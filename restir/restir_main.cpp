@@ -1,6 +1,9 @@
 ﻿/*
 
 コマンドラインオプション例 / Command line option example:
+You can load a 3D model for exampling by downloading from the internet.
+(e.g. https://casual-effects.com/data/)
+
 (1) -cam-pos -0.753442 0.140257 -0.056083 -cam-yaw 75
     -name exterior -obj Amazon_Bistro/Exterior/exterior.obj 0.001 -brightness 2.0
     -name rectlight -emittance 5 5 5 -rectangle 0.1 0.1
@@ -1428,8 +1431,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
     glfwWindowHint(GLFW_SRGB_CAPABLE, GLFW_TRUE);
 
-    int32_t renderTargetSizeX = 1024;
-    int32_t renderTargetSizeY = 1024;
+    int32_t renderTargetSizeX = 1280;
+    int32_t renderTargetSizeY = 720;
 
     // JP: ウインドウの初期化。
     // EN: Initialize a window.
@@ -2386,6 +2389,18 @@ int32_t main(int32_t argc, const char* argv[]) try {
             ImGui::Text("Pos. Speed (T/G): %g", g_cameraPositionalMovingSpeed);
             ImGui::SliderFloat("Brightness", &brightness, -5.0f, 5.0f);
 
+            if (ImGui::Button("Screenshot")) {
+                CUDADRV_CHECK(cuStreamSynchronize(cuStream));
+                auto rawImage = new float4[renderTargetSizeX * renderTargetSizeY];
+                glGetTextureSubImage(
+                    outputTexture.getHandle(), 0,
+                    0, 0, 0, renderTargetSizeX, renderTargetSizeY, 1,
+                    GL_RGBA, GL_FLOAT, sizeof(float4) * renderTargetSizeX * renderTargetSizeY, rawImage);
+                saveImage("output.png", renderTargetSizeX, renderTargetSizeY, rawImage,
+                          false, true);
+                delete[] rawImage;
+            }
+
             ImGui::End();
         }
 
@@ -2764,19 +2779,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
         curGPUTimer.denoise.stop(cuStream);
 
         curGPUTimer.frame.stop(cuStream);
-
-        if (g_takeScreenShot && frameIndex + 1 == 60) {
-            CUDADRV_CHECK(cuStreamSynchronize(cuStream));
-            auto rawImage = new float4[renderTargetSizeX * renderTargetSizeY];
-            glGetTextureSubImage(
-                outputTexture.getHandle(), 0,
-                0, 0, 0, renderTargetSizeX, renderTargetSizeY, 1,
-                GL_RGBA, GL_FLOAT, sizeof(float4) * renderTargetSizeX * renderTargetSizeY, rawImage);
-            saveImage("output.png", renderTargetSizeX, renderTargetSizeY, rawImage,
-                      false, true);
-            delete[] rawImage;
-            break;
-        }
 
 
 

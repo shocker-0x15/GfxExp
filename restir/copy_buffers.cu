@@ -57,6 +57,7 @@ CUDA_DEVICE_KERNEL void visualizeToOutputBuffer(
         float lumT = 1 - std::exp(-brightness * lum);
         // simple tone-map
         value = value * (lumT / lum);
+        value.w = 1.0f;
 
         //const auto reinhard = [](float x, float Lw) {
         //    return x / (1 + x) * (1 + x / (Lw * Lw));
