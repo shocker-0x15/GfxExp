@@ -128,6 +128,8 @@ CUDA_DEVICE_FUNCTION void setupBSDF<LambertBRDF>(const MaterialData &matData, co
 
 
 
+// JP: ホストコード側でまだ対応させていない。
+// EN: Not supported yet on the host code.
 class DiffuseAndSpecularBRDF {
     struct GGXMicrofacetDistribution {
         float alpha_g;
@@ -837,7 +839,7 @@ CUDA_DEVICE_FUNCTION void combineTemporalNeighbors() {
 
         int2 nbCoord = make_int2(launchIndex.x + 0.5f - motionVector.x,
                                  launchIndex.y + 0.5f - motionVector.y);
-        bool acceptedNeighbor = true;
+        bool acceptedNeighbor;
         if constexpr (useUnbiasedEstimator) {
             acceptedNeighbor =
                 nbCoord.x >= 0 && nbCoord.x < plp.s->imageSize.x &&
@@ -913,38 +915,40 @@ CUDA_DEVICE_FUNCTION void combineTemporalNeighbors() {
             // EN: Next, calculate a quantity corresponding to the neighboring pixel's target PDF.
             if (acceptedNeighbor) {
                 GBuffer0 nbGBuffer0 = plp.s->GBuffer0[prevBufIdx].read(nbCoord);
-                GBuffer1 nbGBuffer1 = plp.s->GBuffer1[prevBufIdx].read(nbCoord);
-                GBuffer2 nbGBuffer2 = plp.s->GBuffer2[prevBufIdx].read(nbCoord);
 
                 float3 nbPositionInWorld = nbGBuffer0.positionInWorld;
-                float3 nbNormalInWorld = nbGBuffer1.normalInWorld;
-                float2 nbTexCoord = make_float2(nbGBuffer0.texCoord_x, nbGBuffer1.texCoord_y);
-                uint32_t nbMaterialSlot = nbGBuffer2.materialSlot;
+                if (allFinite(nbPositionInWorld)) {
+                    GBuffer1 nbGBuffer1 = plp.s->GBuffer1[prevBufIdx].read(nbCoord);
+                    GBuffer2 nbGBuffer2 = plp.s->GBuffer2[prevBufIdx].read(nbCoord);
+                    float3 nbNormalInWorld = nbGBuffer1.normalInWorld;
+                    float2 nbTexCoord = make_float2(nbGBuffer0.texCoord_x, nbGBuffer1.texCoord_y);
+                    uint32_t nbMaterialSlot = nbGBuffer2.materialSlot;
 
-                const MaterialData &nbMat = plp.s->materialDataBuffer[nbMaterialSlot];
+                    const MaterialData &nbMat = plp.s->materialDataBuffer[nbMaterialSlot];
 
-                BSDF nbBsdf;
-                nbMat.setupBSDF(nbMat, nbTexCoord, &nbBsdf);
-                ReferenceFrame nbShadingFrame(nbNormalInWorld);
-                float3 nbVOut = plp.f->camera.position - nbPositionInWorld;
-                float nbDist = length(nbVOut);
-                nbVOut /= nbDist;
-                float3 nbVOutLocal = nbShadingFrame.toLocal(nbVOut);
+                    BSDF nbBsdf;
+                    nbMat.setupBSDF(nbMat, nbTexCoord, &nbBsdf);
+                    ReferenceFrame nbShadingFrame(nbNormalInWorld);
+                    float3 nbVOut = plp.f->camera.position - nbPositionInWorld;
+                    float nbDist = length(nbVOut);
+                    nbVOut /= nbDist;
+                    float3 nbVOutLocal = nbShadingFrame.toLocal(nbVOut);
 
-                const Reservoir<LightSample> /*&*/neighbor = plp.s->reservoirBuffer[prevResIndex][nbCoord];
+                    const Reservoir<LightSample> /*&*/neighbor = plp.s->reservoirBuffer[prevResIndex][nbCoord];
 
-                float3 cont = performDirectLighting<false>(
-                    nbPositionInWorld, nbVOutLocal, nbShadingFrame, nbBsdf, selectedLightSample);
-                float nbTargetDensity = convertToWeight(cont);
-                uint32_t nbStreamLength = min(neighbor.getStreamLength(), maxNumPrevSamples);
-                if constexpr (useMIS_RIS) {
-                    denomWeight += nbTargetDensity * nbStreamLength;
-                    if (neighborIsSelected)
-                        numWeight = nbTargetDensity;
-                }
-                else {
-                    if (nbTargetDensity > 0.0f)
-                        denomWeight += nbStreamLength;
+                    float3 cont = performDirectLighting<false>(
+                        nbPositionInWorld, nbVOutLocal, nbShadingFrame, nbBsdf, selectedLightSample);
+                    float nbTargetDensity = convertToWeight(cont);
+                    uint32_t nbStreamLength = min(neighbor.getStreamLength(), maxNumPrevSamples);
+                    if constexpr (useMIS_RIS) {
+                        denomWeight += nbTargetDensity * nbStreamLength;
+                        if (neighborIsSelected)
+                            numWeight = nbTargetDensity;
+                    }
+                    else {
+                        if (nbTargetDensity > 0.0f)
+                            denomWeight += nbStreamLength;
+                    }
                 }
             }
 
@@ -1163,12 +1167,13 @@ CUDA_DEVICE_FUNCTION void combineSpatialNeighbors() {
                 acceptedNeighbor &= nbCoord.x != launchIndex.x || nbCoord.y != launchIndex.y;
                 if (acceptedNeighbor) {
                     GBuffer0 nbGBuffer0 = plp.s->GBuffer0[bufIdx].read(nbCoord);
-                    GBuffer1 nbGBuffer1 = plp.s->GBuffer1[bufIdx].read(nbCoord);
-                    GBuffer2 nbGBuffer2 = plp.s->GBuffer2[bufIdx].read(nbCoord);
 
                     float3 nbPositionInWorld = nbGBuffer0.positionInWorld;
                     if (!allFinite(nbPositionInWorld))
                         continue;
+
+                    GBuffer1 nbGBuffer1 = plp.s->GBuffer1[bufIdx].read(nbCoord);
+                    GBuffer2 nbGBuffer2 = plp.s->GBuffer2[bufIdx].read(nbCoord);
                     float3 nbNormalInWorld = nbGBuffer1.normalInWorld;
                     float2 nbTexCoord = make_float2(nbGBuffer0.texCoord_x, nbGBuffer1.texCoord_y);
                     uint32_t nbMaterialSlot = nbGBuffer2.materialSlot;

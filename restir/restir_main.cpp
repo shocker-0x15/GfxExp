@@ -1,5 +1,27 @@
 ﻿/*
 
+コマンドラインオプション例 / Command line option example:
+(1) -cam-pos -0.753442 0.140257 -0.056083 -cam-yaw 75
+    -name exterior -obj Amazon_Bistro/Exterior/exterior.obj 0.001 -brightness 2.0
+    -name rectlight -emittance 5 5 5 -rectangle 0.1 0.1
+    -inst exterior
+    -begin-pos 0.362 0.329 -2.0 -begin-pitch -90 -begin-yaw 150
+    -end-pos -0.719 0.329 -0.442 -end-pitch -90 -end-yaw 30 -inst rectlight
+
+(2) -cam-pos -9.5 5 0 -cam-yaw 90
+    -name sponza -obj crytek_sponza/sponza.obj 0.01
+    -name rectlight -emittance 600 600 600 -rectangle 1 1 -begin-pos 0 15 0 -inst rectlight
+    -name rectlight0 -emittance 600 0 0 -rectangle 1 1
+    -name rectlight1 -emittance 0 600 0 -rectangle 1 1
+    -name rectlight2 -emittance 0 0 600 -rectangle 1 1
+    -name rectlight3 -emittance 100 100 100 -rectangle 1 1
+    -begin-pos 0 0 0.36125 -inst sponza
+    -begin-pos -5 13.1 0 -end-pos 5 13.1 0 -freq 5 -time 0.0 -inst rectlight0
+    -begin-pos -5 13 0 -end-pos 5 13 0 -freq 10 -time 2.5 -inst rectlight1
+    -begin-pos -5 12.9 0 -end-pos 5 12.9 0 -freq 15 -time 7.5 -inst rectlight2
+    -begin-pos -5 7 -4.8 -begin-pitch -30 -end-pos 5 7 -4.8 -end-pitch -30 -freq 5 -inst rectlight3
+    -begin-pos 5 7 4.8 -begin-pitch 30 -end-pos -5 7 4.8 -end-pitch 30 -freq 5 -inst rectlight3
+
 JP: 
 
 EN: 
@@ -976,19 +998,22 @@ static GeometryInstance* createGeometryInstance(
     const Material* mat) {
     Shared::GeometryInstanceData* geomInstDataOnHost = gpuEnv.geomInstDataBuffer.getMappedPointer();
 
-    std::vector<float> emitterImportances(triangles.size());
-    float lumEmittance = mat->texEmittance ? 1.0f : 0.0f;
-    for (int triIdx = 0; triIdx < emitterImportances.size(); ++triIdx) {
-        const Shared::Triangle &tri = triangles[triIdx];
-        const Shared::Vertex (&vs)[3] = {
-            vertices[tri.index0],
-            vertices[tri.index1],
-            vertices[tri.index2],
-        };
-        float area = 0.5f * length(cross(vs[2].position - vs[0].position,
-                                         vs[1].position - vs[0].position));
-        Assert(area >= 0.0f, "Area must be positive.");
-        emitterImportances[triIdx] = lumEmittance * area;
+    std::vector<float> emitterImportances(triangles.size(), 0.0f);
+    if (mat->texEmittance) {
+        // JP: 面積に比例して発光プリミティブをサンプリングできるようインポータンスを計算する。
+        // EN: Calculate importance values to make it possible to sample an emitter primitive based on its area.
+        for (int triIdx = 0; triIdx < emitterImportances.size(); ++triIdx) {
+            const Shared::Triangle &tri = triangles[triIdx];
+            const Shared::Vertex (&vs)[3] = {
+                vertices[tri.index0],
+                vertices[tri.index1],
+                vertices[tri.index2],
+            };
+            float area = 0.5f * length(cross(vs[2].position - vs[0].position,
+                                             vs[1].position - vs[0].position));
+            Assert(area >= 0.0f, "Area must be positive.");
+            emitterImportances[triIdx] = area;
+        }
     }
 
     GeometryInstance* geomInst = new GeometryInstance();
@@ -1044,6 +1069,10 @@ static Instance* createInstance(
     const Matrix4x4 &transform) {
     Shared::InstanceData* instDataOnHost = gpuEnv.instDataBuffer[0].getMappedPointer();
 
+    // JP: 各ジオメトリインスタンスの光源サンプリングに関わるインポータンスは
+    //     プリミティブのインポータンスの合計値とする。
+    // EN: Use the sum of importance values of primitives as each geometry instances's importance
+    //     for sampling a light source
     std::vector<uint32_t> geomInstSlots;
     std::vector<float> lightImportances;
     for (auto it = geomGroup->geomInsts.cbegin(); it != geomGroup->geomInsts.cend(); ++it) {
@@ -1403,9 +1432,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
     int32_t renderTargetSizeY = 1024;
 
     // JP: ウインドウの初期化。
-    //     HiDPIディスプレイに対応する。
     // EN: Initialize a window.
-    //     Support Hi-DPI display.
     float contentScaleX, contentScaleY;
     glfwGetMonitorContentScale(monitor, &contentScaleX, &contentScaleY);
     float UIScaling = contentScaleX;
@@ -1572,7 +1599,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
     gpuEnv.geomInstDataBuffer.map();
     gpuEnv.instDataBuffer[0].map();
 
-    g_cameraPositionalMovingSpeed = 0.05f;
+    // TODO: シーンの大きさに応じた移動速度の初期値を設定する。
+    g_cameraPositionalMovingSpeed = 0.005f;
     g_cameraDirectionalMovingSpeed = 0.0015f;
     g_cameraTiltSpeed = 0.025f;
 
@@ -1771,6 +1799,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
     CUDADRV_CHECK(cuStreamSynchronize(cuStream));
 
+    // JP: 各インスタンスのインポータンスから光源インスタンスをサンプルするための分布を計算する。
+    // EN: Compute a distribution to sample a light source instance from the importance value of each instance.
     uint32_t totalNumEmitterPrimitives = 0;
     std::vector<float> lightImportances(insts.size());
     for (int i = 0; i < insts.size(); ++i) {
@@ -2012,6 +2042,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
 
 
+    // JP: Spatial Reuseで使用する近傍ピクセルへの方向をLow-discrepancy数列から作成しておく。
+    // EN: Generate directions to neighboring pixels used in spatial reuse from a low-discrepancy sequence.
     const auto computeHaltonSequence = [](uint32_t base, uint32_t idx) {
         const float recBase = 1.0f / base;
         float ret = 0.0f;
@@ -2360,7 +2392,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         static bool useTemporalDenosier = true;
         static Shared::BufferToDisplay bufferTypeToDisplay = Shared::BufferToDisplay::NoisyBeauty;
         static float motionVectorScale = -1.0f;
-        static bool animate = false;// true;
+        static bool animate = true;
         bool resetAccumulation = false;
         static bool enableAccumulation = true;
         static bool enableJittering = false;
@@ -2596,7 +2628,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
         CUDADRV_CHECK(cuMemcpyHtoDAsync(plpOnDevice, &plp, sizeof(plp), cuStream));
 
         // JP: Gバッファーのセットアップ。
+        //     ここではレイトレースを使ってGバッファーを生成しているがもちろんラスタライザーで生成可能。
         // EN: Setup the G-buffers.
+        //     Generate the G-buffers using ray trace here, but of course this can be done using rasterizer.
         curGPUTimer.setupGBuffers.start(cuStream);
         gpuEnv.pipeline.setRayGenerationProgram(gpuEnv.setupGBuffersRayGenProgram);
         gpuEnv.pipeline.launch(cuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);
