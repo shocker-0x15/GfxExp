@@ -1,0 +1,116 @@
+{
+  "FileVersion": 2,
+  "Id": "1ef1de28-642d-4216-b2b3-cb456c99d435",
+  "Items": [
+    {
+      "Id": "5559cb54-f3c5-4659-8c40-e75e2438a7af",
+      "Command": "Amazon Bistro Interior",
+      "Items": [
+        {
+          "Id": "8fd747bc-3e69-49f4-920a-9f6ddef5d5b8",
+          "Command": "-cam-pos -0.180 0.245 -0.071 -cam-pitch 176.009 -cam-yaw 84.974 -cam-roll 172.740 "
+        },
+        {
+          "Id": "59597436-21f4-4a0f-8020-a63690fc63be",
+          "Command": "-name interior -obj ../../../assets/Amazon_Bistro/Interior/interior.obj 0.001 -brightness 2.5"
+        },
+        {
+          "Id": "c4964da6-2b83-4b0f-93d4-178c1fefdb39",
+          "Command": "-inst interior"
+        }
+      ]
+    },
+    {
+      "Id": "020bfeaa-ed0d-467b-bdd6-7663f4c757d3",
+      "Command": "Amazon Bistro Exterior",
+      "Items": [
+        {
+          "Id": "d493bb58-1c7b-45e6-b55f-9e271cda01d6",
+          "Command": "-cam-pos -0.753442 0.140257 -0.056083 -cam-yaw 75"
+        },
+        {
+          "Id": "464b3d6b-7705-4f0c-9c98-d65091daba01",
+          "Command": "-name exterior -obj ../../assets/Amazon_Bistro/Exterior/exterior.obj 0.001 -brightness 2.0"
+        },
+        {
+          "Id": "5f69af30-6b20-43a1-8f1e-2df5e739af17",
+          "Command": "-name rectlight -emittance 5 5 5 -rect-emitter-tex ../../data/xy_color_diagram.png -rectangle 0.1 0.1"
+        },
+        {
+          "Id": "bdfb4b29-fb9a-4896-8c4b-6e96e71b09fb",
+          "Command": "-inst exterior"
+        },
+        {
+          "Id": "c963d399-e3e5-40d3-b983-e0d68ea51fc6",
+          "Command": "-begin-pos 0.362 0.329 -2.0 -begin-pitch -90 -begin-yaw 150 -end-pos -0.719 0.329 -0.442 -end-pitch -90 -end-yaw 30 -inst rectlight"
+        }
+      ]
+    },
+    {
+      "Id": "ec1b1936-fb0a-4f4e-8631-c59ee606615e",
+      "Command": "Crytek Sponza",
+      "Items": [
+        {
+          "Id": "2743afa2-5992-4189-8855-2b40cb08917e",
+          "Command": "-cam-pos 0 2 0 -cam-roll -30 -cam-pitch -15 -cam-yaw 90"
+        },
+        {
+          "Id": "fc8d2075-0eaf-4dab-a060-975a1eadc705",
+          "Command": "-cam-pos 0 3 0 -cam-yaw 90"
+        },
+        {
+          "Id": "4f5087e9-5667-488d-a7f0-8a1b5a1fe134",
+          "Command": "-cam-pos -9.5 11 0 -cam-yaw 90"
+        },
+        {
+          "Id": "c17c10e0-c3b2-4e6c-9ab2-7dae784edfa1",
+          "Command": "-name sponza -obj ../../../assets/crytek_sponza/sponza.obj 0.01"
+        },
+        {
+          "Id": "31eb4cbe-ad1c-4357-bd7c-e28a3686b896",
+          "Command": "-name rectlight -emittance 600 600 600 -rectangle 1 1 -begin-pos 0 15 0 -inst rectlight"
+        },
+        {
+          "Id": "caec873b-dd6a-49ba-83b1-3bb809a54745",
+          "Command": "-name rectlight0 -emittance 600 0 0 -rectangle 1 1"
+        },
+        {
+          "Id": "e52f26b5-d15c-4c27-aa3c-e2e9e154c2bd",
+          "Command": "-name rectlight1 -emittance 0 600 0 -rectangle 1 1"
+        },
+        {
+          "Id": "c0e970b2-ef63-4ece-9480-abe2adc13de4",
+          "Command": "-name rectlight2 -emittance 0 0 600 -rectangle 1 1"
+        },
+        {
+          "Id": "cafafd54-4bcc-486a-a2ab-bb8fe43e0878",
+          "Command": "-begin-pos 0 0 0.36125 -inst sponza"
+        },
+        {
+          "Id": "477913bf-42c0-4c12-8c87-4fac449cb50a",
+          "Command": "-begin-pos -5 13.1 0 -end-pos 5 13.1 0 -freq 5 -time 0.0 -inst rectlight0"
+        },
+        {
+          "Id": "6358a393-da6e-4cb3-80a8-8d8879670a2e",
+          "Command": "-begin-pos -5 13 0 -end-pos 5 13 0 -freq 10 -time 2.5 -inst rectlight1"
+        },
+        {
+          "Id": "139bca4b-7f76-4425-afa6-f17d4a6518e9",
+          "Command": "-begin-pos -5 12.9 0 -end-pos 5 12.9 0 -freq 15 -time 7.5 -inst rectlight2"
+        },
+        {
+          "Id": "9e4121c4-2675-4803-85d0-d14a121f0dfd",
+          "Command": "-name rectlight3 -emittance 100 100 100 -rectangle 1 1"
+        },
+        {
+          "Id": "49f5de91-416a-4653-971a-59be5e31f647",
+          "Command": "-begin-pos -5 7 -4.8 -begin-pitch -30 -end-pos 5 7 -4.8 -end-pitch -30 -freq 5 -inst rectlight3"
+        },
+        {
+          "Id": "87bd9104-d579-4a8e-a71a-bb5d6cae7325",
+          "Command": "-begin-pos 5 7 4.8 -begin-pitch 30 -end-pos -5 7 4.8 -end-pitch 30 -freq 5 -inst rectlight3"
+        }
+      ]
+    }
+  ]
+}
