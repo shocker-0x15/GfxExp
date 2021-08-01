@@ -1,7 +1,7 @@
 ﻿/*
 
 コマンドラインオプション例 / Command line option example:
-You can load a 3D model for exampling by downloading from the internet.
+You can load a 3D model for example by downloading from the internet.
 (e.g. https://casual-effects.com/data/)
 
 (1) -cam-pos -0.753442 0.140257 -0.056083 -cam-yaw 75
@@ -25,9 +25,17 @@ You can load a 3D model for exampling by downloading from the internet.
     -begin-pos -5 7 -4.8 -begin-pitch -30 -end-pos 5 7 -4.8 -end-pitch -30 -freq 5 -inst rectlight3
     -begin-pos 5 7 4.8 -begin-pitch 30 -end-pos -5 7 4.8 -end-pitch 30 -freq 5 -inst rectlight3
 
-JP: 
+JP: このプログラムはReSTIR (Reservoir-based Spatio-Temporal Importance Resampling) [1]の実装例です。
+    ReSTIRでは、Resampled Importance Sampling (RIS), Weighted Reservoir Sampling (WRS)、
+    そして複数のReservoirを結合する際の特性を利用することで大量の発光プリミティブからの効率的なサンプリングが可能となります。
 
-EN: 
+EN: This program is an example implementation of ReSTIR (Reservoir-based Spatio-Temporal Importance Resampling) [1].
+    ReSTIR enables efficient sampling from a massive amount of emitter primitives by
+    Resampled Importance Sampling (RIS), Weighted Reservoir Sampling (WRS) and exploiting the property of
+    combining multiple reservoirs.
+
+[1] Spatiotemporal reservoir resampling for real-time ray tracing with dynamic direct lighting
+    https://research.nvidia.com/publication/2020-07_Spatiotemporal-reservoir-resampling
 
 */
 
