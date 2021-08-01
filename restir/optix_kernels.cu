@@ -449,16 +449,18 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
     hitPointParams->texCoord = texCoord;
     hitPointParams->materialSlot = geomInst.materialSlot;
 
-    float3 vOut = -optixGetWorldRayDirection();
-
-    const MaterialData &mat = plp.s->materialDataBuffer[geomInst.materialSlot];
-    BSDF bsdf;
-    mat.setupBSDF(mat, texCoord, &bsdf);
-    ReferenceFrame shadingFrame(sn);
-    float3 vOutLocal = shadingFrame.toLocal(normalize(vOut));
-
+    // JP: マウスが乗っているピクセルの情報を出力する。
+    // EN: Export the information of the pixel on which the mouse is.
     if (launchIndex.x == plp.f->mousePosition.x &&
         launchIndex.y == plp.f->mousePosition.y) {
+        float3 vOut = -optixGetWorldRayDirection();
+
+        const MaterialData &mat = plp.s->materialDataBuffer[geomInst.materialSlot];
+        BSDF bsdf;
+        mat.setupBSDF(mat, texCoord, &bsdf);
+        ReferenceFrame shadingFrame(sn);
+        float3 vOutLocal = shadingFrame.toLocal(normalize(vOut));
+
         pickInfo->hit = true;
         pickInfo->instSlot = optixGetInstanceId();
         pickInfo->geomInstSlot = geomInst.geomInstSlot;
@@ -482,6 +484,8 @@ CUDA_DEVICE_FUNCTION float3 sampleLight(float ul, float u0, float u1,
                                         LightSample* lightSample, float3* lightPosition, float3* lightNormal, float* areaPDensity) {
     float lightProb = 1.0f;
 
+    // JP: まずはインスタンスをサンプルする。
+    // EN: First, sample an instance.
     float instProb;
     float uGeomInst;
     uint32_t instIndex = plp.s->lightInstDist.sample(ul, &instProb, &uGeomInst);
@@ -489,6 +493,8 @@ CUDA_DEVICE_FUNCTION float3 sampleLight(float ul, float u0, float u1,
     const InstanceData &inst = plp.f->instanceDataBuffer[instIndex];
     lightSample->instIndex = instIndex;
 
+    // JP: 次にサンプルしたインスタンスに属するジオメトリインスタンスをサンプルする。
+    // EN: Next, sample a geometry instance which belongs to the sampled instance.
     float geomInstProb;
     float uPrim;
     uint32_t geomInstIndex = inst.geomInstSlots[inst.lightGeomInstDist.sample(uGeomInst, &geomInstProb, &uPrim)];
@@ -496,6 +502,8 @@ CUDA_DEVICE_FUNCTION float3 sampleLight(float ul, float u0, float u1,
     const GeometryInstanceData &geomInst = plp.s->geometryInstanceDataBuffer[geomInstIndex];
     lightSample->geomInstIndex = geomInstIndex;
 
+    // JP: 最後に、サンプルしたジオメトリインスタンスに属するプリミティブをサンプルする。
+    // EN: Finally, sample a primitive which belongs to the sampled geometry instance.
     float primProb;
     uint32_t primIndex = geomInst.emitterPrimDist.sample(uPrim, &primProb);
     lightProb *= primProb;
@@ -712,7 +720,7 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(generateInitialCandidates)() {
         Reservoir<LightSample> reservoir = plp.s->reservoirBuffer[curResIndex][launchIndex];
         reservoir.initialize();
 
-        // JP: ターゲットPDFをUnshadowed ContributionとしてStreaming RISを実行。
+        // JP: Unshadowed ContributionをターゲットPDFとしてStreaming RISを実行。
         // EN: Perform streaming RIS with unshadowed contribution as the target PDF.
         float selectedTargetDensity = 0.0f;
         uint32_t numCandidates = 1 << plp.f->log2NumCandidateSamples;
@@ -936,6 +944,10 @@ CUDA_DEVICE_FUNCTION void combineTemporalNeighbors() {
 
                     const Reservoir<LightSample> /*&*/neighbor = plp.s->reservoirBuffer[prevResIndex][nbCoord];
 
+                    // JP: 際限なく過去フレームのウェイトが高まってしまうのを防ぐため、
+                    //     Temporal Reuseでは前フレームのストリーム長を現在のピクセルの20倍に制限する。
+                    // EN: To prevent the weight for previous frames to grow unlimitedly,
+                    //     limit the previous frame's weight by 20x of the current pixel's one.
                     float3 cont = performDirectLighting<false>(
                         nbPositionInWorld, nbVOutLocal, nbShadingFrame, nbBsdf, selectedLightSample);
                     float nbTargetDensity = convertToWeight(cont);

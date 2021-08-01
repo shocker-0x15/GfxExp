@@ -15,6 +15,8 @@ https://research.nvidia.com/publication/2020-07_Spatiotemporal-reservoir-resampl
 ## その他 / Miscellaneous
 OptiX/CUDAのラッパーとして[OptiX Utility](https://github.com/shocker-0x15/OptiX_Utility)を使用しています。
 
+Programs here use [OptiX Utility](https://github.com/shocker-0x15/OptiX_Utility) as OptiX/CUDA wrapper.
+
 ## 動作環境 / Confirmed Environment
 現状以下の環境で動作を確認しています。\
 I've confirmed that the program runs correctly in the following environment.
