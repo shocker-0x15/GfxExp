@@ -1,6 +1,5 @@
-tests/**/*.bmp filter=lfs diff=lfs merge=lfs -text
-tests/**/*.png filter=lfs diff=lfs merge=lfs -text
 ext/assimp/assimp-vc142-mt.dll filter=lfs diff=lfs merge=lfs -text
 ext/assimp/assimp-vc142-mt.lib filter=lfs diff=lfs merge=lfs -text
 ext/glfw/lib/glfw3.lib filter=lfs diff=lfs merge=lfs -text
 *.png filter=lfs diff=lfs merge=lfs -text
+*.bmp filter=lfs diff=lfs merge=lfs -text

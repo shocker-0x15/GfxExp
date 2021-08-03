@@ -271,8 +271,8 @@ CUDA_DEVICE_FUNCTION void setupBSDF<DiffuseAndSpecularBRDF>(const MaterialData &
     float4 specularF0Color = tex2DLod<float4>(matData.asDiffuseAndSpecular.specular, texCoord.x, texCoord.y, 0.0f);
     float smoothness = tex2DLod<float>(matData.asDiffuseAndSpecular.smoothness, texCoord.x, texCoord.y, 0.0f);
     auto &bsdfBody = *reinterpret_cast<DiffuseAndSpecularBRDF*>(bsdf->m_data);
-    bsdfBody = DiffuseAndSpecularBRDF(make_float3(diffuseColor.x, diffuseColor.y, diffuseColor.z),
-                                      make_float3(diffuseColor.x, diffuseColor.y, diffuseColor.z),
+    bsdfBody = DiffuseAndSpecularBRDF(make_float3(diffuseColor),
+                                      make_float3(specularF0Color),
                                       smoothness);
 }
 

@@ -865,6 +865,7 @@ static Material* createDiffuseAndSpecularMaterial(
     GPUEnvironment &gpuEnv,
     const std::filesystem::path &diffuseColorPath, const float3 &immDiffuseColor,
     const std::filesystem::path &specularColorPath, const float3 &immSpecularColor,
+    float immSmoothness,
     const std::filesystem::path &emittancePath, const float3 &immEmittance) {
     Shared::MaterialData* matDataOnHost = gpuEnv.materialDataBuffer.getMappedPointer();
 
@@ -947,7 +948,6 @@ static Material* createDiffuseAndSpecularMaterial(
     body.texSpecular = sampler_sRGB.createTextureObject(body.specular);
 
     {
-        constexpr float immSmoothness = 0.7f;
         uint8_t data = std::min<uint32_t>(255 * immSmoothness, 255);
         body.smoothness.initialize2D(
             gpuEnv.cuContext, cudau::ArrayElementType::UInt8, 1,
@@ -976,14 +976,28 @@ static Material* createDiffuseAndSpecularMaterial(
         hpprintf("Reading: %s ... ", emittancePath.string().c_str());
         uint8_t* linearImageData = stbi_load(emittancePath.string().c_str(),
                                              &width, &height, &n, 4);
-        hpprintf("done.\n");
-        mat->emittance.initialize2D(
-            gpuEnv.cuContext, cudau::ArrayElementType::UInt8, 4,
-            cudau::ArraySurface::Disable, cudau::ArrayTextureGather::Disable,
-            width, height, 1);
-        mat->emittance.write<uint8_t>(linearImageData, width * height * 4);
-        stbi_image_free(linearImageData);
-        mat->texEmittance = sampler_sRGB.createTextureObject(mat->emittance);
+        if (linearImageData) {
+            hpprintf("done.\n");
+            mat->emittance.initialize2D(
+                gpuEnv.cuContext, cudau::ArrayElementType::UInt8, 4,
+                cudau::ArraySurface::Disable, cudau::ArrayTextureGather::Disable,
+                width, height, 1);
+            mat->emittance.write<uint8_t>(linearImageData, width * height * 4);
+            stbi_image_free(linearImageData);
+            mat->texEmittance = sampler_sRGB.createTextureObject(mat->emittance);
+        }
+        else {
+            hpprintf("failed.\n");
+            float data[4] = {
+                immEmittance.x, immEmittance.y, immEmittance.z, 1.0f
+            };
+            mat->emittance.initialize2D(
+                gpuEnv.cuContext, cudau::ArrayElementType::Float32, 4,
+                cudau::ArraySurface::Disable, cudau::ArrayTextureGather::Disable,
+                1, 1, 1);
+            mat->emittance.write(data, 4);
+            mat->texEmittance = sampler_float.createTextureObject(mat->emittance);
+        }
     }
 
     mat->materialSlot = gpuEnv.materialSlotFinder.getFirstAvailableSlot();
@@ -1149,8 +1163,6 @@ static void createTriangleMeshes(
     materials.clear();
     Shared::MaterialData* matDataOnHost = gpuEnv.materialDataBuffer.getMappedPointer();
     for (int matIdx = 0; matIdx < scene->mNumMaterials; ++matIdx) {
-        std::filesystem::path reflectancePath;
-        float3 immReflectance;
         std::filesystem::path emittancePath;
         float3 immEmittance = float3(0.0f);
 
@@ -1162,16 +1174,64 @@ static void createTriangleMeshes(
         if (aiMat->Get(AI_MATKEY_NAME, strValue) == aiReturn_SUCCESS)
             matName = strValue.C_Str();
 
-        if (aiMat->Get(AI_MATKEY_TEXTURE_DIFFUSE(0), strValue) == aiReturn_SUCCESS) {
-            reflectancePath = dirPath / strValue.C_Str();
+        constexpr bool useLambertMaterial = true;
+
+        std::filesystem::path reflectancePath;
+        float3 immReflectance;
+        std::filesystem::path diffuseColorPath;
+        float3 immDiffuseColor;
+        std::filesystem::path specularColorPath;
+        float3 immSpecularColor;
+        float immSmoothness;
+        if constexpr (useLambertMaterial) {
+            if (aiMat->Get(AI_MATKEY_TEXTURE_DIFFUSE(0), strValue) == aiReturn_SUCCESS) {
+                reflectancePath = dirPath / strValue.C_Str();
+            }
+            else {
+                if (aiMat->Get(AI_MATKEY_COLOR_DIFFUSE, color, nullptr) != aiReturn_SUCCESS) {
+                    color[0] = 1.0f;
+                    color[1] = 0.0f;
+                    color[2] = 1.0f;
+                }
+                immReflectance = float3(color[0], color[1], color[2]);
+            }
+            (void)diffuseColorPath;
+            (void)immDiffuseColor;
+            (void)specularColorPath;
+            (void)immSpecularColor;
+            (void)immSmoothness;
         }
         else {
-            if (!aiMat->Get(AI_MATKEY_COLOR_DIFFUSE, color, nullptr) == aiReturn_SUCCESS) {
-                color[0] = 1.0f;
-                color[1] = 0.0f;
-                color[2] = 1.0f;
+            if (aiMat->Get(AI_MATKEY_TEXTURE_DIFFUSE(0), strValue) == aiReturn_SUCCESS) {
+                diffuseColorPath = dirPath / strValue.C_Str();
             }
-            immReflectance = float3(color[0], color[1], color[2]);
+            else {
+                if (aiMat->Get(AI_MATKEY_COLOR_DIFFUSE, color, nullptr) != aiReturn_SUCCESS) {
+                    color[0] = 0.0f;
+                    color[1] = 0.0f;
+                    color[2] = 0.0f;
+                }
+                immDiffuseColor = float3(color[0], color[1], color[2]);
+            }
+
+            if (aiMat->Get(AI_MATKEY_TEXTURE_SPECULAR(0), strValue) == aiReturn_SUCCESS) {
+                specularColorPath = dirPath / strValue.C_Str();
+            }
+            else {
+                if (aiMat->Get(AI_MATKEY_COLOR_SPECULAR, color, nullptr) != aiReturn_SUCCESS) {
+                    color[0] = 0.0f;
+                    color[1] = 0.0f;
+                    color[2] = 0.0f;
+                }
+                immSpecularColor = float3(color[0], color[1], color[2]);
+            }
+
+            if (aiMat->Get(AI_MATKEY_SHININESS, &immSmoothness, nullptr) != aiReturn_SUCCESS)
+                immSmoothness = 0.0f;
+            immSmoothness = std::fmin(immSmoothness * 0.01f, 0.9f);
+
+            (void)reflectancePath;
+            (void)immReflectance;
         }
 
         if (aiMat->Get(AI_MATKEY_TEXTURE_EMISSIVE(0), strValue) == aiReturn_SUCCESS)
@@ -1179,10 +1239,23 @@ static void createTriangleMeshes(
         else if (aiMat->Get(AI_MATKEY_COLOR_EMISSIVE, color, nullptr) == aiReturn_SUCCESS)
             immEmittance = float3(color[0], color[1], color[2]);
 
-        materials.push_back(createLambertMaterial(
-            gpuEnv,
-            reflectancePath, immReflectance,
-            emittancePath, immEmittance));
+        Material* mat;
+        if constexpr (useLambertMaterial) {
+            mat = createLambertMaterial(
+                gpuEnv,
+                reflectancePath, immReflectance,
+                emittancePath, immEmittance);
+        }
+        else {
+            mat = createDiffuseAndSpecularMaterial(
+                gpuEnv,
+                diffuseColorPath, immDiffuseColor,
+                specularColorPath, immSpecularColor,
+                immSmoothness,
+                emittancePath, immEmittance);
+        }
+
+        materials.push_back(mat);
     }
 
     geomInsts.clear();
