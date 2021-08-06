@@ -2,7 +2,11 @@
 
 適当にグラフィックス関連の論文などを読んで実装・検証したものを置きます。
 
+このリポジトリを正しくcloneするには[Git LFS](https://git-lfs.github.com/)のインストールが必要です。
+
 I'll randomly put something for implementing/validating graphics papers here.
+
+You need to install [Git LFS](https://git-lfs.github.com/) to correctly clone this repository.
 
 ## 実装 / Implementations
 
