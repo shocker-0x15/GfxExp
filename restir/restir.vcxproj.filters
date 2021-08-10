@@ -25,20 +25,17 @@
     <Filter Include="non-essentials\utils">
       <UniqueIdentifier>{6f26d21a-72b8-449a-b8dd-7ac1d7c4bfb2}</UniqueIdentifier>
     </Filter>
+    <Filter Include="non-essentials\ext\miniz">
+      <UniqueIdentifier>{3e67c4a3-116d-4c60-bf4e-3ff7bdfdd409}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="restir_main.cpp" />
-    <ClCompile Include="..\common\common.cpp">
-      <Filter>non-essentials</Filter>
-    </ClCompile>
     <ClCompile Include="..\common\dds_loader.cpp">
       <Filter>non-essentials</Filter>
     </ClCompile>
     <ClCompile Include="..\utils\gl_util.cpp">
       <Filter>non-essentials\utils</Filter>
-    </ClCompile>
-    <ClCompile Include="..\ext\tiny_obj_loader.cc">
-      <Filter>non-essentials\ext</Filter>
     </ClCompile>
     <ClCompile Include="..\ext\imgui\imgui_demo.cpp">
       <Filter>non-essentials\ext\imgui</Filter>
@@ -67,10 +64,22 @@
     <ClCompile Include="..\utils\optix_util.cpp">
       <Filter>non-essentials\utils</Filter>
     </ClCompile>
+    <ClCompile Include="..\ext\miniz\miniz.c">
+      <Filter>non-essentials\ext\miniz</Filter>
+    </ClCompile>
+    <ClCompile Include="..\ext\tinyexr.cc">
+      <Filter>non-essentials\ext</Filter>
+    </ClCompile>
+    <ClCompile Include="..\ext\stb_image_write_compile.cpp">
+      <Filter>non-essentials\ext</Filter>
+    </ClCompile>
+    <ClCompile Include="..\common\common_host.cpp">
+      <Filter>non-essentials</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="restir_shared.h" />
-    <ClInclude Include="..\common\common.h">
+    <ClInclude Include="..\common\common_shared.h">
       <Filter>non-essentials</Filter>
     </ClInclude>
     <ClInclude Include="..\common\dds_loader.h">
@@ -78,9 +87,6 @@
     </ClInclude>
     <ClInclude Include="..\utils\gl_util.h">
       <Filter>non-essentials\utils</Filter>
-    </ClInclude>
-    <ClInclude Include="..\ext\tiny_obj_loader.h">
-      <Filter>non-essentials\ext</Filter>
     </ClInclude>
     <ClInclude Include="..\ext\stb_image_write.h">
       <Filter>non-essentials\ext</Filter>
@@ -135,6 +141,15 @@
     </ClInclude>
     <ClInclude Include="..\utils\optixu_on_cudau.h">
       <Filter>non-essentials\utils</Filter>
+    </ClInclude>
+    <ClInclude Include="..\ext\tinyexr.h">
+      <Filter>non-essentials\ext</Filter>
+    </ClInclude>
+    <ClInclude Include="..\ext\miniz\miniz.h">
+      <Filter>non-essentials\ext\miniz</Filter>
+    </ClInclude>
+    <ClInclude Include="..\common\common_host.h">
+      <Filter>non-essentials</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

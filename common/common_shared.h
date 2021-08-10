@@ -36,24 +36,9 @@
 #   include <cstdint>
 #   include <cmath>
 
-#   include <fstream>
-#   include <sstream>
-#   include <array>
-#   include <vector>
-#   include <set>
-#   include <map>
-#   include <unordered_set>
-#   include <random>
 #   include <algorithm>
-#   include <filesystem>
-#   include <functional>
-#   include <thread>
-#   include <chrono>
-#   include <variant>
 
 #   include <immintrin.h>
-
-#   include "stopwatch.h"
 #endif
 
 
@@ -578,6 +563,35 @@ CUDA_DEVICE_FUNCTION float sRGB_calcLuminance(const float3 &value) {
 
 
 
+template <typename RealType>
+struct CompensatedSum {
+    RealType result;
+    RealType comp;
+
+    CUDA_DEVICE_FUNCTION CompensatedSum(const RealType &value = RealType(0)) : result(value), comp(0.0) { };
+
+    CUDA_DEVICE_FUNCTION CompensatedSum &operator=(const RealType &value) {
+        result = value;
+        comp = 0;
+        return *this;
+    }
+
+    CUDA_DEVICE_FUNCTION CompensatedSum &operator+=(const RealType &value) {
+        RealType cInput = value - comp;
+        RealType sumTemp = result + cInput;
+        comp = (sumTemp - result) - cInput;
+        result = sumTemp;
+        return *this;
+    }
+
+    CUDA_DEVICE_FUNCTION operator RealType() const { return result; };
+};
+
+//using FloatSum = float;
+using FloatSum = CompensatedSum<float>;
+
+
+
 struct AABB {
     float3 minP;
     float3 maxP;
@@ -1061,397 +1075,452 @@ CUDA_DEVICE_FUNCTION Quaternion Slerp(float t, const Quaternion &q0, const Quate
 
 
 
-// Reference:
-// Long-Period Hash Functions for Procedural Texturing
-// combined permutation table of the hash function of period 739,024 = lcm(11, 13, 16, 17, 19)
-CUDA_CONSTANT_MEM static uint8_t PermutationTable[] = {
-    // table 0: 11 numbers
-    0, 10, 2, 7, 3, 5, 6, 4, 8, 1, 9,
-    // table 1: 13 numbers
-    5, 11, 6, 8, 1, 10, 12, 9, 3, 7, 0, 4, 2,
-    // table 2: 16 numbers = the range of the hash function required by Perlin noise.
-    13, 10, 11, 5, 6, 9, 4, 3, 8, 7, 14, 2, 0, 1, 15, 12,
-    // table 3: 17 numbers
-    1, 13, 5, 14, 12, 3, 6, 16, 0, 8, 9, 2, 11, 4, 15, 7, 10,
-    // table 4: 19 numbers
-    10, 6, 5, 8, 15, 0, 17, 7, 14, 18, 13, 16, 2, 9, 12, 1, 11, 4, 3,
-    //// table 6: 23 numbers
-    //20, 21, 4, 5, 0, 18, 14, 2, 6, 22, 10, 17, 3, 7, 8, 16, 19, 11, 9, 13, 1, 15, 12
-};
+#define USE_WALKER_ALIAS_METHOD
 
-// References
-// Improving Noise
-// This code is based on the web site: adrian's soapbox
-// http://flafla2.github.io/2014/08/09/perlinnoise.html
-class PerlinNoise3D {
-    int32_t m_repeat;
+namespace shared {
+    class PCG32RNG {
+        uint64_t state;
 
-    CUDA_DEVICE_FUNCTION static uint8_t hash(int32_t x, int32_t y, int32_t z) {
-        uint32_t sum = 0;
-        sum += PermutationTable[0 + (PermutationTable[0 + (PermutationTable[0 + x % 11] + y) % 11] + z) % 11];
-        sum += PermutationTable[11 + (PermutationTable[11 + (PermutationTable[11 + x % 13] + y) % 13] + z) % 13];
-        sum += PermutationTable[24 + (PermutationTable[24 + (PermutationTable[24 + x % 16] + y) % 16] + z) % 16];
-        sum += PermutationTable[40 + (PermutationTable[40 + (PermutationTable[40 + x % 17] + y) % 17] + z) % 17];
-        sum += PermutationTable[57 + (PermutationTable[57 + (PermutationTable[57 + x % 19] + y) % 19] + z) % 19];
-        return sum % 16;
-    }
+    public:
+        CUDA_DEVICE_FUNCTION PCG32RNG() {}
 
-    CUDA_DEVICE_FUNCTION static float gradient(uint32_t hash, float xu, float yu, float zu) {
-        switch (hash & 0xF) {
-            // Dot products with 12 vectors defined by the directions from the center of a cube to its edges.
-        case 0x0: return  xu + yu; // ( 1,  1,  0)
-        case 0x1: return -xu + yu; // (-1,  1,  0)
-        case 0x2: return  xu - yu; // ( 1, -1,  0)
-        case 0x3: return -xu - yu; // (-1, -1,  0)
-        case 0x4: return  xu + zu; // ( 1,  0,  1)
-        case 0x5: return -xu + zu; // (-1,  0,  1)
-        case 0x6: return  xu - zu; // ( 1,  0, -1)
-        case 0x7: return -xu - zu; // (-1,  0, -1)
-        case 0x8: return  yu + zu; // ( 0,  1,  1)
-        case 0x9: return -yu + zu; // ( 0, -1,  1)
-        case 0xA: return  yu - zu; // ( 0,  1, -1)
-        case 0xB: return -yu - zu; // ( 0, -1, -1)
+        void setState(uint64_t _state) { state = _state; }
 
-            // To avoid the cost of dividing by 12, we pad to 16 gradient directions.
-            // These form a regular tetrahedron, so adding them redundantly introduces no visual bias in the texture.
-        case 0xC: return  xu + yu; // ( 1,  1,  0)
-        case 0xD: return -yu + zu; // ( 0, -1,  1)
-        case 0xE: return -xu + yu; // (-1 , 1,  0)
-        case 0xF: return -yu - zu; // ( 0, -1, -1)
-
-        default: return 0; // never happens
-        }
-    }
-
-public:
-    CUDA_DEVICE_FUNCTION PerlinNoise3D(int32_t repeat) : m_repeat(repeat) {}
-
-    CUDA_DEVICE_FUNCTION float evaluate(const float3 &p, float frequency) const {
-        float x = frequency * p.x;
-        float y = frequency * p.y;
-        float z = frequency * p.z;
-        const uint32_t repeat = static_cast<uint32_t>(m_repeat * frequency);
-
-        // If we have any repeat on, change the coordinates to their "local" repetitions.
-        if (repeat > 0) {
-#if defined(__CUDA_ARCH__)
-            x = fmodf(x, repeat);
-            y = fmodf(y, repeat);
-            z = fmodf(z, repeat);
-#else
-            x = std::fmod(x, static_cast<float>(repeat));
-            y = std::fmod(y, static_cast<float>(repeat));
-            z = std::fmod(z, static_cast<float>(repeat));
-#endif
-            if (x < 0)
-                x += repeat;
-            if (y < 0)
-                y += repeat;
-            if (z < 0)
-                z += repeat;
+        CUDA_DEVICE_FUNCTION uint32_t operator()() {
+            uint64_t oldstate = state;
+            // Advance internal state
+            state = oldstate * 6364136223846793005ULL + 1;
+            // Calculate output function (XSH RR), uses old state for max ILP
+            uint32_t xorshifted = static_cast<uint32_t>(((oldstate >> 18u) ^ oldstate) >> 27u);
+            uint32_t rot = oldstate >> 59u;
+            return (xorshifted >> rot) | (xorshifted << ((-static_cast<int32_t>(rot)) & 31));
         }
 
-        // Calculate the "unit cube" that the point asked will be located in.
-        // The left bound is ( |_x_|,|_y_|,|_z_| ) and the right bound is that plus 1.
-#if defined(__CUDA_ARCH__)
-        int32_t xi = floorf(x);
-        int32_t yi = floorf(y);
-        int32_t zi = floorf(z);
+        CUDA_DEVICE_FUNCTION float getFloat0cTo1o() {
+            uint32_t fractionBits = ((*this)() >> 9) | 0x3f800000;
+            return *(float*)&fractionBits - 1.0f;
+        }
+    };
+
+
+
+    template <typename RealType>
+    struct AliasTableEntry {
+        uint32_t secondIndex;
+        RealType probToPickFirst;
+
+        CUDA_DEVICE_FUNCTION AliasTableEntry() {}
+        CUDA_DEVICE_FUNCTION AliasTableEntry(uint32_t _secondIndex, RealType _probToPickFirst) :
+            secondIndex(_secondIndex), probToPickFirst(_probToPickFirst) {}
+    };
+
+    template <typename RealType>
+    struct AliasValueMap {
+        RealType scaleForFirst;
+        RealType scaleForSecond;
+        RealType offsetForSecond;
+    };
+
+
+
+    template <typename RealType>
+    class DiscreteDistribution1DTemplate {
+        const RealType* m_PMF;
+#if defined(USE_WALKER_ALIAS_METHOD)
+        const AliasTableEntry<RealType>* m_aliasTable;
+        const AliasValueMap<RealType>* m_valueMaps;
 #else
-        int32_t xi = static_cast<int32_t>(std::floor(x));
-        int32_t yi = static_cast<int32_t>(std::floor(y));
-        int32_t zi = static_cast<int32_t>(std::floor(z));
+        const RealType* m_CDF;
+#endif
+        RealType m_integral;
+        uint32_t m_numValues;
+
+    public:
+#if defined(USE_WALKER_ALIAS_METHOD)
+        DiscreteDistribution1DTemplate(
+            const RealType* PMF, const AliasTableEntry<RealType>* aliasTable, const AliasValueMap<RealType>* valueMaps,
+            RealType integral, uint32_t numValues) :
+            m_PMF(PMF), m_aliasTable(aliasTable), m_valueMaps(valueMaps),
+            m_integral(integral), m_numValues(numValues) {}
+#else
+        DiscreteDistribution1DTemplate(
+            const RealType* PMF, const RealType* CDF, RealType integral, uint32_t numValues) :
+            m_PMF(PMF), m_CDF(CDF), m_integral(integral), m_numValues(numValues) {}
 #endif
 
-        const auto fade = [](float t) {
-            // Fade function as defined by Ken Perlin.
-            // This eases coordinate values so that they will "ease" towards integral values.
-            // This ends up smoothing the final output.
-            // 6t^5 - 15t^4 + 10t^3
-            return t * t * t * (t * (t * 6 - 15) + 10);
-        };
+        CUDA_DEVICE_FUNCTION DiscreteDistribution1DTemplate() {}
 
-        // Next we calculate the location (from 0.0 to 1.0) in that cube.
-        // We also fade the location to smooth the result.
-        float xu = x - xi;
-        float yu = y - yi;
-        float zu = z - zi;
-        float u = fade(xu);
-        float v = fade(yu);
-        float w = fade(zu);
-
-        const auto inc = [this, repeat](int32_t num) {
-            ++num;
-            if (repeat > 0)
-                num %= repeat;
-            return num;
-        };
-
-        uint8_t lll, llu, lul, luu, ull, ulu, uul, uuu;
-        lll = hash(xi, yi, zi);
-        ull = hash(inc(xi), yi, zi);
-        lul = hash(xi, inc(yi), zi);
-        uul = hash(inc(xi), inc(yi), zi);
-        llu = hash(xi, yi, inc(zi));
-        ulu = hash(inc(xi), yi, inc(zi));
-        luu = hash(xi, inc(yi), inc(zi));
-        uuu = hash(inc(xi), inc(yi), inc(zi));
-
-        const auto lerp = [](float v0, float v1, float t) {
-            return v0 * (1 - t) + v1 * t;
-        };
-
-        // The gradient function calculates the dot product between a pseudorandom gradient vector and 
-        // the vector from the input coordinate to the 8 surrounding points in its unit cube.
-        // This is all then lerped together as a sort of weighted average based on the faded (u,v,w) values we made earlier.
-        float _llValue = lerp(gradient(lll, xu, yu, zu), gradient(ull, xu - 1, yu, zu), u);
-        float _ulValue = lerp(gradient(lul, xu, yu - 1, zu), gradient(uul, xu - 1, yu - 1, zu), u);
-        float __lValue = lerp(_llValue, _ulValue, v);
-
-        float _luValue = lerp(gradient(llu, xu, yu, zu - 1), gradient(ulu, xu - 1, yu, zu - 1), u);
-        float _uuValue = lerp(gradient(luu, xu, yu - 1, zu - 1), gradient(uuu, xu - 1, yu - 1, zu - 1), u);
-        float __uValue = lerp(_luValue, _uuValue, v);
-
-        float ret = lerp(__lValue, __uValue, w);
-        return ret;
-    }
-};
-
-class MultiOctavePerlinNoise3D {
-    PerlinNoise3D m_primaryNoiseGen;
-    uint32_t m_numOctaves;
-    float m_initialFrequency;
-    float m_initialAmplitude;
-    float m_frequencyMultiplier;
-    float m_persistence;
-    float m_supValue;
-
-public:
-    CUDA_DEVICE_FUNCTION MultiOctavePerlinNoise3D(uint32_t numOctaves, float initialFrequency, float supValueOrInitialAmplitude, bool supSpecified,
-                                                  float frequencyMultiplier, float persistence, uint32_t repeat) :
-        m_primaryNoiseGen(repeat),
-        m_numOctaves(numOctaves),
-        m_initialFrequency(initialFrequency),
-        m_frequencyMultiplier(frequencyMultiplier), m_persistence(persistence) {
-        if (supSpecified) {
-            float amplitude = 1.0f;
-            float tempSupValue = 0;
-            for (int i = 0; i < static_cast<int32_t>(m_numOctaves); ++i) {
-                tempSupValue += amplitude;
-                amplitude *= m_persistence;
+        CUDA_DEVICE_FUNCTION uint32_t sample(RealType u, RealType* prob) const {
+            Assert(u >= 0 && u < 1, "\"u\": %g must be in range [0, 1).", u);
+#if defined(USE_WALKER_ALIAS_METHOD)
+            uint32_t idx = min(static_cast<uint32_t>(u * m_numValues), m_numValues - 1);
+            u = u * m_numValues - idx;
+            const AliasTableEntry<RealType> &entry = m_aliasTable[idx];
+            if (u >= entry.probToPickFirst)
+                idx = entry.secondIndex;
+#else
+            int idx = 0;
+            for (int d = nextPowerOf2(m_numValues) >> 1; d >= 1; d >>= 1) {
+                if (idx + d >= m_numValues)
+                    continue;
+                if (m_CDF[idx + d] <= u)
+                    idx += d;
             }
-            m_initialAmplitude = supValueOrInitialAmplitude / tempSupValue;
-            m_supValue = supValueOrInitialAmplitude;
+#endif
+            Assert(idx >= 0 && idx < m_numValues, "Invalid Index!: %d", idx);
+            *prob = m_PMF[idx];
+            return idx;
         }
-        else {
-            m_initialAmplitude = supValueOrInitialAmplitude;
+
+        CUDA_DEVICE_FUNCTION uint32_t sample(RealType u, RealType* prob, RealType* remapped) const {
+            Assert(u >= 0 && u < 1, "\"u\": %g must be in range [0, 1).", u);
+#if defined(USE_WALKER_ALIAS_METHOD)
+            uint32_t idx = min(static_cast<uint32_t>(u * m_numValues), m_numValues - 1);
+            u = u * m_numValues - idx;
+            const AliasTableEntry<RealType> &entry = m_aliasTable[idx];
+            const AliasValueMap<RealType> &valueMap = m_valueMaps[idx];
+            if (u < entry.probToPickFirst) {
+                *remapped = valueMap.scaleForFirst * u;
+            }
+            else {
+                idx = entry.secondIndex;
+                *remapped = valueMap.scaleForSecond * u + valueMap.offsetForSecond;
+            }
+#else
+            int idx = 0;
+            for (int d = nextPowerOf2(m_numValues) >> 1; d >= 1; d >>= 1) {
+                if (idx + d >= m_numValues)
+                    continue;
+                if (m_CDF[idx + d] <= u)
+                    idx += d;
+            }
+            Assert(idx >= 0 && idx < m_numValues, "Invalid Index!: %d", idx);
+            *remapped = (u - m_CDF[idx]) / (m_CDF[idx + 1] - m_CDF[idx]);
+#endif
+            *prob = m_PMF[idx];
+            Assert(isfinite(*remapped), "Remapped value is not a finite value %g.",
+                   *remapped);
+            return idx;
+        }
+
+        CUDA_DEVICE_FUNCTION RealType evaluatePMF(uint32_t idx) const {
+            Assert(idx >= 0 && idx < m_numValues, "\"idx\" is out of range [0, %u)", m_numValues);
+            return m_PMF[idx];
+        }
+
+        CUDA_DEVICE_FUNCTION RealType integral() const { return m_integral; }
+
+        CUDA_DEVICE_FUNCTION uint32_t numValues() const { return m_numValues; }
+    };
+
+    using DiscreteDistribution1D = DiscreteDistribution1DTemplate<float>;
+
+
+
+    template <typename RealType>
+    class RegularConstantContinuousDistribution1DTemplate {
+        const RealType* m_PDF;
+#if defined(USE_WALKER_ALIAS_METHOD)
+        const AliasTableEntry<RealType>* m_aliasTable;
+        const AliasValueMap<RealType>* m_valueMaps;
+#else
+        const RealType* m_CDF;
+#endif
+        RealType m_integral;
+        uint32_t m_numValues;
+
+    public:
+#if defined(USE_WALKER_ALIAS_METHOD)
+        RegularConstantContinuousDistribution1DTemplate(
+            const RealType* PDF, const AliasTableEntry<RealType>* aliasTable, const AliasValueMap<RealType>* valueMaps,
+            RealType integral, uint32_t numValues) :
+            m_PDF(PDF), m_aliasTable(aliasTable), m_valueMaps(valueMaps),
+            m_integral(integral), m_numValues(numValues) {}
+#else
+        RegularConstantContinuousDistribution1DTemplate(
+            const RealType* PDF, const RealType* CDF, RealType integral, uint32_t numValues) :
+            m_PDF(PDF), m_CDF(CDF), m_integral(integral), m_numValues(numValues) {}
+#endif
+
+        CUDA_DEVICE_FUNCTION RegularConstantContinuousDistribution1DTemplate() {}
+
+        CUDA_DEVICE_FUNCTION RealType sample(RealType u, RealType* probDensity) const {
+            Assert(u >= 0 && u < 1, "\"u\": %g must be in range [0, 1).", u);
+#if defined(USE_WALKER_ALIAS_METHOD)
+            uint32_t idx = min(static_cast<uint32_t>(u * m_numValues), m_numValues - 1);
+            u = u * m_numValues - idx;
+            const AliasTableEntry<RealType> &entry = m_aliasTable[idx];
+            const AliasValueMap<RealType> &valueMap = m_valueMaps[idx];
+            RealType t;
+            if (u < entry.probToPickFirst) {
+                t = valueMap.scaleForFirst * u;
+            }
+            else {
+                idx = entry.secondIndex;
+                t = valueMap.scaleForSecond * u + valueMap.offsetForSecond;
+            }
+#else
+            int idx = 0;
+            for (int d = nextPowerOf2(m_numValues) >> 1; d >= 1; d >>= 1) {
+                if (idx + d >= m_numValues)
+                    continue;
+                if (m_CDF[idx + d] <= u)
+                    idx += d;
+            }
+            Assert(idx >= 0 && idx < m_numValues, "Invalid Index!: %d", idx);
+            RealType t = (u - m_CDF[idx]) / (m_CDF[idx + 1] - m_CDF[idx]);
+#endif
+            *probDensity = m_PDF[idx];
+            return (idx + t) / m_numValues;
+        }
+        CUDA_DEVICE_FUNCTION RealType evaluatePDF(RealType smp) const {
+            Assert(smp >= 0 && smp < 1.0, "\"smp\": %g is out of range [0, 1).", smp);
+            int32_t idx = min(m_numValues - 1, static_cast<uint32_t>(smp * m_numValues));
+            return m_PDF[idx];
+        }
+        CUDA_DEVICE_FUNCTION RealType integral() const { return m_integral; }
+
+        CUDA_DEVICE_FUNCTION uint32_t numValues() const { return m_numValues; }
+    };
+
+    using RegularConstantContinuousDistribution1D = RegularConstantContinuousDistribution1DTemplate<float>;
+
+
+
+    template <typename RealType>
+    class RegularConstantContinuousDistribution2DTemplate {
+        const RegularConstantContinuousDistribution1DTemplate<RealType>* m_1DDists;
+        RegularConstantContinuousDistribution1DTemplate<RealType> m_top1DDist;
+
+    public:
+        RegularConstantContinuousDistribution2DTemplate(const RegularConstantContinuousDistribution1DTemplate<RealType>* _1DDists,
+                                                        const RegularConstantContinuousDistribution1DTemplate<RealType> &top1DDist) :
+            m_1DDists(_1DDists), m_top1DDist(top1DDist) {}
+
+        CUDA_DEVICE_FUNCTION RegularConstantContinuousDistribution2DTemplate() {}
+
+        CUDA_DEVICE_FUNCTION void sample(RealType u0, RealType u1, RealType* d0, RealType* d1, RealType* probDensity) const {
+            RealType topPDF;
+            *d1 = m_top1DDist.sample(u1, &topPDF);
+            uint32_t idx1D = min(static_cast<uint32_t>(m_top1DDist.numValues() * *d1), m_top1DDist.numValues() - 1);
+            *d0 = m_1DDists[idx1D].sample(u0, probDensity);
+            *probDensity *= topPDF;
+        }
+        CUDA_DEVICE_FUNCTION RealType evaluatePDF(RealType d0, RealType d1) const {
+            uint32_t idx1D = min(static_cast<uint32_t>(m_top1DDist.numValues() * d1), m_top1DDist.numValues() - 1);
+            return m_top1DDist.evaluatePDF(d1) * m_1DDists[idx1D].evaluatePDF(d0);
+        }
+    };
+
+    using RegularConstantContinuousDistribution2D = RegularConstantContinuousDistribution2DTemplate<float>;
+
+
+
+    // Reference:
+    // Long-Period Hash Functions for Procedural Texturing
+    // combined permutation table of the hash function of period 739,024 = lcm(11, 13, 16, 17, 19)
+    CUDA_CONSTANT_MEM static uint8_t PermutationTable[] = {
+        // table 0: 11 numbers
+        0, 10, 2, 7, 3, 5, 6, 4, 8, 1, 9,
+        // table 1: 13 numbers
+        5, 11, 6, 8, 1, 10, 12, 9, 3, 7, 0, 4, 2,
+        // table 2: 16 numbers = the range of the hash function required by Perlin noise.
+        13, 10, 11, 5, 6, 9, 4, 3, 8, 7, 14, 2, 0, 1, 15, 12,
+        // table 3: 17 numbers
+        1, 13, 5, 14, 12, 3, 6, 16, 0, 8, 9, 2, 11, 4, 15, 7, 10,
+        // table 4: 19 numbers
+        10, 6, 5, 8, 15, 0, 17, 7, 14, 18, 13, 16, 2, 9, 12, 1, 11, 4, 3,
+        //// table 6: 23 numbers
+        //20, 21, 4, 5, 0, 18, 14, 2, 6, 22, 10, 17, 3, 7, 8, 16, 19, 11, 9, 13, 1, 15, 12
+    };
+
+    // References
+    // Improving Noise
+    // This code is based on the web site: adrian's soapbox
+    // http://flafla2.github.io/2014/08/09/perlinnoise.html
+    class PerlinNoise3D {
+        int32_t m_repeat;
+
+        CUDA_DEVICE_FUNCTION static uint8_t hash(int32_t x, int32_t y, int32_t z) {
+            uint32_t sum = 0;
+            sum += PermutationTable[0 + (PermutationTable[0 + (PermutationTable[0 + x % 11] + y) % 11] + z) % 11];
+            sum += PermutationTable[11 + (PermutationTable[11 + (PermutationTable[11 + x % 13] + y) % 13] + z) % 13];
+            sum += PermutationTable[24 + (PermutationTable[24 + (PermutationTable[24 + x % 16] + y) % 16] + z) % 16];
+            sum += PermutationTable[40 + (PermutationTable[40 + (PermutationTable[40 + x % 17] + y) % 17] + z) % 17];
+            sum += PermutationTable[57 + (PermutationTable[57 + (PermutationTable[57 + x % 19] + y) % 19] + z) % 19];
+            return sum % 16;
+        }
+
+        CUDA_DEVICE_FUNCTION static float gradient(uint32_t hash, float xu, float yu, float zu) {
+            switch (hash & 0xF) {
+                // Dot products with 12 vectors defined by the directions from the center of a cube to its edges.
+            case 0x0: return  xu + yu; // ( 1,  1,  0)
+            case 0x1: return -xu + yu; // (-1,  1,  0)
+            case 0x2: return  xu - yu; // ( 1, -1,  0)
+            case 0x3: return -xu - yu; // (-1, -1,  0)
+            case 0x4: return  xu + zu; // ( 1,  0,  1)
+            case 0x5: return -xu + zu; // (-1,  0,  1)
+            case 0x6: return  xu - zu; // ( 1,  0, -1)
+            case 0x7: return -xu - zu; // (-1,  0, -1)
+            case 0x8: return  yu + zu; // ( 0,  1,  1)
+            case 0x9: return -yu + zu; // ( 0, -1,  1)
+            case 0xA: return  yu - zu; // ( 0,  1, -1)
+            case 0xB: return -yu - zu; // ( 0, -1, -1)
+
+                // To avoid the cost of dividing by 12, we pad to 16 gradient directions.
+                // These form a regular tetrahedron, so adding them redundantly introduces no visual bias in the texture.
+            case 0xC: return  xu + yu; // ( 1,  1,  0)
+            case 0xD: return -yu + zu; // ( 0, -1,  1)
+            case 0xE: return -xu + yu; // (-1 , 1,  0)
+            case 0xF: return -yu - zu; // ( 0, -1, -1)
+
+            default: return 0; // never happens
+            }
+        }
+
+    public:
+        CUDA_DEVICE_FUNCTION PerlinNoise3D(int32_t repeat) : m_repeat(repeat) {}
+
+        CUDA_DEVICE_FUNCTION float evaluate(const float3 &p, float frequency) const {
+            float x = frequency * p.x;
+            float y = frequency * p.y;
+            float z = frequency * p.z;
+            const uint32_t repeat = static_cast<uint32_t>(m_repeat * frequency);
+
+            // If we have any repeat on, change the coordinates to their "local" repetitions.
+            if (repeat > 0) {
+#if defined(__CUDA_ARCH__)
+                x = fmodf(x, repeat);
+                y = fmodf(y, repeat);
+                z = fmodf(z, repeat);
+#else
+                x = std::fmod(x, static_cast<float>(repeat));
+                y = std::fmod(y, static_cast<float>(repeat));
+                z = std::fmod(z, static_cast<float>(repeat));
+#endif
+                if (x < 0)
+                    x += repeat;
+                if (y < 0)
+                    y += repeat;
+                if (z < 0)
+                    z += repeat;
+            }
+
+            // Calculate the "unit cube" that the point asked will be located in.
+            // The left bound is ( |_x_|,|_y_|,|_z_| ) and the right bound is that plus 1.
+#if defined(__CUDA_ARCH__)
+            int32_t xi = floorf(x);
+            int32_t yi = floorf(y);
+            int32_t zi = floorf(z);
+#else
+            int32_t xi = static_cast<int32_t>(std::floor(x));
+            int32_t yi = static_cast<int32_t>(std::floor(y));
+            int32_t zi = static_cast<int32_t>(std::floor(z));
+#endif
+
+            const auto fade = [](float t) {
+                // Fade function as defined by Ken Perlin.
+                // This eases coordinate values so that they will "ease" towards integral values.
+                // This ends up smoothing the final output.
+                // 6t^5 - 15t^4 + 10t^3
+                return t * t * t * (t * (t * 6 - 15) + 10);
+            };
+
+            // Next we calculate the location (from 0.0 to 1.0) in that cube.
+            // We also fade the location to smooth the result.
+            float xu = x - xi;
+            float yu = y - yi;
+            float zu = z - zi;
+            float u = fade(xu);
+            float v = fade(yu);
+            float w = fade(zu);
+
+            const auto inc = [this, repeat](int32_t num) {
+                ++num;
+                if (repeat > 0)
+                    num %= repeat;
+                return num;
+            };
+
+            uint8_t lll, llu, lul, luu, ull, ulu, uul, uuu;
+            lll = hash(xi, yi, zi);
+            ull = hash(inc(xi), yi, zi);
+            lul = hash(xi, inc(yi), zi);
+            uul = hash(inc(xi), inc(yi), zi);
+            llu = hash(xi, yi, inc(zi));
+            ulu = hash(inc(xi), yi, inc(zi));
+            luu = hash(xi, inc(yi), inc(zi));
+            uuu = hash(inc(xi), inc(yi), inc(zi));
+
+            const auto lerp = [](float v0, float v1, float t) {
+                return v0 * (1 - t) + v1 * t;
+            };
+
+            // The gradient function calculates the dot product between a pseudorandom gradient vector and 
+            // the vector from the input coordinate to the 8 surrounding points in its unit cube.
+            // This is all then lerped together as a sort of weighted average based on the faded (u,v,w) values we made earlier.
+            float _llValue = lerp(gradient(lll, xu, yu, zu), gradient(ull, xu - 1, yu, zu), u);
+            float _ulValue = lerp(gradient(lul, xu, yu - 1, zu), gradient(uul, xu - 1, yu - 1, zu), u);
+            float __lValue = lerp(_llValue, _ulValue, v);
+
+            float _luValue = lerp(gradient(llu, xu, yu, zu - 1), gradient(ulu, xu - 1, yu, zu - 1), u);
+            float _uuValue = lerp(gradient(luu, xu, yu - 1, zu - 1), gradient(uuu, xu - 1, yu - 1, zu - 1), u);
+            float __uValue = lerp(_luValue, _uuValue, v);
+
+            float ret = lerp(__lValue, __uValue, w);
+            return ret;
+        }
+    };
+
+    class MultiOctavePerlinNoise3D {
+        PerlinNoise3D m_primaryNoiseGen;
+        uint32_t m_numOctaves;
+        float m_initialFrequency;
+        float m_initialAmplitude;
+        float m_frequencyMultiplier;
+        float m_persistence;
+        float m_supValue;
+
+    public:
+        CUDA_DEVICE_FUNCTION MultiOctavePerlinNoise3D(uint32_t numOctaves, float initialFrequency, float supValueOrInitialAmplitude, bool supSpecified,
+                                                      float frequencyMultiplier, float persistence, uint32_t repeat) :
+            m_primaryNoiseGen(repeat),
+            m_numOctaves(numOctaves),
+            m_initialFrequency(initialFrequency),
+            m_frequencyMultiplier(frequencyMultiplier), m_persistence(persistence) {
+            if (supSpecified) {
+                float amplitude = 1.0f;
+                float tempSupValue = 0;
+                for (int i = 0; i < static_cast<int32_t>(m_numOctaves); ++i) {
+                    tempSupValue += amplitude;
+                    amplitude *= m_persistence;
+                }
+                m_initialAmplitude = supValueOrInitialAmplitude / tempSupValue;
+                m_supValue = supValueOrInitialAmplitude;
+            }
+            else {
+                m_initialAmplitude = supValueOrInitialAmplitude;
+                float amplitude = m_initialAmplitude;
+                m_supValue = 0;
+                for (int i = 0; i < static_cast<int32_t>(m_numOctaves); ++i) {
+                    m_supValue += amplitude;
+                    amplitude *= m_persistence;
+                }
+            }
+        }
+
+        CUDA_DEVICE_FUNCTION float evaluate(const float3 &p) const {
+            float total = 0;
+            float frequency = m_initialFrequency;
             float amplitude = m_initialAmplitude;
-            m_supValue = 0;
             for (int i = 0; i < static_cast<int32_t>(m_numOctaves); ++i) {
-                m_supValue += amplitude;
+                total += m_primaryNoiseGen.evaluate(p, frequency) * amplitude;
+
                 amplitude *= m_persistence;
+                frequency *= m_frequencyMultiplier;
             }
+
+            return total;
         }
-    }
-
-    CUDA_DEVICE_FUNCTION float evaluate(const float3 &p) const {
-        float total = 0;
-        float frequency = m_initialFrequency;
-        float amplitude = m_initialAmplitude;
-        for (int i = 0; i < static_cast<int32_t>(m_numOctaves); ++i) {
-            total += m_primaryNoiseGen.evaluate(p, frequency) * amplitude;
-
-            amplitude *= m_persistence;
-            frequency *= m_frequencyMultiplier;
-        }
-
-        return total;
-    }
-};
-
-
-
-// JP: ホスト専用の定義。
-// EN: Definitions only for host.
-#if !defined(__CUDA_ARCH__) || defined(OPTIXU_Platform_CodeCompletion)
-
-#if 1
-#   define hpprintf(fmt, ...) do { devPrintf(fmt, ##__VA_ARGS__); printf(fmt, ##__VA_ARGS__); } while (0)
-#else
-#   define hpprintf(fmt, ...) printf(fmt, ##__VA_ARGS__)
-#endif
-
-template <typename T, typename Deleter, typename ...ArgTypes>
-std::shared_ptr<T> make_shared_with_deleter(const Deleter &deleter, ArgTypes&&... args) {
-    return std::shared_ptr<T>(new T(std::forward<ArgTypes>(args)...),
-                              deleter);
+    };
 }
-
-std::filesystem::path getExecutableDirectory();
-
-std::string readTxtFile(const std::filesystem::path& filepath);
-
-
-
-struct MovingAverageTime {
-    float values[60];
-    uint32_t index;
-    uint32_t numValidValues;
-    MovingAverageTime() : index(0), numValidValues(0) {}
-    void append(float value) {
-        values[index] = value;
-        index = (index + 1) % lengthof(values);
-        numValidValues = std::min<uint32_t>(numValidValues + 1, lengthof(values));
-    }
-    float getAverage() const {
-        float sum = 0.0f;
-        for (int i = 0; i < numValidValues; ++i)
-            sum += values[(index - 1 - i + lengthof(values)) % lengthof(values)];
-        return numValidValues > 0 ? sum / numValidValues : 0.0f;
-    }
-};
-
-
-
-class SlotFinder {
-    uint32_t m_numLayers;
-    uint32_t m_numLowestFlagBins;
-    uint32_t m_numTotalCompiledFlagBins;
-    uint32_t* m_flagBins;
-    uint32_t* m_offsetsToOR_AND;
-    uint32_t* m_numUsedFlagsUnderBinList;
-    uint32_t* m_offsetsToNumUsedFlags;
-    uint32_t* m_numFlagsInLayerList;
-
-    SlotFinder(const SlotFinder &) = delete;
-    SlotFinder &operator=(const SlotFinder &) = delete;
-
-    void aggregate();
-
-    uint32_t getNumLayers() const {
-        return m_numLayers;
-    }
-
-    const uint32_t* getOffsetsToOR_AND() const {
-        return m_offsetsToOR_AND;
-    }
-
-    const uint32_t* getOffsetsToNumUsedFlags() const {
-        return m_offsetsToNumUsedFlags;
-    }
-
-    const uint32_t* getNumFlagsInLayerList() const {
-        return m_numFlagsInLayerList;
-    }
-
-public:
-    static constexpr uint32_t InvalidSlotIndex = 0xFFFFFFFF;
-
-    SlotFinder() :
-        m_numLayers(0), m_numLowestFlagBins(0), m_numTotalCompiledFlagBins(0),
-        m_flagBins(nullptr), m_offsetsToOR_AND(nullptr),
-        m_numUsedFlagsUnderBinList(nullptr), m_offsetsToNumUsedFlags(nullptr),
-        m_numFlagsInLayerList(nullptr) {
-    }
-    ~SlotFinder() {
-    }
-
-    void initialize(uint32_t numSlots);
-
-    void finalize();
-
-    SlotFinder &operator=(SlotFinder &&inst) {
-        finalize();
-
-        m_numLayers = inst.m_numLayers;
-        m_numLowestFlagBins = inst.m_numLowestFlagBins;
-        m_numTotalCompiledFlagBins = inst.m_numTotalCompiledFlagBins;
-        m_flagBins = inst.m_flagBins;
-        m_offsetsToOR_AND = inst.m_offsetsToOR_AND;
-        m_numUsedFlagsUnderBinList = inst.m_numUsedFlagsUnderBinList;
-        m_offsetsToNumUsedFlags = inst.m_offsetsToNumUsedFlags;
-        m_numFlagsInLayerList = inst.m_numFlagsInLayerList;
-        inst.m_flagBins = nullptr;
-        inst.m_offsetsToOR_AND = nullptr;
-        inst.m_numUsedFlagsUnderBinList = nullptr;
-        inst.m_offsetsToNumUsedFlags = nullptr;
-        inst.m_numFlagsInLayerList = nullptr;
-
-        return *this;
-    }
-    SlotFinder(SlotFinder &&inst) {
-        *this = std::move(inst);
-    }
-
-    void resize(uint32_t numSlots);
-
-    void reset() {
-        std::fill_n(m_flagBins, m_numLowestFlagBins + m_numTotalCompiledFlagBins, 0);
-        std::fill_n(m_numUsedFlagsUnderBinList, m_numLowestFlagBins + m_numTotalCompiledFlagBins / 2, 0);
-    }
-
-
-
-    void setInUse(uint32_t slotIdx);
-
-    void setNotInUse(uint32_t slotIdx);
-
-    bool getUsage(uint32_t slotIdx) const {
-        uint32_t binIdx = slotIdx / 32;
-        uint32_t flagIdxInBin = slotIdx % 32;
-        uint32_t flagBin = m_flagBins[binIdx];
-
-        return (bool)((flagBin >> flagIdxInBin) & 0x1);
-    }
-
-    uint32_t getFirstAvailableSlot() const;
-
-    uint32_t getFirstUsedSlot() const;
-
-    uint32_t find_nthUsedSlot(uint32_t n) const;
-
-    uint32_t getNumSlots() const {
-        return m_numFlagsInLayerList[0];
-    }
-
-    uint32_t getNumUsed() const {
-        return m_numUsedFlagsUnderBinList[m_offsetsToNumUsedFlags[m_numLayers - 1]];
-    }
-
-    void debugPrint() const;
-};
-
-
-
-void saveImage(const std::filesystem::path &filepath, uint32_t width, uint32_t height, const uint32_t* data);
-
-void saveImage(const std::filesystem::path &filepath, uint32_t width, uint32_t height, const float4* data,
-               bool applyToneMap, bool apply_sRGB_gammaCorrection);
-
-void saveImage(const std::filesystem::path &filepath,
-               uint32_t width, cudau::TypedBuffer<float4> &buffer,
-               bool applyToneMap, bool apply_sRGB_gammaCorrection);
-
-void saveImage(const std::filesystem::path &filepath,
-               cudau::Array &array,
-               bool applyToneMap, bool apply_sRGB_gammaCorrection);
-
-template <uint32_t log2BlockWidth>
-void saveImage(const std::filesystem::path &filepath,
-               optixu::HostBlockBuffer2D<float4, log2BlockWidth> &buffer,
-               bool applyToneMap, bool apply_sRGB_gammaCorrection) {
-    uint32_t width = buffer.getWidth();
-    uint32_t height = buffer.getHeight();
-    auto data = new float4[width * height];
-    buffer.map();
-    for (int y = 0; y < static_cast<int32_t>(height); ++y) {
-        for (int x = 0; x < static_cast<int32_t>(width); ++x) {
-            data[y * width + x] = buffer(x, y);
-        }
-    }
-    buffer.unmap();
-    saveImage(filepath, width, height, data, applyToneMap, apply_sRGB_gammaCorrection);
-    delete[] data;
-}
-
-#endif

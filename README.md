@@ -39,5 +39,14 @@ It requires the following libraries.
   \* CUDA 11.3.0 has a bug which prevents to use it with OptiX Utility. You need to use Update 1 or later.
 * OptiX 7.3.0 (requires Maxwell or later generation NVIDIA GPU)
 
+## オープンソースソフトウェア / Open Source Softwares
+- [assimp](https://github.com/assimp/assimp)
+- [Dear ImGui](https://github.com/ocornut/imgui)
+- [gl3w](https://github.com/skaslev/gl3w)
+- [GLFW](https://github.com/glfw/glfw)
+- [stb](https://github.com/nothings/stb)
+- [tinyexr](https://github.com/syoyo/tinyexr)
+- [tinyobjloader](https://github.com/tinyobjloader/tinyobjloader)
+
 ----
 2021 [@Shocker_0x15](https://twitter.com/Shocker_0x15)

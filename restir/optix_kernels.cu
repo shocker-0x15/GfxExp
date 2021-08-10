@@ -1,8 +1,6 @@
-﻿#pragma once
+﻿#include "restir_shared.h"
 
-#include "restir_shared.h"
-
-using namespace Shared;
+using namespace shared;
 
 RT_PIPELINE_LAUNCH_PARAMETERS PipelineLaunchParameters plp;
 
@@ -29,6 +27,23 @@ CUDA_DEVICE_FUNCTION T lerp(const T &v0, const T &v1, float t) {
 }
 
 
+
+// ( 0, 0,  1) <=> phi:      0
+// (-1, 0,  0) <=> phi: 1/2 pi
+// ( 0, 0, -1) <=> phi:   1 pi
+// ( 1, 0,  0) <=> phi: 3/2 pi
+CUDA_DEVICE_FUNCTION float3 fromPolarYUp(float phi, float theta) {
+    float sinPhi, cosPhi;
+    float sinTheta, cosTheta;
+    sincosf(phi, &sinPhi, &cosPhi);
+    sincosf(theta, &sinTheta, &cosTheta);
+    return make_float3(-sinPhi * sinTheta, cosTheta, cosPhi * sinTheta);
+}
+CUDA_DEVICE_FUNCTION void toPolarYUp(const float3 &v, float* phi, float* theta) {
+    *theta = std::acos(min(max(v.y, -1.0f), 1.0f));
+    *phi = std::fmod(std::atan2(-v.x, v.z) + 2 * Pi,
+                     2 * Pi);
+}
 
 CUDA_DEVICE_FUNCTION float3 halfVector(const float3 &a, const float3 &b) {
     return normalize(a + b);
@@ -358,15 +373,6 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(setupGBuffers)() {
     hitPointParams.materialSlot = 0xFFFFFFFF;
 
     PickInfo pickInfo = {};
-    pickInfo.hit = false;
-    pickInfo.instSlot = 0xFFFFFFFF;
-    pickInfo.geomInstSlot = 0xFFFFFFFF;
-    pickInfo.matSlot = 0xFFFFFFFF;
-    pickInfo.primIndex = 0xFFFFFFFF;
-    pickInfo.positionInWorld = make_float3(0.0f);
-    pickInfo.albedo = make_float3(0.0f);
-    pickInfo.emittance = make_float3(0.0f);
-    pickInfo.normalInWorld = make_float3(0.0f);
 
     HitPointParams* hitPointParamsPtr = &hitPointParams;
     PickInfo* pickInfoPtr = &pickInfo;
@@ -478,119 +484,249 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
     }
 }
 
+CUDA_DEVICE_KERNEL void RT_MS_NAME(setupGBuffers)() {
+    uint2 launchIndex = make_uint2(optixGetLaunchIndex().x, optixGetLaunchIndex().y);
+
+    float3 vOut = -optixGetWorldRayDirection();
+    float3 p = -vOut;
+
+    float posPhi, posTheta;
+    toPolarYUp(p, &posPhi, &posTheta);
+
+    float phi = posPhi + plp.f->envLightRotation;
+
+    float u = phi / (2 * Pi);
+    u -= floorf(u);
+    float v = posTheta / Pi;
+
+    HitPointParams* hitPointParams;
+    PickInfo* pickInfo;
+    optixu::getPayloads<PrimaryRayPayloadSignature>(&hitPointParams, &pickInfo);
+
+    hitPointParams->positionInWorld = p;
+    hitPointParams->prevPositionInWorld = p;
+    hitPointParams->normalInWorld = vOut;
+    hitPointParams->texCoord = make_float2(u, v);
+    hitPointParams->materialSlot = 0xFFFFFFFF;
+
+    // JP: マウスが乗っているピクセルの情報を出力する。
+    // EN: Export the information of the pixel on which the mouse is.
+    if (launchIndex.x == plp.f->mousePosition.x &&
+        launchIndex.y == plp.f->mousePosition.y) {
+        pickInfo->hit = true;
+        pickInfo->instSlot = 0xFFFFFFFF;
+        pickInfo->geomInstSlot = 0xFFFFFFFF;
+        pickInfo->matSlot = 0xFFFFFFFF;
+        pickInfo->primIndex = 0xFFFFFFFF;
+        pickInfo->positionInWorld = p;
+        pickInfo->albedo = make_float3(0.0f, 0.0f, 0.0f);
+        float3 emittance = make_float3(0.0f, 0.0f, 0.0f);
+        if (plp.s->envLightTexture) {
+            float4 texValue = tex2DLod<float4>(plp.s->envLightTexture, u, v, 0.0f);
+            emittance = make_float3(texValue);
+            emittance *= Pi * plp.f->envLightPowerCoeff;
+        }
+        pickInfo->emittance = emittance;
+        pickInfo->normalInWorld = vOut;
+    }
+}
 
 
-CUDA_DEVICE_FUNCTION float3 sampleLight(float ul, float u0, float u1,
-                                        LightSample* lightSample, float3* lightPosition, float3* lightNormal, float* areaPDensity) {
+
+CUDA_DEVICE_FUNCTION float3 sampleLight(
+    float ul, float u0, float u1,
+    LightSample* lightSample, float3* lightPosition, float3* lightNormal, float* areaPDensity) {
     float lightProb = 1.0f;
 
-    // JP: まずはインスタンスをサンプルする。
-    // EN: First, sample an instance.
-    float instProb;
-    float uGeomInst;
-    uint32_t instIndex = plp.s->lightInstDist.sample(ul, &instProb, &uGeomInst);
-    lightProb *= instProb;
-    const InstanceData &inst = plp.f->instanceDataBuffer[instIndex];
-    lightSample->instIndex = instIndex;
-
-    // JP: 次にサンプルしたインスタンスに属するジオメトリインスタンスをサンプルする。
-    // EN: Next, sample a geometry instance which belongs to the sampled instance.
-    float geomInstProb;
-    float uPrim;
-    uint32_t geomInstIndex = inst.geomInstSlots[inst.lightGeomInstDist.sample(uGeomInst, &geomInstProb, &uPrim)];
-    lightProb *= geomInstProb;
-    const GeometryInstanceData &geomInst = plp.s->geometryInstanceDataBuffer[geomInstIndex];
-    lightSample->geomInstIndex = geomInstIndex;
-
-    // JP: 最後に、サンプルしたジオメトリインスタンスに属するプリミティブをサンプルする。
-    // EN: Finally, sample a primitive which belongs to the sampled geometry instance.
-    float primProb;
-    uint32_t primIndex = geomInst.emitterPrimDist.sample(uPrim, &primProb);
-    lightProb *= primProb;
-    lightSample->primIndex = primIndex;
-
-    // Uniform sampling on unit triangle
-    // A Low-Distortion Map Between Triangle and Square
-    float t0 = 0.5f * u0;
-    float t1 = 0.5f * u1;
-    float offset = t1 - t0;
-    if (offset > 0)
-        t1 += offset;
-    else
-        t0 -= offset;
-    float t2 = 1 - (t0 + t1);
-
-    lightSample->b1 = t1;
-    lightSample->b2 = t2;
-
-    //printf("%u-%u-%u: %g\n", instIndex, geomInstIndex, primIndex, lightProb);
-
-    const MaterialData &mat = plp.s->materialDataBuffer[geomInst.materialSlot];
-
-    const Shared::Triangle &tri = geomInst.triangleBuffer[primIndex];
-    const Shared::Vertex (&v)[3] = {
-        geomInst.vertexBuffer[tri.index0],
-        geomInst.vertexBuffer[tri.index1],
-        geomInst.vertexBuffer[tri.index2]
-    };
-
-    *lightPosition = t0 * v[0].position + t1 * v[1].position + t2 * v[2].position;
-    *lightPosition = inst.transform * *lightPosition;
-    *lightNormal = cross(v[1].position - v[0].position,
-                         v[2].position - v[0].position);
-    float area = length(*lightNormal);
-    *lightNormal = (inst.normalMatrix * *lightNormal) / area;
-    area *= 0.5f;
-    *areaPDensity = lightProb / area;
-
-    //printf("%u-%u-%u: (%g, %g, %g), PDF: %g\n", instIndex, geomInstIndex, primIndex,
-    //       mat.emittance.x, mat.emittance.y, mat.emittance.z, *areaPDensity);
-
-    //printf("%u-%u-%u: (%g, %g, %g), (%g, %g, %g)\n", instIndex, geomInstIndex, primIndex,
-    //       lightPosition->x, lightPosition->y, lightPosition->z,
-    //       lightNormal->x, lightNormal->y, lightNormal->z);
-
-    float3 emittance = make_float3(0.0f, 0.0f, 0.0f);
-    if (mat.emittance) {
-        float2 texCoord = t0 * v[0].texCoord + t1 * v[1].texCoord + t2 * v[2].texCoord;
-        float4 texValue = tex2DLod<float4>(mat.emittance, texCoord.x, texCoord.y, 0.0f);
-        emittance = make_float3(texValue);
+    // JP: 環境光テクスチャーが設定されている場合は一定の確率でサンプルする。
+    // EN: Sample an environmental texture with a fixed probability if it is set.
+    bool sampleEnvLight = false;
+    if (plp.s->envLightTexture) {
+        if (ul < 0.25f) {
+            lightProb = 0.25f;
+            ul = ul / 0.25f;
+            sampleEnvLight = true;
+        }
+        else {
+            lightProb = 0.75f;
+            ul = (ul - 0.25f) / 0.75f;
+        }
     }
 
-    return emittance;
+    if (sampleEnvLight) {
+        lightSample->instIndex = 0xFFFFFFFF;
+        lightSample->geomInstIndex = 0xFFFFFFFF;
+        lightSample->primIndex = 0xFFFFFFFF;
+
+        float u, v;
+        float uvPDF;
+        plp.s->envLightImportanceMap.sample(u0, u1, &u, &v, &uvPDF);
+        float phi = 2 * Pi * u;
+        float theta = Pi * v;
+        lightSample->b1 = phi;
+        lightSample->b2 = theta;
+
+        float posPhi = phi - plp.f->envLightRotation;
+        posPhi = posPhi - floorf(posPhi / (2 * Pi)) * 2 * Pi;
+
+        float3 direction = fromPolarYUp(posPhi, theta);
+        float3 position = make_float3(direction.x, direction.y, direction.z);
+        *lightPosition = position;
+
+        float sinPhi, cosPhi;
+        sincosf(posPhi, &sinPhi, &cosPhi);
+        float3 texCoord0Dir = normalize(make_float3(-cosPhi, 0.0f, -sinPhi));
+
+        *lightNormal = -position;
+
+        // JP: テクスチャー空間中のPDFを面積に関するものに変換する。
+        // EN: convert the PDF in texture space to one with respect to area.
+        // The true value is: lim_{l to inf} uvPDF / (2 * Pi * Pi * std::sin(theta)) / l^2
+        *areaPDensity = uvPDF / (2 * Pi * Pi * std::sin(theta));
+        *areaPDensity *= lightProb;
+
+        float4 texValue = tex2DLod<float4>(plp.s->envLightTexture, u, v, 0.0f);
+        float3 emittance = make_float3(texValue);
+        emittance *= Pi * plp.f->envLightPowerCoeff;
+
+        return emittance;
+    }
+    else {
+        // JP: まずはインスタンスをサンプルする。
+        // EN: First, sample an instance.
+        float instProb;
+        float uGeomInst;
+        uint32_t instIndex = plp.s->lightInstDist.sample(ul, &instProb, &uGeomInst);
+        lightProb *= instProb;
+        const InstanceData &inst = plp.f->instanceDataBuffer[instIndex];
+        lightSample->instIndex = instIndex;
+
+        // JP: 次にサンプルしたインスタンスに属するジオメトリインスタンスをサンプルする。
+        // EN: Next, sample a geometry instance which belongs to the sampled instance.
+        float geomInstProb;
+        float uPrim;
+        uint32_t geomInstIndex = inst.geomInstSlots[inst.lightGeomInstDist.sample(uGeomInst, &geomInstProb, &uPrim)];
+        lightProb *= geomInstProb;
+        const GeometryInstanceData &geomInst = plp.s->geometryInstanceDataBuffer[geomInstIndex];
+        lightSample->geomInstIndex = geomInstIndex;
+
+        // JP: 最後に、サンプルしたジオメトリインスタンスに属するプリミティブをサンプルする。
+        // EN: Finally, sample a primitive which belongs to the sampled geometry instance.
+        float primProb;
+        uint32_t primIndex = geomInst.emitterPrimDist.sample(uPrim, &primProb);
+        lightProb *= primProb;
+        lightSample->primIndex = primIndex;
+
+        // Uniform sampling on unit triangle
+        // A Low-Distortion Map Between Triangle and Square
+        float t0 = 0.5f * u0;
+        float t1 = 0.5f * u1;
+        float offset = t1 - t0;
+        if (offset > 0)
+            t1 += offset;
+        else
+            t0 -= offset;
+        float t2 = 1 - (t0 + t1);
+
+        lightSample->b1 = t1;
+        lightSample->b2 = t2;
+
+        //printf("%u-%u-%u: %g\n", instIndex, geomInstIndex, primIndex, lightProb);
+
+        const MaterialData &mat = plp.s->materialDataBuffer[geomInst.materialSlot];
+
+        const shared::Triangle &tri = geomInst.triangleBuffer[primIndex];
+        const shared::Vertex(&v)[3] = {
+            geomInst.vertexBuffer[tri.index0],
+            geomInst.vertexBuffer[tri.index1],
+            geomInst.vertexBuffer[tri.index2]
+        };
+
+        *lightPosition = t0 * v[0].position + t1 * v[1].position + t2 * v[2].position;
+        *lightPosition = inst.transform * *lightPosition;
+        *lightNormal = cross(v[1].position - v[0].position,
+                             v[2].position - v[0].position);
+        float area = length(*lightNormal);
+        *lightNormal = (inst.normalMatrix * *lightNormal) / area;
+        area *= 0.5f;
+        *areaPDensity = lightProb / area;
+
+        //printf("%u-%u-%u: (%g, %g, %g), PDF: %g\n", instIndex, geomInstIndex, primIndex,
+        //       mat.emittance.x, mat.emittance.y, mat.emittance.z, *areaPDensity);
+
+        //printf("%u-%u-%u: (%g, %g, %g), (%g, %g, %g)\n", instIndex, geomInstIndex, primIndex,
+        //       lightPosition->x, lightPosition->y, lightPosition->z,
+        //       lightNormal->x, lightNormal->y, lightNormal->z);
+
+        float3 emittance = make_float3(0.0f, 0.0f, 0.0f);
+        if (mat.emittance) {
+            float2 texCoord = t0 * v[0].texCoord + t1 * v[1].texCoord + t2 * v[2].texCoord;
+            float4 texValue = tex2DLod<float4>(mat.emittance, texCoord.x, texCoord.y, 0.0f);
+            emittance = make_float3(texValue);
+        }
+
+        return emittance;
+    }
 }
 
 CUDA_DEVICE_FUNCTION float3 evaluateLight(const LightSample &lightSample, float3* lightPosition, float3* lightNormal) {
-    const InstanceData &inst = plp.f->instanceDataBuffer[lightSample.instIndex];
-    const GeometryInstanceData &geomInst = plp.s->geometryInstanceDataBuffer[lightSample.geomInstIndex];
-    const MaterialData &mat = plp.s->materialDataBuffer[geomInst.materialSlot];
+    if (lightSample.atInfinity()) {
+        float phi = lightSample.b1;
+        float theta = lightSample.b2;
+        float u = phi / (2 * Pi);
+        float v = theta / Pi;
 
-    const Shared::Triangle &tri = geomInst.triangleBuffer[lightSample.primIndex];
-    const Shared::Vertex (&v)[3] = {
-        geomInst.vertexBuffer[tri.index0],
-        geomInst.vertexBuffer[tri.index1],
-        geomInst.vertexBuffer[tri.index2]
-    };
+        float posPhi = phi - plp.f->envLightRotation;
+        posPhi = posPhi - floorf(posPhi / (2 * Pi)) * 2 * Pi;
 
-    float t1 = lightSample.b1;
-    float t2 = lightSample.b2;
-    float t0 = 1.0f - (t1 + t2);
+        float3 direction = fromPolarYUp(posPhi, theta);
+        float3 position = make_float3(direction.x, direction.y, direction.z);
+        *lightPosition = position;
 
-    *lightPosition = t0 * v[0].position + t1 * v[1].position + t2 * v[2].position;
-    *lightPosition = inst.transform * *lightPosition;
-    *lightNormal = cross(v[1].position - v[0].position,
-                         v[2].position - v[0].position);
-    float area = length(*lightNormal);
-    *lightNormal = (inst.normalMatrix * *lightNormal) / area;
+        float sinPhi, cosPhi;
+        sincosf(posPhi, &sinPhi, &cosPhi);
+        float3 texCoord0Dir = normalize(make_float3(-cosPhi, 0.0f, -sinPhi));
 
-    float3 emittance = make_float3(0.0f, 0.0f, 0.0f);
-    if (mat.emittance) {
-        float2 texCoord = t0 * v[0].texCoord + t1 * v[1].texCoord + t2 * v[2].texCoord;
-        float4 texValue = tex2DLod<float4>(mat.emittance, texCoord.x, texCoord.y, 0.0f);
-        emittance = make_float3(texValue);
+        *lightNormal = -position;
+
+        float4 texValue = tex2DLod<float4>(plp.s->envLightTexture, u, v, 0.0f);
+        float3 emittance = make_float3(texValue);
+        emittance *= Pi * plp.f->envLightPowerCoeff;
+
+        return emittance;
     }
+    else {
+        const InstanceData &inst = plp.f->instanceDataBuffer[lightSample.instIndex];
+        const GeometryInstanceData &geomInst = plp.s->geometryInstanceDataBuffer[lightSample.geomInstIndex];
+        const MaterialData &mat = plp.s->materialDataBuffer[geomInst.materialSlot];
 
-    return emittance;
+        const shared::Triangle &tri = geomInst.triangleBuffer[lightSample.primIndex];
+        const shared::Vertex (&v)[3] = {
+            geomInst.vertexBuffer[tri.index0],
+            geomInst.vertexBuffer[tri.index1],
+            geomInst.vertexBuffer[tri.index2]
+        };
+
+        float t1 = lightSample.b1;
+        float t2 = lightSample.b2;
+        float t0 = 1.0f - (t1 + t2);
+
+        *lightPosition = t0 * v[0].position + t1 * v[1].position + t2 * v[2].position;
+        *lightPosition = inst.transform * *lightPosition;
+        *lightNormal = cross(v[1].position - v[0].position,
+                             v[2].position - v[0].position);
+        float area = length(*lightNormal);
+        *lightNormal = (inst.normalMatrix * *lightNormal) / area;
+
+        float3 emittance = make_float3(0.0f, 0.0f, 0.0f);
+        if (mat.emittance) {
+            float2 texCoord = t0 * v[0].texCoord + t1 * v[1].texCoord + t2 * v[2].texCoord;
+            float4 texValue = tex2DLod<float4>(mat.emittance, texCoord.x, texCoord.y, 0.0f);
+            emittance = make_float3(texValue);
+        }
+
+        return emittance;
+    }
 }
 
 CUDA_DEVICE_FUNCTION float3 sampleUnshadowedContribution(
@@ -600,9 +736,10 @@ CUDA_DEVICE_FUNCTION float3 sampleUnshadowedContribution(
     float3 lpn;
     float3 M = sampleLight(uLight, uPos0, uPos1,
                            lightSample, &lp, &lpn, probDensity);
+    bool atInfinity = lightSample->atInfinity();
 
     float3 offsetOrigin = shadingPoint + shadingFrame.normal * RayEpsilon;
-    float3 shadowRayDir = lp - offsetOrigin;
+    float3 shadowRayDir = atInfinity ? lp : (lp - offsetOrigin);
     float dist2 = sqLength(shadowRayDir);
     float dist = std::sqrt(dist2);
     shadowRayDir /= dist;
@@ -630,12 +767,15 @@ CUDA_DEVICE_FUNCTION float3 performDirectLighting(
     float3 lp;
     float3 lpn;
     float3 M = evaluateLight(lightSample, &lp, &lpn);
+    bool atInfinity = lightSample.atInfinity();
 
     float3 offsetOrigin = shadingPoint + shadingFrame.normal * RayEpsilon;
-    float3 shadowRayDir = lp - offsetOrigin;
+    float3 shadowRayDir = atInfinity ? lp : (lp - offsetOrigin);
     float dist2 = sqLength(shadowRayDir);
     float dist = std::sqrt(dist2);
     shadowRayDir /= dist;
+    if (atInfinity)
+        dist = 1e+10f;
     float3 shadowRayDirLocal = shadingFrame.toLocal(shadowRayDir);
 
     float lpCos = dot(-shadowRayDir, lpn);
@@ -668,12 +808,15 @@ CUDA_DEVICE_FUNCTION bool evaluateVisibility(
     float3 lp;
     float3 lpn;
     evaluateLight(lightSample, &lp, &lpn);
+    bool atInfinity = lightSample.atInfinity();
 
     float3 offsetOrigin = shadingPoint + shadingFrame.normal * RayEpsilon;
-    float3 shadowRayDir = lp - offsetOrigin;
+    float3 shadowRayDir = atInfinity ? lp : (lp - offsetOrigin);
     float dist2 = sqLength(shadowRayDir);
     float dist = std::sqrt(dist2);
     shadowRayDir /= dist;
+    if (atInfinity)
+        dist = 1e+10f;
 
     float visibility = 1.0f;
     optixu::trace<VisibilityRayPayloadSignature>(
@@ -703,7 +846,7 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(generateInitialCandidates)() {
     float2 texCoord = make_float2(gBuffer0.texCoord_x, gBuffer1.texCoord_y);
     uint32_t materialSlot = gBuffer2.materialSlot;
 
-    if (allFinite(positionInWorld)) {
+    if (materialSlot != 0xFFFFFFFF) {
         PCG32RNG rng = plp.s->rngBuffer.read(launchIndex);
 
         const MaterialData &mat = plp.s->materialDataBuffer[materialSlot];
@@ -780,11 +923,13 @@ CUDA_DEVICE_FUNCTION bool testNeighbor(
         nbCoord.y < 0 || nbCoord.y >= plp.s->imageSize.y)
         return false;
 
+    GBuffer2 nbGBuffer2 = plp.s->GBuffer2[nbBufIdx].read(nbCoord);
+    if (nbGBuffer2.materialSlot == 0xFFFFFFFF)
+        return false;
+
     GBuffer0 nbGBuffer0 = plp.s->GBuffer0[nbBufIdx].read(nbCoord);
     GBuffer1 nbGBuffer1 = plp.s->GBuffer1[nbBufIdx].read(nbCoord);
     float3 nbPositionInWorld = nbGBuffer0.positionInWorld;
-    if (!allFinite(nbPositionInWorld))
-        return false;
     float3 nbNormalInWorld = nbGBuffer1.normalInWorld;
     float nbDist = length(plp.f->camera.position - nbPositionInWorld);
     if (abs(nbDist - dist) / dist > 0.1f || dot(normalInWorld, nbNormalInWorld) < 0.9f)
@@ -815,7 +960,7 @@ CUDA_DEVICE_FUNCTION void combineTemporalNeighbors() {
     float2 motionVector = gBuffer2.motionVector;
     uint32_t materialSlot = gBuffer2.materialSlot;
 
-    if (allFinite(positionInWorld)) {
+    if (materialSlot != 0xFFFFFFFF) {
         const MaterialData &mat = plp.s->materialDataBuffer[materialSlot];
 
         BSDF bsdf;
@@ -922,15 +1067,14 @@ CUDA_DEVICE_FUNCTION void combineTemporalNeighbors() {
             // JP: 続いて隣接ピクセルのターゲットPDFに対応する量を計算。
             // EN: Next, calculate a quantity corresponding to the neighboring pixel's target PDF.
             if (acceptedNeighbor) {
-                GBuffer0 nbGBuffer0 = plp.s->GBuffer0[prevBufIdx].read(nbCoord);
-
-                float3 nbPositionInWorld = nbGBuffer0.positionInWorld;
-                if (allFinite(nbPositionInWorld)) {
+                GBuffer2 nbGBuffer2 = plp.s->GBuffer2[prevBufIdx].read(nbCoord);
+                uint32_t nbMaterialSlot = nbGBuffer2.materialSlot;
+                if (nbMaterialSlot != 0xFFFFFFFF) {
+                    GBuffer0 nbGBuffer0 = plp.s->GBuffer0[prevBufIdx].read(nbCoord);
                     GBuffer1 nbGBuffer1 = plp.s->GBuffer1[prevBufIdx].read(nbCoord);
-                    GBuffer2 nbGBuffer2 = plp.s->GBuffer2[prevBufIdx].read(nbCoord);
+                    float3 nbPositionInWorld = nbGBuffer0.positionInWorld;
                     float3 nbNormalInWorld = nbGBuffer1.normalInWorld;
                     float2 nbTexCoord = make_float2(nbGBuffer0.texCoord_x, nbGBuffer1.texCoord_y);
-                    uint32_t nbMaterialSlot = nbGBuffer2.materialSlot;
 
                     const MaterialData &nbMat = plp.s->materialDataBuffer[nbMaterialSlot];
 
@@ -1011,7 +1155,7 @@ CUDA_DEVICE_FUNCTION void combineSpatialNeighbors() {
     float2 texCoord = make_float2(gBuffer0.texCoord_x, gBuffer1.texCoord_y);
     uint32_t materialSlot = gBuffer2.materialSlot;
 
-    if (allFinite(positionInWorld)) {
+    if (materialSlot != 0xFFFFFFFF) {
         const MaterialData &mat = plp.s->materialDataBuffer[materialSlot];
 
         BSDF bsdf;
@@ -1065,9 +1209,9 @@ CUDA_DEVICE_FUNCTION void combineSpatialNeighbors() {
                     nbCoord.x >= 0 && nbCoord.x < plp.s->imageSize.x &&
                     nbCoord.y >= 0 && nbCoord.y < plp.s->imageSize.y;
                 if (acceptedNeighbor) {
-                    GBuffer0 nbGBuffer0 = plp.s->GBuffer0[bufIdx].read(nbCoord);
-                    float3 nbPositionInWorld = nbGBuffer0.positionInWorld;
-                    acceptedNeighbor &= allFinite(nbPositionInWorld);
+                    GBuffer2 nbGBuffer2 = plp.s->GBuffer2[bufIdx].read(nbCoord);
+                    uint32_t nbMaterialSlot = nbGBuffer2.materialSlot;
+                    acceptedNeighbor &= nbMaterialSlot != 0xFFFFFFFF;
                 }
             }
             else {
@@ -1178,17 +1322,17 @@ CUDA_DEVICE_FUNCTION void combineSpatialNeighbors() {
                     nbCoord.y >= 0 && nbCoord.y < plp.s->imageSize.y;
                 acceptedNeighbor &= nbCoord.x != launchIndex.x || nbCoord.y != launchIndex.y;
                 if (acceptedNeighbor) {
-                    GBuffer0 nbGBuffer0 = plp.s->GBuffer0[bufIdx].read(nbCoord);
+                    GBuffer2 nbGBuffer2 = plp.s->GBuffer2[bufIdx].read(nbCoord);
 
-                    float3 nbPositionInWorld = nbGBuffer0.positionInWorld;
-                    if (!allFinite(nbPositionInWorld))
+                    uint32_t nbMaterialSlot = nbGBuffer2.materialSlot;
+                    if (nbMaterialSlot == 0xFFFFFFFF)
                         continue;
 
+                    GBuffer0 nbGBuffer0 = plp.s->GBuffer0[bufIdx].read(nbCoord);
                     GBuffer1 nbGBuffer1 = plp.s->GBuffer1[bufIdx].read(nbCoord);
-                    GBuffer2 nbGBuffer2 = plp.s->GBuffer2[bufIdx].read(nbCoord);
+                    float3 nbPositionInWorld = nbGBuffer0.positionInWorld;
                     float3 nbNormalInWorld = nbGBuffer1.normalInWorld;
                     float2 nbTexCoord = make_float2(nbGBuffer0.texCoord_x, nbGBuffer1.texCoord_y);
-                    uint32_t nbMaterialSlot = nbGBuffer2.materialSlot;
 
                     const MaterialData &nbMat = plp.s->materialDataBuffer[nbMaterialSlot];
 
@@ -1273,7 +1417,7 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(shading)() {
 
     float3 albedo = make_float3(0.0f);
     float3 contribution = make_float3(0.01f, 0.01f, 0.01f);
-    if (allFinite(positionInWorld)) {
+    if (materialSlot != 0xFFFFFFFF) {
         const MaterialData &mat = plp.s->materialDataBuffer[materialSlot];
 
         BSDF bsdf;
@@ -1309,6 +1453,18 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(shading)() {
         contribution += directCont;
 
         albedo = bsdf.getBaseColor(vOutLocal);
+    }
+    else {
+        if (plp.s->envLightTexture) {
+            float u = texCoord.x, v = texCoord.y;
+            float4 texValue = tex2DLod<float4>(plp.s->envLightTexture, u, v, 0.0f);
+            float3 emittance = make_float3(texValue);
+            emittance *= plp.f->envLightPowerCoeff;
+
+            contribution = emittance / Pi;
+
+            albedo = make_float3(0.0f, 0.0f, 0.0f);
+        }
     }
 
 

@@ -1,124 +1,12 @@
 ﻿#pragma once
 
-#include "../common/common.h"
+#include "../common/common_shared.h"
 
 struct BSDF;
 
-namespace Shared {
+namespace shared {
     static constexpr float Pi = 3.14159265358979323846f;
     static constexpr float RayEpsilon = 1e-4;
-
-
-
-    template <typename RealType>
-    struct CompensatedSum {
-        RealType result;
-        RealType comp;
-
-        CUDA_DEVICE_FUNCTION CompensatedSum(const RealType &value = RealType(0)) : result(value), comp(0.0) { };
-
-        CUDA_DEVICE_FUNCTION CompensatedSum &operator=(const RealType &value) {
-            result = value;
-            comp = 0;
-            return *this;
-        }
-
-        CUDA_DEVICE_FUNCTION CompensatedSum &operator+=(const RealType &value) {
-            RealType cInput = value - comp;
-            RealType sumTemp = result + cInput;
-            comp = (sumTemp - result) - cInput;
-            result = sumTemp;
-            return *this;
-        }
-
-        CUDA_DEVICE_FUNCTION operator RealType() const { return result; };
-    };
-
-    //using FloatSum = float;
-    using FloatSum = CompensatedSum<float>;
-
-
-
-    class PCG32RNG {
-        uint64_t state;
-
-    public:
-        CUDA_DEVICE_FUNCTION PCG32RNG() {}
-
-        void setState(uint64_t _state) { state = _state; }
-
-        CUDA_DEVICE_FUNCTION uint32_t operator()() {
-            uint64_t oldstate = state;
-            // Advance internal state
-            state = oldstate * 6364136223846793005ULL + 1;
-            // Calculate output function (XSH RR), uses old state for max ILP
-            uint32_t xorshifted = static_cast<uint32_t>(((oldstate >> 18u) ^ oldstate) >> 27u);
-            uint32_t rot = oldstate >> 59u;
-            return (xorshifted >> rot) | (xorshifted << ((-static_cast<int32_t>(rot)) & 31));
-        }
-
-        CUDA_DEVICE_FUNCTION float getFloat0cTo1o() {
-            uint32_t fractionBits = ((*this)() >> 9) | 0x3f800000;
-            return *(float*)&fractionBits - 1.0f;
-        }
-    };
-
-
-
-    template <typename RealType>
-    class DiscreteDistribution1DTemplate {
-        const RealType* m_PMF;
-        const RealType* m_CDF;
-        RealType m_integral;
-        uint32_t m_numValues;
-
-    public:
-        DiscreteDistribution1DTemplate(const RealType* PMF, const RealType* CDF, RealType integral, uint32_t numValues) :
-            m_PMF(PMF), m_CDF(CDF), m_integral(integral), m_numValues(numValues) {}
-
-        CUDA_DEVICE_FUNCTION DiscreteDistribution1DTemplate() {}
-
-        CUDA_DEVICE_FUNCTION uint32_t sample(RealType u, RealType* prob) const {
-            Assert(u >= 0 && u < 1, "\"u\": %g must be in range [0, 1).", u);
-            int idx = 0;
-            for (int d = nextPowerOf2(m_numValues) >> 1; d >= 1; d >>= 1) {
-                if (idx + d >= m_numValues)
-                    continue;
-                if (m_CDF[idx + d] <= u)
-                    idx += d;
-            }
-            Assert(idx >= 0 && idx < m_numValues, "Invalid Index!: %d", idx);
-            *prob = m_PMF[idx];
-            return idx;
-        }
-
-        CUDA_DEVICE_FUNCTION uint32_t sample(RealType u, RealType* prob, RealType* remapped) const {
-            Assert(u >= 0 && u < 1, "\"u\": %g must be in range [0, 1).", u);
-            int idx = 0;
-            for (int d = nextPowerOf2(m_numValues) >> 1; d >= 1; d >>= 1) {
-                if (idx + d >= m_numValues)
-                    continue;
-                if (m_CDF[idx + d] <= u)
-                    idx += d;
-            }
-            Assert(idx >= 0 && idx < m_numValues, "Invalid Index!: %d", idx);
-            *prob = m_PMF[idx];
-            *remapped = (u - m_CDF[idx]) / (m_CDF[idx + 1] - m_CDF[idx]);
-            Assert(isfinite(*remapped), "Remapped value is indefinite %g.", *remapped);
-            return idx;
-        }
-
-        CUDA_DEVICE_FUNCTION RealType evaluatePMF(uint32_t idx) const {
-            Assert(idx >= 0 && idx < m_numValues, "\"idx\" is out of range [0, %u)", m_numValues);
-            return m_PMF[idx];
-        }
-
-        CUDA_DEVICE_FUNCTION RealType integral() const { return m_integral; }
-
-        CUDA_DEVICE_FUNCTION uint32_t numValues() const { return m_numValues; }
-    };
-
-    using DiscreteDistribution1D = DiscreteDistribution1DTemplate<float>;
 
 
 
@@ -230,6 +118,10 @@ namespace Shared {
         uint32_t primIndex;
         float b1;
         float b2;
+
+        CUDA_DEVICE_FUNCTION bool atInfinity() const {
+            return instIndex == 0xFFFFFFFF;
+        }
     };
 
     template <typename SampleType>
@@ -319,6 +211,8 @@ namespace Shared {
         const MaterialData* materialDataBuffer;
         const GeometryInstanceData* geometryInstanceDataBuffer;
         DiscreteDistribution1D lightInstDist;
+        RegularConstantContinuousDistribution2D envLightImportanceMap;
+        CUtexObject envLightTexture;
 
         optixu::NativeBlockBuffer2D<float4> beautyAccumBuffer;
         optixu::NativeBlockBuffer2D<float4> albedoAccumBuffer;
@@ -333,6 +227,9 @@ namespace Shared {
 
         PerspectiveCamera camera;
         PerspectiveCamera prevCamera;
+
+        float envLightPowerCoeff;
+        float envLightRotation;
 
         float spatialNeighborRadius;
 
@@ -375,5 +272,5 @@ namespace Shared {
     };
 }
 
-#define PrimaryRayPayloadSignature Shared::HitPointParams*, Shared::PickInfo*
+#define PrimaryRayPayloadSignature shared::HitPointParams*, shared::PickInfo*
 #define VisibilityRayPayloadSignature float

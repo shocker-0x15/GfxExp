@@ -1,4 +1,4 @@
-#include "common.h"
+#include "common_host.h"
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "../ext/stb_image_write.h"
@@ -49,6 +49,265 @@ std::string readTxtFile(const std::filesystem::path& filepath) {
 
     return std::string(sstream.str());
 }
+
+
+
+template <typename RealType>
+void DiscreteDistribution1DTemplate<RealType>::
+initialize(CUcontext cuContext, cudau::BufferType type, const RealType* values, size_t numValues) {
+    m_numValues = static_cast<uint32_t>(numValues);
+#if defined(USE_WALKER_ALIAS_METHOD)
+    m_PMF.initialize(cuContext, type, m_numValues);
+    m_aliasTable.initialize(cuContext, type, m_numValues);
+    m_valueMaps.initialize(cuContext, type, m_numValues);
+
+    RealType* PMF = m_PMF.map();
+    std::memcpy(PMF, values, sizeof(RealType) * m_numValues);
+
+    CompensatedSum<RealType> sum(0);
+    for (int i = 0; i < m_numValues; ++i)
+        sum += values[i];
+    RealType avgWeight = sum / m_numValues;
+    m_integral = sum;
+
+    for (int i = 0; i < m_numValues; ++i)
+        PMF[i] /= m_integral;
+    m_PMF.unmap();
+
+    struct IndexAndWeight {
+        uint32_t index;
+        RealType weight;
+        IndexAndWeight() {}
+        IndexAndWeight(uint32_t _index, RealType _weight) :
+            index(_index), weight(_weight) {}
+    };
+
+    std::vector<IndexAndWeight> smallGroup;
+    std::vector<IndexAndWeight> largeGroup;
+    for (int i = 0; i < m_numValues; ++i) {
+        RealType weight = values[i];
+        IndexAndWeight entry(i, weight);
+        if (weight <= avgWeight)
+            smallGroup.push_back(entry);
+        else
+            largeGroup.push_back(entry);
+    }
+    shared::AliasTableEntry<RealType>* aliasTable = m_aliasTable.map();
+    shared::AliasValueMap<RealType>* valueMaps = m_valueMaps.map();
+    for (int i = 0; !smallGroup.empty() && !largeGroup.empty(); ++i) {
+        IndexAndWeight smallPair = smallGroup.back();
+        smallGroup.pop_back();
+        IndexAndWeight &largePair = largeGroup.back();
+        uint32_t secondIndex = largePair.index;
+        RealType reducedWeight = (largePair.weight + smallPair.weight) - avgWeight;
+        largePair.weight = reducedWeight;
+        if (largePair.weight <= avgWeight) {
+            smallGroup.push_back(largePair);
+            largeGroup.pop_back();
+        }
+        RealType probToPickFirst = smallPair.weight / avgWeight;
+        aliasTable[smallPair.index] = shared::AliasTableEntry<RealType>(secondIndex, probToPickFirst);
+
+        shared::AliasValueMap<RealType> valueMap;
+        RealType probToPickSecond = 1 - probToPickFirst;
+        valueMap.scaleForFirst = avgWeight / values[smallPair.index];
+        valueMap.scaleForSecond = avgWeight / values[secondIndex];
+        valueMap.offsetForSecond = (reducedWeight - smallPair.weight) / values[secondIndex];
+        valueMaps[smallPair.index] = valueMap;
+    }
+    while (!smallGroup.empty() || !largeGroup.empty()) {
+        IndexAndWeight pair;
+        if (!smallGroup.empty()) {
+            pair = smallGroup.back();
+            smallGroup.pop_back();
+        }
+        else {
+            pair = largeGroup.back();
+            largeGroup.pop_back();
+        }
+        aliasTable[pair.index] = shared::AliasTableEntry<RealType>(0xFFFFFFFF, 1.0f);
+
+        shared::AliasValueMap<RealType> valueMap;
+        valueMap.scaleForFirst = avgWeight / values[pair.index];
+        valueMap.scaleForSecond = 0;
+        valueMap.offsetForSecond = 0;
+        valueMaps[pair.index] = valueMap;
+    }
+    m_valueMaps.unmap();
+    m_aliasTable.unmap();
+#else
+    m_PMF.initialize(cuContext, type, m_numValues);
+    m_CDF.initialize(cuContext, type, m_numValues + 1);
+
+    RealType* PMF = m_PMF.map();
+    RealType* CDF = m_CDF.map();
+    std::memcpy(PMF, values, sizeof(RealType) * m_numValues);
+
+    CompensatedSum<RealType> sum(0);
+    for (int i = 0; i < m_numValues; ++i) {
+        CDF[i] = sum;
+        sum += PMF[i];
+    }
+    m_integral = sum;
+    for (int i = 0; i < m_numValues; ++i) {
+        PMF[i] /= m_integral;
+        CDF[i] /= m_integral;
+    }
+    CDF[m_numValues] = 1.0f;
+
+    m_CDF.unmap();
+    m_PMF.unmap();
+#endif
+}
+
+template class DiscreteDistribution1DTemplate<float>;
+
+
+
+template <typename RealType>
+void RegularConstantContinuousDistribution1DTemplate<RealType>::
+initialize(CUcontext cuContext, cudau::BufferType type, const RealType* values, size_t numValues) {
+    m_numValues = static_cast<uint32_t>(numValues);
+#if defined(USE_WALKER_ALIAS_METHOD)
+    m_PDF.initialize(cuContext, type, m_numValues);
+    m_aliasTable.initialize(cuContext, type, m_numValues);
+    m_valueMaps.initialize(cuContext, type, m_numValues);
+
+    RealType* PDF = m_PDF.map();
+    std::memcpy(PDF, values, sizeof(RealType) * m_numValues);
+
+    CompensatedSum<RealType> sum(0);
+    for (int i = 0; i < m_numValues; ++i)
+        sum += values[i];
+    RealType avgWeight = sum / m_numValues;
+    m_integral = avgWeight;
+
+    for (int i = 0; i < m_numValues; ++i)
+        PDF[i] /= m_integral;
+    m_PDF.unmap();
+
+    struct IndexAndWeight {
+        uint32_t index;
+        RealType weight;
+        IndexAndWeight() {}
+        IndexAndWeight(uint32_t _index, RealType _weight) :
+            index(_index), weight(_weight) {}
+    };
+
+    std::vector<IndexAndWeight> smallGroup;
+    std::vector<IndexAndWeight> largeGroup;
+    for (int i = 0; i < m_numValues; ++i) {
+        RealType weight = values[i];
+        IndexAndWeight entry(i, weight);
+        if (weight <= avgWeight)
+            smallGroup.push_back(entry);
+        else
+            largeGroup.push_back(entry);
+    }
+
+    shared::AliasTableEntry<RealType>* aliasTable = m_aliasTable.map();
+    shared::AliasValueMap<RealType>* valueMaps = m_valueMaps.map();
+    for (int i = 0; !smallGroup.empty() && !largeGroup.empty(); ++i) {
+        IndexAndWeight smallPair = smallGroup.back();
+        smallGroup.pop_back();
+        IndexAndWeight &largePair = largeGroup.back();
+        uint32_t secondIndex = largePair.index;
+        RealType reducedWeight = (largePair.weight + smallPair.weight) - avgWeight;
+        largePair.weight = reducedWeight;
+        if (largePair.weight <= avgWeight) {
+            smallGroup.push_back(largePair);
+            largeGroup.pop_back();
+        }
+        RealType probToPickFirst = smallPair.weight / avgWeight;
+        aliasTable[smallPair.index] = shared::AliasTableEntry<RealType>(secondIndex, probToPickFirst);
+
+        shared::AliasValueMap<RealType> valueMap;
+        RealType probToPickSecond = 1 - probToPickFirst;
+        valueMap.scaleForFirst = avgWeight / values[smallPair.index];
+        valueMap.scaleForSecond = avgWeight / values[secondIndex];
+        valueMap.offsetForSecond = (reducedWeight - smallPair.weight) / values[secondIndex];
+        valueMaps[smallPair.index] = valueMap;
+    }
+    while (!smallGroup.empty() || !largeGroup.empty()) {
+        IndexAndWeight pair;
+        if (!smallGroup.empty()) {
+            pair = smallGroup.back();
+            smallGroup.pop_back();
+        }
+        else {
+            pair = largeGroup.back();
+            largeGroup.pop_back();
+        }
+        aliasTable[pair.index] = shared::AliasTableEntry<RealType>(0xFFFFFFFF, 1.0f);
+
+        shared::AliasValueMap<RealType> valueMap;
+        valueMap.scaleForFirst = avgWeight / values[pair.index];
+        valueMap.scaleForSecond = 0;
+        valueMap.offsetForSecond = 0;
+        valueMaps[pair.index] = valueMap;
+    }
+    m_valueMaps.unmap();
+    m_aliasTable.unmap();
+#else
+    m_PDF.initialize(cuContext, type, m_numValues);
+    m_CDF.initialize(cuContext, type, m_numValues + 1);
+
+    RealType* PDF = m_PDF.map();
+    RealType* CDF = m_CDF.map();
+    std::memcpy(PDF, values, sizeof(RealType) * m_numValues);
+
+    CompensatedSum<RealType> sum{ 0 };
+    for (int i = 0; i < m_numValues; ++i) {
+        CDF[i] = sum;
+        sum += PDF[i] / m_numValues;
+    }
+    m_integral = sum;
+    for (int i = 0; i < m_numValues; ++i) {
+        PDF[i] /= m_integral;
+        CDF[i] /= m_integral;
+    }
+    CDF[m_numValues] = 1.0f;
+
+    m_CDF.unmap();
+    m_PDF.unmap();
+#endif
+}
+
+template class RegularConstantContinuousDistribution1DTemplate<float>;
+
+
+
+template <typename RealType>
+void RegularConstantContinuousDistribution2DTemplate<RealType>::
+initialize(CUcontext cuContext, cudau::BufferType type, const RealType* values, size_t numD1, size_t numD2) {
+    m_1DDists = new RegularConstantContinuousDistribution1DTemplate<RealType>[numD2];
+    m_raw1DDists.initialize(cuContext, type, numD2);
+
+    shared::RegularConstantContinuousDistribution1DTemplate<RealType>* rawDists = m_raw1DDists.map();
+
+    // JP: まず各行に関するDistribution1Dを作成する。
+    // EN: First, create Distribution1D's for every rows.
+    CompensatedSum<RealType> sum(0);
+    RealType* integrals = new RealType[numD2];
+    for (int i = 0; i < numD2; ++i) {
+        RegularConstantContinuousDistribution1DTemplate<RealType> &dist = m_1DDists[i];
+        dist.initialize(cuContext, type, values + i * numD1, numD1);
+        dist.getDeviceType(&rawDists[i]);
+        integrals[i] = dist.getIntegral();
+        sum += integrals[i];
+    }
+
+    // JP: 各行の積分値を用いてDistribution1Dを作成する。
+    // EN: create a Distribution1D using integral values of each row.
+    m_top1DDist.initialize(cuContext, type, integrals, numD2);
+    delete[] integrals;
+
+    Assert(std::isfinite(m_top1DDist.getIntegral()), "invalid integral value.");
+
+    m_raw1DDists.unmap();
+}
+
+template class RegularConstantContinuousDistribution2DTemplate<float>;
 
 
 
