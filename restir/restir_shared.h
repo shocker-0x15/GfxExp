@@ -243,6 +243,7 @@ namespace shared {
         unsigned int bufferIndex : 1;
         unsigned int resetFlowBuffer : 1;
         unsigned int enableJittering : 1;
+        unsigned int enableEnvLight : 1;
 
         uint32_t debugSwitches;
         void setDebugSwitch(int32_t idx, bool b) {

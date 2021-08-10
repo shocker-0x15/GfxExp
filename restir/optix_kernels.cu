@@ -521,7 +521,7 @@ CUDA_DEVICE_KERNEL void RT_MS_NAME(setupGBuffers)() {
         pickInfo->positionInWorld = p;
         pickInfo->albedo = make_float3(0.0f, 0.0f, 0.0f);
         float3 emittance = make_float3(0.0f, 0.0f, 0.0f);
-        if (plp.s->envLightTexture) {
+        if (plp.s->envLightTexture && plp.f->enableEnvLight) {
             float4 texValue = tex2DLod<float4>(plp.s->envLightTexture, u, v, 0.0f);
             emittance = make_float3(texValue);
             emittance *= Pi * plp.f->envLightPowerCoeff;
@@ -863,7 +863,7 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(generateInitialCandidates)() {
             float ul = rng.getFloat0cTo1o();
             float lightProb = 1.0f;
             bool sampleEnvLight = false;
-            if (plp.s->envLightTexture) {
+            if (plp.s->envLightTexture && plp.f->enableEnvLight) {
                 float probSampleEnvLight = min(max(0.25f * numCandidates - i, 0.0f), 1.0f);
                 if (ul < probSampleEnvLight) {
                     lightProb = probSampleEnvLight;
@@ -1447,7 +1447,7 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(shading)() {
         albedo = bsdf.getBaseColor(vOutLocal);
     }
     else {
-        if (plp.s->envLightTexture) {
+        if (plp.s->envLightTexture && plp.f->enableEnvLight) {
             float u = texCoord.x, v = texCoord.y;
             float4 texValue = tex2DLod<float4>(plp.s->envLightTexture, u, v, 0.0f);
             float3 emittance = make_float3(texValue);

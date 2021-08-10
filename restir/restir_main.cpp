@@ -2469,6 +2469,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         
         // Camera Window
         static float brightness = g_initBrightness;
+        static bool enableEnvLight = true;
         static float log10EnvLightPowerCoeff = 0.0f;
         static float envLightRotation = 0.0f;
         {
@@ -2502,10 +2503,13 @@ int32_t main(int32_t argc, const char* argv[]) try {
                 delete[] rawImage;
             }
 
-            ImGui::Separator();
+            if (!g_envLightTexturePath.empty()) {
+                ImGui::Separator();
 
-            resetAccumulation |= ImGui::SliderFloat("Env Power", &log10EnvLightPowerCoeff, -5.0f, 5.0f);
-            resetAccumulation |= ImGui::SliderAngle("Env Rotation", &envLightRotation);
+                resetAccumulation |= ImGui::Checkbox("Enable Env Light", &enableEnvLight);
+                resetAccumulation |= ImGui::SliderFloat("Env Power", &log10EnvLightPowerCoeff, -5.0f, 5.0f);
+                resetAccumulation |= ImGui::SliderAngle("Env Rotation", &envLightRotation);
+            }
 
             ImGui::End();
         }
@@ -2739,6 +2743,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         perFramePlp.bufferIndex = bufferIndex;
         perFramePlp.resetFlowBuffer = newSequence;
         perFramePlp.enableJittering = enableJittering;
+        perFramePlp.enableEnvLight = enableEnvLight;
         for (int i = 0; i < lengthof(debugSwitches); ++i)
             perFramePlp.setDebugSwitch(i, debugSwitches[i]);
 
