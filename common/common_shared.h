@@ -1104,6 +1104,19 @@ namespace shared {
 
 
 
+    CUDA_DEVICE_FUNCTION uint32_t mapPrimarySampleToDiscrete(float u01, uint32_t numValues, float* uRemapped = nullptr) {
+#if defined(__CUDA_ARCH__)
+        uint32_t idx = min(static_cast<uint32_t>(u01 * numValues), numValues - 1);
+#else
+        uint32_t idx = std::min(static_cast<uint32_t>(u01 * numValues), numValues - 1);
+#endif
+        if (uRemapped)
+            *uRemapped = u01 * numValues - idx;
+        return idx;
+    }
+
+
+
     template <typename RealType>
     struct AliasTableEntry {
         uint32_t secondIndex;
@@ -1153,8 +1166,7 @@ namespace shared {
         CUDA_DEVICE_FUNCTION uint32_t sample(RealType u, RealType* prob) const {
             Assert(u >= 0 && u < 1, "\"u\": %g must be in range [0, 1).", u);
 #if defined(USE_WALKER_ALIAS_METHOD)
-            uint32_t idx = min(static_cast<uint32_t>(u * m_numValues), m_numValues - 1);
-            u = u * m_numValues - idx;
+            uint32_t idx = mapPrimarySampleToDiscrete(u, m_numValues, &u);
             const AliasTableEntry<RealType> &entry = m_aliasTable[idx];
             if (u >= entry.probToPickFirst)
                 idx = entry.secondIndex;
@@ -1175,8 +1187,7 @@ namespace shared {
         CUDA_DEVICE_FUNCTION uint32_t sample(RealType u, RealType* prob, RealType* remapped) const {
             Assert(u >= 0 && u < 1, "\"u\": %g must be in range [0, 1).", u);
 #if defined(USE_WALKER_ALIAS_METHOD)
-            uint32_t idx = min(static_cast<uint32_t>(u * m_numValues), m_numValues - 1);
-            u = u * m_numValues - idx;
+            uint32_t idx = mapPrimarySampleToDiscrete(u, m_numValues, &u);
             const AliasTableEntry<RealType> &entry = m_aliasTable[idx];
             const AliasValueMap<RealType> &valueMap = m_valueMaps[idx];
             if (u < entry.probToPickFirst) {
@@ -1247,8 +1258,7 @@ namespace shared {
         CUDA_DEVICE_FUNCTION RealType sample(RealType u, RealType* probDensity) const {
             Assert(u >= 0 && u < 1, "\"u\": %g must be in range [0, 1).", u);
 #if defined(USE_WALKER_ALIAS_METHOD)
-            uint32_t idx = min(static_cast<uint32_t>(u * m_numValues), m_numValues - 1);
-            u = u * m_numValues - idx;
+            uint32_t idx = mapPrimarySampleToDiscrete(u, m_numValues, &u);
             const AliasTableEntry<RealType> &entry = m_aliasTable[idx];
             const AliasValueMap<RealType> &valueMap = m_valueMaps[idx];
             RealType t;
@@ -1302,12 +1312,12 @@ namespace shared {
         CUDA_DEVICE_FUNCTION void sample(RealType u0, RealType u1, RealType* d0, RealType* d1, RealType* probDensity) const {
             RealType topPDF;
             *d1 = m_top1DDist.sample(u1, &topPDF);
-            uint32_t idx1D = min(static_cast<uint32_t>(m_top1DDist.numValues() * *d1), m_top1DDist.numValues() - 1);
+            uint32_t idx1D = mapPrimarySampleToDiscrete(*d1, m_top1DDist.numValues());
             *d0 = m_1DDists[idx1D].sample(u0, probDensity);
             *probDensity *= topPDF;
         }
         CUDA_DEVICE_FUNCTION RealType evaluatePDF(RealType d0, RealType d1) const {
-            uint32_t idx1D = min(static_cast<uint32_t>(m_top1DDist.numValues() * d1), m_top1DDist.numValues() - 1);
+            uint32_t idx1D = mapPrimarySampleToDiscrete(d1, m_top1DDist.numValues());
             return m_top1DDist.evaluatePDF(d1) * m_1DDists[idx1D].evaluatePDF(d0);
         }
     };

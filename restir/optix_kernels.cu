@@ -553,6 +553,9 @@ CUDA_DEVICE_FUNCTION float3 sampleLight(
         }
     }
 
+    CUtexObject texEmittance = 0;
+    float3 emittance = make_float3(0.0f, 0.0f, 0.0f);
+    float2 texCoord;
     if (sampleEnvLight) {
         lightSample->instIndex = 0xFFFFFFFF;
         lightSample->geomInstIndex = 0xFFFFFFFF;
@@ -573,10 +576,6 @@ CUDA_DEVICE_FUNCTION float3 sampleLight(
         float3 position = make_float3(direction.x, direction.y, direction.z);
         *lightPosition = position;
 
-        float sinPhi, cosPhi;
-        sincosf(posPhi, &sinPhi, &cosPhi);
-        float3 texCoord0Dir = normalize(make_float3(-cosPhi, 0.0f, -sinPhi));
-
         *lightNormal = -position;
 
         // JP: テクスチャー空間中のPDFを面積に関するものに変換する。
@@ -585,11 +584,10 @@ CUDA_DEVICE_FUNCTION float3 sampleLight(
         *areaPDensity = uvPDF / (2 * Pi * Pi * std::sin(theta));
         *areaPDensity *= lightProb;
 
-        float4 texValue = tex2DLod<float4>(plp.s->envLightTexture, u, v, 0.0f);
-        float3 emittance = make_float3(texValue);
-        emittance *= Pi * plp.f->envLightPowerCoeff;
-
-        return emittance;
+        texEmittance = plp.s->envLightTexture;
+        emittance = make_float3(Pi * plp.f->envLightPowerCoeff);
+        texCoord.x = u;
+        texCoord.y = v;
     }
     else {
         // JP: まずはインスタンスをサンプルする。
@@ -605,7 +603,8 @@ CUDA_DEVICE_FUNCTION float3 sampleLight(
         // EN: Next, sample a geometry instance which belongs to the sampled instance.
         float geomInstProb;
         float uPrim;
-        uint32_t geomInstIndex = inst.geomInstSlots[inst.lightGeomInstDist.sample(uGeomInst, &geomInstProb, &uPrim)];
+        uint32_t geomInstIndexInInst = inst.lightGeomInstDist.sample(uGeomInst, &geomInstProb, &uPrim);
+        uint32_t geomInstIndex = inst.geomInstSlots[geomInstIndexInInst];
         lightProb *= geomInstProb;
         const GeometryInstanceData &geomInst = plp.s->geometryInstanceDataBuffer[geomInstIndex];
         lightSample->geomInstIndex = geomInstIndex;
@@ -636,7 +635,7 @@ CUDA_DEVICE_FUNCTION float3 sampleLight(
         const MaterialData &mat = plp.s->materialDataBuffer[geomInst.materialSlot];
 
         const shared::Triangle &tri = geomInst.triangleBuffer[primIndex];
-        const shared::Vertex(&v)[3] = {
+        const shared::Vertex (&v)[3] = {
             geomInst.vertexBuffer[tri.index0],
             geomInst.vertexBuffer[tri.index1],
             geomInst.vertexBuffer[tri.index2]
@@ -658,15 +657,19 @@ CUDA_DEVICE_FUNCTION float3 sampleLight(
         //       lightPosition->x, lightPosition->y, lightPosition->z,
         //       lightNormal->x, lightNormal->y, lightNormal->z);
 
-        float3 emittance = make_float3(0.0f, 0.0f, 0.0f);
         if (mat.emittance) {
-            float2 texCoord = t0 * v[0].texCoord + t1 * v[1].texCoord + t2 * v[2].texCoord;
-            float4 texValue = tex2DLod<float4>(mat.emittance, texCoord.x, texCoord.y, 0.0f);
-            emittance = make_float3(texValue);
+            texEmittance = mat.emittance;
+            emittance = make_float3(1.0f, 1.0f, 1.0f);
+            texCoord = t0 * v[0].texCoord + t1 * v[1].texCoord + t2 * v[2].texCoord;
         }
-
-        return emittance;
     }
+
+    if (texEmittance) {
+        float4 texValue = tex2DLod<float4>(texEmittance, texCoord.x, texCoord.y, 0.0f);
+        emittance *= make_float3(texValue);
+    }
+
+    return emittance;
 }
 
 CUDA_DEVICE_FUNCTION float3 evaluateLight(const LightSample &lightSample, float3* lightPosition, float3* lightNormal) {
