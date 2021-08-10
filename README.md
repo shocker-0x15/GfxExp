@@ -47,7 +47,6 @@ It requires the following libraries.
 - [stb](https://github.com/nothings/stb)
 - [tinyexr](https://github.com/syoyo/tinyexr)
   - [miniz](https://github.com/richgel999/miniz)
-- [tinyobjloader](https://github.com/tinyobjloader/tinyobjloader)
 
 ----
 2021 [@Shocker_0x15](https://twitter.com/Shocker_0x15)
