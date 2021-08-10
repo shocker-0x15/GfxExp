@@ -917,6 +917,7 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(generateInitialCandidates)() {
 
 
 
+template <bool testGeometry>
 CUDA_DEVICE_FUNCTION bool testNeighbor(
     uint32_t nbBufIdx, int2 nbCoord, float dist, const float3 &normalInWorld) {
     if (nbCoord.x < 0 || nbCoord.x >= plp.s->imageSize.x ||
@@ -927,13 +928,15 @@ CUDA_DEVICE_FUNCTION bool testNeighbor(
     if (nbGBuffer2.materialSlot == 0xFFFFFFFF)
         return false;
 
-    GBuffer0 nbGBuffer0 = plp.s->GBuffer0[nbBufIdx].read(nbCoord);
-    GBuffer1 nbGBuffer1 = plp.s->GBuffer1[nbBufIdx].read(nbCoord);
-    float3 nbPositionInWorld = nbGBuffer0.positionInWorld;
-    float3 nbNormalInWorld = nbGBuffer1.normalInWorld;
-    float nbDist = length(plp.f->camera.position - nbPositionInWorld);
-    if (abs(nbDist - dist) / dist > 0.1f || dot(normalInWorld, nbNormalInWorld) < 0.9f)
-        return false;
+    if constexpr (testGeometry) {
+        GBuffer0 nbGBuffer0 = plp.s->GBuffer0[nbBufIdx].read(nbCoord);
+        GBuffer1 nbGBuffer1 = plp.s->GBuffer1[nbBufIdx].read(nbCoord);
+        float3 nbPositionInWorld = nbGBuffer0.positionInWorld;
+        float3 nbNormalInWorld = nbGBuffer1.normalInWorld;
+        float nbDist = length(plp.f->camera.position - nbPositionInWorld);
+        if (abs(nbDist - dist) / dist > 0.1f || dot(normalInWorld, nbNormalInWorld) < 0.9f)
+            return false;
+    }
 
     return true;
 }
@@ -992,19 +995,12 @@ CUDA_DEVICE_FUNCTION void combineTemporalNeighbors() {
 
         int2 nbCoord = make_int2(launchIndex.x + 0.5f - motionVector.x,
                                  launchIndex.y + 0.5f - motionVector.y);
-        bool acceptedNeighbor;
-        if constexpr (useUnbiasedEstimator) {
-            acceptedNeighbor =
-                nbCoord.x >= 0 && nbCoord.x < plp.s->imageSize.x &&
-                nbCoord.y >= 0 && nbCoord.y < plp.s->imageSize.y;
-        }
-        else {
-            // JP: 隣接ピクセルのジオメトリ・マテリアルがあまりに異なる場合に候補サンプルを再利用すると
-            //     バイアスが増えてしまうため、そのようなピクセルは棄却する。
-            // EN: Reusing candidates from neighboring pixels with substantially different geometry/material
-            //     leads to increased bias. Reject such a pixel.
-            acceptedNeighbor = testNeighbor(prevBufIdx, nbCoord, dist, normalInWorld);
-        }
+
+        // JP: 隣接ピクセルのジオメトリ・マテリアルがあまりに異なる場合に候補サンプルを再利用すると
+        //     バイアスが増えてしまうため、そのようなピクセルは棄却する。
+        // EN: Reusing candidates from neighboring pixels with substantially different geometry/material
+        //     leads to increased bias. Reject such a pixel.
+        bool acceptedNeighbor = testNeighbor<!useUnbiasedEstimator>(prevBufIdx, nbCoord, dist, normalInWorld);
         if (acceptedNeighbor) {
             const Reservoir<LightSample> /*&*/neighbor = plp.s->reservoirBuffer[prevResIndex][nbCoord];
             const ReservoirInfo neighborInfo = plp.s->reservoirInfoBuffer[prevResIndex].read(nbCoord);
@@ -1203,24 +1199,11 @@ CUDA_DEVICE_FUNCTION void combineSpatialNeighbors() {
             int2 nbCoord = make_int2(launchIndex.x + 0.5f + deltaX,
                                      launchIndex.y + 0.5f + deltaY);
 
-            bool acceptedNeighbor;
-            if constexpr (useUnbiasedEstimator) {
-                acceptedNeighbor =
-                    nbCoord.x >= 0 && nbCoord.x < plp.s->imageSize.x &&
-                    nbCoord.y >= 0 && nbCoord.y < plp.s->imageSize.y;
-                if (acceptedNeighbor) {
-                    GBuffer2 nbGBuffer2 = plp.s->GBuffer2[bufIdx].read(nbCoord);
-                    uint32_t nbMaterialSlot = nbGBuffer2.materialSlot;
-                    acceptedNeighbor &= nbMaterialSlot != 0xFFFFFFFF;
-                }
-            }
-            else {
-                // JP: 隣接ピクセルのジオメトリ・マテリアルがあまりに異なる場合に候補サンプルを再利用すると
-                //     バイアスが増えてしまうため、そのようなピクセルは棄却する。
-                // EN: Reusing candidates from neighboring pixels with substantially different geometry/material
-                //     leads to increased bias. Reject such a pixel.
-                acceptedNeighbor = testNeighbor(bufIdx, nbCoord, dist, normalInWorld);
-            }
+            // JP: 隣接ピクセルのジオメトリ・マテリアルがあまりに異なる場合に候補サンプルを再利用すると
+            //     バイアスが増えてしまうため、そのようなピクセルは棄却する。
+            // EN: Reusing candidates from neighboring pixels with substantially different geometry/material
+            //     leads to increased bias. Reject such a pixel.
+            bool acceptedNeighbor = testNeighbor<!useUnbiasedEstimator>(bufIdx, nbCoord, dist, normalInWorld);
             acceptedNeighbor &= nbCoord.x != launchIndex.x || nbCoord.y != launchIndex.y;
             if (acceptedNeighbor) {
                 const Reservoir<LightSample> /*&*/neighbor = plp.s->reservoirBuffer[srcResIndex][nbCoord];
