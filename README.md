@@ -40,12 +40,12 @@ It requires the following libraries.
 * OptiX 7.3.0 (requires Maxwell or later generation NVIDIA GPU)
 
 ## オープンソースソフトウェア / Open Source Software
-- [assimp](https://github.com/assimp/assimp)
+- [Open Asset Import Library (assimp)](https://github.com/assimp/assimp)
 - [Dear ImGui](https://github.com/ocornut/imgui)
 - [gl3w](https://github.com/skaslev/gl3w)
 - [GLFW](https://github.com/glfw/glfw)
 - [stb](https://github.com/nothings/stb)
-- [tinyexr](https://github.com/syoyo/tinyexr)
+- [Tiny OpenEXR image library (tinyexr)](https://github.com/syoyo/tinyexr)
   - [miniz](https://github.com/richgel999/miniz)
 
 ----

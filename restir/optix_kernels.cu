@@ -534,25 +534,8 @@ CUDA_DEVICE_KERNEL void RT_MS_NAME(setupGBuffers)() {
 
 
 CUDA_DEVICE_FUNCTION float3 sampleLight(
-    float ul, float u0, float u1,
+    float ul, bool sampleEnvLight, float u0, float u1,
     LightSample* lightSample, float3* lightPosition, float3* lightNormal, float* areaPDensity) {
-    float lightProb = 1.0f;
-
-    // JP: 環境光テクスチャーが設定されている場合は一定の確率でサンプルする。
-    // EN: Sample an environmental texture with a fixed probability if it is set.
-    bool sampleEnvLight = false;
-    if (plp.s->envLightTexture) {
-        if (ul < 0.25f) {
-            lightProb = 0.25f;
-            ul = ul / 0.25f;
-            sampleEnvLight = true;
-        }
-        else {
-            lightProb = 0.75f;
-            ul = (ul - 0.25f) / 0.75f;
-        }
-    }
-
     CUtexObject texEmittance = 0;
     float3 emittance = make_float3(0.0f, 0.0f, 0.0f);
     float2 texCoord;
@@ -582,7 +565,6 @@ CUDA_DEVICE_FUNCTION float3 sampleLight(
         // EN: convert the PDF in texture space to one with respect to area.
         // The true value is: lim_{l to inf} uvPDF / (2 * Pi * Pi * std::sin(theta)) / l^2
         *areaPDensity = uvPDF / (2 * Pi * Pi * std::sin(theta));
-        *areaPDensity *= lightProb;
 
         texEmittance = plp.s->envLightTexture;
         emittance = make_float3(Pi * plp.f->envLightPowerCoeff);
@@ -590,6 +572,8 @@ CUDA_DEVICE_FUNCTION float3 sampleLight(
         texCoord.y = v;
     }
     else {
+        float lightProb = 1.0f;
+
         // JP: まずはインスタンスをサンプルする。
         // EN: First, sample an instance.
         float instProb;
@@ -734,10 +718,10 @@ CUDA_DEVICE_FUNCTION float3 evaluateLight(const LightSample &lightSample, float3
 
 CUDA_DEVICE_FUNCTION float3 sampleUnshadowedContribution(
     const float3 &shadingPoint, const float3 &vOutLocal, const ReferenceFrame &shadingFrame, const BSDF &bsdf,
-    float uLight, float uPos0, float uPos1, LightSample* lightSample, float* probDensity) {
+    float uLight, bool sampleEnvLight, float uPos0, float uPos1, LightSample* lightSample, float* probDensity) {
     float3 lp;
     float3 lpn;
-    float3 M = sampleLight(uLight, uPos0, uPos1,
+    float3 M = sampleLight(uLight, sampleEnvLight, uPos0, uPos1,
                            lightSample, &lp, &lpn, probDensity);
     bool atInfinity = lightSample->atInfinity();
 
@@ -871,6 +855,27 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(generateInitialCandidates)() {
         float selectedTargetDensity = 0.0f;
         uint32_t numCandidates = 1 << plp.f->log2NumCandidateSamples;
         for (int i = 0; i < numCandidates; ++i) {
+            // JP: 環境光テクスチャーが設定されている場合は一定の確率でサンプルする。
+            //     ダイバージェンスを抑えるために、ループの最初とそれ以外で環境光かそれ以外のサンプリングを分ける。
+            // EN: Sample an environmental light texture with a fixed probability if it is set.
+            //     Separate sampling from the environmental light and the others to
+            //     the beginning of the loop and the rest to avoid divergence.
+            float ul = rng.getFloat0cTo1o();
+            float lightProb = 1.0f;
+            bool sampleEnvLight = false;
+            if (plp.s->envLightTexture) {
+                float probSampleEnvLight = min(max(0.25f * numCandidates - i, 0.0f), 1.0f);
+                if (ul < probSampleEnvLight) {
+                    lightProb = probSampleEnvLight;
+                    ul = ul / lightProb;
+                    sampleEnvLight = true;
+                }
+                else {
+                    lightProb = 1 - probSampleEnvLight;
+                    ul = (ul - probSampleEnvLight) / lightProb;
+                }
+            }
+
             // JP: 候補サンプルを生成して、ターゲットPDFを計算する。
             //     ターゲットPDFは正規化されていなくても良い。
             // EN: Generate a candidate sample then calculate the target PDF for it.
@@ -879,8 +884,9 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(generateInitialCandidates)() {
             float probDensity;
             float3 cont = sampleUnshadowedContribution(
                 positionInWorld, vOutLocal, shadingFrame, bsdf,
-                rng.getFloat0cTo1o(), rng.getFloat0cTo1o(), rng.getFloat0cTo1o(),
+                ul, sampleEnvLight, rng.getFloat0cTo1o(), rng.getFloat0cTo1o(),
                 &lightSample, &probDensity);
+            probDensity *= lightProb;
             float targetDensity = convertToWeight(cont);
 
             // JP: 候補サンプル生成用のPDFとターゲットPDFは異なるためサンプルにはウェイトがかかる。
