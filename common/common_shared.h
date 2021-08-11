@@ -1075,6 +1075,7 @@ CUDA_DEVICE_FUNCTION Quaternion Slerp(float t, const Quaternion &q0, const Quate
 
 
 
+// Use Walker's alias method with initialization by Vose's algorithm
 #define USE_WALKER_ALIAS_METHOD
 
 namespace shared {

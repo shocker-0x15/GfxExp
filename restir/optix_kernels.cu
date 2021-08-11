@@ -143,8 +143,6 @@ CUDA_DEVICE_FUNCTION void setupBSDF<LambertBRDF>(const MaterialData &matData, co
 
 
 
-// JP: ホストコード側でまだ対応させていない。
-// EN: Not supported yet on the host code.
 class DiffuseAndSpecularBRDF {
     struct GGXMicrofacetDistribution {
         float alpha_g;
@@ -160,42 +158,6 @@ class DiffuseAndSpecularBRDF {
                 return 0.0f;
             float temp = pow2(alpha_g) * (pow2(v.x) + pow2(v.y)) / pow2(v.z);
             return 2 / (1 + std::sqrt(1 + temp));
-        }
-        CUDA_DEVICE_FUNCTION float sample(const float3 &v, float u0, float u1,
-                                          float3* m, float* mPDensity) const {
-            // stretch view
-            float3 sv = normalize(make_float3(alpha_g * v.x, alpha_g * v.y, v.z));
-
-            // orthonormal basis
-            float distIn2D = std::sqrt(sv.x * sv.x + sv.y * sv.y);
-            float recDistIn2D = 1.0f / distIn2D;
-            float3 T1 = (sv.z < 0.9999f) ?
-                make_float3(sv.y * recDistIn2D, -sv.x * recDistIn2D, 0) :
-                make_float3(1.0f, 0.0f, 0.0f);
-            float3 T2 = make_float3(T1.y * sv.z, -T1.x * sv.z, distIn2D);
-
-            // sample point with polar coordinates (r, phi)
-            float a = 1.0f / (1.0f + sv.z);
-            float r = std::sqrt(u0);
-            float phi = Pi * ((u1 < a) ? u1 / a : 1 + (u1 - a) / (1.0f - a));
-            float sinPhi, cosPhi;
-            sincosf(phi, &sinPhi, &cosPhi);
-            float P1 = r * cosPhi;
-            float P2 = r * sinPhi * ((u1 < a) ? 1.0f : sv.z);
-
-            // compute normal
-            *m = P1 * T1 + P2 * T2 + std::sqrt(1.0f - P1 * P1 - P2 * P2) * sv;
-
-            // unstretch
-            *m = normalize(make_float3(alpha_g * m->x, alpha_g * m->y, m->z));
-
-            float D = evaluate(*m);
-            *mPDensity = evaluateSmithG1(v, *m) * absDot(v, *m) * D / std::fabs(v.z);
-
-            return D;
-        }
-        CUDA_DEVICE_FUNCTION float evaluatePDF(const float3 &v, const float3 &m) {
-            return evaluateSmithG1(v, m) * absDot(v, m) * evaluate(m) / std::fabs(v.z);
         }
     };
 
@@ -288,7 +250,7 @@ CUDA_DEVICE_FUNCTION void setupBSDF<DiffuseAndSpecularBRDF>(const MaterialData &
     auto &bsdfBody = *reinterpret_cast<DiffuseAndSpecularBRDF*>(bsdf->m_data);
     bsdfBody = DiffuseAndSpecularBRDF(make_float3(diffuseColor),
                                       make_float3(specularF0Color),
-                                      smoothness);
+                                      min(smoothness, 0.999f));
 }
 
 
@@ -669,10 +631,6 @@ CUDA_DEVICE_FUNCTION float3 evaluateLight(const LightSample &lightSample, float3
         float3 direction = fromPolarYUp(posPhi, theta);
         float3 position = make_float3(direction.x, direction.y, direction.z);
         *lightPosition = position;
-
-        float sinPhi, cosPhi;
-        sincosf(posPhi, &sinPhi, &cosPhi);
-        float3 texCoord0Dir = normalize(make_float3(-cosPhi, 0.0f, -sinPhi));
 
         *lightNormal = -position;
 

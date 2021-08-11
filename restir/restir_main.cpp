@@ -1093,6 +1093,8 @@ static Instance* createInstance(
     return inst;
 }
 
+constexpr bool useLambertMaterial = false;
+
 static void createTriangleMeshes(
     const std::filesystem::path &filePath,
     const Matrix4x4 &preTransform,
@@ -1130,8 +1132,6 @@ static void createTriangleMeshes(
         std::string matName;
         if (aiMat->Get(AI_MATKEY_NAME, strValue) == aiReturn_SUCCESS)
             matName = strValue.C_Str();
-
-        constexpr bool useLambertMaterial = true;
 
         std::filesystem::path reflectancePath;
         float3 immReflectance;
@@ -1183,9 +1183,12 @@ static void createTriangleMeshes(
                 immSpecularColor = float3(color[0], color[1], color[2]);
             }
 
+            // JP: 極端に鋭いスペキュラーにするとNEEで寄与が一切サンプルできなくなってしまう。
+            // EN: Exteremely sharp specular makes it impossible to sample a contribution with NEE.
             if (aiMat->Get(AI_MATKEY_SHININESS, &immSmoothness, nullptr) != aiReturn_SUCCESS)
                 immSmoothness = 0.0f;
-            immSmoothness = std::fmin(immSmoothness * 0.01f, 0.9f);
+            immSmoothness = std::sqrt(immSmoothness);
+            immSmoothness = immSmoothness / 11.0f/*30.0f*/;
 
             (void)reflectancePath;
             (void)immReflectance;
@@ -1284,14 +1287,19 @@ static void createRectangleLight(
     float width, float depth,
     const float3 &reflectance,
     const std::filesystem::path &emittancePath,
-    const float3 &emittanceScale,
+    const float3 &immEmittance,
     const Matrix4x4 &transform,
     GPUEnvironment &gpuEnv,
     Material** material,
     GeometryInstance** geomInst,
     GeometryGroup** geomGroup,
     Mesh* mesh) {
-    *material = createLambertMaterial(gpuEnv, "", reflectance, emittancePath, emittanceScale);
+    if constexpr (useLambertMaterial)
+        *material = createLambertMaterial(gpuEnv, "", reflectance, emittancePath, immEmittance);
+    else
+        *material = createDiffuseAndSpecularMaterial(
+            gpuEnv, "", reflectance, "", float3(0.0f), 0.3f,
+            emittancePath, immEmittance);
 
     std::vector<shared::Vertex> vertices = {
         shared::Vertex{float3(-0.5f * width, 0.0f, -0.5f * depth), float3(0, -1, 0), float2(0.0f, 1.0f)},
@@ -1317,15 +1325,21 @@ static void createRectangleLight(
 
 static void createSphereLight(
     float radius,
+    const float3 &reflectance,
     const std::filesystem::path &emittancePath,
-    const float3 &emittanceScale,
+    const float3 &immEmittance,
     const float3 &position,
     GPUEnvironment &gpuEnv,
     Material** material,
     GeometryInstance** geomInst,
     GeometryGroup** geomGroup,
     Mesh* mesh) {
-    *material = createLambertMaterial(gpuEnv, "", float3(0.8f), emittancePath, emittanceScale);
+    if constexpr (useLambertMaterial)
+        *material = createLambertMaterial(gpuEnv, "", reflectance, emittancePath, immEmittance);
+    else
+        *material = createDiffuseAndSpecularMaterial(
+            gpuEnv, "", reflectance, "", float3(0.0f), 0.3f,
+            emittancePath, immEmittance);
 
     constexpr uint32_t numZenithSegments = 8;
     constexpr uint32_t numAzimuthSegments = 16;
