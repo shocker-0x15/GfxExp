@@ -824,13 +824,13 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(generateInitialCandidates)() {
             if (plp.s->envLightTexture && plp.f->enableEnvLight) {
                 float probSampleEnvLight = min(max(0.25f * numCandidates - i, 0.0f), 1.0f);
                 if (ul < probSampleEnvLight) {
-                    lightProb = probSampleEnvLight;
-                    ul = ul / lightProb;
+                    lightProb = 0.25f;
+                    ul = ul / probSampleEnvLight;
                     sampleEnvLight = true;
                 }
                 else {
-                    lightProb = 1 - probSampleEnvLight;
-                    ul = (ul - probSampleEnvLight) / lightProb;
+                    lightProb = 0.75f;
+                    ul = (ul - probSampleEnvLight) / (1 - probSampleEnvLight);
                 }
             }
 
