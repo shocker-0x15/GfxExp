@@ -53,9 +53,17 @@ namespace shared {
 
     struct MaterialData;
 
-    using SetupBSDF = optixu::DirectCallableProgramID<void(const MaterialData &matData, const float2 &texCoord, BSDF* bsdf)>;
-    using GetBaseColor = optixu::DirectCallableProgramID<float3(const uint32_t* data, const float3 &vout)>;
-    using EvaluateBSDF = optixu::DirectCallableProgramID<float3(const uint32_t* data, const float3 &vin, const float3 &vout)>;
+    using SetupBSDF = optixu::DirectCallableProgramID<
+        void(const MaterialData &matData, const float2 &texCoord, BSDF* bsdf)>;
+    using BSDFSampleThroughput = optixu::DirectCallableProgramID<
+        float3(const uint32_t* data, const float3 &vGiven, float uDir0, float uDir1,
+               float3* vSampled, float* dirPDensity)>;
+    using BSDFEvaluate = optixu::DirectCallableProgramID<
+        float3(const uint32_t* data, const float3 &vGiven, const float3 &vSampled)>;
+    using BSDFEvaluatePDF = optixu::DirectCallableProgramID<
+        float(const uint32_t* data, const float3 &vGiven, const float3 &vSampled)>;
+    using BSDFEvaluateDHReflectanceEstimate = optixu::DirectCallableProgramID<
+        float3(const uint32_t* data, const float3 &vGiven)>;
 
     struct MaterialData {
         union {
@@ -71,8 +79,10 @@ namespace shared {
         CUtexObject emittance;
 
         SetupBSDF setupBSDF;
-        GetBaseColor getBaseColor;
-        EvaluateBSDF evaluateBSDF;
+        BSDFSampleThroughput bsdfSampleThroughput; // Not used in this sample
+        BSDFEvaluate bsdfEvaluate;
+        BSDFEvaluatePDF bsdfEvaluatePDF; // Not used in this sample
+        BSDFEvaluateDHReflectanceEstimate bsdfEvaluateDHReflectanceEstimate;
     };
 
     struct GeometryInstanceData {

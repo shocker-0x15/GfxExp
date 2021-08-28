@@ -414,11 +414,15 @@ static void parseCommandline(int32_t argc, const char* argv[]) {
 
 enum CallableProgram {
     CallableProgram_SetupLambertBRDF = 0,
-    CallableProgram_LambertBRDF_getBaseColor,
+    CallableProgram_LambertBRDF_sampleThroughput,
     CallableProgram_LambertBRDF_evaluate,
+    CallableProgram_LambertBRDF_evaluatePDF,
+    CallableProgram_LambertBRDF_evaluateDHReflectanceEstimate,
     CallableProgram_SetupDiffuseAndSpecularBRDF,
-    CallableProgram_DiffuseAndSpecularBRDF_getBaseColor,
+    CallableProgram_DiffuseAndSpecularBRDF_sampleThroughput,
     CallableProgram_DiffuseAndSpecularBRDF_evaluate,
+    CallableProgram_DiffuseAndSpecularBRDF_evaluatePDF,
+    CallableProgram_DiffuseAndSpecularBRDF_evaluateDHReflectanceEstimate,
     NumCallablePrograms
 };
 
@@ -533,11 +537,15 @@ struct GPUEnvironment {
 
         const char* entryPoints[] = {
             RT_DC_NAME_STR("setupLambertBRDF"),
-            RT_DC_NAME_STR("LambertBRDF_getBaseColor"),
+            RT_DC_NAME_STR("LambertBRDF_sampleThroughput"),
             RT_DC_NAME_STR("LambertBRDF_evaluate"),
+            RT_DC_NAME_STR("LambertBRDF_evaluatePDF"),
+            RT_DC_NAME_STR("LambertBRDF_evaluateDHReflectanceEstimate"),
             RT_DC_NAME_STR("setupDiffuseAndSpecularBRDF"),
-            RT_DC_NAME_STR("DiffuseAndSpecularBRDF_getBaseColor"),
+            RT_DC_NAME_STR("DiffuseAndSpecularBRDF_sampleThroughput"),
             RT_DC_NAME_STR("DiffuseAndSpecularBRDF_evaluate"),
+            RT_DC_NAME_STR("DiffuseAndSpecularBRDF_evaluatePDF"),
+            RT_DC_NAME_STR("DiffuseAndSpecularBRDF_evaluateDHReflectanceEstimate"),
         };
         pipeline.setNumCallablePrograms(NumCallablePrograms);
         callablePrograms.resize(NumCallablePrograms);
@@ -813,8 +821,10 @@ static Material* createLambertMaterial(
     matData.asLambert.reflectance = body.texReflectance;
     matData.emittance = mat->texEmittance;
     matData.setupBSDF = shared::SetupBSDF(CallableProgram_SetupLambertBRDF);
-    matData.getBaseColor = shared::GetBaseColor(CallableProgram_LambertBRDF_getBaseColor);
-    matData.evaluateBSDF = shared::EvaluateBSDF(CallableProgram_LambertBRDF_evaluate);
+    matData.bsdfSampleThroughput = shared::BSDFSampleThroughput(CallableProgram_LambertBRDF_sampleThroughput);
+    matData.bsdfEvaluate = shared::BSDFEvaluate(CallableProgram_LambertBRDF_evaluate);
+    matData.bsdfEvaluatePDF = shared::BSDFEvaluatePDF(CallableProgram_LambertBRDF_evaluatePDF);
+    matData.bsdfEvaluateDHReflectanceEstimate = shared::BSDFEvaluateDHReflectanceEstimate(CallableProgram_LambertBRDF_evaluateDHReflectanceEstimate);
     matDataOnHost[mat->materialSlot] = matData;
 
     return mat;
@@ -968,8 +978,10 @@ static Material* createDiffuseAndSpecularMaterial(
     matData.asDiffuseAndSpecular.smoothness = body.texSmoothness;
     matData.emittance = mat->texEmittance;
     matData.setupBSDF = shared::SetupBSDF(CallableProgram_SetupDiffuseAndSpecularBRDF);
-    matData.getBaseColor = shared::GetBaseColor(CallableProgram_DiffuseAndSpecularBRDF_getBaseColor);
-    matData.evaluateBSDF = shared::EvaluateBSDF(CallableProgram_DiffuseAndSpecularBRDF_evaluate);
+    matData.bsdfSampleThroughput = shared::BSDFSampleThroughput(CallableProgram_DiffuseAndSpecularBRDF_sampleThroughput);
+    matData.bsdfEvaluate = shared::BSDFEvaluate(CallableProgram_DiffuseAndSpecularBRDF_evaluate);
+    matData.bsdfEvaluatePDF = shared::BSDFEvaluatePDF(CallableProgram_DiffuseAndSpecularBRDF_evaluatePDF);
+    matData.bsdfEvaluateDHReflectanceEstimate = shared::BSDFEvaluateDHReflectanceEstimate(CallableProgram_DiffuseAndSpecularBRDF_evaluateDHReflectanceEstimate);
     matDataOnHost[mat->materialSlot] = matData;
 
     return mat;
