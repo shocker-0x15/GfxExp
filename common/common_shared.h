@@ -592,28 +592,6 @@ using FloatSum = CompensatedSum<float>;
 
 
 
-struct AABB {
-    float3 minP;
-    float3 maxP;
-
-    CUDA_DEVICE_FUNCTION AABB() : minP(make_float3(INFINITY)), maxP(make_float3(-INFINITY)) {}
-
-    CUDA_DEVICE_FUNCTION AABB &unify(const float3 &p) {
-        minP = min(minP, p);
-        maxP = max(maxP, p);
-        return *this;
-    }
-
-    CUDA_DEVICE_FUNCTION AABB &dilate(float scale) {
-        float3 d = maxP - minP;
-        minP -= 0.5f * (scale - 1) * d;
-        maxP += 0.5f * (scale - 1) * d;
-        return *this;
-    }
-};
-
-
-
 struct Matrix3x3 {
     union {
         struct { float m00, m10, m20; };
@@ -1072,6 +1050,47 @@ CUDA_DEVICE_FUNCTION Quaternion Slerp(float t, const Quaternion &q0, const Quate
         return q0 * cosThetaP + qPerp * sinThetaP;
     }
 }
+
+
+
+struct AABB {
+    float3 minP;
+    float3 maxP;
+
+    CUDA_DEVICE_FUNCTION AABB() : minP(make_float3(INFINITY)), maxP(make_float3(-INFINITY)) {}
+
+    CUDA_DEVICE_FUNCTION AABB &unify(const float3 &p) {
+        minP = min(minP, p);
+        maxP = max(maxP, p);
+        return *this;
+    }
+    CUDA_DEVICE_FUNCTION AABB &unify(const AABB &bb) {
+        minP = min(minP, bb.minP);
+        maxP = max(maxP, bb.maxP);
+        return *this;
+    }
+
+    CUDA_DEVICE_FUNCTION AABB &dilate(float scale) {
+        float3 d = maxP - minP;
+        minP -= 0.5f * (scale - 1) * d;
+        maxP += 0.5f * (scale - 1) * d;
+        return *this;
+    }
+
+    CUDA_DEVICE_FUNCTION friend AABB operator*(const Matrix4x4 &mat, const AABB &aabb) {
+        AABB ret;
+        ret
+            .unify(mat * make_float3(aabb.minP.x, aabb.minP.y, aabb.minP.z))
+            .unify(mat * make_float3(aabb.maxP.x, aabb.minP.y, aabb.minP.z))
+            .unify(mat * make_float3(aabb.minP.x, aabb.maxP.y, aabb.minP.z))
+            .unify(mat * make_float3(aabb.maxP.x, aabb.maxP.y, aabb.minP.z))
+            .unify(mat * make_float3(aabb.minP.x, aabb.minP.y, aabb.maxP.z))
+            .unify(mat * make_float3(aabb.maxP.x, aabb.minP.y, aabb.maxP.z))
+            .unify(mat * make_float3(aabb.minP.x, aabb.maxP.y, aabb.maxP.z))
+            .unify(mat * make_float3(aabb.maxP.x, aabb.maxP.y, aabb.maxP.z));
+        return ret;
+    }
+};
 
 
 

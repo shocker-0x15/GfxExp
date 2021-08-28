@@ -653,6 +653,7 @@ struct GeometryInstance {
     DiscreteDistribution1D emitterPrimDist;
     uint32_t geomInstSlot;
     optixu::GeometryInstance optixGeomInst;
+    AABB aabb;
 };
 
 struct GeometryGroup {
@@ -661,6 +662,7 @@ struct GeometryGroup {
     optixu::GeometryAccelerationStructure optixGas;
     cudau::Buffer optixGasMem;
     uint32_t numEmitterPrimitives;
+    AABB aabb;
 };
 
 struct Instance {
@@ -980,25 +982,30 @@ static GeometryInstance* createGeometryInstance(
     const Material* mat) {
     shared::GeometryInstanceData* geomInstDataOnHost = gpuEnv.geomInstDataBuffer.getMappedPointer();
 
+    GeometryInstance* geomInst = new GeometryInstance();
+
     std::vector<float> emitterImportances(triangles.size(), 0.0f);
-    if (mat->texEmittance) {
-        // JP: 面積に比例して発光プリミティブをサンプリングできるようインポータンスを計算する。
-        // EN: Calculate importance values to make it possible to sample an emitter primitive based on its area.
-        for (int triIdx = 0; triIdx < emitterImportances.size(); ++triIdx) {
-            const shared::Triangle &tri = triangles[triIdx];
-            const shared::Vertex (&vs)[3] = {
-                vertices[tri.index0],
-                vertices[tri.index1],
-                vertices[tri.index2],
-            };
+    // JP: 面積に比例して発光プリミティブをサンプリングできるようインポータンスを計算する。
+    // EN: Calculate importance values to make it possible to sample an emitter primitive based on its area.
+    for (int triIdx = 0; triIdx < emitterImportances.size(); ++triIdx) {
+        const shared::Triangle &tri = triangles[triIdx];
+        const shared::Vertex (&vs)[3] = {
+            vertices[tri.index0],
+            vertices[tri.index1],
+            vertices[tri.index2],
+        };
+        if (mat->texEmittance) {
             float area = 0.5f * length(cross(vs[2].position - vs[0].position,
                                              vs[1].position - vs[0].position));
             Assert(area >= 0.0f, "Area must be positive.");
             emitterImportances[triIdx] = area;
         }
+        geomInst->aabb
+            .unify(vertices[0].position)
+            .unify(vertices[1].position)
+            .unify(vertices[2].position);
     }
 
-    GeometryInstance* geomInst = new GeometryInstance();
     geomInst->mat = mat;
     geomInst->vertexBuffer.initialize(gpuEnv.cuContext, GPUEnvironment::bufferType, vertices);
     geomInst->triangleBuffer.initialize(gpuEnv.cuContext, GPUEnvironment::bufferType, triangles);
@@ -1034,10 +1041,11 @@ static GeometryGroup* createGeometryGroup(
 
     geomGroup->optixGas = gpuEnv.scene.createGeometryAccelerationStructure();
     for (auto it = geomInsts.cbegin(); it != geomInsts.cend(); ++it) {
-        const GeometryInstance* geominst = *it;
-        geomGroup->optixGas.addChild(geominst->optixGeomInst);
-        if (geominst->mat->texEmittance)
-            geomGroup->numEmitterPrimitives += geominst->triangleBuffer.numElements();
+        const GeometryInstance* geomInst = *it;
+        geomGroup->optixGas.addChild(geomInst->optixGeomInst);
+        if (geomInst->mat->texEmittance)
+            geomGroup->numEmitterPrimitives += geomInst->triangleBuffer.numElements();
+        geomGroup->aabb.unify(geomInst->aabb);
     }
     geomGroup->optixGas.setNumMaterialSets(1);
     geomGroup->optixGas.setNumRayTypes(0, shared::NumRayTypes);
@@ -1654,11 +1662,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
     gpuEnv.geomInstDataBuffer.map();
     gpuEnv.instDataBuffer[0].map();
 
-    // TODO: シーンの大きさに応じた移動速度の初期値を設定する。
-    g_cameraPositionalMovingSpeed = 0.005f;
-    g_cameraDirectionalMovingSpeed = 0.0015f;
-    g_cameraTiltSpeed = 0.025f;
-
     struct InstanceController {
         Instance* inst;
         Matrix4x4 defaultTransform;
@@ -1759,6 +1762,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
     std::vector<Instance*> insts;
     std::vector<InstanceController*> instControllers;
+    AABB initialSceneAabb;
     for (int i = 0; i < g_meshInstInfos.size(); ++i) {
         const MeshInstanceInfo &info = g_meshInstInfos[i];
         const Mesh* mesh = meshes.at(info.name);
@@ -1768,6 +1772,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
             Matrix4x4 instXfm = Matrix4x4(info.beginScale * info.beginOrientation.toMatrix3x3(), info.beginPosition);
             Instance* inst = createInstance(gpuEnv, group.geomGroup, instXfm * group.transform);
             insts.push_back(inst);
+
+            initialSceneAabb.unify(instXfm * group.geomGroup->aabb);
 
             if (info.beginPosition != info.endPosition ||
                 info.beginOrientation != info.endOrientation ||
@@ -1782,6 +1788,11 @@ int32_t main(int32_t argc, const char* argv[]) try {
             }
         }
     }
+
+    float3 sceneDim = initialSceneAabb.maxP - initialSceneAabb.minP;
+    g_cameraPositionalMovingSpeed = 0.003f * std::max({ sceneDim.x, sceneDim.y, sceneDim.z });
+    g_cameraDirectionalMovingSpeed = 0.0015f;
+    g_cameraTiltSpeed = 0.025f;
 
     gpuEnv.instDataBuffer[0].unmap();
     gpuEnv.geomInstDataBuffer.unmap();
