@@ -5,13 +5,9 @@
 struct BSDF;
 
 namespace shared {
-    static constexpr float Pi = 3.14159265358979323846f;
-    static constexpr float RayEpsilon = 1e-4;
-
-
-
     enum RayType {
         RayType_Primary = 0,
+        RayType_PathTrace,
         RayType_Visibility,
         NumRayTypes
     };
@@ -53,9 +49,17 @@ namespace shared {
 
     struct MaterialData;
 
-    using SetupBSDF = optixu::DirectCallableProgramID<void(const MaterialData &matData, const float2 &texCoord, BSDF* bsdf)>;
-    using GetBaseColor = optixu::DirectCallableProgramID<float3(const uint32_t* data, const float3 &vout)>;
-    using EvaluateBSDF = optixu::DirectCallableProgramID<float3(const uint32_t* data, const float3 &vin, const float3 &vout)>;
+    using SetupBSDF = optixu::DirectCallableProgramID<
+        void(const MaterialData &matData, const float2 &texCoord, BSDF* bsdf)>;
+    using BSDFSampleThroughput = optixu::DirectCallableProgramID<
+        float3(const uint32_t* data, const float3 &vGiven, float uDir0, float uDir1,
+               float3* vSampled, float* dirPDensity)>;
+    using BSDFEvaluate = optixu::DirectCallableProgramID<
+        float3(const uint32_t* data, const float3 &vGiven, const float3 &vSampled)>;
+    using BSDFEvaluatePDF = optixu::DirectCallableProgramID<
+        float(const uint32_t* data, const float3 &vGiven, const float3 &vSampled)>;
+    using BSDFEvaluateDHReflectanceEstimate = optixu::DirectCallableProgramID<
+        float3(const uint32_t* data, const float3 &vGiven)>;
 
     struct MaterialData {
         union {
@@ -71,8 +75,10 @@ namespace shared {
         CUtexObject emittance;
 
         SetupBSDF setupBSDF;
-        GetBaseColor getBaseColor;
-        EvaluateBSDF evaluateBSDF;
+        BSDFSampleThroughput bsdfSampleThroughput;
+        BSDFEvaluate bsdfEvaluate;
+        BSDFEvaluatePDF bsdfEvaluatePDF;
+        BSDFEvaluateDHReflectanceEstimate bsdfEvaluateDHReflectanceEstimate;
     };
 
     struct GeometryInstanceData {
@@ -194,6 +200,24 @@ namespace shared {
         uint32_t materialSlot;
     };
 
+
+
+    struct PathTraceWriteOnlyPayload {
+        float3 nextOrigin;
+        float3 nextDirection;
+    };
+
+    struct PathTraceReadWritePayload {
+        PCG32RNG rng;
+        float initImportance;
+        float3 alpha;
+        float3 contribution;
+        float prevDirPDensity;
+        unsigned int maxLengthTerminate : 1;
+        unsigned int terminate : 1;
+        unsigned int pathLength : 6;
+    };
+
     
     
     struct StaticPipelineLaunchParameters {
@@ -203,10 +227,6 @@ namespace shared {
         optixu::NativeBlockBuffer2D<GBuffer0> GBuffer0[2];
         optixu::NativeBlockBuffer2D<GBuffer1> GBuffer1[2];
         optixu::NativeBlockBuffer2D<GBuffer2> GBuffer2[2];
-
-        optixu::BlockBuffer2D<Reservoir<LightSample>, 1> reservoirBuffer[2];
-        optixu::NativeBlockBuffer2D<ReservoirInfo> reservoirInfoBuffer[2];
-        const float2* spatialNeighborDeltas;
 
         const MaterialData* materialDataBuffer;
         const GeometryInstanceData* geometryInstanceDataBuffer;
@@ -231,15 +251,9 @@ namespace shared {
         float envLightPowerCoeff;
         float envLightRotation;
 
-        float spatialNeighborRadius;
-
         int2 mousePosition;
         PickInfo* pickInfo;
 
-        unsigned int log2NumCandidateSamples : 4;
-        unsigned int numSpatialNeighbors : 4;
-        unsigned int useLowDiscrepancyNeighbors : 1;
-        unsigned int reuseVisibility : 1;
         unsigned int bufferIndex : 1;
         unsigned int resetFlowBuffer : 1;
         unsigned int enableJittering : 1;
@@ -258,8 +272,6 @@ namespace shared {
     struct PipelineLaunchParameters {
         StaticPipelineLaunchParameters* s;
         PerFramePipelineLaunchParameters* f;
-        unsigned int currentReservoirIndex : 1;
-        unsigned int spatialNeighborBaseIndex : 10;
     };
 
 
@@ -274,4 +286,5 @@ namespace shared {
 }
 
 #define PrimaryRayPayloadSignature shared::HitPointParams*, shared::PickInfo*
+#define PathTraceRayPayloadSignature shared::PathTraceWriteOnlyPayload*, shared::PathTraceReadWritePayload*
 #define VisibilityRayPayloadSignature float

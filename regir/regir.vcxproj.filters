@@ -151,6 +151,7 @@
     <ClInclude Include="..\common\common_host.h">
       <Filter>non-essentials</Filter>
     </ClInclude>
+    <ClInclude Include="..\common\common_device.cuh" />
   </ItemGroup>
   <ItemGroup>
     <CudaCompile Include="optix_kernels.cu" />

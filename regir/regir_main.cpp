@@ -25,17 +25,11 @@ You can load a 3D model for example by downloading from the internet.
     -begin-pos -5 7 -4.8 -begin-pitch -30 -end-pos 5 7 -4.8 -end-pitch -30 -freq 5 -inst rectlight3
     -begin-pos 5 7 4.8 -begin-pitch 30 -end-pos -5 7 4.8 -end-pitch 30 -freq 5 -inst rectlight3
 
-JP: このプログラムはReGIR (Reservoir-based Grid Importance Resampling) [1]の実装例です。
-    ReGIRでは、Resampled Importance Sampling (RIS), Weighted Reservoir Sampling (WRS)、
-    そして複数のReservoirを結合する際の特性を利用することで大量の発光プリミティブからの効率的なサンプリングが可能となります。
+JP: 
 
-EN: This program is an example implementation of ReGIR (Reservoir-based Spatio-Temporal Importance Resampling) [1].
-    ReGIR enables efficient sampling from a massive amount of emitter primitives by
-    Resampled Importance Sampling (RIS), Weighted Reservoir Sampling (WRS) and exploiting the property of
-    combining multiple reservoirs.
+EN: 
 
-[1] Spatiotemporal reservoir resampling for real-time ray tracing with dynamic direct lighting
-    https://research.nvidia.com/publication/2020-07_Spatiotemporal-reservoir-resampling
+[1] 
 
 */
 
@@ -414,11 +408,15 @@ static void parseCommandline(int32_t argc, const char* argv[]) {
 
 enum CallableProgram {
     CallableProgram_SetupLambertBRDF = 0,
-    CallableProgram_LambertBRDF_getBaseColor,
+    CallableProgram_LambertBRDF_sampleThroughput,
     CallableProgram_LambertBRDF_evaluate,
+    CallableProgram_LambertBRDF_evaluatePDF,
+    CallableProgram_LambertBRDF_evaluateDHReflectanceEstimate,
     CallableProgram_SetupDiffuseAndSpecularBRDF,
-    CallableProgram_DiffuseAndSpecularBRDF_getBaseColor,
+    CallableProgram_DiffuseAndSpecularBRDF_sampleThroughput,
     CallableProgram_DiffuseAndSpecularBRDF_evaluate,
+    CallableProgram_DiffuseAndSpecularBRDF_evaluatePDF,
+    CallableProgram_DiffuseAndSpecularBRDF_evaluateDHReflectanceEstimate,
     NumCallablePrograms
 };
 
@@ -438,13 +436,8 @@ struct GPUEnvironment {
     optixu::ProgramGroup setupGBuffersHitProgramGroup;
     optixu::ProgramGroup setupGBuffersMissProgram;
 
-    optixu::ProgramGroup generateInitialCandidatesRayGenProgram;
-    optixu::ProgramGroup combineTemporalNeighborsBiasedRayGenProgram;
-    optixu::ProgramGroup combineTemporalNeighborsUnbiasedRayGenProgram;
-    optixu::ProgramGroup combineSpatialNeighborsBiasedRayGenProgram;
-    optixu::ProgramGroup combineSpatialNeighborsUnbiasedRayGenProgram;
-
-    optixu::ProgramGroup shadingRayGenProgram;
+    optixu::ProgramGroup pathTraceRayGenProgram;
+    optixu::ProgramGroup pathTraceHitProgramProgram;
     optixu::ProgramGroup visibilityHitProgramGroup;
     std::vector<optixu::ProgramGroup> callablePrograms;
 
@@ -477,7 +470,8 @@ struct GPUEnvironment {
         pipeline.setPipelineOptions(
             std::max({
                 optixu::calcSumDwords<PrimaryRayPayloadSignature>(),
-                optixu::calcSumDwords<VisibilityRayPayloadSignature>()
+                optixu::calcSumDwords<VisibilityRayPayloadSignature>(),
+                optixu::calcSumDwords<PathTraceRayPayloadSignature>()
                      }),
             optixu::calcSumDwords<float2>(),
             "plp", sizeof(shared::PipelineLaunchParameters),
@@ -505,19 +499,12 @@ struct GPUEnvironment {
         setupGBuffersMissProgram = pipeline.createMissProgram(
             mainModule, RT_MS_NAME_STR("setupGBuffers"));
 
-        generateInitialCandidatesRayGenProgram = pipeline.createRayGenProgram(
-            mainModule, RT_RG_NAME_STR("generateInitialCandidates"));
-        combineTemporalNeighborsBiasedRayGenProgram = pipeline.createRayGenProgram(
-            mainModule, RT_RG_NAME_STR("combineTemporalNeighborsBiased"));
-        combineTemporalNeighborsUnbiasedRayGenProgram = pipeline.createRayGenProgram(
-            mainModule, RT_RG_NAME_STR("combineTemporalNeighborsUnbiased"));
-        combineSpatialNeighborsBiasedRayGenProgram = pipeline.createRayGenProgram(
-            mainModule, RT_RG_NAME_STR("combineSpatialNeighborsBiased"));
-        combineSpatialNeighborsUnbiasedRayGenProgram = pipeline.createRayGenProgram(
-            mainModule, RT_RG_NAME_STR("combineSpatialNeighborsUnbiased"));
-
-        shadingRayGenProgram = pipeline.createRayGenProgram(
-            mainModule, RT_RG_NAME_STR("shading"));
+        pathTraceRayGenProgram = pipeline.createRayGenProgram(
+            mainModule, RT_RG_NAME_STR("pathTrace"));
+        pathTraceHitProgramProgram = pipeline.createHitProgramGroupForBuiltinIS(
+            OPTIX_PRIMITIVE_TYPE_TRIANGLE,
+            mainModule, RT_CH_NAME_STR("pathTrace"),
+            emptyModule, nullptr);
         visibilityHitProgramGroup = pipeline.createHitProgramGroupForBuiltinIS(
             OPTIX_PRIMITIVE_TYPE_TRIANGLE,
             emptyModule, nullptr,
@@ -529,15 +516,20 @@ struct GPUEnvironment {
         //pipeline.setExceptionProgram(exceptionProgram);
         pipeline.setNumMissRayTypes(shared::NumRayTypes);
         pipeline.setMissProgram(shared::RayType_Primary, setupGBuffersMissProgram);
+        pipeline.setMissProgram(shared::RayType_PathTrace, emptyMissProgram);
         pipeline.setMissProgram(shared::RayType_Visibility, emptyMissProgram);
 
         const char* entryPoints[] = {
             RT_DC_NAME_STR("setupLambertBRDF"),
-            RT_DC_NAME_STR("LambertBRDF_getBaseColor"),
+            RT_DC_NAME_STR("LambertBRDF_sampleThroughput"),
             RT_DC_NAME_STR("LambertBRDF_evaluate"),
+            RT_DC_NAME_STR("LambertBRDF_evaluatePDF"),
+            RT_DC_NAME_STR("LambertBRDF_evaluateDHReflectanceEstimate"),
             RT_DC_NAME_STR("setupDiffuseAndSpecularBRDF"),
-            RT_DC_NAME_STR("DiffuseAndSpecularBRDF_getBaseColor"),
+            RT_DC_NAME_STR("DiffuseAndSpecularBRDF_sampleThroughput"),
             RT_DC_NAME_STR("DiffuseAndSpecularBRDF_evaluate"),
+            RT_DC_NAME_STR("DiffuseAndSpecularBRDF_evaluatePDF"),
+            RT_DC_NAME_STR("DiffuseAndSpecularBRDF_evaluateDHReflectanceEstimate"),
         };
         pipeline.setNumCallablePrograms(NumCallablePrograms);
         callablePrograms.resize(NumCallablePrograms);
@@ -563,6 +555,7 @@ struct GPUEnvironment {
 
         defaultMaterial = optixContext.createMaterial();
         defaultMaterial.setHitGroup(shared::RayType_Primary, setupGBuffersHitProgramGroup);
+        defaultMaterial.setHitGroup(shared::RayType_PathTrace, pathTraceHitProgramProgram);
         defaultMaterial.setHitGroup(shared::RayType_Visibility, visibilityHitProgramGroup);
 
 
@@ -600,12 +593,8 @@ struct GPUEnvironment {
         for (int i = 0; i < NumCallablePrograms; ++i)
             callablePrograms[i].destroy();
         visibilityHitProgramGroup.destroy();
-        shadingRayGenProgram.destroy();
-        combineSpatialNeighborsUnbiasedRayGenProgram.destroy();
-        combineSpatialNeighborsBiasedRayGenProgram.destroy();
-        combineTemporalNeighborsUnbiasedRayGenProgram.destroy();
-        combineTemporalNeighborsBiasedRayGenProgram.destroy();
-        generateInitialCandidatesRayGenProgram.destroy();
+        pathTraceHitProgramProgram.destroy();
+        pathTraceRayGenProgram.destroy();
         setupGBuffersMissProgram.destroy();
         setupGBuffersHitProgramGroup.destroy();
         setupGBuffersRayGenProgram.destroy();
@@ -813,8 +802,10 @@ static Material* createLambertMaterial(
     matData.asLambert.reflectance = body.texReflectance;
     matData.emittance = mat->texEmittance;
     matData.setupBSDF = shared::SetupBSDF(CallableProgram_SetupLambertBRDF);
-    matData.getBaseColor = shared::GetBaseColor(CallableProgram_LambertBRDF_getBaseColor);
-    matData.evaluateBSDF = shared::EvaluateBSDF(CallableProgram_LambertBRDF_evaluate);
+    matData.bsdfSampleThroughput = shared::BSDFSampleThroughput(CallableProgram_LambertBRDF_sampleThroughput);
+    matData.bsdfEvaluate = shared::BSDFEvaluate(CallableProgram_LambertBRDF_evaluate);
+    matData.bsdfEvaluatePDF = shared::BSDFEvaluatePDF(CallableProgram_LambertBRDF_evaluatePDF);
+    matData.bsdfEvaluateDHReflectanceEstimate = shared::BSDFEvaluateDHReflectanceEstimate(CallableProgram_LambertBRDF_evaluateDHReflectanceEstimate);
     matDataOnHost[mat->materialSlot] = matData;
 
     return mat;
@@ -968,8 +959,10 @@ static Material* createDiffuseAndSpecularMaterial(
     matData.asDiffuseAndSpecular.smoothness = body.texSmoothness;
     matData.emittance = mat->texEmittance;
     matData.setupBSDF = shared::SetupBSDF(CallableProgram_SetupDiffuseAndSpecularBRDF);
-    matData.getBaseColor = shared::GetBaseColor(CallableProgram_DiffuseAndSpecularBRDF_getBaseColor);
-    matData.evaluateBSDF = shared::EvaluateBSDF(CallableProgram_DiffuseAndSpecularBRDF_evaluate);
+    matData.bsdfSampleThroughput = shared::BSDFSampleThroughput(CallableProgram_DiffuseAndSpecularBRDF_sampleThroughput);
+    matData.bsdfEvaluate = shared::BSDFEvaluate(CallableProgram_DiffuseAndSpecularBRDF_evaluate);
+    matData.bsdfEvaluatePDF = shared::BSDFEvaluatePDF(CallableProgram_DiffuseAndSpecularBRDF_evaluatePDF);
+    matData.bsdfEvaluateDHReflectanceEstimate = shared::BSDFEvaluateDHReflectanceEstimate(CallableProgram_DiffuseAndSpecularBRDF_evaluateDHReflectanceEstimate);
     matDataOnHost[mat->materialSlot] = matData;
 
     return mat;
@@ -1101,7 +1094,7 @@ static Instance* createInstance(
     return inst;
 }
 
-constexpr bool useLambertMaterial = false;
+constexpr bool useLambertMaterial = true;
 
 static void createTriangleMeshes(
     const std::filesystem::path &filePath,
@@ -1947,9 +1940,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
     cudau::Array gBuffer0[2];
     cudau::Array gBuffer1[2];
     cudau::Array gBuffer2[2];
-
-    optixu::HostBlockBuffer2D<shared::Reservoir<shared::LightSample>, 1> reservoirBuffer[2];
-    cudau::Array reservoirInfoBuffer[2];
     
     cudau::Array beautyAccumBuffer;
     cudau::Array albedoAccumBuffer;
@@ -1975,13 +1965,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
                 renderTargetSizeX, renderTargetSizeY, 1);
             gBuffer2[i].initialize2D(
                 gpuEnv.cuContext, cudau::ArrayElementType::UInt32, (sizeof(shared::GBuffer2) + 3) / 4,
-                cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable,
-                renderTargetSizeX, renderTargetSizeY, 1);
-
-            reservoirBuffer[i].initialize(gpuEnv.cuContext, GPUEnvironment::bufferType,
-                                          renderTargetSizeX, renderTargetSizeY);
-            reservoirInfoBuffer[i].initialize2D(
-                gpuEnv.cuContext, cudau::ArrayElementType::UInt32, (sizeof(shared::ReservoirInfo) + 3) / 4,
                 cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable,
                 renderTargetSizeX, renderTargetSizeY, 1);
         }
@@ -2038,9 +2021,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
         beautyAccumBuffer.finalize();
 
         for (int i = 1; i >= 0; --i) {
-            reservoirInfoBuffer[i].finalize();
-            reservoirBuffer[i].finalize();
-
             gBuffer2[i].finalize();
             gBuffer1[i].finalize();
             gBuffer0[i].finalize();
@@ -2052,9 +2032,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
             gBuffer0[i].resize(width, height);
             gBuffer1[i].resize(width, height);
             gBuffer2[i].resize(width, height);
-
-            reservoirBuffer[i].resize(renderTargetSizeX, renderTargetSizeY);
-            reservoirInfoBuffer[i].resize(renderTargetSizeX, renderTargetSizeY);
         }
 
         beautyAccumBuffer.resize(width, height);
@@ -2163,64 +2140,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
 
 
-    // JP: Spatial Reuseで使用する近傍ピクセルへの方向をLow-discrepancy数列から作成しておく。
-    // EN: Generate directions to neighboring pixels used in spatial reuse from a low-discrepancy sequence.
-    const auto computeHaltonSequence = [](uint32_t base, uint32_t idx) {
-        const float recBase = 1.0f / base;
-        float ret = 0.0f;
-        float scale = 1.0f;
-        while (idx) {
-            scale *= recBase;
-            ret += (idx % base) * scale;
-            idx /= base;
-        }
-        return ret;
-    };
-    const auto concentricSampleDisk = [](float u0, float u1, float* dx, float* dy) {
-        float r, theta;
-        float sx = 2 * u0 - 1;
-        float sy = 2 * u1 - 1;
-
-        if (sx == 0 && sy == 0) {
-            *dx = 0;
-            *dy = 0;
-            return;
-        }
-        if (sx >= -sy) { // region 1 or 2
-            if (sx > sy) { // region 1
-                r = sx;
-                theta = sy / sx;
-            }
-            else { // region 2
-                r = sy;
-                theta = 2 - sx / sy;
-            }
-        }
-        else { // region 3 or 4
-            if (sx > sy) {/// region 4
-                r = -sy;
-                theta = 6 + sx / sy;
-            }
-            else {// region 3
-                r = -sx;
-                theta = 4 + sy / sx;
-            }
-        }
-        theta *= M_PI / 4;
-        *dx = r * cos(theta);
-        *dy = r * sin(theta);
-    };
-    std::vector<float2> spatialNeighborDeltasOnHost(1024);
-    for (int i = 0; i < spatialNeighborDeltasOnHost.size(); ++i) {
-        float2 delta;
-        concentricSampleDisk(computeHaltonSequence(2, i), computeHaltonSequence(3, i), &delta.x, &delta.y);
-        spatialNeighborDeltasOnHost[i] = delta;
-        //printf("%g, %g\n", delta.x, delta.y);
-    }
-    cudau::TypedBuffer<float2> spatialNeighborDeltas(gpuEnv.cuContext, GPUEnvironment::bufferType, spatialNeighborDeltasOnHost);
-
-
-
     shared::StaticPipelineLaunchParameters staticPlp = {};
     staticPlp.imageSize = int2(renderTargetSizeX, renderTargetSizeY);
     staticPlp.rngBuffer = rngBuffer.getSurfaceObject(0);
@@ -2230,11 +2149,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
     staticPlp.GBuffer1[1] = gBuffer1[1].getSurfaceObject(0);
     staticPlp.GBuffer2[0] = gBuffer2[0].getSurfaceObject(0);
     staticPlp.GBuffer2[1] = gBuffer2[1].getSurfaceObject(0);
-    staticPlp.reservoirBuffer[0] = reservoirBuffer[0].getBlockBuffer2D();
-    staticPlp.reservoirBuffer[1] = reservoirBuffer[1].getBlockBuffer2D();
-    staticPlp.reservoirInfoBuffer[0] = reservoirInfoBuffer[0].getSurfaceObject(0);
-    staticPlp.reservoirInfoBuffer[1] = reservoirInfoBuffer[1].getSurfaceObject(0);
-    staticPlp.spatialNeighborDeltas = spatialNeighborDeltas.getDevicePointer();
     staticPlp.materialDataBuffer = gpuEnv.materialDataBuffer.getDevicePointer();
     staticPlp.geometryInstanceDataBuffer = gpuEnv.geomInstDataBuffer.getDevicePointer();
     lightInstDist.getDeviceType(&staticPlp.lightInstDist);
@@ -2265,7 +2179,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
     shared::PipelineLaunchParameters plp;
     plp.s = reinterpret_cast<shared::StaticPipelineLaunchParameters*>(staticPlpOnDevice);
     plp.f = reinterpret_cast<shared::PerFramePipelineLaunchParameters*>(perFramePlpOnDevice);
-    plp.currentReservoirIndex = 0;
 
     gpuEnv.pipeline.setScene(gpuEnv.scene);
     gpuEnv.pipeline.setHitGroupShaderBindingTable(hitGroupSBT, hitGroupSBT.getMappedPointer());
@@ -2293,36 +2206,25 @@ int32_t main(int32_t argc, const char* argv[]) try {
         cudau::Timer frame;
         cudau::Timer update;
         cudau::Timer setupGBuffers;
-        cudau::Timer generateInitialCandidates;
-        cudau::Timer combineTemporalNeighbors;
-        cudau::Timer combineSpatialNeighbors;
-        cudau::Timer shading;
+        cudau::Timer pathTrace;
         cudau::Timer denoise;
 
         void initialize(CUcontext context) {
             frame.initialize(context);
             update.initialize(context);
             setupGBuffers.initialize(context);
-            generateInitialCandidates.initialize(context);
-            combineTemporalNeighbors.initialize(context);
-            combineSpatialNeighbors.initialize(context);
-            shading.initialize(context);
+            pathTrace.initialize(context);
             denoise.initialize(context);
         }
         void finalize() {
             denoise.finalize();
-            shading.finalize();
-            combineSpatialNeighbors.finalize();
-            combineTemporalNeighbors.finalize();
-            generateInitialCandidates.finalize();
+            pathTrace.finalize();
             setupGBuffers.finalize();
             update.finalize();
             frame.finalize();
         }
     };
 
-    uint32_t lastSpatialNeighborBaseIndex = 0;
-    uint32_t lastReservoirIndex = 1;
     GPUTimer gpuTimers[2];
     gpuTimers[0].initialize(gpuEnv.cuContext);
     gpuTimers[1].initialize(gpuEnv.cuContext);
@@ -2393,10 +2295,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
             staticPlp.GBuffer1[1] = gBuffer1[1].getSurfaceObject(0);
             staticPlp.GBuffer2[0] = gBuffer2[0].getSurfaceObject(0);
             staticPlp.GBuffer2[1] = gBuffer2[1].getSurfaceObject(0);
-            staticPlp.reservoirBuffer[0] = reservoirBuffer[0].getBlockBuffer2D();
-            staticPlp.reservoirBuffer[1] = reservoirBuffer[1].getBlockBuffer2D();
-            staticPlp.reservoirInfoBuffer[0] = reservoirInfoBuffer[0].getSurfaceObject(0);
-            staticPlp.reservoirInfoBuffer[1] = reservoirInfoBuffer[1].getSurfaceObject(0);
             staticPlp.beautyAccumBuffer = beautyAccumBuffer.getSurfaceObject(0);
             staticPlp.albedoAccumBuffer = albedoAccumBuffer.getSurfaceObject(0);
             staticPlp.normalAccumBuffer = normalAccumBuffer.getSurfaceObject(0);
@@ -2546,18 +2444,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
         static bool enableAccumulation = true;
         static bool enableJittering = false;
         bool lastFrameWasAnimated = false;
-        static bool useUnbiasedEstimator = false;
-        static int32_t log2NumCandidateSamples = 5;
-        static int32_t log2NumSamples = 0;
-        static bool enableTemporalReuse = true;
-        static bool enableSpatialReuse = true;
-        static int32_t numSpatialReusePassesBiased = 2;
-        static int32_t numSpatialReusePassesUnbiased = 1;
-        static int32_t numSpatialNeighborsBiased = 5;
-        static int32_t numSpatialNeighborsUnbiased = 3;
-        static float spatialNeighborRadius = 20.0f;
-        static bool useLowDiscrepancySpatialNeighbors = true;
-        static bool reuseVisibility = true;
         static bool debugSwitches[] = {
             false, false, false, false, false, false, false, false
         };
@@ -2601,23 +2487,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
                         pickInfoOnHost.emittance.y,
                         pickInfoOnHost.emittance.z);
             ImGui::Separator();
-
-            resetAccumulation |= ImGui::Checkbox("Unbiased", &useUnbiasedEstimator);
-
-            ImGui::InputLog2Int("#Candidates", &log2NumCandidateSamples, 8);
-            //ImGui::InputLog2Int("#Samples", &log2NumSamples, 3);
-
-            resetAccumulation |= ImGui::Checkbox("Temporal Reuse", &enableTemporalReuse);
-            resetAccumulation |= ImGui::Checkbox("Spatial Reuse", &enableSpatialReuse);
-            ImGui::SliderInt("#Spatial Reuse Passes",
-                             useUnbiasedEstimator ? &numSpatialReusePassesUnbiased : &numSpatialReusePassesBiased,
-                             1, 5);
-            ImGui::SliderInt("#Spatial Neighbors",
-                             useUnbiasedEstimator ? &numSpatialNeighborsUnbiased : &numSpatialNeighborsBiased,
-                             1, 10);
-            ImGui::SliderFloat("Radius", &spatialNeighborRadius, 3.0f, 30.0f);
-            resetAccumulation |= ImGui::Checkbox("Low Discrepancy", &useLowDiscrepancySpatialNeighbors);
-            resetAccumulation |= ImGui::Checkbox("Reuse Visibility", &reuseVisibility);
 
             ImGui::PushID("Debug Switches");
             for (int i = lengthof(debugSwitches) - 1; i >= 0; --i) {
@@ -2678,29 +2547,20 @@ int32_t main(int32_t argc, const char* argv[]) try {
             static MovingAverageTime cudaFrameTime;
             static MovingAverageTime updateTime;
             static MovingAverageTime setupGBuffersTime;
-            static MovingAverageTime generateInitialCandidatesTime;
-            static MovingAverageTime combineTemporalNeighborsTime;
-            static MovingAverageTime combineSpatialNeighborsTime;
-            static MovingAverageTime shadingTime;
+            static MovingAverageTime pathTraceTime;
             static MovingAverageTime denoiseTime;
 
             cudaFrameTime.append(frameIndex >= 2 ? curGPUTimer.frame.report() : 0.0f);
             updateTime.append(frameIndex >= 2 ? curGPUTimer.update.report() : 0.0f);
             setupGBuffersTime.append(frameIndex >= 2 ? curGPUTimer.setupGBuffers.report() : 0.0f);
-            generateInitialCandidatesTime.append(frameIndex >= 2 ? curGPUTimer.generateInitialCandidates.report() : 0.0f);
-            combineTemporalNeighborsTime.append(frameIndex >= 2 ? curGPUTimer.combineTemporalNeighbors.report() : 0.0f);
-            combineSpatialNeighborsTime.append(frameIndex >= 2 ? curGPUTimer.combineSpatialNeighbors.report() : 0.0f);
-            shadingTime.append(frameIndex >= 2 ? curGPUTimer.shading.report() : 0.0f);
+            pathTraceTime.append(frameIndex >= 2 ? curGPUTimer.pathTrace.report() : 0.0f);
             denoiseTime.append(frameIndex >= 2 ? curGPUTimer.denoise.report() : 0.0f);
 
             //ImGui::SetNextItemWidth(100.0f);
             ImGui::Text("CUDA/OptiX GPU %.3f [ms]:", cudaFrameTime.getAverage());
             ImGui::Text("  Update: %.3f [ms]", updateTime.getAverage());
             ImGui::Text("  setupGBuffers: %.3f [ms]", setupGBuffersTime.getAverage());
-            ImGui::Text("  generateInitialCandidates: %.3f [ms]", generateInitialCandidatesTime.getAverage());
-            ImGui::Text("  combineTemporalNeighbors: %.3f [ms]", combineTemporalNeighborsTime.getAverage());
-            ImGui::Text("  combineSpatialNeighbors: %.3f [ms]", combineSpatialNeighborsTime.getAverage());
-            ImGui::Text("  shading: %.3f [ms]", shadingTime.getAverage());
+            ImGui::Text("  pathTrace: %.3f [ms]", pathTraceTime.getAverage());
             ImGui::Text("  Denoise: %.3f [ms]", denoiseTime.getAverage());
 
             ImGui::End();
@@ -2754,17 +2614,10 @@ int32_t main(int32_t argc, const char* argv[]) try {
         perFramePlp.instanceDataBuffer = gpuEnv.instDataBuffer[bufferIndex].getDevicePointer();
         perFramePlp.envLightPowerCoeff = std::pow(10.0f, log10EnvLightPowerCoeff);
         perFramePlp.envLightRotation = envLightRotation;
-        perFramePlp.spatialNeighborRadius = spatialNeighborRadius;
         perFramePlp.mousePosition = int2(static_cast<int32_t>(g_mouseX),
                                          static_cast<int32_t>(g_mouseY));
         perFramePlp.pickInfo = pickInfos[bufferIndex].getDevicePointer();
 
-        perFramePlp.log2NumCandidateSamples = log2NumCandidateSamples;
-        perFramePlp.numSpatialNeighbors = useUnbiasedEstimator ?
-            numSpatialNeighborsUnbiased :
-            numSpatialNeighborsBiased;
-        perFramePlp.useLowDiscrepancyNeighbors = useLowDiscrepancySpatialNeighbors;
-        perFramePlp.reuseVisibility = reuseVisibility;
         perFramePlp.bufferIndex = bufferIndex;
         perFramePlp.resetFlowBuffer = newSequence;
         perFramePlp.enableJittering = enableJittering;
@@ -2774,10 +2627,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
         CUDADRV_CHECK(cuMemcpyHtoDAsync(perFramePlpOnDevice, &perFramePlp, sizeof(perFramePlp), cuStream));
 
-        uint32_t currentReservoirIndex = (lastReservoirIndex + 1) % 2;
-        //hpprintf("%u\n", currentReservoirIndex);
-
-        plp.currentReservoirIndex = currentReservoirIndex;
         CUDADRV_CHECK(cuMemcpyHtoDAsync(plpOnDevice, &plp, sizeof(plp), cuStream));
 
         // JP: Gバッファーのセットアップ。
@@ -2789,61 +2638,13 @@ int32_t main(int32_t argc, const char* argv[]) try {
         gpuEnv.pipeline.launch(cuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);
         curGPUTimer.setupGBuffers.stop(cuStream);
 
-        // JP: 各ピクセルで独立したStreaming RISを実行。
-        // EN: Perform independent streaming RIS on each pixel.
-        curGPUTimer.generateInitialCandidates.start(cuStream);
-        gpuEnv.pipeline.setRayGenerationProgram(gpuEnv.generateInitialCandidatesRayGenProgram);
-        gpuEnv.pipeline.launch(cuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);
-        curGPUTimer.generateInitialCandidates.stop(cuStream);
-
-        // JP: 各ピクセルにおいて前フレームの(時間的)隣接ピクセルとの間でReservoirの結合を行う。
-        // EN: For each pixel, combine reservoirs between the current pixel and
-        //     (temporally) neighboring pixel from the previous frame.
-        curGPUTimer.combineTemporalNeighbors.start(cuStream);
-        if (enableTemporalReuse && !newSequence) {
-            if (useUnbiasedEstimator)
-                gpuEnv.pipeline.setRayGenerationProgram(gpuEnv.combineTemporalNeighborsUnbiasedRayGenProgram);
-            else
-                gpuEnv.pipeline.setRayGenerationProgram(gpuEnv.combineTemporalNeighborsBiasedRayGenProgram);
-            gpuEnv.pipeline.launch(cuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);
-        }
-        curGPUTimer.combineTemporalNeighbors.stop(cuStream);
-
-        // JP: 各ピクセルにおいて(空間的)隣接ピクセルとの間でReservoirの結合を行う。
-        // EN: For each pixel, combine reservoirs between the current pixel and
-        //     (Spatially) neighboring pixels.
-        curGPUTimer.combineSpatialNeighbors.start(cuStream);
-        if (enableSpatialReuse) {
-            int32_t numSpatialReusePasses;
-            if (useUnbiasedEstimator) {
-                gpuEnv.pipeline.setRayGenerationProgram(gpuEnv.combineSpatialNeighborsUnbiasedRayGenProgram);
-                numSpatialReusePasses = numSpatialReusePassesUnbiased;
-            }
-            else {
-                gpuEnv.pipeline.setRayGenerationProgram(gpuEnv.combineSpatialNeighborsBiasedRayGenProgram);
-                numSpatialReusePasses = numSpatialReusePassesBiased;
-            }
-
-            for (int i = 0; i < numSpatialReusePasses; ++i) {
-                plp.spatialNeighborBaseIndex = lastSpatialNeighborBaseIndex + numSpatialNeighborsBiased * i;
-                CUDADRV_CHECK(cuMemcpyHtoDAsync(plpOnDevice, &plp, sizeof(plp), cuStream));
-                gpuEnv.pipeline.launch(cuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);
-                currentReservoirIndex = (currentReservoirIndex + 1) % 2;
-                plp.currentReservoirIndex = currentReservoirIndex;
-            }
-            lastSpatialNeighborBaseIndex += numSpatialNeighborsBiased * numSpatialReusePasses;
-        }
-        curGPUTimer.combineSpatialNeighbors.stop(cuStream);
-
-        // JP: 生き残ったサンプルを使ってシェーディングを実行。
-        // EN: Perform shading using the survived samples.
-        curGPUTimer.shading.start(cuStream);
+        // JP: 
+        // EN: 
+        curGPUTimer.pathTrace.start(cuStream);
         CUDADRV_CHECK(cuMemcpyHtoDAsync(plpOnDevice, &plp, sizeof(plp), cuStream));
-        gpuEnv.pipeline.setRayGenerationProgram(gpuEnv.shadingRayGenProgram);
+        gpuEnv.pipeline.setRayGenerationProgram(gpuEnv.pathTraceRayGenProgram);
         gpuEnv.pipeline.launch(cuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);
-        curGPUTimer.shading.stop(cuStream);
-
-        lastReservoirIndex = currentReservoirIndex;
+        curGPUTimer.pathTrace.stop(cuStream);
 
         curGPUTimer.denoise.start(cuStream);
 
@@ -2972,8 +2773,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
     CUDADRV_CHECK(cuMemFree(perFramePlpOnDevice));
     CUDADRV_CHECK(cuMemFree(staticPlpOnDevice));
-
-    spatialNeighborDeltas.finalize();
 
     drawOptiXResultShader.finalize();
     vertexArrayForFullScreen.finalize();

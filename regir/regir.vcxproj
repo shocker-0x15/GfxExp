@@ -29,6 +29,7 @@
     <ClCompile Include="regir_main.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\common\common_device.cuh" />
     <ClInclude Include="..\common\common_shared.h" />
     <ClInclude Include="..\common\common_host.h" />
     <ClInclude Include="..\common\dds_loader.h" />

@@ -479,6 +479,10 @@ CUDA_DEVICE_FUNCTION float3 cross(const float3 &v0, const float3 &v1) {
                        v0.z * v1.x - v0.x * v1.z,
                        v0.x * v1.y - v0.y * v1.x);
 }
+CUDA_DEVICE_FUNCTION float squaredDistance(const float3 &p0, const float3 &p1) {
+    float3 d = p1 - p0;
+    return dot(d, d);
+}
 CUDA_DEVICE_FUNCTION float length(const float3 &v) {
     return std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
 }
