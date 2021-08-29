@@ -172,7 +172,7 @@ public:
     }
     CUDA_DEVICE_FUNCTION float3 evaluate(const float3 &vGiven, const float3 &vSampled) const {
         if (vGiven.z * vSampled.z > 0)
-            return m_reflectance;
+            return m_reflectance / Pi;
         else
             return make_float3(0.0f, 0.0f, 0.0f);
     }
