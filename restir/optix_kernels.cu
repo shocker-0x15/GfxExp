@@ -1734,10 +1734,10 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(shading)() {
         if (plp.s->envLightTexture && plp.f->enableEnvLight) {
             float u = texCoord.x, v = texCoord.y;
             float4 texValue = tex2DLod<float4>(plp.s->envLightTexture, u, v, 0.0f);
-            float3 emittance = make_float3(texValue);
-            emittance *= plp.f->envLightPowerCoeff;
+            float3 luminance = make_float3(texValue);
+            luminance *= plp.f->envLightPowerCoeff;
 
-            contribution = emittance / Pi;
+            contribution = luminance;
 
             albedo = make_float3(0.0f, 0.0f, 0.0f);
         }
