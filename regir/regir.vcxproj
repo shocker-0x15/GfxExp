@@ -57,6 +57,7 @@
     <ClInclude Include="regir_shared.h" />
   </ItemGroup>
   <ItemGroup>
+    <CudaCompile Include="build_cell_reservoirs.cu" />
     <CudaCompile Include="copy_buffers.cu" />
     <CudaCompile Include="optix_kernels.cu">
       <GPUDebugInfo Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</GPUDebugInfo>

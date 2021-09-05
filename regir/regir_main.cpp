@@ -429,6 +429,11 @@ struct GPUEnvironment {
     CUcontext cuContext;
     optixu::Context optixContext;
 
+    CUmodule cellBuilderModule;
+    cudau::Kernel kernelBuildCellReservoirs;
+    cudau::Kernel kernelCombineTemporalNeighbors;
+    cudau::Kernel kernelUpdateLastAccessFrameIndices;
+
     optixu::Pipeline pipeline;
     optixu::Module mainModule;
     optixu::ProgramGroup emptyMissProgram;
@@ -436,8 +441,11 @@ struct GPUEnvironment {
     optixu::ProgramGroup setupGBuffersHitProgramGroup;
     optixu::ProgramGroup setupGBuffersMissProgram;
 
-    optixu::ProgramGroup pathTraceRayGenProgram;
-    optixu::ProgramGroup pathTraceHitProgramProgram;
+    optixu::ProgramGroup pathTraceBaselineRayGenProgram;
+    optixu::ProgramGroup pathTraceBaselineMissProgram;
+    optixu::ProgramGroup pathTraceBaselineHitProgramProgram;
+    optixu::ProgramGroup pathTraceRegirRayGenProgram;
+    optixu::ProgramGroup pathTraceRegirHitProgramProgram;
     optixu::ProgramGroup visibilityHitProgramGroup;
     std::vector<optixu::ProgramGroup> callablePrograms;
 
@@ -462,6 +470,14 @@ struct GPUEnvironment {
         CUDADRV_CHECK(cuCtxSetCurrent(cuContext));
 
         optixContext = optixu::Context::create(cuContext);
+
+        CUDADRV_CHECK(cuModuleLoad(&cellBuilderModule, (getExecutableDirectory() / "regir/ptxes/build_cell_reservoirs.ptx").string().c_str()));
+        kernelBuildCellReservoirs =
+            cudau::Kernel(cellBuilderModule, "buildCellReservoirs", cudau::dim3(32), 0);
+        kernelCombineTemporalNeighbors =
+            cudau::Kernel(cellBuilderModule, "combineTemporalNeighbors", cudau::dim3(32), 0);
+        kernelUpdateLastAccessFrameIndices =
+            cudau::Kernel(cellBuilderModule, "updateLastAccessFrameIndices", cudau::dim3(32), 0);
 
         pipeline = optixContext.createPipeline();
 
@@ -499,12 +515,22 @@ struct GPUEnvironment {
         setupGBuffersMissProgram = pipeline.createMissProgram(
             mainModule, RT_MS_NAME_STR("setupGBuffers"));
 
-        pathTraceRayGenProgram = pipeline.createRayGenProgram(
-            mainModule, RT_RG_NAME_STR("pathTrace"));
-        pathTraceHitProgramProgram = pipeline.createHitProgramGroupForBuiltinIS(
+        pathTraceBaselineRayGenProgram = pipeline.createRayGenProgram(
+            mainModule, RT_RG_NAME_STR("pathTraceBaseline"));
+        pathTraceBaselineMissProgram = pipeline.createMissProgram(
+            mainModule, RT_MS_NAME_STR("pathTraceBaseline"));
+        pathTraceBaselineHitProgramProgram = pipeline.createHitProgramGroupForBuiltinIS(
             OPTIX_PRIMITIVE_TYPE_TRIANGLE,
-            mainModule, RT_CH_NAME_STR("pathTrace"),
+            mainModule, RT_CH_NAME_STR("pathTraceBaseline"),
             emptyModule, nullptr);
+
+        pathTraceRegirRayGenProgram = pipeline.createRayGenProgram(
+            mainModule, RT_RG_NAME_STR("pathTraceRegir"));
+        pathTraceRegirHitProgramProgram = pipeline.createHitProgramGroupForBuiltinIS(
+            OPTIX_PRIMITIVE_TYPE_TRIANGLE,
+            mainModule, RT_CH_NAME_STR("pathTraceRegir"),
+            emptyModule, nullptr);
+
         visibilityHitProgramGroup = pipeline.createHitProgramGroupForBuiltinIS(
             OPTIX_PRIMITIVE_TYPE_TRIANGLE,
             emptyModule, nullptr,
@@ -516,7 +542,8 @@ struct GPUEnvironment {
         //pipeline.setExceptionProgram(exceptionProgram);
         pipeline.setNumMissRayTypes(shared::NumRayTypes);
         pipeline.setMissProgram(shared::RayType_Primary, setupGBuffersMissProgram);
-        pipeline.setMissProgram(shared::RayType_PathTrace, emptyMissProgram);
+        pipeline.setMissProgram(shared::RayType_PathTraceBaseline, pathTraceBaselineMissProgram);
+        pipeline.setMissProgram(shared::RayType_PathTraceReGIR, emptyMissProgram);
         pipeline.setMissProgram(shared::RayType_Visibility, emptyMissProgram);
 
         const char* entryPoints[] = {
@@ -555,7 +582,8 @@ struct GPUEnvironment {
 
         defaultMaterial = optixContext.createMaterial();
         defaultMaterial.setHitGroup(shared::RayType_Primary, setupGBuffersHitProgramGroup);
-        defaultMaterial.setHitGroup(shared::RayType_PathTrace, pathTraceHitProgramProgram);
+        defaultMaterial.setHitGroup(shared::RayType_PathTraceBaseline, pathTraceBaselineHitProgramProgram);
+        defaultMaterial.setHitGroup(shared::RayType_PathTraceReGIR, pathTraceRegirHitProgramProgram);
         defaultMaterial.setHitGroup(shared::RayType_Visibility, visibilityHitProgramGroup);
 
 
@@ -593,8 +621,11 @@ struct GPUEnvironment {
         for (int i = 0; i < NumCallablePrograms; ++i)
             callablePrograms[i].destroy();
         visibilityHitProgramGroup.destroy();
-        pathTraceHitProgramProgram.destroy();
-        pathTraceRayGenProgram.destroy();
+        pathTraceRegirHitProgramProgram.destroy();
+        pathTraceRegirRayGenProgram.destroy();
+        pathTraceBaselineHitProgramProgram.destroy();
+        pathTraceBaselineMissProgram.destroy();
+        pathTraceBaselineRayGenProgram.destroy();
         setupGBuffersMissProgram.destroy();
         setupGBuffersHitProgramGroup.destroy();
         setupGBuffersRayGenProgram.destroy();
@@ -602,6 +633,8 @@ struct GPUEnvironment {
         mainModule.destroy();
 
         pipeline.destroy();
+
+        CUDADRV_CHECK(cuModuleUnload(cellBuilderModule));
 
         optixContext.destroy();
 
@@ -1094,7 +1127,7 @@ static Instance* createInstance(
     return inst;
 }
 
-constexpr bool useLambertMaterial = true;
+constexpr bool useLambertMaterial = false;
 
 static void createTriangleMeshes(
     const std::filesystem::path &filePath,
@@ -1934,6 +1967,66 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
 
     // ----------------------------------------------------------------
+    // JP: 
+    // EN: 
+    
+    uint3 gridDimension;
+    uint32_t numCells;
+    uint32_t numLightSlots;
+    float3 gridOrigin;
+    float3 gridCellSize;
+    cudau::TypedBuffer<shared::Reservoir<shared::LightSample>> reservoirs[2];
+    cudau::TypedBuffer<shared::ReservoirInfo> reservoirInfos[2];
+    cudau::TypedBuffer<shared::PCG32RNG> lightSlotRngs;
+    cudau::TypedBuffer<uint32_t> cellTouchFlags;
+    cudau::TypedBuffer<uint32_t> lastAccessFrameIndices;
+
+    const auto initializeReservoirs = [&]
+    (const AABB &gridAabb, const uint3 _gridDimension, uint32_t frameIndex) {
+        gridDimension = _gridDimension;
+        numCells = gridDimension.x * gridDimension.y * gridDimension.z;
+        numLightSlots = numCells * shared::kNumLightSlotsPerCell;
+        gridOrigin = gridAabb.minP;
+        gridCellSize = (gridAabb.maxP - gridAabb.minP) / float3(gridDimension);
+        for (int i = 0; i < 2; ++i) {
+            reservoirs[i].initialize(gpuEnv.cuContext, GPUEnvironment::bufferType, numLightSlots);
+            reservoirInfos[i].initialize(gpuEnv.cuContext, GPUEnvironment::bufferType, numLightSlots);
+        }
+
+        lightSlotRngs.initialize(gpuEnv.cuContext, GPUEnvironment::bufferType, numLightSlots);
+        auto rngs = lightSlotRngs.map();
+        std::mt19937_64 rngSeed(591842031321323413);
+        for (int slotIdx = 0; slotIdx < lightSlotRngs.numElements(); ++slotIdx) {
+            shared::PCG32RNG &rng = rngs[slotIdx];
+            rng.setState(rngSeed());
+        }
+        lightSlotRngs.unmap();
+
+        cellTouchFlags.initialize(gpuEnv.cuContext, GPUEnvironment::bufferType, numCells);
+        lastAccessFrameIndices.initialize(gpuEnv.cuContext, GPUEnvironment::bufferType, numCells);
+        lastAccessFrameIndices.fill(frameIndex);
+    };
+
+    const auto finalizeReservoirs = [&]
+    () {
+        lastAccessFrameIndices.finalize();
+        cellTouchFlags.finalize();
+
+        lightSlotRngs.finalize();
+
+        for (int i = 1; i >= 0; --i) {
+            reservoirInfos[i].finalize();
+            reservoirs[i].finalize();
+        }
+    };
+
+    initializeReservoirs(initialSceneAabb, uint3(32, 8, 32), -1);
+
+    // ----------------------------------------------------------------
+
+
+
+    // ----------------------------------------------------------------
     // JP: スクリーン関連のバッファーを初期化。
     // EN: Initialize screen-related buffers.
 
@@ -2141,23 +2234,38 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
 
     shared::StaticPipelineLaunchParameters staticPlp = {};
-    staticPlp.imageSize = int2(renderTargetSizeX, renderTargetSizeY);
-    staticPlp.rngBuffer = rngBuffer.getSurfaceObject(0);
-    staticPlp.GBuffer0[0] = gBuffer0[0].getSurfaceObject(0);
-    staticPlp.GBuffer0[1] = gBuffer0[1].getSurfaceObject(0);
-    staticPlp.GBuffer1[0] = gBuffer1[0].getSurfaceObject(0);
-    staticPlp.GBuffer1[1] = gBuffer1[1].getSurfaceObject(0);
-    staticPlp.GBuffer2[0] = gBuffer2[0].getSurfaceObject(0);
-    staticPlp.GBuffer2[1] = gBuffer2[1].getSurfaceObject(0);
-    staticPlp.materialDataBuffer = gpuEnv.materialDataBuffer.getDevicePointer();
-    staticPlp.geometryInstanceDataBuffer = gpuEnv.geomInstDataBuffer.getDevicePointer();
-    lightInstDist.getDeviceType(&staticPlp.lightInstDist);
-    envLightImportanceMap.getDeviceType(&staticPlp.envLightImportanceMap);
-    staticPlp.envLightTexture = envLightTexture;
-    staticPlp.beautyAccumBuffer = beautyAccumBuffer.getSurfaceObject(0);
-    staticPlp.albedoAccumBuffer = albedoAccumBuffer.getSurfaceObject(0);
-    staticPlp.normalAccumBuffer = normalAccumBuffer.getSurfaceObject(0);
+    {
+        staticPlp.imageSize = int2(renderTargetSizeX, renderTargetSizeY);
+        staticPlp.rngBuffer = rngBuffer.getSurfaceObject(0);
 
+        staticPlp.GBuffer0[0] = gBuffer0[0].getSurfaceObject(0);
+        staticPlp.GBuffer0[1] = gBuffer0[1].getSurfaceObject(0);
+        staticPlp.GBuffer1[0] = gBuffer1[0].getSurfaceObject(0);
+        staticPlp.GBuffer1[1] = gBuffer1[1].getSurfaceObject(0);
+        staticPlp.GBuffer2[0] = gBuffer2[0].getSurfaceObject(0);
+        staticPlp.GBuffer2[1] = gBuffer2[1].getSurfaceObject(0);
+
+        staticPlp.reservoirs[0] = reservoirs[0].getDevicePointer();
+        staticPlp.reservoirs[1] = reservoirs[1].getDevicePointer();
+        staticPlp.reservoirInfos[0] = reservoirInfos[0].getDevicePointer();
+        staticPlp.reservoirInfos[1] = reservoirInfos[1].getDevicePointer();
+        staticPlp.lightSlotRngs = lightSlotRngs.getDevicePointer();
+        staticPlp.cellTouchFlags = cellTouchFlags.getDevicePointer();
+        staticPlp.lastAccessFrameIndices = lastAccessFrameIndices.getDevicePointer();
+        staticPlp.gridOrigin = gridOrigin;
+        staticPlp.gridCellSize = gridCellSize;
+        staticPlp.gridDimension = gridDimension;
+
+        staticPlp.materialDataBuffer = gpuEnv.materialDataBuffer.getDevicePointer();
+        staticPlp.geometryInstanceDataBuffer = gpuEnv.geomInstDataBuffer.getDevicePointer();
+        lightInstDist.getDeviceType(&staticPlp.lightInstDist);
+        envLightImportanceMap.getDeviceType(&staticPlp.envLightImportanceMap);
+        staticPlp.envLightTexture = envLightTexture;
+
+        staticPlp.beautyAccumBuffer = beautyAccumBuffer.getSurfaceObject(0);
+        staticPlp.albedoAccumBuffer = albedoAccumBuffer.getSurfaceObject(0);
+        staticPlp.normalAccumBuffer = normalAccumBuffer.getSurfaceObject(0);
+    }
     CUdeviceptr staticPlpOnDevice;
     CUDADRV_CHECK(cuMemAlloc(&staticPlpOnDevice, sizeof(staticPlp)));
     CUDADRV_CHECK(cuMemcpyHtoD(staticPlpOnDevice, &staticPlp, sizeof(staticPlp)));
@@ -2206,6 +2314,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
         cudau::Timer frame;
         cudau::Timer update;
         cudau::Timer setupGBuffers;
+        cudau::Timer buildCellReservoirs;
+        cudau::Timer combineTemporalNeighbors;
         cudau::Timer pathTrace;
         cudau::Timer denoise;
 
@@ -2213,12 +2323,16 @@ int32_t main(int32_t argc, const char* argv[]) try {
             frame.initialize(context);
             update.initialize(context);
             setupGBuffers.initialize(context);
+            buildCellReservoirs.initialize(context);
+            combineTemporalNeighbors.initialize(context);
             pathTrace.initialize(context);
             denoise.initialize(context);
         }
         void finalize() {
             denoise.finalize();
             pathTrace.finalize();
+            combineTemporalNeighbors.finalize();
+            buildCellReservoirs.finalize();
             setupGBuffers.finalize();
             update.finalize();
             frame.finalize();
@@ -2444,6 +2558,10 @@ int32_t main(int32_t argc, const char* argv[]) try {
         static bool enableAccumulation = true;
         static bool enableJittering = false;
         bool lastFrameWasAnimated = false;
+        static bool useReGIR = true;
+        static int32_t log2NumCandidatesPerLightSlot = 3;
+        static bool enableTemporalReuse = /*true*/false;
+        static bool visualizeCells = false;
         static bool debugSwitches[] = {
             false, false, false, false, false, false, false, false
         };
@@ -2488,6 +2606,17 @@ int32_t main(int32_t argc, const char* argv[]) try {
                         pickInfoOnHost.emittance.z);
             ImGui::Separator();
 
+            bool tempUseReGIR = useReGIR;
+            if (ImGui::RadioButton("Baseline Path Tracing", !useReGIR))
+                useReGIR = false;
+            if (ImGui::RadioButton("Path Tracing + ReGIR", useReGIR))
+                useReGIR = true;
+            resetAccumulation |= useReGIR != tempUseReGIR;
+
+            ImGui::InputLog2Int("#Light Slot Candidates", &log2NumCandidatesPerLightSlot, 8);
+
+            resetAccumulation |= ImGui::Checkbox("Temporal Reuse", &enableTemporalReuse);
+
             ImGui::PushID("Debug Switches");
             for (int i = lengthof(debugSwitches) - 1; i >= 0; --i) {
                 ImGui::PushID(i);
@@ -2500,6 +2629,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
             ImGui::Separator();
 
+            ImGui::Checkbox("Visualize Cells", &visualizeCells);
             ImGui::Text("Buffer to Display");
             ImGui::RadioButtonE("Noisy Beauty", &bufferTypeToDisplay, shared::BufferToDisplay::NoisyBeauty);
             ImGui::RadioButtonE("Albedo", &bufferTypeToDisplay, shared::BufferToDisplay::Albedo);
@@ -2547,12 +2677,16 @@ int32_t main(int32_t argc, const char* argv[]) try {
             static MovingAverageTime cudaFrameTime;
             static MovingAverageTime updateTime;
             static MovingAverageTime setupGBuffersTime;
+            static MovingAverageTime buildCellReservoirsTime;
+            static MovingAverageTime combineTemporalNeightborsTime;
             static MovingAverageTime pathTraceTime;
             static MovingAverageTime denoiseTime;
 
             cudaFrameTime.append(frameIndex >= 2 ? curGPUTimer.frame.report() : 0.0f);
             updateTime.append(frameIndex >= 2 ? curGPUTimer.update.report() : 0.0f);
             setupGBuffersTime.append(frameIndex >= 2 ? curGPUTimer.setupGBuffers.report() : 0.0f);
+            buildCellReservoirsTime.append(frameIndex >= 2 ? curGPUTimer.buildCellReservoirs.report() : 0.0f);
+            combineTemporalNeightborsTime.append(frameIndex >= 2 ? curGPUTimer.combineTemporalNeighbors.report() : 0.0f);
             pathTraceTime.append(frameIndex >= 2 ? curGPUTimer.pathTrace.report() : 0.0f);
             denoiseTime.append(frameIndex >= 2 ? curGPUTimer.denoise.report() : 0.0f);
 
@@ -2560,6 +2694,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
             ImGui::Text("CUDA/OptiX GPU %.3f [ms]:", cudaFrameTime.getAverage());
             ImGui::Text("  Update: %.3f [ms]", updateTime.getAverage());
             ImGui::Text("  setupGBuffers: %.3f [ms]", setupGBuffersTime.getAverage());
+            ImGui::Text("  buildCellReservoirs: %.3f [ms]", buildCellReservoirsTime.getAverage());
+            ImGui::Text("  combineTemoralNeighbors: %.3f [ms]", combineTemporalNeightborsTime.getAverage());
             ImGui::Text("  pathTrace: %.3f [ms]", pathTraceTime.getAverage());
             ImGui::Text("  Denoise: %.3f [ms]", denoiseTime.getAverage());
 
@@ -2618,6 +2754,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
                                          static_cast<int32_t>(g_mouseY));
         perFramePlp.pickInfo = pickInfos[bufferIndex].getDevicePointer();
 
+        perFramePlp.log2NumCandidatesPerLightSlot = log2NumCandidatesPerLightSlot;
         perFramePlp.bufferIndex = bufferIndex;
         perFramePlp.resetFlowBuffer = newSequence;
         perFramePlp.enableJittering = enableJittering;
@@ -2640,11 +2777,66 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
         // JP: 
         // EN: 
+        curGPUTimer.buildCellReservoirs.start(cuStream);
+        if (useReGIR) {
+            gpuEnv.kernelBuildCellReservoirs(
+                cuStream, gpuEnv.kernelBuildCellReservoirs.calcGridDim(numLightSlots),
+                plp, static_cast<uint32_t>(frameIndex));
+        }
+        curGPUTimer.buildCellReservoirs.stop(cuStream);
+
+        //CUDADRV_CHECK(cuStreamSynchronize(cuStream));
+        //{
+        //    std::vector<shared::Reservoir<shared::LightSample>> reservoirsOnHost
+        //        = reservoirs[0];
+        //    std::vector<shared::ReservoirInfo> reservoirInfosOnHost
+        //        = reservoirInfos[0];
+        //    while (true) {
+        //        uint32_t ix = 15;
+        //        uint32_t iy = 0;
+        //        uint32_t iz = 15;
+        //        uint32_t cellLinearIndex =
+        //            iz * (gridDimension.x * gridCellSize.y)
+        //            + iy * gridDimension.x
+        //            + ix;
+        //        for (int lightSlotIndex = 0; lightSlotIndex < shared::kNumLightSlotsPerCell; ++lightSlotIndex) {
+        //            uint32_t idx = shared::kNumLightSlotsPerCell * cellLinearIndex + lightSlotIndex;
+        //            const shared::Reservoir<shared::LightSample> &res = reservoirsOnHost[idx];
+        //            const shared::ReservoirInfo &resInfo = reservoirInfosOnHost[idx];
+        //            const shared::LightSample &lightSample = res.getSample();
+        //            hpprintf("%3u: %u\n", lightSlotIndex, lightSample.instIndex);
+        //        }
+        //        hpprintf("\n");
+        //    }
+        //    printf("");
+        //}
+
+        // JP: 
+        // EN: 
+        curGPUTimer.combineTemporalNeighbors.start(cuStream);
+        if (useReGIR && enableTemporalReuse && !newSequence) {
+            gpuEnv.kernelCombineTemporalNeighbors(
+                cuStream, gpuEnv.kernelCombineTemporalNeighbors.calcGridDim(numLightSlots),
+                plp, static_cast<uint32_t>(frameIndex));
+        }
+        curGPUTimer.combineTemporalNeighbors.stop(cuStream);
+
+        // JP: 
+        // EN: 
         curGPUTimer.pathTrace.start(cuStream);
         CUDADRV_CHECK(cuMemcpyHtoDAsync(plpOnDevice, &plp, sizeof(plp), cuStream));
-        gpuEnv.pipeline.setRayGenerationProgram(gpuEnv.pathTraceRayGenProgram);
+        if (useReGIR)
+            gpuEnv.pipeline.setRayGenerationProgram(gpuEnv.pathTraceRegirRayGenProgram);
+        else
+            gpuEnv.pipeline.setRayGenerationProgram(gpuEnv.pathTraceBaselineRayGenProgram);
         gpuEnv.pipeline.launch(cuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);
         curGPUTimer.pathTrace.stop(cuStream);
+
+        // JP: 
+        // EN: 
+        gpuEnv.kernelUpdateLastAccessFrameIndices(
+            cuStream, gpuEnv.kernelUpdateLastAccessFrameIndices.calcGridDim(numCells),
+            plp, static_cast<uint32_t>(frameIndex));
 
         curGPUTimer.denoise.start(cuStream);
 
@@ -2706,6 +2898,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
         }
         kernelVisualizeToOutputBuffer(
             cuStream, kernelVisualizeToOutputBuffer.calcGridDim(renderTargetSizeX, renderTargetSizeY),
+            staticPlp.GBuffer0[bufferIndex], static_cast<uint32_t>(visualizeCells),
+            gridOrigin, gridCellSize, gridDimension,
             bufferToDisplay,
             bufferTypeToDisplay,
             std::pow(10.0f, brightness),
@@ -2791,6 +2985,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
     denoiser.destroy();
     
     finalizeScreenRelatedBuffers();
+
+    finalizeReservoirs();
 
 
 

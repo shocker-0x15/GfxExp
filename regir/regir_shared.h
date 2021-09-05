@@ -5,9 +5,13 @@
 struct BSDF;
 
 namespace shared {
+    static constexpr float probToSampleEnvLight = 0.25f;
+    static constexpr uint32_t kNumLightSlotsPerCell = 512;
+
     enum RayType {
         RayType_Primary = 0,
-        RayType_PathTrace,
+        RayType_PathTraceBaseline,
+        RayType_PathTraceReGIR,
         RayType_Visibility,
         NumRayTypes
     };
@@ -150,7 +154,7 @@ namespace shared {
             return accepted;
         }
 
-        CUDA_DEVICE_FUNCTION LightSample getSample() const {
+        CUDA_DEVICE_FUNCTION const LightSample &getSample() const {
             return m_sample;
         }
         CUDA_DEVICE_FUNCTION float getSumWeights() const {
@@ -228,6 +232,15 @@ namespace shared {
         optixu::NativeBlockBuffer2D<GBuffer1> GBuffer1[2];
         optixu::NativeBlockBuffer2D<GBuffer2> GBuffer2[2];
 
+        Reservoir<LightSample>* reservoirs[2];
+        ReservoirInfo* reservoirInfos[2];
+        PCG32RNG* lightSlotRngs;
+        uint32_t* cellTouchFlags;
+        uint32_t* lastAccessFrameIndices;
+        float3 gridOrigin;
+        float3 gridCellSize;
+        uint3 gridDimension;
+
         const MaterialData* materialDataBuffer;
         const GeometryInstanceData* geometryInstanceDataBuffer;
         DiscreteDistribution1D lightInstDist;
@@ -242,6 +255,7 @@ namespace shared {
     struct PerFramePipelineLaunchParameters {
         OptixTraversableHandle travHandle;
         uint32_t numAccumFrames;
+        uint32_t frameIndex;
 
         const InstanceData* instanceDataBuffer;
 
@@ -254,6 +268,7 @@ namespace shared {
         int2 mousePosition;
         PickInfo* pickInfo;
 
+        unsigned int log2NumCandidatesPerLightSlot : 4;
         unsigned int bufferIndex : 1;
         unsigned int resetFlowBuffer : 1;
         unsigned int enableJittering : 1;

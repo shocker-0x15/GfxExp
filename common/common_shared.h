@@ -264,6 +264,7 @@ struct float3 {
     float x, y, z;
     constexpr float3(float v = 0) : x(v), y(v), z(v) {}
     constexpr float3(float xx, float yy, float zz) : x(xx), y(yy), z(zz) {}
+    constexpr float3(const uint3 &v) : x(v.x), y(v.y), z(v.z) {}
 };
 inline constexpr float3 make_float3(float x, float y, float z) {
     return float3(x, y, z);
@@ -1108,7 +1109,7 @@ namespace shared {
     public:
         CUDA_DEVICE_FUNCTION PCG32RNG() {}
 
-        void setState(uint64_t _state) { state = _state; }
+        CUDA_DEVICE_FUNCTION void setState(uint64_t _state) { state = _state; }
 
         CUDA_DEVICE_FUNCTION uint32_t operator()() {
             uint64_t oldstate = state;
