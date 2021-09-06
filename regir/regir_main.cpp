@@ -37,6 +37,7 @@ EN: This program is an example implementation of ReGIR (Reservoir-based Grid? Im
     in order to support light sampling after secondary visibility.
 
 [1] Chapter 23. "Rendering Many Lights with Grid-based Reservoirs", Ray Tracing Gems II
+    https://www.realtimerendering.com/raytracinggems/rtg2/index.html
 [2] Spatiotemporal reservoir resampling for real-time ray tracing with dynamic direct lighting
     https://research.nvidia.com/publication/2020-07_Spatiotemporal-reservoir-resampling
 
