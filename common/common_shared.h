@@ -264,6 +264,7 @@ struct float3 {
     float x, y, z;
     constexpr float3(float v = 0) : x(v), y(v), z(v) {}
     constexpr float3(float xx, float yy, float zz) : x(xx), y(yy), z(zz) {}
+    constexpr float3(const uint3 &v) : x(v.x), y(v.y), z(v.z) {}
 };
 inline constexpr float3 make_float3(float x, float y, float z) {
     return float3(x, y, z);
@@ -478,6 +479,10 @@ CUDA_DEVICE_FUNCTION float3 cross(const float3 &v0, const float3 &v1) {
     return make_float3(v0.y * v1.z - v0.z * v1.y,
                        v0.z * v1.x - v0.x * v1.z,
                        v0.x * v1.y - v0.y * v1.x);
+}
+CUDA_DEVICE_FUNCTION float squaredDistance(const float3 &p0, const float3 &p1) {
+    float3 d = p1 - p0;
+    return dot(d, d);
 }
 CUDA_DEVICE_FUNCTION float length(const float3 &v) {
     return std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
@@ -1104,7 +1109,7 @@ namespace shared {
     public:
         CUDA_DEVICE_FUNCTION PCG32RNG() {}
 
-        void setState(uint64_t _state) { state = _state; }
+        CUDA_DEVICE_FUNCTION void setState(uint64_t _state) { state = _state; }
 
         CUDA_DEVICE_FUNCTION uint32_t operator()() {
             uint64_t oldstate = state;

@@ -526,6 +526,12 @@ namespace cudau {
             *reinterpret_cast<Buffer*>(&ret) = Buffer::copy(stream);
             return ret;
         }
+
+        operator std::vector<T>() {
+            std::vector<T> ret(numElements());
+            read(ret);
+            return ret;
+        }
     };
 
 
