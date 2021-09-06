@@ -716,6 +716,8 @@ CUDA_DEVICE_FUNCTION float3 performNextEventEstimation(
                 float3 vInLocal = shadingFrame.toLocal(shadowRay);
                 float lpCos = std::fabs(dot(shadowRay, lightNormal));
                 float bsdfPDensity = bsdf.evaluatePDF(vOutLocal, vInLocal) * lpCos / dist2;
+                if (!isfinite(bsdfPDensity))
+                    bsdfPDensity = 0.0f;
                 float lightPDensity = areaPDensity;
                 misWeight = pow2(lightPDensity) / (pow2(bsdfPDensity) + pow2(lightPDensity));
             }
