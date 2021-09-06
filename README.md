@@ -14,7 +14,7 @@ You need to install [Git LFS](https://git-lfs.github.com/) to correctly clone th
 Spatiotemporal reservoir resampling for real-time ray tracing with dynamic direct lighting\
 https://research.nvidia.com/publication/2020-07_Spatiotemporal-reservoir-resampling
 
-- [x] Basic Implementation (Biased RIS Estimator)
+- [x] Basic Implementation (Biased RIS Estimator, Spatio-temporal Reuse)
 - [x] Advanced Items
   - [x] Diffuse + Glossy BRDF
   - [x] Environmental Light
@@ -26,7 +26,7 @@ https://research.nvidia.com/publication/2020-07_Spatiotemporal-reservoir-resampl
 Chapter 23. "Rendering Many Lights with Grid-based Reservoirs", Ray Tracing Gems II\
 https://www.realtimerendering.com/raytracinggems/rtg2/index.html
 
-- [x] Basic Implementation (Uniform Grid)
+- [x] Basic Implementation (Uniform Grid, Temporal Reuse)
 - [ ] Advanced Items
   - [x] Diffuse + Glossy BRDF
   - [x] Environmental Light
