@@ -4,12 +4,9 @@
 You can load a 3D model for example by downloading from the internet.
 (e.g. https://casual-effects.com/data/)
 
-(1) -cam-pos -0.753442 0.140257 -0.056083 -cam-yaw 75
-    -name exterior -obj Amazon_Bistro/Exterior/exterior.obj 0.001 -brightness 2.0
-    -name rectlight -emittance 5 5 5 -rectangle 0.1 0.1
-    -inst exterior
-    -begin-pos 0.362 0.329 -2.0 -begin-pitch -90 -begin-yaw 150
-    -end-pos -0.719 0.329 -0.442 -end-pitch -90 -end-yaw 30 -inst rectlight
+(1) -cam-pos -0.180 0.245 -0.071 -cam-pitch 176.009 -cam-yaw 84.974 -cam-roll 172.740
+    -name interior -obj ../../assets/Amazon_Bistro/Interior/interior.obj 0.001 -brightness 2.5
+    -inst interior
 
 (2) -cam-pos -9.5 5 0 -cam-yaw 90
     -name sponza -obj crytek_sponza/sponza.obj 0.01
