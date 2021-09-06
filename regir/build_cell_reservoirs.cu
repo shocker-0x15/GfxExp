@@ -39,6 +39,9 @@ CUDA_DEVICE_FUNCTION float3 sampleLight(
         *areaPDensity = uvPDF / (2 * Pi * Pi * std::sin(theta));
 
         texEmittance = plp.s->envLightTexture;
+        // JP: 環境マップテクスチャーの値に係数をかけて、通常の光源と同じように返り値を光束発散度
+        //     として扱えるようにする。
+        // EN: Multiply a coefficient to make the return value possible to be handled as luminous emittance.
         emittance = make_float3(Pi * plp.f->envLightPowerCoeff);
         texCoord.x = u;
         texCoord.y = v;
@@ -128,7 +131,7 @@ CUDA_DEVICE_FUNCTION float3 sampleLight(
     return emittance;
 }
 
-CUDA_DEVICE_FUNCTION float3 sampleFlux(
+CUDA_DEVICE_FUNCTION float3 sampleIntensity(
     const float3 &shadingPoint, float minSquaredDistance,
     float uLight, bool sampleEnvLight, float uPos0, float uPos1,
     LightSample* lightSample, float* probDensity) {
@@ -185,8 +188,9 @@ CUDA_DEVICE_KERNEL void buildCellReservoirs(PipelineLaunchParameters _plp, uint3
     Reservoir<LightSample> reservoir;
     reservoir.initialize();
 
-    // JP: セルの代表点に到達する光束をターゲットPDFとしてStreaming RISを実行。
-    // EN: Perform streaming RIS with flux reaching to a cell's representative point as the target PDF.
+    // JP: セルの代表点に到達する光度をターゲットPDFとしてStreaming RISを実行。
+    // EN: Perform streaming RIS with luminous intensity reaching to a cell's representative point
+    //     as the target PDF.
     const uint32_t numCandidates = 1 << plp.f->log2NumCandidatesPerLightSlot;
     for (int candIdx = 0; candIdx < numCandidates; ++candIdx) {
         // JP: 環境光テクスチャーが設定されている場合は一定の確率でサンプルする。
@@ -216,7 +220,7 @@ CUDA_DEVICE_KERNEL void buildCellReservoirs(PipelineLaunchParameters _plp, uint3
         //     Target PDF doesn't require to be normalized.
         LightSample lightSample;
         float areaPDensity;
-        float3 cont = sampleFlux(
+        float3 cont = sampleIntensity(
             cellCenter, minSquaredDistance,
             uLight, sampleEnvLight, rng.getFloat0cTo1o(), rng.getFloat0cTo1o(),
             &lightSample, &areaPDensity);
@@ -276,8 +280,8 @@ CUDA_DEVICE_KERNEL void combineTemporalNeighbors(PipelineLaunchParameters _plp, 
     Reservoir<LightSample> combinedReservoir;
     combinedReservoir.initialize();
 
-    // JP: 
-    // EN: 
+    // JP: まずはライトスロットごとに現在のフレームのReservoirを結合する。
+    // EN: First combine the reservoir of the current frame per light slot.
     if (curResInfo.recPDFEstimate > 0.0f) {
         combinedReservoir = curReservoir;
         selectedTargetDensity = curResInfo.targetDensity;
@@ -285,8 +289,12 @@ CUDA_DEVICE_KERNEL void combineTemporalNeighbors(PipelineLaunchParameters _plp, 
     uint32_t combinedStreamLength = curReservoir.getStreamLength();
     uint32_t maxNumPrevSamples = 20 * curReservoir.getStreamLength();
 
-    // JP: 
-    // EN: 
+    // JP: 際限なく過去フレームで得たサンプルがウェイトを増やさないように、
+    //     前フレームのストリーム長を、現在フレームのReservoirに対して20倍までに制限する。
+    // EN: Limit the stream length of the previous frame by 20 times of that of the current frame
+    //     in order to avoid a sample obtained in the past getting a unlimited weight.
+    // TODO: 光源アニメーションがある場合には前フレームと今のフレームでターゲットPDFが異なるので
+    //       ウェイトを調整するべき？
     const LightSample &prevLightSample = prevReservoir.getSample();
     float prevTargetDensity = prevResInfo.targetDensity;
     uint32_t prevStreamLength = min(prevReservoir.getStreamLength(), maxNumPrevSamples);
@@ -316,6 +324,8 @@ CUDA_DEVICE_KERNEL void combineTemporalNeighbors(PipelineLaunchParameters _plp, 
 CUDA_DEVICE_KERNEL void updateLastAccessFrameIndices(PipelineLaunchParameters _plp, uint32_t frameIndex) {
     plp = _plp;
 
+    // JP: 現在のフレーム中でアクセスされたセルにフレーム番号を記録する。
+    // EN: Record the frame number to cells that accessed in the current frame.
     uint32_t linearThreadIndex = blockDim.x * blockIdx.x + threadIdx.x;
     uint32_t cellLinearIndex = linearThreadIndex;
     if (plp.s->cellTouchFlags[cellLinearIndex])

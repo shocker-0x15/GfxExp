@@ -25,11 +25,20 @@ You can load a 3D model for example by downloading from the internet.
     -begin-pos -5 7 -4.8 -begin-pitch -30 -end-pos 5 7 -4.8 -end-pitch -30 -freq 5 -inst rectlight3
     -begin-pos 5 7 4.8 -begin-pitch 30 -end-pos -5 7 4.8 -end-pitch 30 -freq 5 -inst rectlight3
 
-JP: 
+JP: このプログラムはReGIR (Reservoir-based Grid? Importance Resampling) [1]の実装例です。
+    ReGIRでは、ReSTIR [2]と同様にStreaming RISを用いて大量の発光プリミティブからの効率的なサンプリングが可能となります。
+    ReSTIRとは異なり、セカンダリー以降の光源サンプリングにも対応するため、Reservoirをワールド空間のグリッドに記録し、
+    2段階のStreaming RISを行います。
 
-EN: 
+EN: This program is an example implementation of ReGIR (Reservoir-based Grid? Importance Resampling) [1].
+    ReGIR enables efficient sampling from a massive amount of emitter primitives by
+    using streaming RIS similar to ReSTIR [2].
+    Unlike ReSTIR, ReGIR stores reservoirs in a world space grid and performs two-stage streaming RIS
+    in order to support light sampling after secondary visibility.
 
-[1] 
+[1] Chapter 23. "Rendering Many Lights with Grid-based Reservoirs", Ray Tracing Gems II
+[2] Spatiotemporal reservoir resampling for real-time ray tracing with dynamic direct lighting
+    https://research.nvidia.com/publication/2020-07_Spatiotemporal-reservoir-resampling
 
 */
 
@@ -1967,8 +1976,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
 
     // ----------------------------------------------------------------
-    // JP: 
-    // EN: 
+    // JP: Reservoirグリッド関連のバッファーを初期化。
+    // EN: Initialize buffers related to rerservoir grid.
     
     uint3 gridDimension;
     uint32_t numCells;
@@ -2022,6 +2031,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
     initializeReservoirs(initialSceneAabb, uint3(32, 8, 32), -1);
 
+    // END: Initialize buffers related to rerservoir grid.
     // ----------------------------------------------------------------
 
 
@@ -2560,7 +2570,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         bool lastFrameWasAnimated = false;
         static bool useReGIR = true;
         static int32_t log2NumCandidatesPerLightSlot = 3;
-        static bool enableTemporalReuse = /*true*/false;
+        static bool enableTemporalReuse = true;
         static bool visualizeCells = false;
         static bool debugSwitches[] = {
             false, false, false, false, false, false, false, false
@@ -2695,7 +2705,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
             ImGui::Text("  Update: %.3f [ms]", updateTime.getAverage());
             ImGui::Text("  setupGBuffers: %.3f [ms]", setupGBuffersTime.getAverage());
             ImGui::Text("  buildCellReservoirs: %.3f [ms]", buildCellReservoirsTime.getAverage());
-            ImGui::Text("  combineTemoralNeighbors: %.3f [ms]", combineTemporalNeightborsTime.getAverage());
+            ImGui::Text("  combineTemporalNeighbors: %.3f [ms]", combineTemporalNeightborsTime.getAverage());
             ImGui::Text("  pathTrace: %.3f [ms]", pathTraceTime.getAverage());
             ImGui::Text("  Denoise: %.3f [ms]", denoiseTime.getAverage());
 
@@ -2775,8 +2785,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
         gpuEnv.pipeline.launch(cuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);
         curGPUTimer.setupGBuffers.stop(cuStream);
 
-        // JP: 
-        // EN: 
+        // JP: セルごとの複数のReservoirを構築する。
+        // EN: Build multiple reservoirs per cell.
         curGPUTimer.buildCellReservoirs.start(cuStream);
         if (useReGIR) {
             gpuEnv.kernelBuildCellReservoirs(
@@ -2811,8 +2821,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
         //    printf("");
         //}
 
-        // JP: 
-        // EN: 
+        // JP: 各セルにおいて前フレームのセルとの間でReservoirの結合を行う。
+        // EN: For each cell, combine reservoirs between the current cell and
+        //     the cell from the previous frame.
         curGPUTimer.combineTemporalNeighbors.start(cuStream);
         if (useReGIR && enableTemporalReuse && !newSequence) {
             gpuEnv.kernelCombineTemporalNeighbors(
@@ -2821,8 +2832,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
         }
         curGPUTimer.combineTemporalNeighbors.stop(cuStream);
 
-        // JP: 
-        // EN: 
+        // JP: パストレーシングによるシェーディングを実行。
+        // EN: Perform shading by path tracing.
         curGPUTimer.pathTrace.start(cuStream);
         CUDADRV_CHECK(cuMemcpyHtoDAsync(plpOnDevice, &plp, sizeof(plp), cuStream));
         if (useReGIR)
@@ -2832,8 +2843,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
         gpuEnv.pipeline.launch(cuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);
         curGPUTimer.pathTrace.stop(cuStream);
 
-        // JP: 
-        // EN: 
+        // JP: セルの最終アクセスフレーム番号を更新する。
+        // EN: Update the last access frame number for each cell.
         gpuEnv.kernelUpdateLastAccessFrameIndices(
             cuStream, gpuEnv.kernelUpdateLastAccessFrameIndices.calcGridDim(numCells),
             plp, static_cast<uint32_t>(frameIndex));
