@@ -22,6 +22,8 @@ https://www.realtimerendering.com/raytracinggems/rtg2/index.html
 
 ![example](regir/comparison.png)
 
+Models downloaded from Morgan McGuire's [Computer Graphics Archive](https://casual-effects.com/data)
+
 ## その他 / Miscellaneous
 OptiX/CUDAのラッパーとして[OptiX Utility](https://github.com/shocker-0x15/OptiX_Utility)を使用しています。
 
