@@ -269,6 +269,8 @@ namespace shared {
         PickInfo* pickInfo;
 
         unsigned int log2NumCandidatesPerLightSlot : 4;
+        unsigned int log2NumCandidatesPerCell : 4;
+        unsigned int enableCellRandomization : 1;
         unsigned int bufferIndex : 1;
         unsigned int resetFlowBuffer : 1;
         unsigned int enableJittering : 1;

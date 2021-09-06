@@ -2568,7 +2568,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
         bool lastFrameWasAnimated = false;
         static bool useReGIR = true;
         static int32_t log2NumCandidatesPerLightSlot = 3;
+        static int32_t log2NumCandidatesPerCell = 2;
         static bool enableTemporalReuse = true;
+        static bool enableCellRandomization = true;
         static bool visualizeCells = false;
         static bool debugSwitches[] = {
             false, false, false, false, false, false, false, false
@@ -2622,8 +2624,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
             resetAccumulation |= useReGIR != tempUseReGIR;
 
             ImGui::InputLog2Int("#Light Slot Candidates", &log2NumCandidatesPerLightSlot, 8);
-
+            ImGui::InputLog2Int("#Shading Candidates", &log2NumCandidatesPerCell, 8);
             resetAccumulation |= ImGui::Checkbox("Temporal Reuse", &enableTemporalReuse);
+            resetAccumulation |= ImGui::Checkbox("Cell Randomization", &enableCellRandomization);
 
             ImGui::PushID("Debug Switches");
             for (int i = lengthof(debugSwitches) - 1; i >= 0; --i) {
@@ -2763,6 +2766,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
         perFramePlp.pickInfo = pickInfos[bufferIndex].getDevicePointer();
 
         perFramePlp.log2NumCandidatesPerLightSlot = log2NumCandidatesPerLightSlot;
+        perFramePlp.log2NumCandidatesPerCell = log2NumCandidatesPerCell;
+        perFramePlp.enableCellRandomization = enableCellRandomization;
         perFramePlp.bufferIndex = bufferIndex;
         perFramePlp.resetFlowBuffer = newSequence;
         perFramePlp.enableJittering = enableJittering;

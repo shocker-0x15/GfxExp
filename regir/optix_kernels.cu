@@ -614,10 +614,16 @@ CUDA_DEVICE_FUNCTION float3 sampleFromCell(
     const float3 &shadingPoint, const float3 &vOutLocal, const ReferenceFrame &shadingFrame, const BSDF &bsdf,
     uint32_t frameIndex, PCG32RNG &rng,
     LightSample* lightSample, float* recProbDensityEstimate) {
-    float3 randomOffset = plp.s->gridCellSize
-        * make_float3(-0.5f + rng.getFloat0cTo1o(),
-                      -0.5f + rng.getFloat0cTo1o(),
-                      -0.5f + rng.getFloat0cTo1o());
+    float3 randomOffset;
+    if (plp.f->enableCellRandomization) {
+        randomOffset = plp.s->gridCellSize
+            * make_float3(-0.5f + rng.getFloat0cTo1o(),
+                          -0.5f + rng.getFloat0cTo1o(),
+                          -0.5f + rng.getFloat0cTo1o());
+    }
+    else {
+        randomOffset = make_float3(0.0f);
+    }
     uint32_t cellLinearIndex = calcCellLinearIndex(shadingPoint + randomOffset);
     uint32_t resStartIndex = kNumLightSlotsPerCell * cellLinearIndex;
 
@@ -627,7 +633,7 @@ CUDA_DEVICE_FUNCTION float3 sampleFromCell(
 
     // JP: セルごとに保持している複数のReservoirからリサンプリングを行う。
     // EN: Resample from multiple reservoirs held by each cell.
-    constexpr uint32_t numResampling = 4;
+    const uint32_t numResampling = 1 << plp.f->log2NumCandidatesPerCell;
     Reservoir<LightSample> combinedReservoir;
     combinedReservoir.initialize();
     uint32_t combinedStreamLength = 0;
