@@ -855,6 +855,9 @@ CUDA_DEVICE_FUNCTION float3 sampleLight(
         *areaPDensity = uvPDF / (2 * Pi * Pi * std::sin(theta));
 
         texEmittance = plp.s->envLightTexture;
+        // JP: 環境マップテクスチャーの値に係数をかけて、通常の光源と同じように返り値を光束発散度
+        //     として扱えるようにする。
+        // EN: Multiply a coefficient to make the return value possible to be handled as luminous emittance.
         emittance = make_float3(Pi * plp.f->envLightPowerCoeff);
         texCoord.x = u;
         texCoord.y = v;
@@ -1020,7 +1023,7 @@ CUDA_DEVICE_FUNCTION float3 sampleUnshadowedContribution(
     float spCos = shadowRayDirLocal.z;
 
     if (lpCos > 0) {
-        float3 Le = M / Pi;
+        float3 Le = M / Pi; // assume diffuse emitter.
         float3 fsValue = bsdf.evaluate(vOutLocal, shadowRayDirLocal);
         float G = lpCos * std::fabs(spCos) / dist2;
         float3 ret = fsValue * Le * G;
@@ -1063,7 +1066,7 @@ CUDA_DEVICE_FUNCTION float3 performDirectLighting(
     }
 
     if (visibility > 0 && lpCos > 0) {
-        float3 Le = M / Pi;
+        float3 Le = M / Pi; // assume diffuse emitter.
         float3 fsValue = bsdf.evaluate(vOutLocal, shadowRayDirLocal);
         float G = lpCos * std::fabs(spCos) / dist2;
         float3 ret = fsValue * Le * G;
@@ -1145,18 +1148,18 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(generateInitialCandidates)() {
             //     Separate sampling from the environmental light and the others to
             //     the beginning of the loop and the rest to avoid divergence.
             float ul = rng.getFloat0cTo1o();
-            float lightProb = 1.0f;
+            float probToSampleCurLightType = 1.0f;
             bool sampleEnvLight = false;
             if (plp.s->envLightTexture && plp.f->enableEnvLight) {
-                float probSampleEnvLight = min(max(0.25f * numCandidates - i, 0.0f), 1.0f);
-                if (ul < probSampleEnvLight) {
-                    lightProb = 0.25f;
-                    ul = ul / probSampleEnvLight;
+                float prob = min(max(probToSampleEnvLight * numCandidates - i, 0.0f), 1.0f);
+                if (ul < prob) {
+                    probToSampleCurLightType = probToSampleEnvLight;
+                    ul = ul / prob;
                     sampleEnvLight = true;
                 }
                 else {
-                    lightProb = 0.75f;
-                    ul = (ul - probSampleEnvLight) / (1 - probSampleEnvLight);
+                    probToSampleCurLightType = 1.0f - probToSampleEnvLight;
+                    ul = (ul - prob) / (1 - prob);
                 }
             }
 
@@ -1170,7 +1173,7 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(generateInitialCandidates)() {
                 positionInWorld, vOutLocal, shadingFrame, bsdf,
                 ul, sampleEnvLight, rng.getFloat0cTo1o(), rng.getFloat0cTo1o(),
                 &lightSample, &probDensity);
-            probDensity *= lightProb;
+            probDensity *= probToSampleCurLightType;
             float targetDensity = convertToWeight(cont);
 
             // JP: 候補サンプル生成用のPDFとターゲットPDFは異なるためサンプルにはウェイトがかかる。
@@ -1308,6 +1311,10 @@ CUDA_DEVICE_FUNCTION void combineTemporalNeighbors() {
                 positionInWorld, vOutLocal, shadingFrame, bsdf, nbLightSample);
             float targetDensity = convertToWeight(cont);
 
+            // JP: 際限なく過去フレームで得たサンプルがウェイトを増やさないように、
+            //     前フレームのストリーム長を、現在フレームのReservoirに対して20倍までに制限する。
+            // EN: Limit the stream length of the previous frame by 20 times of that of the current frame
+            //     in order to avoid a sample obtained in the past getting a unlimited weight.
             uint32_t nbStreamLength = min(neighbor.getStreamLength(), maxNumPrevSamples);
             float weight = targetDensity * neighborInfo.recPDFEstimate * nbStreamLength;
             if (combinedReservoir.update(nbLightSample, weight, rng.getFloat0cTo1o())) {
@@ -1731,6 +1738,8 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(shading)() {
         albedo = bsdf.evaluateDHReflectanceEstimate(vOutLocal);
     }
     else {
+        // JP: 環境光源を直接見ている場合の寄与を蓄積。
+        // EN: Accumulate the contribution from the environmental light source directly seeing.
         if (plp.s->envLightTexture && plp.f->enableEnvLight) {
             float u = texCoord.x, v = texCoord.y;
             float4 texValue = tex2DLod<float4>(plp.s->envLightTexture, u, v, 0.0f);

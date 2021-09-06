@@ -7,6 +7,7 @@ struct BSDF;
 namespace shared {
     static constexpr float Pi = 3.14159265358979323846f;
     static constexpr float RayEpsilon = 1e-4;
+    static constexpr float probToSampleEnvLight = 0.25f;
 
 
 
