@@ -345,6 +345,9 @@ CUDA_DEVICE_FUNCTION float3 sampleLight(
         *areaPDensity = uvPDF / (2 * Pi * Pi * std::sin(theta));
 
         texEmittance = plp.s->envLightTexture;
+        // JP: 環境マップテクスチャーの値に係数をかけて、通常の光源と同じように返り値を光束発散度
+        //     として扱えるようにする。
+        // EN: Multiply a coefficient to make the return value possible to be handled as luminous emittance.
         emittance = make_float3(Pi * plp.f->envLightPowerCoeff);
         texCoord.x = u;
         texCoord.y = v;
@@ -510,7 +513,7 @@ CUDA_DEVICE_FUNCTION float3 sampleUnshadowedContribution(
     float spCos = shadowRayDirLocal.z;
 
     if (lpCos > 0) {
-        float3 Le = M / Pi;
+        float3 Le = M / Pi; // assume diffuse emitter.
         float3 fsValue = bsdf.evaluate(vOutLocal, shadowRayDirLocal);
         float G = lpCos * std::fabs(spCos) / dist2;
         float3 ret = fsValue * Le * G;
@@ -553,7 +556,7 @@ CUDA_DEVICE_FUNCTION float3 performDirectLighting(
     }
 
     if (visibility > 0 && lpCos > 0) {
-        float3 Le = M / Pi;
+        float3 Le = M / Pi; // assume diffuse emitter.
         float3 fsValue = bsdf.evaluate(vOutLocal, shadowRayDirLocal);
         float G = lpCos * std::fabs(spCos) / dist2;
         float3 ret = fsValue * Le * G;

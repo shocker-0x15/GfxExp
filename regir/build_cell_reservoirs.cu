@@ -253,6 +253,11 @@ CUDA_DEVICE_KERNEL void buildCellReservoirs(PipelineLaunchParameters _plp, uint3
     curReservoirInfos[linearThreadIndex] = resInfo;
 }
 
+// JP: 元の文献では過去数フレーム分のストリーム長で正規化されたReservoirを保持して、それらを結合しているが、
+//     ここでは正規化は行わず現在フレームと過去フレームの累積Reservoirの2つを結合する。
+// EN: The original literature suggests using stream length normalized reservoirs of several previous
+//     frames, then combine them, but here it doesn't use normalization and combines two reservoirs, one from
+//     the current frame and the other is the accumulation of the previous frames.
 CUDA_DEVICE_KERNEL void combineTemporalNeighbors(PipelineLaunchParameters _plp, uint32_t frameIndex) {
     plp = _plp;
 

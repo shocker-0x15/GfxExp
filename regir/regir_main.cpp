@@ -31,7 +31,7 @@ EN: This program is an example implementation of ReGIR (Reservoir-based Grid? Im
     ReGIR enables efficient sampling from a massive amount of emitter primitives by
     using streaming RIS similar to ReSTIR [2].
     Unlike ReSTIR, ReGIR stores reservoirs in a world space grid and performs two-stage streaming RIS
-    in order to support light sampling after secondary visibility.
+    to support light sampling after secondary visibility.
 
 [1] Chapter 23. "Rendering Many Lights with Grid-based Reservoirs", Ray Tracing Gems II
     https://www.realtimerendering.com/raytracinggems/rtg2/index.html
