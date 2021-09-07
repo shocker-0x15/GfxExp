@@ -437,7 +437,8 @@ CUDA_DEVICE_FUNCTION float3 sampleLight(
     return emittance;
 }
 
-CUDA_DEVICE_FUNCTION float3 evaluateLight(const LightSample &lightSample, float3* lightPosition, float3* lightNormal) {
+CUDA_DEVICE_FUNCTION float3 evaluateLight(
+    const LightSample &lightSample, float3* lightPosition, float3* lightNormal) {
     if (lightSample.atInfinity()) {
         float phi = lightSample.b1;
         float theta = lightSample.b2;

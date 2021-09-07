@@ -131,6 +131,9 @@ CUDA_DEVICE_FUNCTION float3 sampleLight(
     return emittance;
 }
 
+// TODO: セルの中央だけのサンプリングだと、セルの中央が光源の裏側に回ってしまっている場合に、
+//       寄与の可能性のあるサンプルを棄却してしまう。代表点をランダムに決定するなどで解決できそうだが、
+//       PDFが毎回変わるのでそれを考慮する必要あり？
 CUDA_DEVICE_FUNCTION float3 sampleIntensity(
     const float3 &shadingPoint, float minSquaredDistance,
     float uLight, bool sampleEnvLight, float uPos0, float uPos1,
