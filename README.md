@@ -15,7 +15,7 @@ Spatiotemporal reservoir resampling for real-time ray tracing with dynamic direc
 https://research.nvidia.com/publication/2020-07_Spatiotemporal-reservoir-resampling
 
 - [x] Basic Implementation (Biased RIS Estimator, Spatio-temporal Reuse)
-- [x] Advanced Items
+- [ ] Advanced Items
   - [x] Diffuse + Glossy BRDF
   - [x] Environmental Light
   - [x] Unbiased RIS Estimator

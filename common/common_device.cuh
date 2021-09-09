@@ -65,6 +65,12 @@ CUDA_DEVICE_FUNCTION void makeCoordinateSystem(const float3 &normal, float3* tan
     *bitangent = make_float3(b, sign + normal.y * normal.y * a, -normal.y);
 }
 
+// JP: 自己交叉回避のためにレイの原点にオフセットを付加する。
+// EN: Add an offset to a ray origin to avoid self-intersection.
+CUDA_DEVICE_FUNCTION float3 offsetRayOriginNaive(const float3 &p, const float3 &geometricNormal) {
+    return p + RayEpsilon * geometricNormal;
+}
+
 // Reference:
 // Chapter 6. A Fast and Robust Method for Avoiding Self-Intersection, Ray Tracing Gems, 2019
 CUDA_DEVICE_FUNCTION float3 offsetRayOrigin(const float3 &p, const float3 &geometricNormal) {
