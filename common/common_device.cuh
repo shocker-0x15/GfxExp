@@ -8,6 +8,7 @@
 
 static constexpr float Pi = 3.14159265358979323846f;
 static constexpr float RayEpsilon = 1e-4;
+static constexpr bool forceDoubleSidedMaterial = true;
 
 
 
@@ -62,6 +63,36 @@ CUDA_DEVICE_FUNCTION void makeCoordinateSystem(const float3 &normal, float3* tan
     const float b = normal.x * normal.y * a;
     *tangent = make_float3(1 + sign * normal.x * normal.x * a, sign * b, -sign * normal.x);
     *bitangent = make_float3(b, sign + normal.y * normal.y * a, -normal.y);
+}
+
+// Reference:
+// Chapter 6. A Fast and Robust Method for Avoiding Self-Intersection, Ray Tracing Gems, 2019
+CUDA_DEVICE_FUNCTION float3 offsetRayOrigin(const float3 &p, const float3 &geometricNormal) {
+    constexpr float kOrigin = 1.0f / 32.0f;
+    constexpr float kFloatScale = 1.0f / 65536.0f;
+    constexpr float kIntScale = 256.0f;
+
+    int32_t offsetInInt[] = {
+        static_cast<int32_t>(kIntScale * geometricNormal.x),
+        static_cast<int32_t>(kIntScale * geometricNormal.y),
+        static_cast<int32_t>(kIntScale * geometricNormal.z)
+    };
+
+    // JP: 数学的な衝突点の座標と、実際の座標の誤差は原点からの距離に比例する。
+    //     intとしてオフセットを加えることでスケール非依存に適切なオフセットを加えることができる。
+    // EN: The error of the actual coorinates of the intersection point to the mathematical one is proportional to the distance to the origin.
+    //     Applying the offset as int makes applying appropriate scale invariant amount of offset possible.
+    float3 newP1 = make_float3(__int_as_float(__float_as_int(p.x) + (p.x < 0 ? -1 : 1) * offsetInInt[0]),
+                               __int_as_float(__float_as_int(p.y) + (p.y < 0 ? -1 : 1) * offsetInInt[1]),
+                               __int_as_float(__float_as_int(p.z) + (p.z < 0 ? -1 : 1) * offsetInInt[2]));
+
+    // JP: 原点に近い場所では、原点からの距離に依存せず一定の誤差が残るため別処理が必要。
+    // EN: A constant amount of error remains near the origin independent of the distance to the origin so we need handle it separately.
+    float3 newP2 = p + kFloatScale * geometricNormal;
+
+    return make_float3(std::fabs(p.x) < kOrigin ? newP2.x : newP1.x,
+                       std::fabs(p.y) < kOrigin ? newP2.y : newP1.y,
+                       std::fabs(p.z) < kOrigin ? newP2.z : newP1.z);
 }
 
 struct ReferenceFrame {

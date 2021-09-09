@@ -216,8 +216,11 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
         float b0 = 1 - (b1 + b2);
         float3 localP = b0 * v0.position + b1 * v1.position + b2 * v2.position;
         sn = b0 * v0.normal + b1 * v1.normal + b2 * v2.normal;
-        //sn = cross(v1.position - v0.position,
-        //           v2.position - v0.position);
+        if constexpr (forceDoubleSidedMaterial) {
+            float3 geomNormal = cross(v1.position - v0.position, v2.position - v0.position);
+            if (dot(optixGetWorldRayDirection(), geomNormal) > 0.0f)
+                sn *= -1;
+        }
         texCoord = b0 * v0.texCoord + b1 * v1.texCoord + b2 * v2.texCoord;
 
         p = optixTransformPointFromObjectToWorldSpace(localP);
@@ -503,8 +506,7 @@ CUDA_DEVICE_FUNCTION float3 sampleUnshadowedContribution(
                            lightSample, &lp, &lpn, probDensity);
     bool atInfinity = lightSample->atInfinity();
 
-    float3 offsetOrigin = shadingPoint + shadingFrame.normal * RayEpsilon;
-    float3 shadowRayDir = atInfinity ? lp : (lp - offsetOrigin);
+    float3 shadowRayDir = atInfinity ? lp : (lp - shadingPoint);
     float dist2 = sqLength(shadowRayDir);
     float dist = std::sqrt(dist2);
     shadowRayDir /= dist;
@@ -534,8 +536,7 @@ CUDA_DEVICE_FUNCTION float3 performDirectLighting(
     float3 M = evaluateLight(lightSample, &lp, &lpn);
     bool atInfinity = lightSample.atInfinity();
 
-    float3 offsetOrigin = shadingPoint + shadingFrame.normal * RayEpsilon;
-    float3 shadowRayDir = atInfinity ? lp : (lp - offsetOrigin);
+    float3 shadowRayDir = atInfinity ? lp : (lp - shadingPoint);
     float dist2 = sqLength(shadowRayDir);
     float dist = std::sqrt(dist2);
     shadowRayDir /= dist;
@@ -550,7 +551,7 @@ CUDA_DEVICE_FUNCTION float3 performDirectLighting(
     if constexpr (withVisibility) {
         optixu::trace<VisibilityRayPayloadSignature>(
             plp.f->travHandle,
-            offsetOrigin, shadowRayDir, 0.0f, dist * 0.9999f, 0.0f,
+            shadingPoint, shadowRayDir, 0.0f, dist * 0.9999f, 0.0f,
             0xFF, OPTIX_RAY_FLAG_NONE,
             RayType_Visibility, NumRayTypes, RayType_Visibility,
             visibility);
@@ -575,8 +576,7 @@ CUDA_DEVICE_FUNCTION bool evaluateVisibility(
     evaluateLight(lightSample, &lp, &lpn);
     bool atInfinity = lightSample.atInfinity();
 
-    float3 offsetOrigin = shadingPoint + shadingFrame.normal * RayEpsilon;
-    float3 shadowRayDir = atInfinity ? lp : (lp - offsetOrigin);
+    float3 shadowRayDir = atInfinity ? lp : (lp - shadingPoint);
     float dist2 = sqLength(shadowRayDir);
     float dist = std::sqrt(dist2);
     shadowRayDir /= dist;
@@ -586,7 +586,7 @@ CUDA_DEVICE_FUNCTION bool evaluateVisibility(
     float visibility = 1.0f;
     optixu::trace<VisibilityRayPayloadSignature>(
         plp.f->travHandle,
-        offsetOrigin, shadowRayDir, 0.0f, dist * 0.9999f, 0.0f,
+        shadingPoint, shadowRayDir, 0.0f, dist * 0.9999f, 0.0f,
         0xFF, OPTIX_RAY_FLAG_NONE,
         RayType_Visibility, NumRayTypes, RayType_Visibility,
         visibility);
@@ -619,6 +619,8 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(generateInitialCandidates)() {
         BSDF bsdf;
         mat.setupBSDF(mat, texCoord, &bsdf);
         ReferenceFrame shadingFrame(normalInWorld);
+        // Add offset to avoid self-intersection.
+        positionInWorld += shadingFrame.normal * RayEpsilon;
         float3 vOut = plp.f->camera.position - positionInWorld;
         float dist = length(vOut);
         vOut /= dist;
@@ -756,6 +758,8 @@ CUDA_DEVICE_FUNCTION void combineTemporalNeighbors() {
         BSDF bsdf;
         mat.setupBSDF(mat, texCoord, &bsdf);
         ReferenceFrame shadingFrame(normalInWorld);
+        // Add offset to avoid self-intersection.
+        positionInWorld += shadingFrame.normal * RayEpsilon;
         float3 vOut = plp.f->camera.position - positionInWorld;
         float dist = length(vOut);
         vOut /= dist;
@@ -868,6 +872,8 @@ CUDA_DEVICE_FUNCTION void combineTemporalNeighbors() {
                     BSDF nbBsdf;
                     nbMat.setupBSDF(nbMat, nbTexCoord, &nbBsdf);
                     ReferenceFrame nbShadingFrame(nbNormalInWorld);
+                    // Add offset to avoid self-intersection.
+                    nbPositionInWorld += nbShadingFrame.normal * RayEpsilon;
                     float3 nbVOut = plp.f->camera.position - nbPositionInWorld;
                     float nbDist = length(nbVOut);
                     nbVOut /= nbDist;
@@ -948,6 +954,8 @@ CUDA_DEVICE_FUNCTION void combineSpatialNeighbors() {
         BSDF bsdf;
         mat.setupBSDF(mat, texCoord, &bsdf);
         ReferenceFrame shadingFrame(normalInWorld);
+        // Add offset to avoid self-intersection.
+        positionInWorld += shadingFrame.normal * RayEpsilon;
         float3 vOut = plp.f->camera.position - positionInWorld;
         float dist = length(vOut);
         vOut /= dist;
@@ -1113,6 +1121,8 @@ CUDA_DEVICE_FUNCTION void combineSpatialNeighbors() {
                     BSDF nbBsdf;
                     nbMat.setupBSDF(nbMat, nbTexCoord, &nbBsdf);
                     ReferenceFrame nbShadingFrame(nbNormalInWorld);
+                    // Add offset to avoid self-intersection.
+                    nbPositionInWorld += nbShadingFrame.normal * RayEpsilon;
                     float3 nbVOut = plp.f->camera.position - nbPositionInWorld;
                     float nbDist = length(nbVOut);
                     nbVOut /= nbDist;
@@ -1197,6 +1207,8 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(shading)() {
         BSDF bsdf;
         mat.setupBSDF(mat, texCoord, &bsdf);
         ReferenceFrame shadingFrame(normalInWorld);
+        // Add offset to avoid self-intersection.
+        positionInWorld += shadingFrame.normal * RayEpsilon;
         float3 vOut = normalize(camera.position - positionInWorld);
         float3 vOutLocal = shadingFrame.toLocal(vOut);
 

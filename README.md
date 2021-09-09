@@ -19,6 +19,7 @@ https://research.nvidia.com/publication/2020-07_Spatiotemporal-reservoir-resampl
   - [x] Diffuse + Glossy BRDF
   - [x] Environmental Light
   - [x] Unbiased RIS Estimator
+  - [ ] Rearchitecting
 
 ![example](restir/comparison.png)
 
@@ -30,8 +31,8 @@ https://www.realtimerendering.com/raytracinggems/rtg2/index.html
 - [ ] Advanced Items
   - [x] Diffuse + Glossy BRDF
   - [x] Environmental Light
-  - [ ] ReGIR + Multiple Importance Sampling
-  - [ ] Scrolling Clipmap
+  - [ ] Scrolling Clipmap or Sparse Grid using Hash Map
+  - [ ] ReGIR + Multiple Importance Sampling (Impossible?)
 
 ![example](regir/comparison.png)
 
