@@ -813,14 +813,13 @@ CUDA_DEVICE_FUNCTION void pathTrace_rayGen_generic() {
         rwPayload.pathLength = 1;
         float3 rayOrg = positionInWorld;
         float3 rayDir = vIn;
-        constexpr uint32_t maxPathLength = 5;
         while (true) {
             bool isValidSampling = rwPayload.prevDirPDensity > 0.0f && isfinite(rwPayload.prevDirPDensity);
             if (!isValidSampling)
                 break;
 
             ++rwPayload.pathLength;
-            if (rwPayload.pathLength >= maxPathLength)
+            if (rwPayload.pathLength >= plp.f->maxPathLength)
                 rwPayload.maxLengthTerminate = true;
             rwPayload.terminate = true;
             if constexpr (!useImplicitLightSampling || useReGIR) {

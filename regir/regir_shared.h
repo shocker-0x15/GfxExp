@@ -268,6 +268,7 @@ namespace shared {
         int2 mousePosition;
         PickInfo* pickInfo;
 
+        unsigned int maxPathLength : 4;
         unsigned int log2NumCandidatesPerLightSlot : 4;
         unsigned int log2NumCandidatesPerCell : 4;
         unsigned int enableCellRandomization : 1;

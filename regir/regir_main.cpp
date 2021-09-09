@@ -2566,6 +2566,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         static bool enableAccumulation = true;
         static bool enableJittering = false;
         bool lastFrameWasAnimated = false;
+        static int32_t maxPathLength = 5;
         static bool useReGIR = true;
         static int32_t log2NumCandidatesPerLightSlot = 3;
         static int32_t log2NumCandidatesPerCell = 2;
@@ -2615,6 +2616,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
                         pickInfoOnHost.emittance.y,
                         pickInfoOnHost.emittance.z);
             ImGui::Separator();
+
+            resetAccumulation |= ImGui::SliderInt("Max Path Length", &maxPathLength, 2, 15);
 
             bool tempUseReGIR = useReGIR;
             if (ImGui::RadioButton("Baseline Path Tracing", !useReGIR))
@@ -2765,6 +2768,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
                                          static_cast<int32_t>(g_mouseY));
         perFramePlp.pickInfo = pickInfos[bufferIndex].getDevicePointer();
 
+        perFramePlp.maxPathLength = maxPathLength;
         perFramePlp.log2NumCandidatesPerLightSlot = log2NumCandidatesPerLightSlot;
         perFramePlp.log2NumCandidatesPerCell = log2NumCandidatesPerCell;
         perFramePlp.enableCellRandomization = enableCellRandomization;
