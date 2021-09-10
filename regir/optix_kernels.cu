@@ -909,10 +909,15 @@ CUDA_DEVICE_FUNCTION void pathTrace_closestHit_generic() {
         float3 localP = b0 * v0.position + b1 * v1.position + b2 * v2.position;
         shadingNormalInWorld = b0 * v0.normal + b1 * v1.normal + b2 * v2.normal;
         geometricNormalInWorld = cross(v1.position - v0.position, v2.position - v0.position);
-        if constexpr (useMultipleImportanceSampling) {
-            float primProb = geomInst.emitterPrimDist.evaluatePMF(hp.primIndex);
+        if constexpr (useMultipleImportanceSampling && !useReGIR) {
+            float lightProb = 1.0f;
+            if (plp.s->envLightTexture && plp.f->enableEnvLight)
+                lightProb *= (1 - probToSampleEnvLight);
+            lightProb *= inst.lightGeomInstDist.integral() / plp.s->lightInstDist.integral();
+            lightProb *= geomInst.emitterPrimDist.integral() / inst.lightGeomInstDist.integral();
+            lightProb *= geomInst.emitterPrimDist.evaluatePMF(hp.primIndex);
             float area = 0.5f * length(geometricNormalInWorld);
-            hypAreaPDensity = primProb / area;
+            hypAreaPDensity = lightProb / area;
         }
         texCoord = b0 * v0.texCoord + b1 * v1.texCoord + b2 * v2.texCoord;
 
@@ -944,9 +949,7 @@ CUDA_DEVICE_FUNCTION void pathTrace_closestHit_generic() {
             float misWeight = 1.0f;
             if constexpr (useMultipleImportanceSampling) {
                 float dist2 = squaredDistance(optixGetWorldRayOrigin(), positionInWorld);
-                float instProb = inst.lightGeomInstDist.integral() / plp.s->lightInstDist.integral();
-                float geomInstProb = geomInst.emitterPrimDist.integral() / inst.lightGeomInstDist.integral();
-                float lightPDensity = instProb * geomInstProb * hypAreaPDensity * dist2 / vOutLocal.z;
+                float lightPDensity = hypAreaPDensity * dist2 / vOutLocal.z;
                 float bsdfPDensity = rwPayload->prevDirPDensity;
                 misWeight = pow2(bsdfPDensity) / (pow2(bsdfPDensity) + pow2(lightPDensity));
             }

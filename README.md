@@ -19,7 +19,8 @@ https://research.nvidia.com/publication/2020-07_Spatiotemporal-reservoir-resampl
   - [x] Diffuse + Glossy BRDF
   - [x] Environmental Light
   - [x] Unbiased RIS Estimator
-  - [ ] Rearchitecting
+  - [ ] Rearchitecting Spatiotemporal Resampling for Production\
+        https://research.nvidia.com/publication/2021-07_Rearchitecting-Spatiotemporal-Resampling
 
 ![example](restir/comparison.png)
 
