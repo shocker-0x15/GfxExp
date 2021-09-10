@@ -635,7 +635,7 @@ CUDA_DEVICE_FUNCTION float3 sampleFromCell(
 
     // JP: セルに触れたフラグを建てておく。
     // EN: Set the flag indicating the cell is touched.
-    atomicOr(&plp.s->cellTouchFlags[cellLinearIndex], 1u);
+    atomicAdd(&plp.s->perCellNumAccesses[cellLinearIndex], 1u);
 
     // JP: セルごとに保持している複数のReservoirからリサンプリングを行う。
     // EN: Resample from multiple reservoirs held by each cell.

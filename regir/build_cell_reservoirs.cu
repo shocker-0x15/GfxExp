@@ -167,7 +167,9 @@ CUDA_DEVICE_KERNEL void buildCellReservoirs(PipelineLaunchParameters _plp, uint3
     uint32_t linearThreadIndex = blockDim.x * blockIdx.x + threadIdx.x;
     uint32_t cellLinearIndex = linearThreadIndex / kNumLightSlotsPerCell;
     uint32_t lastAccessFrameIndex = plp.s->lastAccessFrameIndices[cellLinearIndex];
-    plp.s->cellTouchFlags[cellLinearIndex] = 0;
+    if (linearThreadIndex == 0)
+        *plp.f->numActiveCells = 0;
+    plp.s->perCellNumAccesses[cellLinearIndex] = 0;
     if (frameIndex - lastAccessFrameIndex > 8)
         return;
 
@@ -336,6 +338,11 @@ CUDA_DEVICE_KERNEL void updateLastAccessFrameIndices(PipelineLaunchParameters _p
     // EN: Record the frame number to cells that accessed in the current frame.
     uint32_t linearThreadIndex = blockDim.x * blockIdx.x + threadIdx.x;
     uint32_t cellLinearIndex = linearThreadIndex;
-    if (plp.s->cellTouchFlags[cellLinearIndex])
+    uint32_t perCellNumAccesses = plp.s->perCellNumAccesses[cellLinearIndex];
+    if (perCellNumAccesses > 0)
         plp.s->lastAccessFrameIndices[cellLinearIndex] = frameIndex;
+
+    uint32_t numActiveCellsInGroup = __popc(__ballot_sync(0xFFFFFFFF, perCellNumAccesses > 0));
+    if (threadIdx.x == 0 && numActiveCellsInGroup > 0)
+        atomicAdd(plp.f->numActiveCells, numActiveCellsInGroup);
 }

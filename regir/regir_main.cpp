@@ -1985,7 +1985,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
     cudau::TypedBuffer<shared::Reservoir<shared::LightSample>> reservoirs[2];
     cudau::TypedBuffer<shared::ReservoirInfo> reservoirInfos[2];
     cudau::TypedBuffer<shared::PCG32RNG> lightSlotRngs;
-    cudau::TypedBuffer<uint32_t> cellTouchFlags;
+    cudau::TypedBuffer<uint32_t> perCellNumAccesses;
     cudau::TypedBuffer<uint32_t> lastAccessFrameIndices;
 
     const auto initializeReservoirs = [&]
@@ -2009,7 +2009,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         }
         lightSlotRngs.unmap();
 
-        cellTouchFlags.initialize(gpuEnv.cuContext, GPUEnvironment::bufferType, numCells);
+        perCellNumAccesses.initialize(gpuEnv.cuContext, GPUEnvironment::bufferType, numCells);
         lastAccessFrameIndices.initialize(gpuEnv.cuContext, GPUEnvironment::bufferType, numCells);
         lastAccessFrameIndices.fill(frameIndex);
     };
@@ -2017,7 +2017,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
     const auto finalizeReservoirs = [&]
     () {
         lastAccessFrameIndices.finalize();
-        cellTouchFlags.finalize();
+        perCellNumAccesses.finalize();
 
         lightSlotRngs.finalize();
 
@@ -2258,7 +2258,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         staticPlp.reservoirInfos[0] = reservoirInfos[0].getDevicePointer();
         staticPlp.reservoirInfos[1] = reservoirInfos[1].getDevicePointer();
         staticPlp.lightSlotRngs = lightSlotRngs.getDevicePointer();
-        staticPlp.cellTouchFlags = cellTouchFlags.getDevicePointer();
+        staticPlp.perCellNumAccesses = perCellNumAccesses.getDevicePointer();
         staticPlp.lastAccessFrameIndices = lastAccessFrameIndices.getDevicePointer();
         staticPlp.gridOrigin = gridOrigin;
         staticPlp.gridCellSize = gridCellSize;
@@ -2312,6 +2312,10 @@ int32_t main(int32_t argc, const char* argv[]) try {
     cudau::TypedBuffer<shared::PickInfo> pickInfos[2];
     pickInfos[0].initialize(gpuEnv.cuContext, GPUEnvironment::bufferType, 1, initPickInfo);
     pickInfos[1].initialize(gpuEnv.cuContext, GPUEnvironment::bufferType, 1, initPickInfo);
+
+    cudau::TypedBuffer<uint32_t> numActiveCells[2];
+    numActiveCells[0].initialize(gpuEnv.cuContext, GPUEnvironment::bufferType, 1);
+    numActiveCells[1].initialize(gpuEnv.cuContext, GPUEnvironment::bufferType, 1);
 
     CUdeviceptr plpOnDevice;
     CUDADRV_CHECK(cuMemAlloc(&plpOnDevice, sizeof(plp)));
@@ -2617,6 +2621,12 @@ int32_t main(int32_t argc, const char* argv[]) try {
                         pickInfoOnHost.emittance.z);
             ImGui::Separator();
 
+            uint32_t numActiveCellsOnHost;
+            numActiveCells[bufferIndex].read(&numActiveCellsOnHost, 1, cuStream);
+            ImGui::Text("#Active Cells: %5u / %5u", numActiveCellsOnHost, numCells);
+
+            ImGui::Separator();
+
             resetAccumulation |= ImGui::SliderInt("Max Path Length", &maxPathLength, 2, 15);
 
             bool tempUseReGIR = useReGIR;
@@ -2767,6 +2777,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         perFramePlp.mousePosition = int2(static_cast<int32_t>(g_mouseX),
                                          static_cast<int32_t>(g_mouseY));
         perFramePlp.pickInfo = pickInfos[bufferIndex].getDevicePointer();
+        perFramePlp.numActiveCells = numActiveCells[bufferIndex].getDevicePointer();
 
         perFramePlp.maxPathLength = maxPathLength;
         perFramePlp.log2NumCandidatesPerLightSlot = log2NumCandidatesPerLightSlot;
@@ -2980,6 +2991,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
     CUDADRV_CHECK(cuMemFree(plpOnDevice));
 
+    numActiveCells[1].finalize();
+    numActiveCells[0].finalize();
     pickInfos[1].finalize();
     pickInfos[0].finalize();
 

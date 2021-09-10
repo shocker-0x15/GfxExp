@@ -235,7 +235,7 @@ namespace shared {
         Reservoir<LightSample>* reservoirs[2];
         ReservoirInfo* reservoirInfos[2];
         PCG32RNG* lightSlotRngs;
-        uint32_t* cellTouchFlags;
+        uint32_t* perCellNumAccesses;
         uint32_t* lastAccessFrameIndices;
         float3 gridOrigin;
         float3 gridCellSize;
@@ -267,6 +267,7 @@ namespace shared {
 
         int2 mousePosition;
         PickInfo* pickInfo;
+        uint32_t* numActiveCells;
 
         unsigned int maxPathLength : 4;
         unsigned int log2NumCandidatesPerLightSlot : 4;
