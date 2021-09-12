@@ -206,7 +206,7 @@ CUDA_DEVICE_KERNEL void buildCellReservoirs(PipelineLaunchParameters _plp, uint3
         float uLight = rng.getFloat0cTo1o();
         bool sampleEnvLight = false;
         float probToSampleCurLightType = 1.0f;
-        if (plp.s->envLightTexture && plp.f->enableEnvLight) {
+        if (plp.s->envLightTexture && plp.f->enableEnvLight && !plp.f->separateEnvLightSampling) {
             float prob = min(max(probToSampleEnvLight * numCandidates - candIdx, 0.0f), 1.0f);
             if (uLight < prob) {
                 probToSampleCurLightType = probToSampleEnvLight;

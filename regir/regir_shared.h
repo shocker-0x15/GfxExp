@@ -16,6 +16,16 @@ namespace shared {
         NumRayTypes
     };
 
+    enum MissRayType {
+        MissRayType_Primary = 0,
+        MissRayType_PathTraceBaseline,
+        MissRayType_PathTraceBaseline_Env,
+        MissRayType_PathTraceReGIR,
+        MissRayType_PathTraceReGIR_Env,
+        MissRayType_Visibility,
+        NumMissRayTypes
+    };
+
 
 
     struct Vertex {
@@ -273,6 +283,7 @@ namespace shared {
         unsigned int log2NumCandidatesPerLightSlot : 4;
         unsigned int log2NumCandidatesPerCell : 4;
         unsigned int enableCellRandomization : 1;
+        unsigned int separateEnvLightSampling : 1;
         unsigned int bufferIndex : 1;
         unsigned int resetFlowBuffer : 1;
         unsigned int enableJittering : 1;

@@ -452,6 +452,7 @@ struct GPUEnvironment {
     optixu::ProgramGroup pathTraceBaselineMissProgram;
     optixu::ProgramGroup pathTraceBaselineHitProgramProgram;
     optixu::ProgramGroup pathTraceRegirRayGenProgram;
+    optixu::ProgramGroup pathTraceRegirMissProgram;
     optixu::ProgramGroup pathTraceRegirHitProgramProgram;
     optixu::ProgramGroup visibilityHitProgramGroup;
     std::vector<optixu::ProgramGroup> callablePrograms;
@@ -533,6 +534,8 @@ struct GPUEnvironment {
 
         pathTraceRegirRayGenProgram = pipeline.createRayGenProgram(
             mainModule, RT_RG_NAME_STR("pathTraceRegir"));
+        pathTraceRegirMissProgram = pipeline.createMissProgram(
+            mainModule, RT_MS_NAME_STR("pathTraceRegir"));
         pathTraceRegirHitProgramProgram = pipeline.createHitProgramGroupForBuiltinIS(
             OPTIX_PRIMITIVE_TYPE_TRIANGLE,
             mainModule, RT_CH_NAME_STR("pathTraceRegir"),
@@ -547,11 +550,13 @@ struct GPUEnvironment {
 
         // If an exception program is not set but exception flags are set, the default exception program will by provided by OptiX.
         //pipeline.setExceptionProgram(exceptionProgram);
-        pipeline.setNumMissRayTypes(shared::NumRayTypes);
-        pipeline.setMissProgram(shared::RayType_Primary, setupGBuffersMissProgram);
-        pipeline.setMissProgram(shared::RayType_PathTraceBaseline, pathTraceBaselineMissProgram);
-        pipeline.setMissProgram(shared::RayType_PathTraceReGIR, emptyMissProgram);
-        pipeline.setMissProgram(shared::RayType_Visibility, emptyMissProgram);
+        pipeline.setNumMissRayTypes(shared::NumMissRayTypes);
+        pipeline.setMissProgram(shared::MissRayType_Primary, setupGBuffersMissProgram);
+        pipeline.setMissProgram(shared::MissRayType_PathTraceBaseline, emptyMissProgram);
+        pipeline.setMissProgram(shared::MissRayType_PathTraceBaseline_Env, pathTraceBaselineMissProgram);
+        pipeline.setMissProgram(shared::MissRayType_PathTraceReGIR, emptyMissProgram);
+        pipeline.setMissProgram(shared::MissRayType_PathTraceReGIR_Env, pathTraceRegirMissProgram);
+        pipeline.setMissProgram(shared::MissRayType_Visibility, emptyMissProgram);
 
         const char* entryPoints[] = {
             RT_DC_NAME_STR("setupLambertBRDF"),
@@ -629,6 +634,7 @@ struct GPUEnvironment {
             callablePrograms[i].destroy();
         visibilityHitProgramGroup.destroy();
         pathTraceRegirHitProgramProgram.destroy();
+        pathTraceRegirMissProgram.destroy();
         pathTraceRegirRayGenProgram.destroy();
         pathTraceBaselineHitProgramProgram.destroy();
         pathTraceBaselineMissProgram.destroy();
@@ -2576,6 +2582,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         static int32_t log2NumCandidatesPerCell = 2;
         static bool enableTemporalReuse = true;
         static bool enableCellRandomization = true;
+        static bool separateEnvLightSampling = true;
         static bool visualizeCells = false;
         static bool debugSwitches[] = {
             false, false, false, false, false, false, false, false
@@ -2640,6 +2647,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
             ImGui::InputLog2Int("#Shading Candidates", &log2NumCandidatesPerCell, 8);
             resetAccumulation |= ImGui::Checkbox("Temporal Reuse", &enableTemporalReuse);
             resetAccumulation |= ImGui::Checkbox("Cell Randomization", &enableCellRandomization);
+            resetAccumulation |= ImGui::Checkbox("Separated Env Light Sampling", &separateEnvLightSampling);
 
             ImGui::PushID("Debug Switches");
             for (int i = lengthof(debugSwitches) - 1; i >= 0; --i) {
@@ -2783,6 +2791,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         perFramePlp.log2NumCandidatesPerLightSlot = log2NumCandidatesPerLightSlot;
         perFramePlp.log2NumCandidatesPerCell = log2NumCandidatesPerCell;
         perFramePlp.enableCellRandomization = enableCellRandomization;
+        perFramePlp.separateEnvLightSampling = separateEnvLightSampling;
         perFramePlp.bufferIndex = bufferIndex;
         perFramePlp.resetFlowBuffer = newSequence;
         perFramePlp.enableJittering = enableJittering;
