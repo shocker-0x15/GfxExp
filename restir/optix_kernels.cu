@@ -188,6 +188,21 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(setupGBuffers)() {
     if (launchIndex.x == plp.f->mousePosition.x &&
         launchIndex.y == plp.f->mousePosition.y)
         *plp.f->pickInfo = pickInfo;
+
+    // JP: デノイザーに必要な情報を出力。
+    // EN: Output information required for the denoiser.
+    float3 firstHitNormal = transpose(camera.orientation) * hitPointParams.normalInWorld;
+    float3 prevAlbedoResult = make_float3(0.0f, 0.0f, 0.0f);
+    float3 prevNormalResult = make_float3(0.0f, 0.0f, 0.0f);
+    if (plp.f->numAccumFrames > 0) {
+        prevAlbedoResult = getXYZ(plp.s->albedoAccumBuffer.read(launchIndex));
+        prevNormalResult = getXYZ(plp.s->normalAccumBuffer.read(launchIndex));
+    }
+    float curWeight = 1.0f / (1 + plp.f->numAccumFrames);
+    float3 albedoResult = (1 - curWeight) * prevAlbedoResult + curWeight * hitPointParams.albedo;
+    float3 normalResult = (1 - curWeight) * prevNormalResult + curWeight * firstHitNormal;
+    plp.s->albedoAccumBuffer.write(launchIndex, make_float4(albedoResult, 1.0f));
+    plp.s->normalAccumBuffer.write(launchIndex, make_float4(normalResult, 1.0f));
 }
 
 CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
@@ -231,6 +246,14 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
             shadingNormalInWorld = make_float3(0, 0, 1);
     }
 
+    const MaterialData &mat = plp.s->materialDataBuffer[geomInst.materialSlot];
+    BSDF bsdf;
+    mat.setupBSDF(mat, texCoord, &bsdf);
+    ReferenceFrame shadingFrame(shadingNormalInWorld);
+    float3 vOut = -optixGetWorldRayDirection();
+    float3 vOutLocal = shadingFrame.toLocal(normalize(vOut));
+
+    hitPointParams->albedo = bsdf.evaluateDHReflectanceEstimate(vOutLocal);
     hitPointParams->positionInWorld = positionInWorld;
     hitPointParams->prevPositionInWorld = prevPositionInWorld;
     hitPointParams->normalInWorld = shadingNormalInWorld;
@@ -241,21 +264,13 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
     // EN: Export the information of the pixel on which the mouse is.
     if (launchIndex.x == plp.f->mousePosition.x &&
         launchIndex.y == plp.f->mousePosition.y) {
-        float3 vOut = -optixGetWorldRayDirection();
-
-        const MaterialData &mat = plp.s->materialDataBuffer[geomInst.materialSlot];
-        BSDF bsdf;
-        mat.setupBSDF(mat, texCoord, &bsdf);
-        ReferenceFrame shadingFrame(shadingNormalInWorld);
-        float3 vOutLocal = shadingFrame.toLocal(normalize(vOut));
-
         pickInfo->hit = true;
         pickInfo->instSlot = optixGetInstanceId();
         pickInfo->geomInstSlot = geomInst.geomInstSlot;
         pickInfo->matSlot = geomInst.materialSlot;
         pickInfo->primIndex = hp.primIndex;
         pickInfo->positionInWorld = positionInWorld;
-        pickInfo->albedo = bsdf.evaluateDHReflectanceEstimate(vOutLocal);
+        pickInfo->albedo = hitPointParams->albedo;
         float3 emittance = make_float3(0.0f, 0.0f, 0.0f);
         if (mat.emittance) {
             float4 texValue = tex2DLod<float4>(mat.emittance, texCoord.x, texCoord.y, 0.0f);
@@ -285,6 +300,7 @@ CUDA_DEVICE_KERNEL void RT_MS_NAME(setupGBuffers)() {
     PickInfo* pickInfo;
     optixu::getPayloads<PrimaryRayPayloadSignature>(&hitPointParams, &pickInfo);
 
+    hitPointParams->albedo = make_float3(0.0f, 0.0f, 0.0f);
     hitPointParams->positionInWorld = p;
     hitPointParams->prevPositionInWorld = p;
     hitPointParams->normalInWorld = vOut;
@@ -1200,7 +1216,6 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(shading)() {
 
     const PerspectiveCamera &camera = plp.f->camera;
 
-    float3 albedo = make_float3(0.0f);
     float3 contribution = make_float3(0.01f, 0.01f, 0.01f);
     if (materialSlot != 0xFFFFFFFF) {
         const MaterialData &mat = plp.s->materialDataBuffer[materialSlot];
@@ -1238,8 +1253,6 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(shading)() {
             directCont = recPDFEstimate * performDirectLighting<true>(positionInWorld, vOutLocal, shadingFrame, bsdf, lightSample);
 
         contribution += directCont;
-
-        albedo = bsdf.evaluateDHReflectanceEstimate(vOutLocal);
     }
     else {
         // JP: 環境光源を直接見ている場合の寄与を蓄積。
@@ -1247,33 +1260,15 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(shading)() {
         if (plp.s->envLightTexture && plp.f->enableEnvLight) {
             float u = texCoord.x, v = texCoord.y;
             float4 texValue = tex2DLod<float4>(plp.s->envLightTexture, u, v, 0.0f);
-            float3 luminance = make_float3(texValue);
-            luminance *= plp.f->envLightPowerCoeff;
-
+            float3 luminance = plp.f->envLightPowerCoeff * make_float3(texValue);
             contribution = luminance;
-
-            albedo = make_float3(0.0f, 0.0f, 0.0f);
         }
     }
 
-
-
-    // JP: デノイザーに必要な情報を出力。
-    // EN: Output information required for the denoiser.
-    float3 firstHitNormal = transpose(camera.orientation) * normalInWorld;
     float3 prevColorResult = make_float3(0.0f, 0.0f, 0.0f);
-    float3 prevAlbedoResult = make_float3(0.0f, 0.0f, 0.0f);
-    float3 prevNormalResult = make_float3(0.0f, 0.0f, 0.0f);
-    if (plp.f->numAccumFrames > 0) {
+    if (plp.f->numAccumFrames > 0)
         prevColorResult = getXYZ(plp.s->beautyAccumBuffer.read(launchIndex));
-        prevAlbedoResult = getXYZ(plp.s->albedoAccumBuffer.read(launchIndex));
-        prevNormalResult = getXYZ(plp.s->normalAccumBuffer.read(launchIndex));
-    }
     float curWeight = 1.0f / (1 + plp.f->numAccumFrames);
     float3 colorResult = (1 - curWeight) * prevColorResult + curWeight * contribution;
-    float3 albedoResult = (1 - curWeight) * prevAlbedoResult + curWeight * albedo;
-    float3 normalResult = (1 - curWeight) * prevNormalResult + curWeight * firstHitNormal;
     plp.s->beautyAccumBuffer.write(launchIndex, make_float4(colorResult, 1.0f));
-    plp.s->albedoAccumBuffer.write(launchIndex, make_float4(albedoResult, 1.0f));
-    plp.s->normalAccumBuffer.write(launchIndex, make_float4(normalResult, 1.0f));
 }

@@ -105,6 +105,7 @@ namespace shared {
 
 
     struct HitPointParams {
+        float3 albedo;
         float3 positionInWorld;
         float3 prevPositionInWorld;
         float3 normalInWorld;

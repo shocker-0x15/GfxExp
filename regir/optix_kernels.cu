@@ -188,6 +188,21 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(setupGBuffers)() {
     if (launchIndex.x == plp.f->mousePosition.x &&
         launchIndex.y == plp.f->mousePosition.y)
         *plp.f->pickInfo = pickInfo;
+
+    // JP: デノイザーに必要な情報を出力。
+    // EN: Output information required for the denoiser.
+    float3 firstHitNormal = transpose(camera.orientation) * hitPointParams.normalInWorld;
+    float3 prevAlbedoResult = make_float3(0.0f, 0.0f, 0.0f);
+    float3 prevNormalResult = make_float3(0.0f, 0.0f, 0.0f);
+    if (plp.f->numAccumFrames > 0) {
+        prevAlbedoResult = getXYZ(plp.s->albedoAccumBuffer.read(launchIndex));
+        prevNormalResult = getXYZ(plp.s->normalAccumBuffer.read(launchIndex));
+    }
+    float curWeight = 1.0f / (1 + plp.f->numAccumFrames);
+    float3 albedoResult = (1 - curWeight) * prevAlbedoResult + curWeight * hitPointParams.albedo;
+    float3 normalResult = (1 - curWeight) * prevNormalResult + curWeight * firstHitNormal;
+    plp.s->albedoAccumBuffer.write(launchIndex, make_float4(albedoResult, 1.0f));
+    plp.s->normalAccumBuffer.write(launchIndex, make_float4(normalResult, 1.0f));
 }
 
 CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
@@ -231,6 +246,14 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
             shadingNormalInWorld = make_float3(0, 0, 1);
     }
 
+    const MaterialData &mat = plp.s->materialDataBuffer[geomInst.materialSlot];
+    BSDF bsdf;
+    mat.setupBSDF(mat, texCoord, &bsdf);
+    ReferenceFrame shadingFrame(shadingNormalInWorld);
+    float3 vOut = -optixGetWorldRayDirection();
+    float3 vOutLocal = shadingFrame.toLocal(normalize(vOut));
+
+    hitPointParams->albedo = bsdf.evaluateDHReflectanceEstimate(vOutLocal);
     hitPointParams->positionInWorld = positionInWorld;
     hitPointParams->prevPositionInWorld = prevPositionInWorld;
     hitPointParams->normalInWorld = shadingNormalInWorld;
@@ -241,21 +264,13 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
     // EN: Export the information of the pixel on which the mouse is.
     if (launchIndex.x == plp.f->mousePosition.x &&
         launchIndex.y == plp.f->mousePosition.y) {
-        float3 vOut = -optixGetWorldRayDirection();
-
-        const MaterialData &mat = plp.s->materialDataBuffer[geomInst.materialSlot];
-        BSDF bsdf;
-        mat.setupBSDF(mat, texCoord, &bsdf);
-        ReferenceFrame shadingFrame(shadingNormalInWorld);
-        float3 vOutLocal = shadingFrame.toLocal(normalize(vOut));
-
         pickInfo->hit = true;
         pickInfo->instSlot = optixGetInstanceId();
         pickInfo->geomInstSlot = geomInst.geomInstSlot;
         pickInfo->matSlot = geomInst.materialSlot;
         pickInfo->primIndex = hp.primIndex;
         pickInfo->positionInWorld = positionInWorld;
-        pickInfo->albedo = bsdf.evaluateDHReflectanceEstimate(vOutLocal);
+        pickInfo->albedo = hitPointParams->albedo;
         float3 emittance = make_float3(0.0f, 0.0f, 0.0f);
         if (mat.emittance) {
             float4 texValue = tex2DLod<float4>(mat.emittance, texCoord.x, texCoord.y, 0.0f);
@@ -285,6 +300,7 @@ CUDA_DEVICE_KERNEL void RT_MS_NAME(setupGBuffers)() {
     PickInfo* pickInfo;
     optixu::getPayloads<PrimaryRayPayloadSignature>(&hitPointParams, &pickInfo);
 
+    hitPointParams->albedo = make_float3(0.0f, 0.0f, 0.0f);
     hitPointParams->positionInWorld = p;
     hitPointParams->prevPositionInWorld = p;
     hitPointParams->normalInWorld = vOut;
@@ -759,48 +775,48 @@ CUDA_DEVICE_FUNCTION void pathTrace_rayGen_generic() {
     const PerspectiveCamera &camera = plp.f->camera;
 
     bool useEnvLight = plp.s->envLightTexture && plp.f->enableEnvLight;
-    float3 albedo = make_float3(0.0f);
     float3 contribution = make_float3(0.01f, 0.01f, 0.01f);
     if (materialSlot != 0xFFFFFFFF) {
         float3 alpha = make_float3(1.0f);
-
-        const MaterialData &mat = plp.s->materialDataBuffer[materialSlot];
-
-        ReferenceFrame shadingFrame(normalInWorld);
-        // Add offset with shading normal instead of geometric normal alghough not so correct...
-        positionInWorld = offsetRayOriginNaive(positionInWorld, shadingFrame.normal);
-        float3 vOut = normalize(camera.position - positionInWorld);
-        float3 vOutLocal = shadingFrame.toLocal(vOut);
-
-        // JP: 光源を直接見ている場合の寄与を蓄積。
-        // EN: Accumulate the contribution from a light source directly seeing.
-        contribution = make_float3(0.0f);
-        if (vOutLocal.z > 0 && mat.emittance) {
-            float4 texValue = tex2DLod<float4>(mat.emittance, texCoord.x, texCoord.y, 0.0f);
-            float3 emittance = make_float3(texValue);
-            contribution += alpha * emittance / Pi;
-        }
-
+        float initImportance = sRGB_calcLuminance(alpha);
         PCG32RNG rng = plp.s->rngBuffer.read(launchIndex);
 
-        BSDF bsdf;
-        mat.setupBSDF(mat, texCoord, &bsdf);
-
-        albedo = bsdf.evaluateDHReflectanceEstimate(vOutLocal);
-
-        // Next event estimation on the first hit.
-        contribution += alpha * performNextEventEstimation<useReGIR>(
-            positionInWorld, vOutLocal, shadingFrame, bsdf, rng);
-
-        float initImportance = sRGB_calcLuminance(alpha);
-
-        // generate a next ray.
-        float3 vInLocal;
+        // JP: 最初の交点におけるシェーディング。
+        // EN: Shading on the first hit.
+        float3 vIn;
         float dirPDensity;
-        alpha *= bsdf.sampleThroughput(
-            vOutLocal, rng.getFloat0cTo1o(), rng.getFloat0cTo1o(),
-            &vInLocal, &dirPDensity);
-        float3 vIn = shadingFrame.fromLocal(vInLocal);
+        {
+            const MaterialData &mat = plp.s->materialDataBuffer[materialSlot];
+
+            ReferenceFrame shadingFrame(normalInWorld);
+            // Add offset with shading normal instead of geometric normal alghough not so correct...
+            positionInWorld = offsetRayOriginNaive(positionInWorld, shadingFrame.normal);
+            float3 vOut = normalize(camera.position - positionInWorld);
+            float3 vOutLocal = shadingFrame.toLocal(vOut);
+
+            // JP: 光源を直接見ている場合の寄与を蓄積。
+            // EN: Accumulate the contribution from a light source directly seeing.
+            contribution = make_float3(0.0f);
+            if (vOutLocal.z > 0 && mat.emittance) {
+                float4 texValue = tex2DLod<float4>(mat.emittance, texCoord.x, texCoord.y, 0.0f);
+                float3 emittance = make_float3(texValue);
+                contribution += alpha * emittance / Pi;
+            }
+
+            BSDF bsdf;
+            mat.setupBSDF(mat, texCoord, &bsdf);
+
+            // Next event estimation (explicit light sampling) on the first hit.
+            contribution += alpha * performNextEventEstimation<useReGIR>(
+                positionInWorld, vOutLocal, shadingFrame, bsdf, rng);
+
+            // generate a next ray.
+            float3 vInLocal;
+            alpha *= bsdf.sampleThroughput(
+                vOutLocal, rng.getFloat0cTo1o(), rng.getFloat0cTo1o(),
+                &vInLocal, &dirPDensity);
+            vIn = shadingFrame.fromLocal(vInLocal);
+        }
 
         // Path extension loop
         PathTraceWriteOnlyPayload woPayload = {};
@@ -859,35 +875,17 @@ CUDA_DEVICE_FUNCTION void pathTrace_rayGen_generic() {
         if (useEnvLight) {
             float u = texCoord.x, v = texCoord.y;
             float4 texValue = tex2DLod<float4>(plp.s->envLightTexture, u, v, 0.0f);
-            float3 luminance = make_float3(texValue);
-            luminance *= plp.f->envLightPowerCoeff;
-
+            float3 luminance = plp.f->envLightPowerCoeff * make_float3(texValue);
             contribution = luminance;
-
-            albedo = make_float3(0.0f, 0.0f, 0.0f);
         }
     }
 
-
-
-    // JP: デノイザーに必要な情報を出力。
-    // EN: Output information required for the denoiser.
-    float3 firstHitNormal = transpose(camera.orientation) * normalInWorld;
     float3 prevColorResult = make_float3(0.0f, 0.0f, 0.0f);
-    float3 prevAlbedoResult = make_float3(0.0f, 0.0f, 0.0f);
-    float3 prevNormalResult = make_float3(0.0f, 0.0f, 0.0f);
-    if (plp.f->numAccumFrames > 0) {
+    if (plp.f->numAccumFrames > 0)
         prevColorResult = getXYZ(plp.s->beautyAccumBuffer.read(launchIndex));
-        prevAlbedoResult = getXYZ(plp.s->albedoAccumBuffer.read(launchIndex));
-        prevNormalResult = getXYZ(plp.s->normalAccumBuffer.read(launchIndex));
-    }
     float curWeight = 1.0f / (1 + plp.f->numAccumFrames);
     float3 colorResult = (1 - curWeight) * prevColorResult + curWeight * contribution;
-    float3 albedoResult = (1 - curWeight) * prevAlbedoResult + curWeight * albedo;
-    float3 normalResult = (1 - curWeight) * prevNormalResult + curWeight * firstHitNormal;
     plp.s->beautyAccumBuffer.write(launchIndex, make_float4(colorResult, 1.0f));
-    plp.s->albedoAccumBuffer.write(launchIndex, make_float4(albedoResult, 1.0f));
-    plp.s->normalAccumBuffer.write(launchIndex, make_float4(normalResult, 1.0f));
 }
 
 template <bool useReGIR>
@@ -919,6 +917,9 @@ CUDA_DEVICE_FUNCTION void pathTrace_closestHit_generic() {
         shadingNormalInWorld = b0 * v0.normal + b1 * v1.normal + b2 * v2.normal;
         geometricNormalInWorld = cross(v1.position - v0.position, v2.position - v0.position);
         if constexpr (useMultipleImportanceSampling && !useReGIR) {
+            // JP: 交点をExplicit Light Samplingでサンプルする場合の仮想的な確率密度を求める。
+            // EN: Compute a hypothetical probability density with which the intersection point
+            //     is sampled by explicit light sampling.
             float lightProb = 1.0f;
             if (plp.s->envLightTexture && plp.f->enableEnvLight)
                 lightProb *= (1 - probToSampleEnvLight);
@@ -975,7 +976,7 @@ CUDA_DEVICE_FUNCTION void pathTrace_closestHit_generic() {
     BSDF bsdf;
     mat.setupBSDF(mat, texCoord, &bsdf);
 
-    // Next Event Estimation
+    // Next Event Estimation (Explicit Light Sampling)
     rwPayload->contribution += rwPayload->alpha * performNextEventEstimation<useReGIR>(
         positionInWorld, vOutLocal, shadingFrame, bsdf, rng);
 
@@ -1019,7 +1020,7 @@ CUDA_DEVICE_KERNEL void RT_MS_NAME(pathTraceBaseline)() {
 
         // Implicit Light Sampling
         float4 texValue = tex2DLod<float4>(plp.s->envLightTexture, texCoord.x, texCoord.y, 0.0f);
-        float3 emittance = (Pi * plp.f->envLightPowerCoeff) * make_float3(texValue);
+        float3 luminance = plp.f->envLightPowerCoeff * make_float3(texValue);
         float misWeight = 1.0f;
         if constexpr (useMultipleImportanceSampling) {
             float uvPDF = plp.s->envLightImportanceMap.evaluatePDF(texCoord.x, texCoord.y);
@@ -1028,7 +1029,7 @@ CUDA_DEVICE_KERNEL void RT_MS_NAME(pathTraceBaseline)() {
             float bsdfPDensity = rwPayload->prevDirPDensity;
             misWeight = pow2(bsdfPDensity) / (pow2(bsdfPDensity) + pow2(lightPDensity));
         }
-        rwPayload->contribution += rwPayload->alpha * emittance * (misWeight / Pi);
+        rwPayload->contribution += rwPayload->alpha * luminance * misWeight;
     }
 }
 
