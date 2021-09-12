@@ -2619,11 +2619,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
                         pickInfoOnHost.emittance.x,
                         pickInfoOnHost.emittance.y,
                         pickInfoOnHost.emittance.z);
-            ImGui::Separator();
-
-            uint32_t numActiveCellsOnHost;
-            numActiveCells[bufferIndex].read(&numActiveCellsOnHost, 1, cuStream);
-            ImGui::Text("#Active Cells: %5u / %5u", numActiveCellsOnHost, numCells);
 
             ImGui::Separator();
 
@@ -2650,6 +2645,11 @@ int32_t main(int32_t argc, const char* argv[]) try {
                     ImGui::SameLine();
             }
             ImGui::PopID();
+
+            uint32_t numActiveCellsOnHost = 0;
+            if (useReGIR)
+                numActiveCells[bufferIndex].read(&numActiveCellsOnHost, 1, cuStream);
+            ImGui::Text("#Active Cells: %5u / %5u", numActiveCellsOnHost, numCells);
 
             ImGui::Separator();
 
@@ -2813,32 +2813,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
         }
         curGPUTimer.buildCellReservoirs.stop(cuStream);
 
-        //CUDADRV_CHECK(cuStreamSynchronize(cuStream));
-        //{
-        //    std::vector<shared::Reservoir<shared::LightSample>> reservoirsOnHost
-        //        = reservoirs[0];
-        //    std::vector<shared::ReservoirInfo> reservoirInfosOnHost
-        //        = reservoirInfos[0];
-        //    while (true) {
-        //        uint32_t ix = 15;
-        //        uint32_t iy = 0;
-        //        uint32_t iz = 15;
-        //        uint32_t cellLinearIndex =
-        //            iz * (gridDimension.x * gridCellSize.y)
-        //            + iy * gridDimension.x
-        //            + ix;
-        //        for (int lightSlotIndex = 0; lightSlotIndex < shared::kNumLightSlotsPerCell; ++lightSlotIndex) {
-        //            uint32_t idx = shared::kNumLightSlotsPerCell * cellLinearIndex + lightSlotIndex;
-        //            const shared::Reservoir<shared::LightSample> &res = reservoirsOnHost[idx];
-        //            const shared::ReservoirInfo &resInfo = reservoirInfosOnHost[idx];
-        //            const shared::LightSample &lightSample = res.getSample();
-        //            hpprintf("%3u: %u\n", lightSlotIndex, lightSample.instIndex);
-        //        }
-        //        hpprintf("\n");
-        //    }
-        //    printf("");
-        //}
-
         // JP: 各セルにおいて前フレームのセルとの間でReservoirの結合を行う。
         // EN: For each cell, combine reservoirs between the current cell and
         //     the cell from the previous frame.
@@ -2863,9 +2837,11 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
         // JP: セルの最終アクセスフレーム番号を更新する。
         // EN: Update the last access frame number for each cell.
-        gpuEnv.kernelUpdateLastAccessFrameIndices(
-            cuStream, gpuEnv.kernelUpdateLastAccessFrameIndices.calcGridDim(numCells),
-            plp, static_cast<uint32_t>(frameIndex));
+        if (useReGIR) {
+            gpuEnv.kernelUpdateLastAccessFrameIndices(
+                cuStream, gpuEnv.kernelUpdateLastAccessFrameIndices.calcGridDim(numCells),
+                plp, static_cast<uint32_t>(frameIndex));
+        }
 
         curGPUTimer.denoise.start(cuStream);
 
