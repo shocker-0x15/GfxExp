@@ -200,13 +200,20 @@ CUDA_DEVICE_KERNEL void buildCellReservoirs(PipelineLaunchParameters _plp, uint3
     for (int candIdx = 0; candIdx < numCandidates; ++candIdx) {
         // JP: 環境光テクスチャーが設定されている場合は一定の確率でサンプルする。
         //     ダイバージェンスを抑えるために、ループの最初とそれ以外で環境光かそれ以外のサンプリングを分ける。
+        //     ただし、そもそもReGIRは2段階のRISにおいてVisibilityを一切考慮していないため、環境光は(特に高いエネルギーの場合)、
+        //     Reservoir中のサンプルに無駄なものを増やしてしまい、むしろ分散が増える傾向にある。
+        //     環境光のサンプリングは別で行うほうが良いかもしれない。
         // EN: Sample an environmental light texture with a fixed probability if it is set.
         //     Separate sampling from the environmental light and the others to
         //     the beginning of the loop and the rest to avoid divergence.
+        //     However in the first place, ReGIR doesn't take visibility into account at all during two-stage RIS,
+        //     therefore an environmental light (particularly with a high-energy case) tends to increase useless
+        //     samples in reservoirs, resulting in high variance.
+        //     Separated environmental light sampling may be preferred.
         float uLight = rng.getFloat0cTo1o();
         bool sampleEnvLight = false;
         float probToSampleCurLightType = 1.0f;
-        if (plp.s->envLightTexture && plp.f->enableEnvLight && !plp.f->separateEnvLightSampling) {
+        if (plp.s->envLightTexture && plp.f->enableEnvLight) {
             float prob = min(max(probToSampleEnvLight * numCandidates - candIdx, 0.0f), 1.0f);
             if (uLight < prob) {
                 probToSampleCurLightType = probToSampleEnvLight;

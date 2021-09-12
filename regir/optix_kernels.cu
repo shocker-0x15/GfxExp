@@ -157,7 +157,7 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(setupGBuffers)() {
     optixu::trace<PrimaryRayPayloadSignature>(
         plp.f->travHandle, origin, direction,
         0.0f, FLT_MAX, 0.0f, 0xFF, OPTIX_RAY_FLAG_NONE,
-        RayType_Primary, NumRayTypes, MissRayType_Primary,
+        RayType_Primary, NumRayTypes, RayType_Primary,
         hitPointParamsPtr, pickInfoPtr);
 
 
@@ -555,7 +555,7 @@ CUDA_DEVICE_FUNCTION float3 performDirectLighting(
             plp.f->travHandle,
             shadingPoint, shadowRayDir, 0.0f, dist * 0.9999f, 0.0f,
             0xFF, OPTIX_RAY_FLAG_NONE,
-            RayType_Visibility, NumRayTypes, MissRayType_Visibility,
+            RayType_Visibility, NumRayTypes, RayType_Visibility,
             visibility);
     }
 
@@ -590,7 +590,7 @@ CUDA_DEVICE_FUNCTION bool evaluateVisibility(
         plp.f->travHandle,
         shadingPoint, shadowRayDir, 0.0f, dist * 0.9999f, 0.0f,
         0xFF, OPTIX_RAY_FLAG_NONE,
-        RayType_Visibility, NumRayTypes, MissRayType_Visibility,
+        RayType_Visibility, NumRayTypes, RayType_Visibility,
         visibility);
 
     return visibility > 0.0f;
@@ -695,39 +695,6 @@ CUDA_DEVICE_FUNCTION float3 performNextEventEstimation(
         if (recProbDensityEstimate > 0.0f) {
             float visibility = evaluateVisibility(shadingPoint, shadingFrame, lightSample);
             ret = unshadowedContribution * (visibility * recProbDensityEstimate);
-        }
-
-        // JP: ReGIRは2段階のRISにおいてVisibilityを一切考慮していないため、環境光は(特に高いエネルギーの場合)、
-        //     Reservoir中のサンプルに無駄なものを増やしてしまい、むしろ分散が増える傾向にある。
-        //     環境光は別でサンプルを行う。
-        // EN: ReGIR doesn't take visibility into account at all during two-stage RIS, therefore
-        //     an environmental light (particularly with a high-energy case) tends to increase useless
-        //     samples in reservoirs, resulting in high variance.
-        //     Separately sample the environmental light.
-        // TODO: 2段階目のRISに組み込む？それとも専用のRISを実装する？
-        if (plp.s->envLightTexture && plp.f->enableEnvLight && plp.f->separateEnvLightSampling) {
-            LightSample lightSample;
-            float3 lightPosition;
-            float3 lightNormal;
-            float areaPDensity;
-            float3 M = sampleLight(rng.getFloat0cTo1o(), true, rng.getFloat0cTo1o(), rng.getFloat0cTo1o(),
-                                   &lightSample, &lightPosition, &lightNormal, &areaPDensity);
-            float misWeight = 1.0f;
-            if constexpr (useMultipleImportanceSampling) {
-                bool atInfinity = lightSample.atInfinity();
-                float3 shadowRay = atInfinity ? lightPosition : (lightPosition - shadingPoint);
-                float dist2 = sqLength(shadowRay);
-                shadowRay /= std::sqrt(dist2);
-                float3 vInLocal = shadingFrame.toLocal(shadowRay);
-                float lpCos = std::fabs(dot(shadowRay, lightNormal));
-                float bsdfPDensity = bsdf.evaluatePDF(vOutLocal, vInLocal) * lpCos / dist2;
-                if (!isfinite(bsdfPDensity))
-                    bsdfPDensity = 0.0f;
-                float lightPDensity = areaPDensity;
-                misWeight = pow2(lightPDensity) / (pow2(bsdfPDensity) + pow2(lightPDensity));
-            }
-            ret += performDirectLighting<true>(
-                shadingPoint, vOutLocal, shadingFrame, bsdf, lightSample) * (misWeight / areaPDensity);
         }
     }
     else {
@@ -835,23 +802,6 @@ CUDA_DEVICE_FUNCTION void pathTrace_rayGen_generic() {
             &vInLocal, &dirPDensity);
         float3 vIn = shadingFrame.fromLocal(vInLocal);
 
-        RayType pathTraceRayType;
-        MissRayType pathTraceMissRayType;
-        if constexpr (useReGIR) {
-            pathTraceRayType = RayType_PathTraceReGIR;
-            if (useEnvLight && plp.f->separateEnvLightSampling)
-                pathTraceMissRayType = MissRayType_PathTraceReGIR_Env;
-            else
-                pathTraceMissRayType = MissRayType_PathTraceReGIR;
-        }
-        else {
-            pathTraceRayType = RayType_PathTraceBaseline;
-            if (useEnvLight)
-                pathTraceMissRayType = MissRayType_PathTraceBaseline_Env;
-            else
-                pathTraceMissRayType = MissRayType_PathTraceBaseline;
-        }
-
         // Path extension loop
         PathTraceWriteOnlyPayload woPayload = {};
         PathTraceWriteOnlyPayload* woPayloadPtr = &woPayload;
@@ -874,17 +824,25 @@ CUDA_DEVICE_FUNCTION void pathTrace_rayGen_generic() {
             if (rwPayload.pathLength >= plp.f->maxPathLength)
                 rwPayload.maxLengthTerminate = true;
             rwPayload.terminate = true;
-            if constexpr (!useImplicitLightSampling || useReGIR) {
+            // JP: 経路長制限に到達したときに、implicit light samplingを使わない場合はClosest-hit program内
+            //     で行うことが無いので終了する。
+            // EN: Nothing to do in the closest-hit program when reaching the path length limit
+            //     in the case implicit light sampling is unused.
+            if constexpr (useReGIR || !useImplicitLightSampling) {
+                if (rwPayload.maxLengthTerminate)
+                    break;
                 // Russian roulette
                 float continueProb = std::fmin(sRGB_calcLuminance(rwPayload.alpha) / rwPayload.initImportance, 1.0f);
-                if (rwPayload.rng.getFloat0cTo1o() >= continueProb || rwPayload.maxLengthTerminate)
+                if (rwPayload.rng.getFloat0cTo1o() >= continueProb)
                     break;
                 rwPayload.alpha /= continueProb;
             }
+
+            constexpr RayType pathTraceRayType = useReGIR ? RayType_PathTraceReGIR : RayType_PathTraceBaseline;
             optixu::trace<PathTraceRayPayloadSignature>(
                 plp.f->travHandle, rayOrg, rayDir,
                 0.0f, FLT_MAX, 0.0f, 0xFF, OPTIX_RAY_FLAG_NONE,
-                pathTraceRayType, NumRayTypes, pathTraceMissRayType,
+                pathTraceRayType, NumRayTypes, pathTraceRayType,
                 woPayloadPtr, rwPayloadPtr);
             if (rwPayload.terminate)
                 break;
@@ -1035,8 +993,15 @@ CUDA_DEVICE_FUNCTION void pathTrace_closestHit_generic() {
     rwPayload->terminate = false;
 }
 
-template <bool useReGIR>
-CUDA_DEVICE_FUNCTION void pathTrace_miss_generic() {
+CUDA_DEVICE_KERNEL void RT_RG_NAME(pathTraceBaseline)() {
+    pathTrace_rayGen_generic<false>();
+}
+
+CUDA_DEVICE_KERNEL void RT_CH_NAME(pathTraceBaseline)() {
+    pathTrace_closestHit_generic<false>();
+}
+
+CUDA_DEVICE_KERNEL void RT_MS_NAME(pathTraceBaseline)() {
     if constexpr (useImplicitLightSampling) {
         if (!plp.s->envLightTexture || !plp.f->enableEnvLight)
             return;
@@ -1059,26 +1024,12 @@ CUDA_DEVICE_FUNCTION void pathTrace_miss_generic() {
         if constexpr (useMultipleImportanceSampling) {
             float uvPDF = plp.s->envLightImportanceMap.evaluatePDF(texCoord.x, texCoord.y);
             float hypAreaPDensity = uvPDF / (2 * Pi * Pi * std::sin(theta));
-            float lightPDensity = hypAreaPDensity;
-            if constexpr (!useReGIR)
-                lightPDensity *= probToSampleEnvLight;
+            float lightPDensity = probToSampleEnvLight * hypAreaPDensity;
             float bsdfPDensity = rwPayload->prevDirPDensity;
             misWeight = pow2(bsdfPDensity) / (pow2(bsdfPDensity) + pow2(lightPDensity));
         }
         rwPayload->contribution += rwPayload->alpha * emittance * (misWeight / Pi);
     }
-}
-
-CUDA_DEVICE_KERNEL void RT_RG_NAME(pathTraceBaseline)() {
-    pathTrace_rayGen_generic<false>();
-}
-
-CUDA_DEVICE_KERNEL void RT_CH_NAME(pathTraceBaseline)() {
-    pathTrace_closestHit_generic<false>();
-}
-
-CUDA_DEVICE_KERNEL void RT_MS_NAME(pathTraceBaseline)() {
-    pathTrace_miss_generic<false>();
 }
 
 CUDA_DEVICE_KERNEL void RT_RG_NAME(pathTraceRegir)() {
@@ -1087,8 +1038,4 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(pathTraceRegir)() {
 
 CUDA_DEVICE_KERNEL void RT_CH_NAME(pathTraceRegir)() {
     pathTrace_closestHit_generic<true>();
-}
-
-CUDA_DEVICE_KERNEL void RT_MS_NAME(pathTraceRegir)() {
-    pathTrace_miss_generic<true>();
 }
