@@ -8,7 +8,6 @@
 
 static constexpr float Pi = 3.14159265358979323846f;
 static constexpr float RayEpsilon = 1e-4;
-static constexpr bool forceDoubleSidedMaterial = true;
 
 
 
@@ -111,6 +110,9 @@ struct ReferenceFrame {
     CUDA_DEVICE_FUNCTION ReferenceFrame(const float3 &_normal) : normal(_normal) {
         makeCoordinateSystem(normal, &tangent, &bitangent);
     }
+    CUDA_DEVICE_FUNCTION ReferenceFrame(const float3 &_normal, const float3 &_tangent) : tangent(_tangent), normal(_normal) {
+        bitangent = cross(normal, tangent);
+    }
 
     CUDA_DEVICE_FUNCTION float3 toLocal(const float3 &v) const {
         return make_float3(dot(tangent, v), dot(bitangent, v), dot(normal, v));
@@ -121,6 +123,49 @@ struct ReferenceFrame {
                            dot(make_float3(tangent.z, bitangent.z, normal.z), v));
     }
 };
+
+CUDA_DEVICE_FUNCTION void applyBumpMapping(const float3 &modNormalInTF, ReferenceFrame* frameToModify) {
+    // JP: 法線から回転軸と回転角(、Quaternion)を求めて対応する接平面ベクトルを求める。
+    // EN: calculate a rotating axis and an angle (and quaternion) from the normal then calculate corresponding tangential vectors.
+    float projLength = std::sqrt(modNormalInTF.x * modNormalInTF.x + modNormalInTF.y * modNormalInTF.y);
+    if (projLength < 1e-3f)
+        return;
+    float tiltAngle = std::atan(projLength / modNormalInTF.z);
+    float qSin, qCos;
+    sincosf(tiltAngle / 2, &qSin, &qCos);
+    float qX = (-modNormalInTF.y / projLength) * qSin;
+    float qY = (modNormalInTF.x / projLength) * qSin;
+    float qW = qCos;
+    float3 modTangentInTF = make_float3(1 - 2 * qY * qY, 2 * qX * qY, -2 * qY * qW);
+    float3 modBitangentInTF = make_float3(2 * qX * qY, 1 - 2 * qX * qX, 2 * qX * qW);
+
+    Matrix3x3 matTFtoW = Matrix3x3(frameToModify->tangent, frameToModify->bitangent, frameToModify->normal);
+    ReferenceFrame bumpShadingFrame(matTFtoW * modTangentInTF,
+                                    matTFtoW * modBitangentInTF,
+                                    matTFtoW * modNormalInTF);
+
+    *frameToModify = bumpShadingFrame;
+}
+
+RT_CALLABLE_PROGRAM float3 RT_DC_NAME(readModifiedNormalFromNormalMap)
+(CUtexObject texture, const float2 &texCoord, uint32_t) {
+    float3 modLocalNormal = make_float3(tex2DLod<float4>(texture, texCoord.x, texCoord.y, 0.0f));
+    modLocalNormal = 2.0f * modLocalNormal - make_float3(1.0f);
+    modLocalNormal.y *= -1; // DirectX convention
+    return modLocalNormal;
+}
+
+RT_CALLABLE_PROGRAM float3 RT_DC_NAME(readModifiedNormalFromHeightMap)
+(CUtexObject texture, const float2 &texCoord, uint32_t texDim) {
+    float4 heightValues = tex2Dgather<float4>(texture, texCoord.x, texCoord.y, 0);
+    constexpr float coeff = (5.0f / 1024);
+    uint32_t width = (texDim >> 0) & 0xFFFF;
+    uint32_t height = (texDim >> 16) & 0xFFFF;
+    float dhdu = (coeff * width) * (heightValues.y - heightValues.x);
+    float dhdv = (coeff * height) * (heightValues.x - heightValues.w);
+    float3 modLocalNormal = normalize(make_float3(-dhdu, dhdv, 1));
+    return modLocalNormal;
+}
 
 
 

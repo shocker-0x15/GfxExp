@@ -1240,7 +1240,7 @@ namespace shared {
         }
 
         CUDA_DEVICE_FUNCTION RealType evaluatePMF(uint32_t idx) const {
-            Assert(idx >= 0 && idx < m_numValues, "\"idx\" is out of range [0, %u)", m_numValues);
+            Assert(idx < m_numValues, "\"idx\" is out of range [0, %u)", m_numValues);
             return m_PMF[idx];
         }
 
@@ -1558,4 +1558,9 @@ namespace shared {
             return total;
         }
     };
+
+
+
+    using ReadModifiedNormal = optixu::DirectCallableProgramID<
+        float3(CUtexObject texture, const float2 &texCoord, uint32_t texDim)>;
 }

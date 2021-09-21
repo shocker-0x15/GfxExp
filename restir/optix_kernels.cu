@@ -192,6 +192,7 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(setupGBuffers)() {
     // JP: デノイザーに必要な情報を出力。
     // EN: Output information required for the denoiser.
     float3 firstHitNormal = transpose(camera.orientation) * hitPointParams.normalInWorld;
+    firstHitNormal.x *= -1;
     float3 prevAlbedoResult = make_float3(0.0f, 0.0f, 0.0f);
     float3 prevNormalResult = make_float3(0.0f, 0.0f, 0.0f);
     if (plp.f->numAccumFrames > 0) {
@@ -220,6 +221,7 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
     float3 positionInWorld;
     float3 prevPositionInWorld;
     float3 shadingNormalInWorld;
+    float3 texCoord0DirInWorld;
     float2 texCoord;
     {
         const Triangle &tri = geomInst.triangleBuffer[hp.primIndex];
@@ -231,32 +233,34 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
         float b0 = 1 - (b1 + b2);
         float3 localP = b0 * v0.position + b1 * v1.position + b2 * v2.position;
         shadingNormalInWorld = b0 * v0.normal + b1 * v1.normal + b2 * v2.normal;
+        texCoord0DirInWorld = b0 * v0.texCoord0Dir + b1 * v1.texCoord0Dir + b2 * v2.texCoord0Dir;
         texCoord = b0 * v0.texCoord + b1 * v1.texCoord + b2 * v2.texCoord;
 
         positionInWorld = optixTransformPointFromObjectToWorldSpace(localP);
         prevPositionInWorld = inst.prevTransform * localP;
         shadingNormalInWorld = normalize(optixTransformNormalFromObjectToWorldSpace(shadingNormalInWorld));
-        if constexpr (forceDoubleSidedMaterial) {
-            float3 geomNormal = cross(v1.position - v0.position, v2.position - v0.position);
-            geomNormal = /*normalize(*/optixTransformNormalFromObjectToWorldSpace(geomNormal)/*)*/;
-            if (dot(optixGetWorldRayDirection(), geomNormal) > 0.0f)
-                shadingNormalInWorld *= -1;
-        }
-        if (!allFinite(shadingNormalInWorld))
+        texCoord0DirInWorld = normalize(optixTransformVectorFromObjectToWorldSpace(texCoord0DirInWorld));
+        if (!allFinite(shadingNormalInWorld)) {
             shadingNormalInWorld = make_float3(0, 0, 1);
+            texCoord0DirInWorld = make_float3(1, 0, 0);
+        }
     }
 
     const MaterialData &mat = plp.s->materialDataBuffer[geomInst.materialSlot];
+
     BSDF bsdf;
     mat.setupBSDF(mat, texCoord, &bsdf);
-    ReferenceFrame shadingFrame(shadingNormalInWorld);
+    ReferenceFrame shadingFrame(shadingNormalInWorld, texCoord0DirInWorld);
+    float3 modLocalNormal = mat.readModifiedNormal(mat.normal, texCoord, mat.normalDimension);
+    if (plp.f->enableBumpMapping)
+        applyBumpMapping(modLocalNormal, &shadingFrame);
     float3 vOut = -optixGetWorldRayDirection();
     float3 vOutLocal = shadingFrame.toLocal(normalize(vOut));
 
     hitPointParams->albedo = bsdf.evaluateDHReflectanceEstimate(vOutLocal);
     hitPointParams->positionInWorld = positionInWorld;
     hitPointParams->prevPositionInWorld = prevPositionInWorld;
-    hitPointParams->normalInWorld = shadingNormalInWorld;
+    hitPointParams->normalInWorld = shadingFrame.normal;
     hitPointParams->texCoord = texCoord;
     hitPointParams->materialSlot = geomInst.materialSlot;
 
@@ -277,7 +281,7 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
             emittance = make_float3(texValue);
         }
         pickInfo->emittance = emittance;
-        pickInfo->normalInWorld = shadingNormalInWorld;
+        pickInfo->normalInWorld = shadingFrame.normal;
     }
 }
 
@@ -624,7 +628,7 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(generateInitialCandidates)() {
     GBuffer2 gBuffer2 = plp.s->GBuffer2[curBufIdx].read(launchIndex);
 
     float3 positionInWorld = gBuffer0.positionInWorld;
-    float3 normalInWorld = gBuffer1.normalInWorld;
+    float3 shadingNormalInWorld = gBuffer1.normalInWorld;
     float2 texCoord = make_float2(gBuffer0.texCoord_x, gBuffer1.texCoord_y);
     uint32_t materialSlot = gBuffer2.materialSlot;
 
@@ -633,14 +637,15 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(generateInitialCandidates)() {
 
         const MaterialData &mat = plp.s->materialDataBuffer[materialSlot];
 
+        // TODO?: Use true geometric normal.
+        float3 geometricNormalInWorld = shadingNormalInWorld;
+        float3 vOut = normalize(plp.f->camera.position - positionInWorld);
+        float frontHit = dot(vOut, geometricNormalInWorld) >= 0.0f ? 1.0f : -1.0f;
+
         BSDF bsdf;
         mat.setupBSDF(mat, texCoord, &bsdf);
-        ReferenceFrame shadingFrame(normalInWorld);
-        // Add offset with shading normal instead of geometric normal alghough not so correct...
-        positionInWorld = offsetRayOriginNaive(positionInWorld, shadingFrame.normal);
-        float3 vOut = plp.f->camera.position - positionInWorld;
-        float dist = length(vOut);
-        vOut /= dist;
+        ReferenceFrame shadingFrame(shadingNormalInWorld);
+        positionInWorld = offsetRayOriginNaive(positionInWorld, frontHit * geometricNormalInWorld);
         float3 vOutLocal = shadingFrame.toLocal(vOut);
 
         uint32_t curResIndex = plp.currentReservoirIndex;
@@ -764,7 +769,7 @@ CUDA_DEVICE_FUNCTION void combineTemporalNeighbors() {
     GBuffer2 gBuffer2 = plp.s->GBuffer2[curBufIdx].read(launchIndex);
 
     float3 positionInWorld = gBuffer0.positionInWorld;
-    float3 normalInWorld = gBuffer1.normalInWorld;
+    float3 shadingNormalInWorld = gBuffer1.normalInWorld;
     float2 texCoord = make_float2(gBuffer0.texCoord_x, gBuffer1.texCoord_y);
     float2 motionVector = gBuffer2.motionVector;
     uint32_t materialSlot = gBuffer2.materialSlot;
@@ -772,12 +777,15 @@ CUDA_DEVICE_FUNCTION void combineTemporalNeighbors() {
     if (materialSlot != 0xFFFFFFFF) {
         const MaterialData &mat = plp.s->materialDataBuffer[materialSlot];
 
+        // TODO?: Use true geometric normal.
+        float3 geometricNormalInWorld = shadingNormalInWorld;
+        float3 vOut = plp.f->camera.position - positionInWorld;
+        float frontHit = dot(vOut, geometricNormalInWorld) >= 0.0f ? 1.0f : -1.0f;
+
         BSDF bsdf;
         mat.setupBSDF(mat, texCoord, &bsdf);
-        ReferenceFrame shadingFrame(normalInWorld);
-        // Add offset with shading normal instead of geometric normal alghough not so correct...
-        positionInWorld = offsetRayOriginNaive(positionInWorld, shadingFrame.normal);
-        float3 vOut = plp.f->camera.position - positionInWorld;
+        ReferenceFrame shadingFrame(shadingNormalInWorld);
+        positionInWorld = offsetRayOriginNaive(positionInWorld, frontHit * geometricNormalInWorld);
         float dist = length(vOut);
         vOut /= dist;
         float3 vOutLocal = shadingFrame.toLocal(vOut);
@@ -808,7 +816,7 @@ CUDA_DEVICE_FUNCTION void combineTemporalNeighbors() {
         //     バイアスが増えてしまうため、そのようなピクセルは棄却する。
         // EN: Reusing candidates from neighboring pixels with substantially different geometry/material
         //     leads to increased bias. Reject such a pixel.
-        bool acceptedNeighbor = testNeighbor<!useUnbiasedEstimator>(prevBufIdx, nbCoord, dist, normalInWorld);
+        bool acceptedNeighbor = testNeighbor<!useUnbiasedEstimator>(prevBufIdx, nbCoord, dist, shadingNormalInWorld);
         if (acceptedNeighbor) {
             const Reservoir<LightSample> /*&*/neighbor = plp.s->reservoirBuffer[prevResIndex][nbCoord];
             const ReservoirInfo neighborInfo = plp.s->reservoirInfoBuffer[prevResIndex].read(nbCoord);
@@ -881,17 +889,20 @@ CUDA_DEVICE_FUNCTION void combineTemporalNeighbors() {
                     GBuffer0 nbGBuffer0 = plp.s->GBuffer0[prevBufIdx].read(nbCoord);
                     GBuffer1 nbGBuffer1 = plp.s->GBuffer1[prevBufIdx].read(nbCoord);
                     float3 nbPositionInWorld = nbGBuffer0.positionInWorld;
-                    float3 nbNormalInWorld = nbGBuffer1.normalInWorld;
+                    float3 nbShadingNormalInWorld = nbGBuffer1.normalInWorld;
                     float2 nbTexCoord = make_float2(nbGBuffer0.texCoord_x, nbGBuffer1.texCoord_y);
 
                     const MaterialData &nbMat = plp.s->materialDataBuffer[nbMaterialSlot];
 
+                    // TODO?: Use true geometric normal.
+                    float3 nbGeometricNormalInWorld = nbShadingNormalInWorld;
+                    float3 nbVOut = plp.f->camera.position - nbPositionInWorld;
+                    float nbFrontHit = dot(nbVOut, nbGeometricNormalInWorld) >= 0.0f ? 1.0f : -1.0f;
+
                     BSDF nbBsdf;
                     nbMat.setupBSDF(nbMat, nbTexCoord, &nbBsdf);
-                    ReferenceFrame nbShadingFrame(nbNormalInWorld);
-                    // Add offset with shading normal instead of geometric normal alghough not so correct...
-                    nbPositionInWorld = offsetRayOriginNaive(nbPositionInWorld, nbShadingFrame.normal);
-                    float3 nbVOut = plp.f->camera.position - nbPositionInWorld;
+                    ReferenceFrame nbShadingFrame(nbShadingNormalInWorld);
+                    nbPositionInWorld = offsetRayOriginNaive(nbPositionInWorld, nbFrontHit * nbGeometricNormalInWorld);
                     float nbDist = length(nbVOut);
                     nbVOut /= nbDist;
                     float3 nbVOutLocal = nbShadingFrame.toLocal(nbVOut);
@@ -961,19 +972,22 @@ CUDA_DEVICE_FUNCTION void combineSpatialNeighbors() {
     GBuffer2 gBuffer2 = plp.s->GBuffer2[bufIdx].read(launchIndex);
 
     float3 positionInWorld = gBuffer0.positionInWorld;
-    float3 normalInWorld = gBuffer1.normalInWorld;
+    float3 shadingNormalInWorld = gBuffer1.normalInWorld;
     float2 texCoord = make_float2(gBuffer0.texCoord_x, gBuffer1.texCoord_y);
     uint32_t materialSlot = gBuffer2.materialSlot;
 
     if (materialSlot != 0xFFFFFFFF) {
         const MaterialData &mat = plp.s->materialDataBuffer[materialSlot];
 
+        // TODO?: Use true geometric normal.
+        float3 geometricNormalInWorld = shadingNormalInWorld;
+        float3 vOut = plp.f->camera.position - positionInWorld;
+        float frontHit = dot(vOut, geometricNormalInWorld) >= 0.0f ? 1.0f : -1.0f;
+
         BSDF bsdf;
         mat.setupBSDF(mat, texCoord, &bsdf);
-        ReferenceFrame shadingFrame(normalInWorld);
-        // Add offset with shading normal instead of geometric normal alghough not so correct...
-        positionInWorld = offsetRayOriginNaive(positionInWorld, shadingFrame.normal);
-        float3 vOut = plp.f->camera.position - positionInWorld;
+        ReferenceFrame shadingFrame(shadingNormalInWorld);
+        positionInWorld = offsetRayOriginNaive(positionInWorld, frontHit * geometricNormalInWorld);
         float dist = length(vOut);
         vOut /= dist;
         float3 vOutLocal = shadingFrame.toLocal(vOut);
@@ -1019,7 +1033,7 @@ CUDA_DEVICE_FUNCTION void combineSpatialNeighbors() {
             //     バイアスが増えてしまうため、そのようなピクセルは棄却する。
             // EN: Reusing candidates from neighboring pixels with substantially different geometry/material
             //     leads to increased bias. Reject such a pixel.
-            bool acceptedNeighbor = testNeighbor<!useUnbiasedEstimator>(bufIdx, nbCoord, dist, normalInWorld);
+            bool acceptedNeighbor = testNeighbor<!useUnbiasedEstimator>(bufIdx, nbCoord, dist, shadingNormalInWorld);
             acceptedNeighbor &= nbCoord.x != launchIndex.x || nbCoord.y != launchIndex.y;
             if (acceptedNeighbor) {
                 const Reservoir<LightSample> /*&*/neighbor = plp.s->reservoirBuffer[srcResIndex][nbCoord];
@@ -1130,17 +1144,20 @@ CUDA_DEVICE_FUNCTION void combineSpatialNeighbors() {
                     GBuffer0 nbGBuffer0 = plp.s->GBuffer0[bufIdx].read(nbCoord);
                     GBuffer1 nbGBuffer1 = plp.s->GBuffer1[bufIdx].read(nbCoord);
                     float3 nbPositionInWorld = nbGBuffer0.positionInWorld;
-                    float3 nbNormalInWorld = nbGBuffer1.normalInWorld;
+                    float3 nbShadingNormalInWorld = nbGBuffer1.normalInWorld;
                     float2 nbTexCoord = make_float2(nbGBuffer0.texCoord_x, nbGBuffer1.texCoord_y);
 
                     const MaterialData &nbMat = plp.s->materialDataBuffer[nbMaterialSlot];
 
+                    // TODO?: Use true geometric normal.
+                    float3 nbGeometricNormalInWorld = nbShadingNormalInWorld;
+                    float3 nbVOut = plp.f->camera.position - nbPositionInWorld;
+                    float nbFrontHit = dot(nbVOut, nbGeometricNormalInWorld) >= 0.0f ? 1.0f : -1.0f;
+
                     BSDF nbBsdf;
                     nbMat.setupBSDF(nbMat, nbTexCoord, &nbBsdf);
-                    ReferenceFrame nbShadingFrame(nbNormalInWorld);
-                    // Add offset with shading normal instead of geometric normal alghough not so correct...
-                    nbPositionInWorld = offsetRayOriginNaive(nbPositionInWorld, nbShadingFrame.normal);
-                    float3 nbVOut = plp.f->camera.position - nbPositionInWorld;
+                    ReferenceFrame nbShadingFrame(nbShadingNormalInWorld);
+                    nbPositionInWorld = offsetRayOriginNaive(nbPositionInWorld, nbFrontHit * nbGeometricNormalInWorld);
                     float nbDist = length(nbVOut);
                     nbVOut /= nbDist;
                     float3 nbVOutLocal = nbShadingFrame.toLocal(nbVOut);
@@ -1210,7 +1227,7 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(shading)() {
     GBuffer2 gBuffer2 = plp.s->GBuffer2[bufIdx].read(launchIndex);
 
     float3 positionInWorld = gBuffer0.positionInWorld;
-    float3 normalInWorld = gBuffer1.normalInWorld;
+    float3 shadingNormalInWorld = gBuffer1.normalInWorld;
     float2 texCoord = make_float2(gBuffer0.texCoord_x, gBuffer1.texCoord_y);
     uint32_t materialSlot = gBuffer2.materialSlot;
 
@@ -1220,12 +1237,15 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(shading)() {
     if (materialSlot != 0xFFFFFFFF) {
         const MaterialData &mat = plp.s->materialDataBuffer[materialSlot];
 
+        // TODO?: Use true geometric normal.
+        float3 geometricNormalInWorld = shadingNormalInWorld;
+        float3 vOut = normalize(camera.position - positionInWorld);
+        float frontHit = dot(vOut, geometricNormalInWorld) >= 0.0f ? 1.0f : -1.0f;
+
         BSDF bsdf;
         mat.setupBSDF(mat, texCoord, &bsdf);
-        ReferenceFrame shadingFrame(normalInWorld);
-        // Add offset with shading normal instead of geometric normal alghough not so correct...
-        positionInWorld = offsetRayOriginNaive(positionInWorld, shadingFrame.normal);
-        float3 vOut = normalize(camera.position - positionInWorld);
+        ReferenceFrame shadingFrame(shadingNormalInWorld);
+        positionInWorld = offsetRayOriginNaive(positionInWorld, frontHit * geometricNormalInWorld);
         float3 vOutLocal = shadingFrame.toLocal(vOut);
 
         uint32_t curResIndex = plp.currentReservoirIndex;

@@ -20,6 +20,7 @@ namespace shared {
     struct Vertex {
         float3 position;
         float3 normal;
+        float3 texCoord0Dir;
         float2 texCoord;
     };
 
@@ -75,7 +76,17 @@ namespace shared {
                 CUtexObject smoothness;
             } asDiffuseAndSpecular;
         };
+        CUtexObject normal;
         CUtexObject emittance;
+        union {
+            struct {
+                unsigned int normalWidth : 16;
+                unsigned int normalHeight : 16;
+            };
+            uint32_t normalDimension;
+        };
+
+        ReadModifiedNormal readModifiedNormal;
 
         SetupBSDF setupBSDF;
         BSDFSampleThroughput bsdfSampleThroughput;
@@ -277,6 +288,7 @@ namespace shared {
         unsigned int resetFlowBuffer : 1;
         unsigned int enableJittering : 1;
         unsigned int enableEnvLight : 1;
+        unsigned int enableBumpMapping : 1;
 
         uint32_t debugSwitches;
         void setDebugSwitch(int32_t idx, bool b) {
