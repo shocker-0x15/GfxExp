@@ -22,7 +22,7 @@ https://research.nvidia.com/publication/2020-07_Spatiotemporal-reservoir-resampl
   - [ ] Rearchitecting Spatiotemporal Resampling for Production\
         https://research.nvidia.com/publication/2021-07_Rearchitecting-Spatiotemporal-Resampling
 
-![example](restir/comparison.png)
+![example](restir/comparison.jpg)
 
 ### ReGIR
 Chapter 23. "Rendering Many Lights with Grid-based Reservoirs", Ray Tracing Gems II\
@@ -35,7 +35,7 @@ https://www.realtimerendering.com/raytracinggems/rtg2/index.html
   - [ ] Scrolling Clipmap or Sparse Grid using Hash Map
   - [ ] ReGIR + Multiple Importance Sampling (Impossible?)
 
-![example](regir/comparison.png)
+![example](regir/comparison.jpg)
 
 Models downloaded from Morgan McGuire's [Computer Graphics Archive](https://casual-effects.com/data)
 

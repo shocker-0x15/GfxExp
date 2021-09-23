@@ -3,3 +3,4 @@ ext/assimp/assimp-vc142-mt.lib filter=lfs diff=lfs merge=lfs -text
 ext/glfw/lib/glfw3.lib filter=lfs diff=lfs merge=lfs -text
 *.png filter=lfs diff=lfs merge=lfs -text
 *.bmp filter=lfs diff=lfs merge=lfs -text
+*.jpg filter=lfs diff=lfs merge=lfs -text
