@@ -145,10 +145,13 @@ namespace shared {
         }
     };
 
+    using WeightSum = float;
+    //using WeightSum = FloatSum;
+
     template <typename SampleType>
     class Reservoir {
         SampleType m_sample;
-        FloatSum m_sumWeights;
+        WeightSum m_sumWeights;
         uint32_t m_streamLength;
 
     public:

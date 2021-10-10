@@ -1043,18 +1043,8 @@ CUDA_DEVICE_FUNCTION void combineSpatialNeighbors() {
                 // EN: Calculate the probability density at the "current" pixel of the candidate sample
                 //     the neighboring pixel holds.
                 LightSample nbLightSample = neighbor.getSample();
-                float3 cont;
-                if constexpr (useUnbiasedEstimator) {
-                    if (plp.f->reuseVisibility) // ?
-                        cont = performDirectLighting<true>(
-                            positionInWorld, vOutLocal, shadingFrame, bsdf, nbLightSample);
-                    else
-                        cont = performDirectLighting<false>(
-                            positionInWorld, vOutLocal, shadingFrame, bsdf, nbLightSample);
-                }
-                else {
-                    cont = performDirectLighting<false>(positionInWorld, vOutLocal, shadingFrame, bsdf, nbLightSample);
-                }
+                float3 cont = performDirectLighting<false>(
+                    positionInWorld, vOutLocal, shadingFrame, bsdf, nbLightSample);
                 float targetDensity = convertToWeight(cont);
 
                 // JP: 隣接ピクセルと現在のピクセルではターゲットPDFが異なるためサンプルはウェイトを持つ。
@@ -1092,7 +1082,7 @@ CUDA_DEVICE_FUNCTION void combineSpatialNeighbors() {
             // EN: First, calculate a quantity corresponding to the current pixel's target PDF.
             {
                 float3 cont;
-                if (plp.f->reuseVisibility) // ?
+                if (plp.f->reuseVisibility)
                     cont = performDirectLighting<true>(
                         positionInWorld, vOutLocal, shadingFrame, bsdf, selectedLightSample);
                 else
@@ -1167,7 +1157,7 @@ CUDA_DEVICE_FUNCTION void combineSpatialNeighbors() {
                     // TODO: ウェイトの条件さえ満たしていれば、MISウェイト計算にはVisibilityはなくても良い？
                     //       要検討。
                     float3 cont;
-                    if (plp.f->reuseVisibility) // ?
+                    if (plp.f->reuseVisibility)
                         cont = performDirectLighting<true>(
                             nbPositionInWorld, nbVOutLocal, nbShadingFrame, nbBsdf, selectedLightSample);
                     else
