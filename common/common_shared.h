@@ -273,6 +273,7 @@ struct alignas(16) float4 {
     float x, y, z, w;
     constexpr float4(float v = 0) : x(v), y(v), z(v), w(v) {}
     constexpr float4(float xx, float yy, float zz, float ww) : x(xx), y(yy), z(zz), w(ww) {}
+    constexpr float4(const float3 &xyz, float ww) : x(xyz.x), y(xyz.y), z(xyz.z), w(ww) {}
 };
 inline constexpr float4 make_float4(float x, float y, float z, float w) {
     return float4(x, y, z, w);
@@ -875,6 +876,63 @@ struct Matrix4x4 {
 
     CUDA_DEVICE_FUNCTION Matrix3x3 getUpperLeftMatrix() const {
         return Matrix3x3(make_float3(c0), make_float3(c1), make_float3(c2));
+    }
+
+    CUDA_DEVICE_FUNCTION void decompose(float3* retScale, float3* rotation, float3* translation) const {
+        Matrix4x4 mat = *this;
+
+        // JP: 移動成分
+        // EN: Translation component
+        if (translation)
+            *translation = make_float3(mat.c3);
+
+        float3 scale = make_float3(
+            length(make_float3(mat.c0)),
+            length(make_float3(mat.c1)),
+            length(make_float3(mat.c2)));
+
+        // JP: 拡大縮小成分
+        // EN: Scale component
+        if (retScale)
+            *retScale = scale;
+
+        if (!rotation)
+            return;
+
+        // JP: 上記成分を排除
+        // EN: Remove the above components
+        mat.c3 = make_float4(0, 0, 0, 1);
+        if (std::fabs(scale.x) > 0)
+            mat.c0 /= scale.x;
+        if (std::fabs(scale.y) > 0)
+            mat.c1 /= scale.y;
+        if (std::fabs(scale.z) > 0)
+            mat.c2 /= scale.z;
+
+        // JP: 回転成分がXYZの順で作られている、つまりZYXp(pは何らかのベクトル)と仮定すると、行列は以下の形式をとっていると考えられる。
+        //     A, B, GはそれぞれX, Y, Z軸に対する回転角度。cとsはcosとsin。
+        //     cG * cB   -sG * cA + cG * sB * sA    sG * sA + cG * sB * cA
+        //     sG * cB    cG * cA + sG * sB * sA   -cG * sA + sG * sB * cA
+        //       -sB             cB * sA                   cB * cA
+        //     したがって、3行1列成分からまずY軸に対する回転Bが求まる。
+        //     次に求めたBを使って回転A, Gが求まる。数値精度を考慮すると、cBが0の場合は別の処理が必要。
+        //     cBが0の場合はsBは+-1(Bが90度ならば+、-90度ならば-)なので、上の行列は以下のようになる。
+        //      0   -sG * cA +- cG * sA    sG * sA +- cG * cA
+        //      0    cG * cA +- sG * sA   -cG * sA +- sG * cA
+        //     -+1           0                     0
+        //     求めたBを使ってさらに求まる成分がないため、Aを0と仮定する。
+        // EN: 
+        rotation->y = std::asin(-mat.c0.z);
+        float cosBeta = std::cos(rotation->y);
+
+        if (std::fabs(cosBeta) < 0.000001f) {
+            rotation->x = 0;
+            rotation->z = std::atan2(-mat.c1.x, mat.c1.y);
+        }
+        else {
+            rotation->x = std::atan2(mat.c1.z, mat.c2.z);
+            rotation->z = std::atan2(mat.c0.y, mat.c0.x);
+        }
     }
 };
 

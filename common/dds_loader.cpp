@@ -244,17 +244,41 @@ namespace dds {
 
         Header header;
         ifs.read((char*)&header, sizeof(Header));
-        if (header.m_magic != 0x20534444 || header.m_fourCC != 0x30315844) {
+        if (header.m_magic != 0x20534444) {
             hpprintf("Non dds (dx10) file: %s", filepath);
             return nullptr;
         }
-
-        HeaderDX10 dx10Header;
-        ifs.read((char*)&dx10Header, sizeof(HeaderDX10));
-
         *width = header.m_width;
         *height = header.m_height;
-        *format = (Format)dx10Header.m_format;
+
+        size_t headerSize = sizeof(Header);
+        if (header.m_fourCC == 0x30315844) {
+            HeaderDX10 dx10Header;
+            ifs.read((char*)&dx10Header, sizeof(HeaderDX10));
+            *format = static_cast<Format>(dx10Header.m_format);
+            headerSize += sizeof(HeaderDX10);
+        }
+        else {
+            const auto makeFourCC = [](uint32_t B0, uint32_t B1, uint32_t B2, uint32_t B3) {
+                return ((B0 << 0) | (B1 << 8) | (B2 << 16) | (B3 << 24));
+            };
+            if (header.m_fourCC == makeFourCC('D', 'X', 'T', '1'))
+                *format = Format::BC1_UNorm;
+            else if (header.m_fourCC == makeFourCC('D', 'X', 'T', '3'))
+                *format = Format::BC2_UNorm;
+            else if (header.m_fourCC == makeFourCC('D', 'X', 'T', '5'))
+                *format = Format::BC3_UNorm;
+            else if (header.m_fourCC == makeFourCC('B', 'C', '4', 'U'))
+                *format = Format::BC4_UNorm;
+            else if (header.m_fourCC == makeFourCC('B', 'C', '4', 'S'))
+                *format = Format::BC4_SNorm;
+            else if (header.m_fourCC == makeFourCC('B', 'C', '5', 'U'))
+                *format = Format::BC5_UNorm;
+            else if (header.m_fourCC == makeFourCC('B', 'C', '5', 'S'))
+                *format = Format::BC5_SNorm;
+            else
+                Assert_NotImplemented();
+        }
 
         if (*format != Format::BC1_UNorm && *format != Format::BC1_UNorm_sRGB &&
             *format != Format::BC2_UNorm && *format != Format::BC2_UNorm_sRGB &&
@@ -267,7 +291,7 @@ namespace dds {
             return nullptr;
         }
 
-        const size_t dataSize = fileSize - (sizeof(Header) + sizeof(HeaderDX10));
+        const size_t dataSize = fileSize - headerSize;
 
         *mipCount = 1;
         if ((header.m_flags & Header::Flags::MipMapCount) != 0)
@@ -284,20 +308,20 @@ namespace dds {
         if (*format == Format::BC1_UNorm || *format == Format::BC1_UNorm_sRGB ||
             *format == Format::BC4_UNorm || *format == Format::BC4_SNorm)
             blockSize = 8;
-        size_t cumDataSize = 0;
+        size_t accDataSize = 0;
         for (int i = 0; i < *mipCount; ++i) {
             int32_t bw = (mipWidth + 3) / 4;
             int32_t bh = (mipHeight + 3) / 4;
             size_t mipDataSize = bw * bh * blockSize;
 
-            data[i] = singleData + cumDataSize;
+            data[i] = singleData + accDataSize;
             (*sizes)[i] = mipDataSize;
-            cumDataSize += mipDataSize;
+            accDataSize += mipDataSize;
 
             mipWidth = std::max<int32_t>(1, mipWidth / 2);
             mipHeight = std::max<int32_t>(1, mipHeight / 2);
         }
-        Assert(cumDataSize == dataSize, "Data size mismatch.");
+        Assert(accDataSize == dataSize, "Data size mismatch.");
 
         return data;
     }

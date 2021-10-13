@@ -372,9 +372,9 @@ public:
         m_roughness = 1 - smoothness;
     }
 
-    CUDA_DEVICE_FUNCTION DiffuseAndSpecularBRDF(const float3 &diffuseColor, float reflectance, float smoothness, float metallic) {
-        m_diffuseColor = diffuseColor * (1 - metallic);
-        m_specularF0Color = make_float3(0.16f * pow2(reflectance) * (1 - metallic)) + diffuseColor * metallic;
+    CUDA_DEVICE_FUNCTION DiffuseAndSpecularBRDF(const float3 &baseColor, float reflectance, float smoothness, float metallic) {
+        m_diffuseColor = baseColor * (1 - metallic);
+        m_specularF0Color = make_float3(0.16f * pow2(reflectance) * (1 - metallic)) + baseColor * metallic;
         m_roughness = 1 - smoothness;
     }
 

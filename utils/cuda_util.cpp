@@ -646,8 +646,8 @@ namespace cudau {
             m_stride = 4;
             m_numChannels = 2;
             numChannels = 2;
-            m_width >>= 2;
-            m_height >>= 2;
+            m_width = (m_width + 3) / 4;
+            m_height = (m_height + 3) / 4;
             break;
         case cudau::ArrayElementType::BC2_UNorm:
         case cudau::ArrayElementType::BC3_UNorm:
@@ -660,8 +660,8 @@ namespace cudau {
             m_stride = 4;
             m_numChannels = 4;
             numChannels = 4;
-            m_width >>= 2;
-            m_height >>= 2;
+            m_width = (m_width + 3) / 4;
+            m_height = (m_height + 3) / 4;
             break;
         default:
             CUDAUAssert_ShouldNotBeCalled();
