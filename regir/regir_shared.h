@@ -75,6 +75,10 @@ namespace shared {
                 CUtexObject specular;
                 CUtexObject smoothness;
             } asDiffuseAndSpecular;
+            struct {
+                CUtexObject baseColor_opacity;
+                CUtexObject occlusion_roughness_metallic;
+            } asSimplePBR;
         };
         CUtexObject normal;
         CUtexObject emittance;

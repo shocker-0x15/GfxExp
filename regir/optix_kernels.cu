@@ -60,7 +60,7 @@ CUDA_DEVICE_FUNCTION void setupBSDF<DiffuseAndSpecularBRDF>(const MaterialData &
         bsdf->m_evaluate = matData.bsdfEvaluate;\
         bsdf->m_evaluatePDF = matData.bsdfEvaluatePDF;\
         bsdf->m_evaluateDHReflectanceEstimate = matData.bsdfEvaluateDHReflectanceEstimate;\
-        return setupBSDF<BSDFType>(matData, texCoord, bsdf);\
+        setupBSDF<BSDFType>(matData, texCoord, bsdf);\
     }\
     RT_CALLABLE_PROGRAM float3 RT_DC_NAME(BSDFType ## _sampleThroughput)(\
         const uint32_t* data, const float3 &vGiven, float uDir0, float uDir1,\
@@ -86,6 +86,22 @@ CUDA_DEVICE_FUNCTION void setupBSDF<DiffuseAndSpecularBRDF>(const MaterialData &
 
 DEFINE_BSDF_CALLABLES(LambertBRDF);
 DEFINE_BSDF_CALLABLES(DiffuseAndSpecularBRDF);
+
+RT_CALLABLE_PROGRAM void RT_DC_NAME(setupSimplePBR_BRDF)(
+    const MaterialData &matData, const float2 &texCoord, BSDF* bsdf) {
+    bsdf->m_sampleThroughput = matData.bsdfSampleThroughput;
+    bsdf->m_evaluate = matData.bsdfEvaluate;
+    bsdf->m_evaluatePDF = matData.bsdfEvaluatePDF;
+    bsdf->m_evaluateDHReflectanceEstimate = matData.bsdfEvaluateDHReflectanceEstimate;
+
+    float4 baseColor_opacity = tex2DLod<float4>(matData.asSimplePBR.baseColor_opacity, texCoord.x, texCoord.y, 0.0f);
+    float4 occlusion_roughness_metallic = tex2DLod<float4>(matData.asSimplePBR.occlusion_roughness_metallic, texCoord.x, texCoord.y, 0.0f);
+    float3 baseColor = make_float3(baseColor_opacity);
+    float smoothness = min(1.0f - occlusion_roughness_metallic.y, 0.999f);
+    float metallic = occlusion_roughness_metallic.z;
+    auto &bsdfBody = *reinterpret_cast<DiffuseAndSpecularBRDF*>(bsdf->m_data);
+    bsdfBody = DiffuseAndSpecularBRDF(baseColor, 0.5f, smoothness, metallic);
+}
 
 
 
@@ -429,15 +445,18 @@ CUDA_DEVICE_FUNCTION float3 sampleLight(
             geomInst.vertexBuffer[tri.index1],
             geomInst.vertexBuffer[tri.index2]
         };
+        float3 p[3] = {
+            inst.transform * v[0].position,
+            inst.transform * v[1].position,
+            inst.transform * v[2].position,
+        };
 
-        *lightPosition = t0 * v[0].position + t1 * v[1].position + t2 * v[2].position;
-        *lightPosition = inst.transform * *lightPosition;
-        *lightNormal = cross(v[1].position - v[0].position,
-                             v[2].position - v[0].position);
-        float area = length(*lightNormal);
-        *lightNormal = (inst.normalMatrix * *lightNormal) / area;
-        area *= 0.5f;
-        *areaPDensity = lightProb / area;
+        *lightPosition = t0 * p[0] + t1 * p[1] + t2 * p[2];
+        *lightNormal = cross(p[1] - p[0], p[2] - p[0]);
+        float recArea = 1.0f / length(*lightNormal);
+        *lightNormal = *lightNormal * recArea;
+        recArea *= 2;
+        *areaPDensity = lightProb * recArea;
 
         //printf("%u-%u-%u: (%g, %g, %g), PDF: %g\n", instIndex, geomInstIndex, primIndex,
         //       mat.emittance.x, mat.emittance.y, mat.emittance.z, *areaPDensity);
@@ -495,17 +514,21 @@ CUDA_DEVICE_FUNCTION float3 evaluateLight(
             geomInst.vertexBuffer[tri.index1],
             geomInst.vertexBuffer[tri.index2]
         };
+        float3 p[3] = {
+            inst.transform * v[0].position,
+            inst.transform * v[1].position,
+            inst.transform * v[2].position,
+        };
 
         float t1 = lightSample.b1;
         float t2 = lightSample.b2;
         float t0 = 1.0f - (t1 + t2);
 
-        *lightPosition = t0 * v[0].position + t1 * v[1].position + t2 * v[2].position;
-        *lightPosition = inst.transform * *lightPosition;
-        *lightNormal = cross(v[1].position - v[0].position,
-                             v[2].position - v[0].position);
-        float area = length(*lightNormal);
-        *lightNormal = (inst.normalMatrix * *lightNormal) / area;
+        *lightPosition = t0 * p[0] + t1 * p[1] + t2 * p[2];
+        *lightNormal = cross(p[1] - p[0], p[2] - p[0]);
+        float recArea = 1.0f / length(*lightNormal);
+        *lightNormal = *lightNormal * recArea;
+        recArea *= 2;
 
         float3 emittance = make_float3(0.0f, 0.0f, 0.0f);
         if (mat.emittance) {

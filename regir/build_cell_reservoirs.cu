@@ -94,20 +94,23 @@ CUDA_DEVICE_FUNCTION float3 sampleLight(
         const MaterialData &mat = plp.s->materialDataBuffer[geomInst.materialSlot];
 
         const shared::Triangle &tri = geomInst.triangleBuffer[primIndex];
-        const shared::Vertex(&v)[3] = {
+        const shared::Vertex (&v)[3] = {
             geomInst.vertexBuffer[tri.index0],
             geomInst.vertexBuffer[tri.index1],
             geomInst.vertexBuffer[tri.index2]
         };
+        float3 p[3] = {
+            inst.transform * v[0].position,
+            inst.transform * v[1].position,
+            inst.transform * v[2].position,
+        };
 
-        *lightPosition = t0 * v[0].position + t1 * v[1].position + t2 * v[2].position;
-        *lightPosition = inst.transform * *lightPosition;
-        *lightNormal = cross(v[1].position - v[0].position,
-                             v[2].position - v[0].position);
-        float area = length(*lightNormal);
-        *lightNormal = (inst.normalMatrix * *lightNormal) / area;
-        area *= 0.5f;
-        *areaPDensity = lightProb / area;
+        *lightPosition = t0 * p[0] + t1 * p[1] + t2 * p[2];
+        *lightNormal = cross(p[1] - p[0], p[2] - p[0]);
+        float recArea = 1.0f / length(*lightNormal);
+        *lightNormal = *lightNormal * recArea;
+        recArea *= 2;
+        *areaPDensity = lightProb * recArea;
 
         //printf("%u-%u-%u: (%g, %g, %g), PDF: %g\n", instIndex, geomInstIndex, primIndex,
         //       mat.emittance.x, mat.emittance.y, mat.emittance.z, *areaPDensity);
