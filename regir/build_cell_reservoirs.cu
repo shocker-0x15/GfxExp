@@ -105,10 +105,12 @@ CUDA_DEVICE_FUNCTION float3 sampleLight(
             inst.transform * v[2].position,
         };
 
+        float3 geomNormal = cross(p[1] - p[0], p[2] - p[0]);
         *lightPosition = t0 * p[0] + t1 * p[1] + t2 * p[2];
-        *lightNormal = cross(p[1] - p[0], p[2] - p[0]);
-        float recArea = 1.0f / length(*lightNormal);
-        *lightNormal = *lightNormal * recArea;
+        float recArea = 1.0f / length(geomNormal);
+        //*lightNormal = geomNormal * recArea;
+        *lightNormal = t0 * v[0].normal + t1 * v[1].normal + t2 * v[2].normal;
+        *lightNormal = normalize(inst.normalMatrix * *lightNormal);
         recArea *= 2;
         *areaPDensity = lightProb * recArea;
 

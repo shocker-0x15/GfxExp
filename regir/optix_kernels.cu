@@ -136,6 +136,21 @@ CUDA_DEVICE_KERNEL void RT_AH_NAME(visibility)() {
 
 
 
+CUDA_DEVICE_FUNCTION uint32_t calcCellLinearIndex(const float3 &positionInWorld) {
+    float3 relPos = positionInWorld - plp.s->gridOrigin;
+    uint32_t ix = min(max(static_cast<uint32_t>(relPos.x / plp.s->gridCellSize.x), 0u),
+                      plp.s->gridDimension.x - 1);
+    uint32_t iy = min(max(static_cast<uint32_t>(relPos.y / plp.s->gridCellSize.y), 0u),
+                      plp.s->gridDimension.y - 1);
+    uint32_t iz = min(max(static_cast<uint32_t>(relPos.z / plp.s->gridCellSize.z), 0u),
+                      plp.s->gridDimension.z - 1);
+    return iz * plp.s->gridDimension.x * plp.s->gridDimension.y
+        + iy * plp.s->gridDimension.x
+        + ix;
+}
+
+
+
 CUDA_DEVICE_KERNEL void RT_RG_NAME(setupGBuffers)() {
     uint2 launchIndex = make_uint2(optixGetLaunchIndex().x, optixGetLaunchIndex().y);
 
@@ -238,6 +253,7 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
     float3 prevPositionInWorld;
     float3 shadingNormalInWorld;
     float3 texCoord0DirInWorld;
+    //float3 geometricNormalInWorld;
     float2 texCoord;
     {
         const Triangle &tri = geomInst.triangleBuffer[hp.primIndex];
@@ -250,12 +266,14 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
         float3 localP = b0 * v0.position + b1 * v1.position + b2 * v2.position;
         shadingNormalInWorld = b0 * v0.normal + b1 * v1.normal + b2 * v2.normal;
         texCoord0DirInWorld = b0 * v0.texCoord0Dir + b1 * v1.texCoord0Dir + b2 * v2.texCoord0Dir;
+        //geometricNormalInWorld = cross(v1.position - v0.position, v2.position - v0.position);
         texCoord = b0 * v0.texCoord + b1 * v1.texCoord + b2 * v2.texCoord;
 
         positionInWorld = optixTransformPointFromObjectToWorldSpace(localP);
         prevPositionInWorld = inst.prevTransform * localP;
         shadingNormalInWorld = normalize(optixTransformNormalFromObjectToWorldSpace(shadingNormalInWorld));
         texCoord0DirInWorld = normalize(optixTransformVectorFromObjectToWorldSpace(texCoord0DirInWorld));
+        //geometricNormalInWorld = normalize(optixTransformNormalFromObjectToWorldSpace(geometricNormalInWorld));
         if (!allFinite(shadingNormalInWorld)) {
             shadingNormalInWorld = make_float3(0, 0, 1);
             texCoord0DirInWorld = make_float3(1, 0, 0);
@@ -290,6 +308,7 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
         pickInfo->matSlot = geomInst.materialSlot;
         pickInfo->primIndex = hp.primIndex;
         pickInfo->positionInWorld = positionInWorld;
+        pickInfo->normalInWorld = shadingFrame.normal;
         pickInfo->albedo = hitPointParams->albedo;
         float3 emittance = make_float3(0.0f, 0.0f, 0.0f);
         if (mat.emittance) {
@@ -297,7 +316,7 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
             emittance = make_float3(texValue);
         }
         pickInfo->emittance = emittance;
-        pickInfo->normalInWorld = shadingFrame.normal;
+        pickInfo->cellLinearIndex = calcCellLinearIndex(positionInWorld);
     }
 }
 
@@ -451,10 +470,12 @@ CUDA_DEVICE_FUNCTION float3 sampleLight(
             inst.transform * v[2].position,
         };
 
+        float3 geomNormal = cross(p[1] - p[0], p[2] - p[0]);
         *lightPosition = t0 * p[0] + t1 * p[1] + t2 * p[2];
-        *lightNormal = cross(p[1] - p[0], p[2] - p[0]);
-        float recArea = 1.0f / length(*lightNormal);
-        *lightNormal = *lightNormal * recArea;
+        float recArea = 1.0f / length(geomNormal);
+        //*lightNormal = geomNormal * recArea;
+        *lightNormal = t0 * v[0].normal + t1 * v[1].normal + t2 * v[2].normal;
+        *lightNormal = normalize(inst.normalMatrix * *lightNormal);
         recArea *= 2;
         *areaPDensity = lightProb * recArea;
 
@@ -524,11 +545,12 @@ CUDA_DEVICE_FUNCTION float3 evaluateLight(
         float t2 = lightSample.b2;
         float t0 = 1.0f - (t1 + t2);
 
+        //float3 geomNormal = cross(p[1] - p[0], p[2] - p[0]);
         *lightPosition = t0 * p[0] + t1 * p[1] + t2 * p[2];
-        *lightNormal = cross(p[1] - p[0], p[2] - p[0]);
-        float recArea = 1.0f / length(*lightNormal);
-        *lightNormal = *lightNormal * recArea;
-        recArea *= 2;
+        //float recArea = 1.0f / length(*lightNormal);
+        //*lightNormal = geomNormal * recArea;
+        *lightNormal = t0 * v[0].normal + t1 * v[1].normal + t2 * v[2].normal;
+        *lightNormal = normalize(inst.normalMatrix * *lightNormal);
 
         float3 emittance = make_float3(0.0f, 0.0f, 0.0f);
         if (mat.emittance) {
@@ -645,19 +667,6 @@ static constexpr bool useImplicitLightSampling = true;
 static constexpr bool useExplicitLightSampling = true;
 static constexpr bool useMultipleImportanceSampling = useImplicitLightSampling && useExplicitLightSampling;
 static_assert(useImplicitLightSampling || useExplicitLightSampling, "Invalid configuration for light sampling.");
-
-CUDA_DEVICE_FUNCTION uint32_t calcCellLinearIndex(const float3 &positionInWorld) {
-    float3 relPos = positionInWorld - plp.s->gridOrigin;
-    uint32_t ix = min(max(static_cast<uint32_t>(relPos.x / plp.s->gridCellSize.x), 0u),
-                      plp.s->gridDimension.x - 1);
-    uint32_t iy = min(max(static_cast<uint32_t>(relPos.y / plp.s->gridCellSize.y), 0u),
-                      plp.s->gridDimension.y - 1);
-    uint32_t iz = min(max(static_cast<uint32_t>(relPos.z / plp.s->gridCellSize.z), 0u),
-                      plp.s->gridDimension.z - 1);
-    return iz * plp.s->gridDimension.x * plp.s->gridDimension.y
-        + iy * plp.s->gridDimension.x
-        + ix;
-}
 
 CUDA_DEVICE_FUNCTION float3 sampleFromCell(
     const float3 &shadingPoint, const float3 &vOutLocal, const ReferenceFrame &shadingFrame, const BSDF &bsdf,

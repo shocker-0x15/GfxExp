@@ -1467,7 +1467,7 @@ static Instance* createInstance(
     if (sumLightImportances > 0.0f &&
         (std::fabs(scale.y - uniformScale) / uniformScale >= 0.001f ||
          std::fabs(scale.z - uniformScale) / uniformScale >= 0.001f ||
-         uniformScale == 0.0f)) {
+         uniformScale <= 0.0f)) {
         hpprintf("Non-uniform scaling (%g, %g, %g) is not recommended for a light source instance.\n",
                  scale.x, scale.y, scale.z);
     }
@@ -3055,6 +3055,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
                         pickInfoOnHost.emittance.x,
                         pickInfoOnHost.emittance.y,
                         pickInfoOnHost.emittance.z);
+            ImGui::Text("Cell: %u", pickInfoOnHost.cellLinearIndex);
 
             ImGui::Separator();
 

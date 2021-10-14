@@ -202,6 +202,7 @@ namespace shared {
         float3 normalInWorld;
         float3 albedo;
         float3 emittance;
+        uint32_t cellLinearIndex;
         unsigned int hit : 1;
     };
 
