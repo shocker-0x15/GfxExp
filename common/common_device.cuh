@@ -155,6 +155,16 @@ RT_CALLABLE_PROGRAM float3 RT_DC_NAME(readModifiedNormalFromNormalMap)
     return modLocalNormal;
 }
 
+RT_CALLABLE_PROGRAM float3 RT_DC_NAME(readModifiedNormalFromNormalMap2ch)
+(CUtexObject texture, const float2 &texCoord, uint32_t) {
+    float2 texValue = tex2DLod<float2>(texture, texCoord.x, texCoord.y, 0.0f);
+    texValue = 2.0f * texValue - make_float2(1.0f);
+    float z = std::sqrt(1.0f - pow2(texValue.x) - pow2(texValue.y));
+    float3 modLocalNormal = make_float3(texValue.x, texValue.y, z);
+    modLocalNormal.y *= -1; // DirectX convention
+    return modLocalNormal;
+}
+
 RT_CALLABLE_PROGRAM float3 RT_DC_NAME(readModifiedNormalFromHeightMap)
 (CUtexObject texture, const float2 &texCoord, uint32_t texDim) {
     float4 heightValues = tex2Dgather<float4>(texture, texCoord.x, texCoord.y, 0);

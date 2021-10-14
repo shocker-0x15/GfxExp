@@ -433,6 +433,7 @@ static void parseCommandline(int32_t argc, const char* argv[]) {
 
 enum CallableProgram {
     CallableProgram_ReadModifiedNormalFromNormalMap = 0,
+    CallableProgram_ReadModifiedNormalFromNormalMap2ch,
     CallableProgram_ReadModifiedNormalFromHeightMap,
     CallableProgram_SetupLambertBRDF,
     CallableProgram_LambertBRDF_sampleThroughput,
@@ -450,6 +451,7 @@ enum CallableProgram {
 
 constexpr const char* callableProgramEntryPoints[] = {
     RT_DC_NAME_STR("readModifiedNormalFromNormalMap"),
+    RT_DC_NAME_STR("readModifiedNormalFromNormalMap2ch"),
     RT_DC_NAME_STR("readModifiedNormalFromHeightMap"),
     RT_DC_NAME_STR("setupLambertBRDF"),
     RT_DC_NAME_STR("LambertBRDF_sampleThroughput"),
@@ -880,6 +882,7 @@ static bool loadTexture(
 enum class BumpMapTextureType {
     NormalMap = 0,
     NormalMap_BC,
+    NormalMap_BC_2ch,
     HeightMap,
     HeightMap_BC,
 };
@@ -908,6 +911,8 @@ static bool loadNormalTexture(
             else if (elemType == cudau::ArrayElementType::BC4_SNorm ||
                      elemType == cudau::ArrayElementType::BC4_UNorm)
                 *bumpMapType = BumpMapTextureType::HeightMap_BC;
+            else if (elemType == cudau::ArrayElementType::BC5_UNorm)
+                *bumpMapType = BumpMapTextureType::NormalMap_BC_2ch;
             else
                 Assert_NotImplemented();
             auto textureGather = *bumpMapType == BumpMapTextureType::HeightMap_BC ?
@@ -957,18 +962,13 @@ static bool loadNormalTexture(
 static void createNormalTexture(
     GPUEnvironment &gpuEnv,
     const std::filesystem::path &normalPath,
-    Material* mat, bool* useNormalMap) {
-    *useNormalMap = true;
+    Material* mat, BumpMapTextureType* bumpMapType) {
     if (!normalPath.empty()) {
-        BumpMapTextureType bumpMapType;
         hpprintf("  Reading: %s ... ", normalPath.string().c_str());
-        if (loadNormalTexture(normalPath, gpuEnv.cuContext, &mat->normal, &bumpMapType))
+        if (loadNormalTexture(normalPath, gpuEnv.cuContext, &mat->normal, bumpMapType))
             hpprintf("done.\n");
         else
             hpprintf("failed.\n");
-        *useNormalMap =
-            bumpMapType == BumpMapTextureType::NormalMap ||
-            bumpMapType == BumpMapTextureType::NormalMap_BC;
     }
     if (!mat->normal.isInitialized()) {
         uint32_t data = 0xFFFF7F7F;
@@ -977,7 +977,7 @@ static void createNormalTexture(
             cudau::ArraySurface::Disable, cudau::ArrayTextureGather::Disable,
             1, 1, 1);
         mat->normal.write<uint8_t>(reinterpret_cast<uint8_t*>(&data), 4);
-        *useNormalMap = true;
+        *bumpMapType = BumpMapTextureType::NormalMap;
     }
 }
 
@@ -1067,9 +1067,17 @@ static Material* createLambertMaterial(
     else
         body.texReflectance = sampler_normFloat.createTextureObject(body.reflectance);
 
-    bool useNormalMap;
-    createNormalTexture(gpuEnv, normalPath, mat, &useNormalMap);
+    BumpMapTextureType bumpMapType;
+    createNormalTexture(gpuEnv, normalPath, mat, &bumpMapType);
     mat->texNormal = sampler_normFloat.createTextureObject(mat->normal);
+    CallableProgram dcReadModifiedNormal;
+    if (bumpMapType == BumpMapTextureType::NormalMap ||
+        bumpMapType == BumpMapTextureType::NormalMap_BC)
+        dcReadModifiedNormal = CallableProgram_ReadModifiedNormalFromNormalMap;
+    else if (bumpMapType == BumpMapTextureType::NormalMap_BC)
+        dcReadModifiedNormal = CallableProgram_ReadModifiedNormalFromNormalMap2ch;
+    else
+        dcReadModifiedNormal = CallableProgram_ReadModifiedNormalFromHeightMap;
 
     bool isHDR;
     createEmittanceTexture(gpuEnv, emittancePath, immEmittance,
@@ -1092,10 +1100,7 @@ static Material* createLambertMaterial(
     matData.emittance = mat->texEmittance;
     matData.normalWidth = mat->normal.getWidth();
     matData.normalHeight = mat->normal.getHeight();
-    matData.readModifiedNormal = shared::ReadModifiedNormal(
-        useNormalMap ?
-        CallableProgram_ReadModifiedNormalFromNormalMap :
-        CallableProgram_ReadModifiedNormalFromHeightMap);
+    matData.readModifiedNormal = shared::ReadModifiedNormal(dcReadModifiedNormal);
     matData.setupBSDF = shared::SetupBSDF(CallableProgram_SetupLambertBRDF);
     matData.bsdfSampleThroughput = shared::BSDFSampleThroughput(CallableProgram_LambertBRDF_sampleThroughput);
     matData.bsdfEvaluate = shared::BSDFEvaluate(CallableProgram_LambertBRDF_evaluate);
@@ -1200,9 +1205,17 @@ static Material* createDiffuseAndSpecularMaterial(
     }
     body.texSmoothness = sampler_normFloat.createTextureObject(body.smoothness);
 
-    bool useNormalMap;
-    createNormalTexture(gpuEnv, normalPath, mat, &useNormalMap);
+    BumpMapTextureType bumpMapType;
+    createNormalTexture(gpuEnv, normalPath, mat, &bumpMapType);
     mat->texNormal = sampler_normFloat.createTextureObject(mat->normal);
+    CallableProgram dcReadModifiedNormal;
+    if (bumpMapType == BumpMapTextureType::NormalMap ||
+        bumpMapType == BumpMapTextureType::NormalMap_BC)
+        dcReadModifiedNormal = CallableProgram_ReadModifiedNormalFromNormalMap;
+    else if (bumpMapType == BumpMapTextureType::NormalMap_BC)
+        dcReadModifiedNormal = CallableProgram_ReadModifiedNormalFromNormalMap2ch;
+    else
+        dcReadModifiedNormal = CallableProgram_ReadModifiedNormalFromHeightMap;
 
     bool isHDR;
     createEmittanceTexture(gpuEnv, emittancePath, immEmittance,
@@ -1227,10 +1240,7 @@ static Material* createDiffuseAndSpecularMaterial(
     matData.emittance = mat->texEmittance;
     matData.normalWidth = mat->normal.getWidth();
     matData.normalHeight = mat->normal.getHeight();
-    matData.readModifiedNormal = shared::ReadModifiedNormal(
-        useNormalMap ?
-        CallableProgram_ReadModifiedNormalFromNormalMap :
-        CallableProgram_ReadModifiedNormalFromHeightMap);
+    matData.readModifiedNormal = shared::ReadModifiedNormal(dcReadModifiedNormal);
     matData.setupBSDF = shared::SetupBSDF(CallableProgram_SetupDiffuseAndSpecularBRDF);
     matData.bsdfSampleThroughput = shared::BSDFSampleThroughput(CallableProgram_DiffuseAndSpecularBRDF_sampleThroughput);
     matData.bsdfEvaluate = shared::BSDFEvaluate(CallableProgram_DiffuseAndSpecularBRDF_evaluate);
@@ -1321,9 +1331,17 @@ static Material* createSimplePBRMaterial(
     }
     body.texOcclusion_roughness_metallic = sampler_normFloat.createTextureObject(body.occlusion_roughness_metallic);
 
-    bool useNormalMap;
-    createNormalTexture(gpuEnv, normalPath, mat, &useNormalMap);
+    BumpMapTextureType bumpMapType;
+    createNormalTexture(gpuEnv, normalPath, mat, &bumpMapType);
     mat->texNormal = sampler_normFloat.createTextureObject(mat->normal);
+    CallableProgram dcReadModifiedNormal;
+    if (bumpMapType == BumpMapTextureType::NormalMap ||
+        bumpMapType == BumpMapTextureType::NormalMap_BC)
+        dcReadModifiedNormal = CallableProgram_ReadModifiedNormalFromNormalMap;
+    else if (bumpMapType == BumpMapTextureType::NormalMap_BC)
+        dcReadModifiedNormal = CallableProgram_ReadModifiedNormalFromNormalMap2ch;
+    else
+        dcReadModifiedNormal = CallableProgram_ReadModifiedNormalFromHeightMap;
 
     bool isHDR;
     createEmittanceTexture(gpuEnv, emittancePath, immEmittance,
@@ -1347,10 +1365,7 @@ static Material* createSimplePBRMaterial(
     matData.emittance = mat->texEmittance;
     matData.normalWidth = mat->normal.getWidth();
     matData.normalHeight = mat->normal.getHeight();
-    matData.readModifiedNormal = shared::ReadModifiedNormal(
-        useNormalMap ?
-        CallableProgram_ReadModifiedNormalFromNormalMap :
-        CallableProgram_ReadModifiedNormalFromHeightMap);
+    matData.readModifiedNormal = shared::ReadModifiedNormal(dcReadModifiedNormal);
     matData.setupBSDF = shared::SetupBSDF(CallableProgram_SetupSimplePBR_BRDF);
     matData.bsdfSampleThroughput = shared::BSDFSampleThroughput(CallableProgram_DiffuseAndSpecularBRDF_sampleThroughput);
     matData.bsdfEvaluate = shared::BSDFEvaluate(CallableProgram_DiffuseAndSpecularBRDF_evaluate);
@@ -1608,6 +1623,8 @@ static void createTriangleMeshes(
 
         std::filesystem::path normalPath;
         if (aiMat->Get(AI_MATKEY_TEXTURE_HEIGHT(0), strValue) == aiReturn_SUCCESS)
+            normalPath = dirPath / strValue.C_Str();
+        else if (aiMat->Get(AI_MATKEY_TEXTURE_NORMALS(0), strValue) == aiReturn_SUCCESS)
             normalPath = dirPath / strValue.C_Str();
 
         if (matName == "Pavement_Cobblestone_Big_BLENDSHADER") {

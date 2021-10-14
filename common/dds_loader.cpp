@@ -272,7 +272,8 @@ namespace dds {
                 *format = Format::BC4_UNorm;
             else if (header.m_fourCC == makeFourCC('B', 'C', '4', 'S'))
                 *format = Format::BC4_SNorm;
-            else if (header.m_fourCC == makeFourCC('B', 'C', '5', 'U'))
+            else if (header.m_fourCC == makeFourCC('B', 'C', '5', 'U') ||
+                     header.m_fourCC == makeFourCC('A', 'T', 'I', '2'))
                 *format = Format::BC5_UNorm;
             else if (header.m_fourCC == makeFourCC('B', 'C', '5', 'S'))
                 *format = Format::BC5_SNorm;
