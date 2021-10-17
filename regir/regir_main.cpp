@@ -477,7 +477,7 @@ struct GPUEnvironment {
 
     CUmodule cellBuilderModule;
     cudau::Kernel kernelBuildCellReservoirs;
-    cudau::Kernel kernelCombineTemporalNeighbors;
+    cudau::Kernel kernelBuildCellReservoirsAndTemporalReuse;
     cudau::Kernel kernelUpdateLastAccessFrameIndices;
 
     optixu::Pipeline pipeline;
@@ -520,8 +520,8 @@ struct GPUEnvironment {
         CUDADRV_CHECK(cuModuleLoad(&cellBuilderModule, (getExecutableDirectory() / "regir/ptxes/build_cell_reservoirs.ptx").string().c_str()));
         kernelBuildCellReservoirs =
             cudau::Kernel(cellBuilderModule, "buildCellReservoirs", cudau::dim3(32), 0);
-        kernelCombineTemporalNeighbors =
-            cudau::Kernel(cellBuilderModule, "combineTemporalNeighbors", cudau::dim3(32), 0);
+        kernelBuildCellReservoirsAndTemporalReuse =
+            cudau::Kernel(cellBuilderModule, "buildCellReservoirsAndTemporalReuse", cudau::dim3(32), 0);
         kernelUpdateLastAccessFrameIndices =
             cudau::Kernel(cellBuilderModule, "updateLastAccessFrameIndices", cudau::dim3(32), 0);
 
@@ -2778,7 +2778,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
         cudau::Timer update;
         cudau::Timer setupGBuffers;
         cudau::Timer buildCellReservoirs;
-        cudau::Timer combineTemporalNeighbors;
         cudau::Timer pathTrace;
         cudau::Timer denoise;
 
@@ -2787,14 +2786,12 @@ int32_t main(int32_t argc, const char* argv[]) try {
             update.initialize(context);
             setupGBuffers.initialize(context);
             buildCellReservoirs.initialize(context);
-            combineTemporalNeighbors.initialize(context);
             pathTrace.initialize(context);
             denoise.initialize(context);
         }
         void finalize() {
             denoise.finalize();
             pathTrace.finalize();
-            combineTemporalNeighbors.finalize();
             buildCellReservoirs.finalize();
             setupGBuffers.finalize();
             update.finalize();
@@ -2808,6 +2805,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
     uint64_t frameIndex = 0;
     glfwSetWindowUserPointer(window, &frameIndex);
     int32_t requestedSize[2];
+    uint32_t numAccumFrames = 0;
     while (true) {
         uint32_t bufferIndex = frameIndex % 2;
 
@@ -3156,7 +3154,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
             static MovingAverageTime updateTime;
             static MovingAverageTime setupGBuffersTime;
             static MovingAverageTime buildCellReservoirsTime;
-            static MovingAverageTime combineTemporalNeightborsTime;
             static MovingAverageTime pathTraceTime;
             static MovingAverageTime denoiseTime;
 
@@ -3164,7 +3161,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
             updateTime.append(frameIndex >= 2 ? curGPUTimer.update.report() : 0.0f);
             setupGBuffersTime.append(frameIndex >= 2 ? curGPUTimer.setupGBuffers.report() : 0.0f);
             buildCellReservoirsTime.append(frameIndex >= 2 ? curGPUTimer.buildCellReservoirs.report() : 0.0f);
-            combineTemporalNeightborsTime.append(frameIndex >= 2 ? curGPUTimer.combineTemporalNeighbors.report() : 0.0f);
             pathTraceTime.append(frameIndex >= 2 ? curGPUTimer.pathTrace.report() : 0.0f);
             denoiseTime.append(frameIndex >= 2 ? curGPUTimer.denoise.report() : 0.0f);
 
@@ -3172,10 +3168,12 @@ int32_t main(int32_t argc, const char* argv[]) try {
             ImGui::Text("CUDA/OptiX GPU %.3f [ms]:", cudaFrameTime.getAverage());
             ImGui::Text("  Update: %.3f [ms]", updateTime.getAverage());
             ImGui::Text("  setupGBuffers: %.3f [ms]", setupGBuffersTime.getAverage());
-            ImGui::Text("  buildCellReservoirs: %.3f [ms]", buildCellReservoirsTime.getAverage());
-            ImGui::Text("  combineTemporalNeighbors: %.3f [ms]", combineTemporalNeightborsTime.getAverage());
+            ImGui::Text("  buildCellReservoirs + ");
+            ImGui::Text("  Temporal Reuse: %.3f [ms]", buildCellReservoirsTime.getAverage());
             ImGui::Text("  pathTrace: %.3f [ms]", pathTraceTime.getAverage());
             ImGui::Text("  Denoise: %.3f [ms]", denoiseTime.getAverage());
+
+            ImGui::Text("%u [spp]", numAccumFrames + 1);
 
             ImGui::End();
         }
@@ -3216,7 +3214,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
         bool newSequence = resized || frameIndex == 0 || resetAccumulation;
         bool firstAccumFrame =
             animate || !enableAccumulation || cameraIsActuallyMoving || newSequence;
-        static uint32_t numAccumFrames = 0;
         if (firstAccumFrame)
             numAccumFrames = 0;
         else
@@ -3259,25 +3256,22 @@ int32_t main(int32_t argc, const char* argv[]) try {
         curGPUTimer.setupGBuffers.stop(cuStream);
 
         // JP: セルごとの複数のReservoirを構築する。
+        //     そして各セルにおいて前フレームのセルとの間でReservoirの結合を行う。
         // EN: Build multiple reservoirs per cell.
+        //     Then combine reservoirs between the current cell and
+        //     the cell from the previous frame.
         curGPUTimer.buildCellReservoirs.start(cuStream);
         if (useReGIR) {
-            gpuEnv.kernelBuildCellReservoirs(
-                cuStream, gpuEnv.kernelBuildCellReservoirs.calcGridDim(numLightSlots),
-                plp, static_cast<uint32_t>(frameIndex));
+            if (enableTemporalReuse && !newSequence)
+                gpuEnv.kernelBuildCellReservoirsAndTemporalReuse(
+                    cuStream, gpuEnv.kernelBuildCellReservoirsAndTemporalReuse.calcGridDim(numLightSlots),
+                    plp, static_cast<uint32_t>(frameIndex));
+            else
+                gpuEnv.kernelBuildCellReservoirs(
+                    cuStream, gpuEnv.kernelBuildCellReservoirs.calcGridDim(numLightSlots),
+                    plp, static_cast<uint32_t>(frameIndex));
         }
         curGPUTimer.buildCellReservoirs.stop(cuStream);
-
-        // JP: 各セルにおいて前フレームのセルとの間でReservoirの結合を行う。
-        // EN: For each cell, combine reservoirs between the current cell and
-        //     the cell from the previous frame.
-        curGPUTimer.combineTemporalNeighbors.start(cuStream);
-        if (useReGIR && enableTemporalReuse && !newSequence) {
-            gpuEnv.kernelCombineTemporalNeighbors(
-                cuStream, gpuEnv.kernelCombineTemporalNeighbors.calcGridDim(numLightSlots),
-                plp, static_cast<uint32_t>(frameIndex));
-        }
-        curGPUTimer.combineTemporalNeighbors.stop(cuStream);
 
         // JP: パストレーシングによるシェーディングを実行。
         // EN: Perform shading by path tracing.

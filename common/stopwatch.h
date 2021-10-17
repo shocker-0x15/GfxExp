@@ -13,7 +13,7 @@ enum class StopWatchDurationType : uint32_t {
     Seconds,
 };
 
-template <typename res, uint32_t MaxNumMeasurements = 512>
+template <typename res>
 class StopWatchTemplate {
     std::vector<typename res::duration> m_measurements;
     std::vector<typename res::time_point> m_startTPStack;
@@ -41,10 +41,8 @@ public:
 
     uint32_t stop() {
         uint32_t mIdx = 0xFFFFFFFF;
-        if (m_measurements.size() < MaxNumMeasurements) {
-            mIdx = static_cast<uint32_t>(m_measurements.size());
-            m_measurements.push_back(res::now() - m_startTPStack.back());
-        }
+        mIdx = static_cast<uint32_t>(m_measurements.size());
+        m_measurements.push_back(res::now() - m_startTPStack.back());
         m_startTPStack.pop_back();
         return mIdx;
     }
@@ -68,9 +66,12 @@ public:
     void clearAllMeasurements() {
         m_measurements.clear();
     }
+
+    void reset() {
+        m_startTPStack.clear();
+        m_measurements.clear();
+    }
 };
 
-template <uint32_t MaxNumMeasurements = 512>
-using StopWatch = StopWatchTemplate<system_clock, MaxNumMeasurements>;
-template <uint32_t MaxNumMeasurements = 512>
-using StopWatchHiRes = StopWatchTemplate<high_resolution_clock, MaxNumMeasurements>;
+using StopWatch = StopWatchTemplate<system_clock>;
+using StopWatchHiRes = StopWatchTemplate<high_resolution_clock>;

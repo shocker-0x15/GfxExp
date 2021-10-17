@@ -166,7 +166,8 @@ CUDA_DEVICE_FUNCTION float3 sampleIntensity(
     }
 }
 
-CUDA_DEVICE_KERNEL void buildCellReservoirs(PipelineLaunchParameters _plp, uint32_t frameIndex) {
+template <bool useTemporalReuse>
+CUDA_DEVICE_FUNCTION void buildCellReservoirsAndTemporalReuse(const PipelineLaunchParameters &_plp, uint32_t frameIndex) {
     plp = _plp;
 
     uint32_t linearThreadIndex = blockDim.x * blockIdx.x + threadIdx.x;
@@ -178,7 +179,7 @@ CUDA_DEVICE_KERNEL void buildCellReservoirs(PipelineLaunchParameters _plp, uint3
     if (frameIndex - lastAccessFrameIndex > 8)
         return;
 
-    uint32_t lightSlotIndex = linearThreadIndex % kNumLightSlotsPerCell;
+    //uint32_t lightSlotIndex = linearThreadIndex % kNumLightSlotsPerCell;
     uint32_t iz = cellLinearIndex / (plp.s->gridDimension.x * plp.s->gridDimension.y);
     uint32_t iy = (cellLinearIndex % (plp.s->gridDimension.x * plp.s->gridDimension.y)) / plp.s->gridDimension.x;
     uint32_t ix = cellLinearIndex % plp.s->gridDimension.x;
@@ -192,7 +193,7 @@ CUDA_DEVICE_KERNEL void buildCellReservoirs(PipelineLaunchParameters _plp, uint3
     Reservoir<LightSample>* curReservoirs = plp.s->reservoirs[bufferIndex];
     ReservoirInfo* curReservoirInfos = plp.s->reservoirInfos[bufferIndex];
 
-    PCG32RNG &rng = plp.s->lightSlotRngs[linearThreadIndex];
+    PCG32RNG rng = plp.s->lightSlotRngs[linearThreadIndex];
 
     float selectedTargetPDensity = 0.0f;
     Reservoir<LightSample> reservoir;
@@ -258,89 +259,71 @@ CUDA_DEVICE_KERNEL void buildCellReservoirs(PipelineLaunchParameters _plp, uint3
 
     // JP: 現在のサンプルが生き残る確率密度の逆数の推定値を計算する。
     // EN: Calculate the estimate of the reciprocal of the probability density that the current sample suvives.
+    float recPDFEstimate = reservoir.getSumWeights() / (selectedTargetPDensity * reservoir.getStreamLength());
+    if (!isfinite(recPDFEstimate)) {
+        recPDFEstimate = 0.0f;
+        selectedTargetPDensity = 0.0f;
+    }
+
+    // JP: 元の文献では過去数フレーム分のストリーム長で正規化されたReservoirを保持して、それらを結合しているが、
+    //     ここでは正規化は行わず現在フレームと過去フレームの累積Reservoirの2つを結合する。
+    // EN: The original literature suggests using stream length normalized reservoirs of several previous
+    //     frames, then combine them, but here it doesn't use normalization and combines two reservoirs, one from
+    //     the current frame and the other is the accumulation of the previous frames.
+    if constexpr (useTemporalReuse) {
+        uint32_t prevBufferIndex = (bufferIndex + 1) % 2;
+        const Reservoir<LightSample>* prevReservoirs = plp.s->reservoirs[prevBufferIndex];
+        const ReservoirInfo* prevReservoirInfos = plp.s->reservoirInfos[prevBufferIndex];
+
+        uint32_t selfStreamLength = reservoir.getStreamLength();
+        if (recPDFEstimate == 0.0f)
+            reservoir.initialize();
+        uint32_t combinedStreamLength = selfStreamLength;
+        uint32_t maxNumPrevSamples = 20 * selfStreamLength;
+
+        // JP: 際限なく過去フレームで得たサンプルがウェイトを増やさないように、
+        //     前フレームのストリーム長を、現在フレームのReservoirに対して20倍までに制限する。
+        // EN: Limit the stream length of the previous frame by 20 times of that of the current frame
+        //     in order to avoid a sample obtained in the past getting a unlimited weight.
+        // TODO: 光源アニメーションがある場合には前フレームと今のフレームでターゲットPDFが異なるので
+        //       ウェイトを調整するべき？
+        const Reservoir<LightSample> &prevReservoir = prevReservoirs[linearThreadIndex];
+        const ReservoirInfo &prevResInfo = prevReservoirInfos[linearThreadIndex];
+        const LightSample &prevLightSample = prevReservoir.getSample();
+        float prevTargetDensity = prevResInfo.targetDensity;
+        uint32_t prevStreamLength = min(prevReservoir.getStreamLength(), maxNumPrevSamples);
+        float lengthCorrection = static_cast<float>(prevStreamLength) / prevReservoir.getStreamLength();
+        float weight = lengthCorrection * prevReservoir.getSumWeights(); // New target PDF and prev target PDF are the same here.
+        if (reservoir.update(prevLightSample, weight, rng.getFloat0cTo1o()))
+            selectedTargetPDensity = prevTargetDensity;
+        combinedStreamLength += prevStreamLength;
+        reservoir.setStreamLength(combinedStreamLength);
+
+        // JP: 現在のサンプルが生き残る確率密度の逆数の推定値を計算する。
+        // EN: Calculate the estimate of the reciprocal of the probability density that the current sample suvives.
+        float weightForEstimate = 1.0f / reservoir.getStreamLength();
+        recPDFEstimate = weightForEstimate * reservoir.getSumWeights() / selectedTargetPDensity;
+    }
+
     ReservoirInfo resInfo;
-    resInfo.recPDFEstimate = reservoir.getSumWeights() / (selectedTargetPDensity * reservoir.getStreamLength());
+    resInfo.recPDFEstimate = recPDFEstimate;
     resInfo.targetDensity = selectedTargetPDensity;
     if (!isfinite(resInfo.recPDFEstimate)) {
         resInfo.recPDFEstimate = 0.0f;
         resInfo.targetDensity = 0.0f;
     }
 
+    plp.s->lightSlotRngs[linearThreadIndex] = rng;
     curReservoirs[linearThreadIndex] = reservoir;
     curReservoirInfos[linearThreadIndex] = resInfo;
 }
 
-// JP: 元の文献では過去数フレーム分のストリーム長で正規化されたReservoirを保持して、それらを結合しているが、
-//     ここでは正規化は行わず現在フレームと過去フレームの累積Reservoirの2つを結合する。
-// EN: The original literature suggests using stream length normalized reservoirs of several previous
-//     frames, then combine them, but here it doesn't use normalization and combines two reservoirs, one from
-//     the current frame and the other is the accumulation of the previous frames.
-CUDA_DEVICE_KERNEL void combineTemporalNeighbors(PipelineLaunchParameters _plp, uint32_t frameIndex) {
-    plp = _plp;
+CUDA_DEVICE_KERNEL void buildCellReservoirs(PipelineLaunchParameters _plp, uint32_t frameIndex) {
+    buildCellReservoirsAndTemporalReuse<false>(_plp, frameIndex);
+}
 
-    uint32_t linearThreadIndex = blockDim.x * blockIdx.x + threadIdx.x;
-    uint32_t cellLinearIndex = linearThreadIndex / kNumLightSlotsPerCell;
-    uint32_t lastAccessFrameIndex = plp.s->lastAccessFrameIndices[cellLinearIndex];
-    if (frameIndex - lastAccessFrameIndex > 8)
-        return;
-
-    uint32_t bufferIndex = plp.f->bufferIndex;
-    uint32_t prevBufferIndex = (bufferIndex + 1) % 2;
-    Reservoir<LightSample>* curReservoirs = plp.s->reservoirs[bufferIndex];
-    ReservoirInfo* curReservoirInfos = plp.s->reservoirInfos[bufferIndex];
-    const Reservoir<LightSample>* prevReservoirs = plp.s->reservoirs[prevBufferIndex];
-    const ReservoirInfo* prevReservoirInfos = plp.s->reservoirInfos[prevBufferIndex];
-
-    PCG32RNG &rng = plp.s->lightSlotRngs[linearThreadIndex];
-
-    Reservoir<LightSample> &curReservoir = curReservoirs[linearThreadIndex];
-    ReservoirInfo &curResInfo = curReservoirInfos[linearThreadIndex];
-    const Reservoir<LightSample> &prevReservoir = prevReservoirs[linearThreadIndex];
-    const ReservoirInfo &prevResInfo = prevReservoirInfos[linearThreadIndex];
-
-    float selectedTargetDensity = 0.0f;
-    Reservoir<LightSample> combinedReservoir;
-    combinedReservoir.initialize();
-
-    // JP: まずはライトスロットごとに現在のフレームのReservoirを結合する。
-    // EN: First combine the reservoir of the current frame per light slot.
-    if (curResInfo.recPDFEstimate > 0.0f) {
-        combinedReservoir = curReservoir;
-        selectedTargetDensity = curResInfo.targetDensity;
-    }
-    uint32_t combinedStreamLength = curReservoir.getStreamLength();
-    uint32_t maxNumPrevSamples = 20 * curReservoir.getStreamLength();
-
-    // JP: 際限なく過去フレームで得たサンプルがウェイトを増やさないように、
-    //     前フレームのストリーム長を、現在フレームのReservoirに対して20倍までに制限する。
-    // EN: Limit the stream length of the previous frame by 20 times of that of the current frame
-    //     in order to avoid a sample obtained in the past getting a unlimited weight.
-    // TODO: 光源アニメーションがある場合には前フレームと今のフレームでターゲットPDFが異なるので
-    //       ウェイトを調整するべき？
-    const LightSample &prevLightSample = prevReservoir.getSample();
-    float prevTargetDensity = prevResInfo.targetDensity;
-    uint32_t prevStreamLength = min(prevReservoir.getStreamLength(), maxNumPrevSamples);
-    float lengthCorrection = static_cast<float>(prevStreamLength) / prevReservoir.getStreamLength();
-    float weight = lengthCorrection * prevReservoir.getSumWeights(); // New target PDF and prev target PDF are the same here.
-    if (combinedReservoir.update(prevLightSample, weight, rng.getFloat0cTo1o()))
-        selectedTargetDensity = prevTargetDensity;
-    combinedStreamLength += prevStreamLength;
-    combinedReservoir.setStreamLength(combinedStreamLength);
-
-    float weightForEstimate = 1.0f / combinedReservoir.getStreamLength();
-
-    // JP: 現在のサンプルが生き残る確率密度の逆数の推定値を計算する。
-    // EN: Calculate the estimate of the reciprocal of the probability density that the current sample suvives.
-    ReservoirInfo combinedResInfo;
-    combinedResInfo.recPDFEstimate = weightForEstimate * combinedReservoir.getSumWeights() / selectedTargetDensity;
-    combinedResInfo.targetDensity = selectedTargetDensity;
-    if (!isfinite(combinedResInfo.recPDFEstimate)) {
-        combinedResInfo.recPDFEstimate = 0.0f;
-        combinedResInfo.targetDensity = 0.0f;
-    }
-
-    curReservoirs[linearThreadIndex] = combinedReservoir;
-    curReservoirInfos[linearThreadIndex] = combinedResInfo;
+CUDA_DEVICE_KERNEL void buildCellReservoirsAndTemporalReuse(PipelineLaunchParameters _plp, uint32_t frameIndex) {
+    buildCellReservoirsAndTemporalReuse<true>(_plp, frameIndex);
 }
 
 CUDA_DEVICE_KERNEL void updateLastAccessFrameIndices(PipelineLaunchParameters _plp, uint32_t frameIndex) {
