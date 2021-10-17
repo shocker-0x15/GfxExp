@@ -703,6 +703,7 @@ CUDA_DEVICE_FUNCTION float3 sampleFromCell(
         const ReservoirInfo &rInfo = plp.s->reservoirInfos[plp.f->bufferIndex][lightSlotIdx];
         const LightSample &lightSample = r.getSample();
         uint32_t streamLength = r.getStreamLength();
+        combinedStreamLength += streamLength;
         if (rInfo.recPDFEstimate == 0.0f)
             continue;
 
@@ -718,7 +719,6 @@ CUDA_DEVICE_FUNCTION float3 sampleFromCell(
             selectedContribution = cont;
             selectedTargetPDensity = targetPDensity;
         }
-        combinedStreamLength += streamLength;
     }
     combinedReservoir.setStreamLength(combinedStreamLength);
 

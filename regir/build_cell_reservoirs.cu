@@ -303,15 +303,15 @@ CUDA_DEVICE_FUNCTION void buildCellReservoirsAndTemporalReuse(const PipelineLaun
         // EN: Calculate the estimate of the reciprocal of the probability density that the current sample suvives.
         float weightForEstimate = 1.0f / reservoir.getStreamLength();
         recPDFEstimate = weightForEstimate * reservoir.getSumWeights() / selectedTargetPDensity;
+        if (!isfinite(recPDFEstimate)) {
+            recPDFEstimate = 0.0f;
+            selectedTargetPDensity = 0.0f;
+        }
     }
 
     ReservoirInfo resInfo;
     resInfo.recPDFEstimate = recPDFEstimate;
     resInfo.targetDensity = selectedTargetPDensity;
-    if (!isfinite(resInfo.recPDFEstimate)) {
-        resInfo.recPDFEstimate = 0.0f;
-        resInfo.targetDensity = 0.0f;
-    }
 
     plp.s->lightSlotRngs[linearThreadIndex] = rng;
     curReservoirs[linearThreadIndex] = reservoir;
