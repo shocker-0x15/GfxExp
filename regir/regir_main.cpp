@@ -489,9 +489,9 @@ struct GPUEnvironment {
 
     optixu::ProgramGroup pathTraceBaselineRayGenProgram;
     optixu::ProgramGroup pathTraceBaselineMissProgram;
-    optixu::ProgramGroup pathTraceBaselineHitProgramProgram;
+    optixu::ProgramGroup pathTraceBaselineHitProgramGroup;
     optixu::ProgramGroup pathTraceRegirRayGenProgram;
-    optixu::ProgramGroup pathTraceRegirHitProgramProgram;
+    optixu::ProgramGroup pathTraceRegirHitProgramGroup;
     optixu::ProgramGroup visibilityHitProgramGroup;
     std::vector<optixu::ProgramGroup> callablePrograms;
 
@@ -565,14 +565,14 @@ struct GPUEnvironment {
             mainModule, RT_RG_NAME_STR("pathTraceBaseline"));
         pathTraceBaselineMissProgram = pipeline.createMissProgram(
             mainModule, RT_MS_NAME_STR("pathTraceBaseline"));
-        pathTraceBaselineHitProgramProgram = pipeline.createHitProgramGroupForBuiltinIS(
+        pathTraceBaselineHitProgramGroup = pipeline.createHitProgramGroupForBuiltinIS(
             OPTIX_PRIMITIVE_TYPE_TRIANGLE,
             mainModule, RT_CH_NAME_STR("pathTraceBaseline"),
             emptyModule, nullptr);
 
         pathTraceRegirRayGenProgram = pipeline.createRayGenProgram(
             mainModule, RT_RG_NAME_STR("pathTraceRegir"));
-        pathTraceRegirHitProgramProgram = pipeline.createHitProgramGroupForBuiltinIS(
+        pathTraceRegirHitProgramGroup = pipeline.createHitProgramGroupForBuiltinIS(
             OPTIX_PRIMITIVE_TYPE_TRIANGLE,
             mainModule, RT_CH_NAME_STR("pathTraceRegir"),
             emptyModule, nullptr);
@@ -616,8 +616,8 @@ struct GPUEnvironment {
 
         defaultMaterial = optixContext.createMaterial();
         defaultMaterial.setHitGroup(shared::RayType_Primary, setupGBuffersHitProgramGroup);
-        defaultMaterial.setHitGroup(shared::RayType_PathTraceBaseline, pathTraceBaselineHitProgramProgram);
-        defaultMaterial.setHitGroup(shared::RayType_PathTraceReGIR, pathTraceRegirHitProgramProgram);
+        defaultMaterial.setHitGroup(shared::RayType_PathTraceBaseline, pathTraceBaselineHitProgramGroup);
+        defaultMaterial.setHitGroup(shared::RayType_PathTraceReGIR, pathTraceRegirHitProgramGroup);
         defaultMaterial.setHitGroup(shared::RayType_Visibility, visibilityHitProgramGroup);
 
 
@@ -655,9 +655,9 @@ struct GPUEnvironment {
         for (int i = 0; i < NumCallablePrograms; ++i)
             callablePrograms[i].destroy();
         visibilityHitProgramGroup.destroy();
-        pathTraceRegirHitProgramProgram.destroy();
+        pathTraceRegirHitProgramGroup.destroy();
         pathTraceRegirRayGenProgram.destroy();
-        pathTraceBaselineHitProgramProgram.destroy();
+        pathTraceBaselineHitProgramGroup.destroy();
         pathTraceBaselineMissProgram.destroy();
         pathTraceBaselineRayGenProgram.destroy();
         setupGBuffersMissProgram.destroy();
