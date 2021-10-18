@@ -212,11 +212,11 @@ struct MovingAverageTime {
     void append(float value) {
         values[index] = value;
         index = (index + 1) % lengthof(values);
-        numValidValues = std::min<uint32_t>(numValidValues + 1, lengthof(values));
+        numValidValues = std::min<uint32_t>(numValidValues + 1, static_cast<uint32_t>(lengthof(values)));
     }
     float getAverage() const {
         float sum = 0.0f;
-        for (int i = 0; i < numValidValues; ++i)
+        for (uint32_t i = 0; i < numValidValues; ++i)
             sum += values[(index - 1 - i + lengthof(values)) % lengthof(values)];
         return numValidValues > 0 ? sum / numValidValues : 0.0f;
     }

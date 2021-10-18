@@ -264,7 +264,8 @@ struct float3 {
     float x, y, z;
     constexpr float3(float v = 0) : x(v), y(v), z(v) {}
     constexpr float3(float xx, float yy, float zz) : x(xx), y(yy), z(zz) {}
-    constexpr float3(const uint3 &v) : x(v.x), y(v.y), z(v.z) {}
+    constexpr float3(const uint3 &v) :
+        x(static_cast<float>(v.x)), y(static_cast<float>(v.y)), z(static_cast<float>(v.z)) {}
 };
 inline constexpr float3 make_float3(float x, float y, float z) {
     return float3(x, y, z);

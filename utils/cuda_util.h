@@ -399,7 +399,7 @@ namespace cudau {
         }
         template <typename T>
         void write(const std::vector<T> &values, CUstream stream = 0) const {
-            write(values.data(), values.size(), stream);
+            write(values.data(), static_cast<uint32_t>(values.size()), stream);
         }
         template <typename T>
         void read(T* dstValues, uint32_t numValues, CUstream stream = 0) const {
@@ -411,14 +411,14 @@ namespace cudau {
         }
         template <typename T>
         void read(std::vector<T> &values, CUstream stream = 0) const {
-            read(values.data(), values.size(), stream);
+            read(values.data(), static_cast<uint32_t>(values.size()), stream);
         }
         template <typename T>
         void fill(const T &value, CUstream stream = 0) const {
-            size_t numValues = (static_cast<size_t>(m_stride) * m_numElements) / sizeof(T);
+            uint32_t numValues = (m_stride * m_numElements) / sizeof(T);
             if (m_persistentMappedMemory) {
                 T* values = reinterpret_cast<T*>(m_mappedPointer);
-                for (int i = 0; i < numValues; ++i)
+                for (uint32_t i = 0; i < numValues; ++i)
                     values[i] = value;
                 write(values, numValues, stream);
             }
@@ -442,7 +442,7 @@ namespace cudau {
         }
         TypedBuffer(CUcontext context, BufferType type, uint32_t numElements, const T &value) {
             std::vector<T> values(numElements, value);
-            Buffer::initialize(context, type, values.size(), sizeof(T));
+            Buffer::initialize(context, type, static_cast<uint32_t>(values.size()), sizeof(T));
             CUDADRV_CHECK(cuMemcpyHtoD(Buffer::getCUdeviceptr(), values.data(), values.size() * sizeof(T)));
         }
         TypedBuffer(CUcontext context, BufferType type, const T* v, uint32_t numElements) {
@@ -459,7 +459,7 @@ namespace cudau {
         }
         void initialize(CUcontext context, BufferType type, uint32_t numElements, const T &value, CUstream stream = 0) {
             std::vector<T> values(numElements, value);
-            initialize(context, type, values.size());
+            initialize(context, type, static_cast<uint32_t>(values.size()));
             CUDADRV_CHECK(cuMemcpyHtoDAsync(Buffer::getCUdeviceptr(), values.data(), values.size() * sizeof(T), stream));
         }
         void initialize(CUcontext context, BufferType type, const T* v, uint32_t numElements, CUstream stream = 0) {
@@ -500,13 +500,13 @@ namespace cudau {
             Buffer::write<T>(srcValues, numValues, stream);
         }
         void write(const std::vector<T> &values, CUstream stream = 0) const {
-            write(values.data(), values.size(), stream);
+            Buffer::write<T>(values, stream);
         }
         void read(T* dstValues, uint32_t numValues, CUstream stream = 0) const {
             Buffer::read<T>(dstValues, numValues, stream);
         }
         void read(std::vector<T> &values, CUstream stream = 0) const {
-            read(values.data(), values.size(), stream);
+            Buffer::read<T>(values, stream);
         }
         void fill(const T &value, CUstream stream = 0) const {
             Buffer::fill<T>(value, stream);
@@ -786,11 +786,11 @@ namespace cudau {
         void initialize(Array* array) {
             m_array = array;
             m_bufferIndex = 0;
-            for (int i = 0; i < NumBuffers; ++i)
+            for (uint32_t i = 0; i < NumBuffers; ++i)
                 m_surfObjs[i] = 0;
         }
         void finalize() {
-            for (int i = 0; i < NumBuffers; ++i) {
+            for (uint32_t i = 0; i < NumBuffers; ++i) {
                 CUDADRV_CHECK(cuSurfObjectDestroy(m_surfObjs[i]));
                 m_surfObjs[i] = 0;
             }
@@ -954,11 +954,11 @@ namespace cudau {
             m_numArrays = numArrays;
             m_arrayIndex = initIndex;
             m_bufferIndex = 0;
-            for (int i = 0; i < NumBuffers; ++i)
+            for (uint32_t i = 0; i < NumBuffers; ++i)
                 m_texObjs[i] = 0;
         }
         void finalize() {
-            for (int i = 0; i < NumBuffers; ++i) {
+            for (uint32_t i = 0; i < NumBuffers; ++i) {
                 CUDADRV_CHECK(cuTexObjectDestroy(m_texObjs[i]));
                 m_texObjs[i] = 0;
             }

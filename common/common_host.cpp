@@ -65,12 +65,12 @@ initialize(CUcontext cuContext, cudau::BufferType type, const RealType* values, 
     std::memcpy(PMF, values, sizeof(RealType) * m_numValues);
 
     CompensatedSum<RealType> sum(0);
-    for (int i = 0; i < m_numValues; ++i)
+    for (uint32_t i = 0; i < m_numValues; ++i)
         sum += values[i];
     RealType avgWeight = sum / m_numValues;
     m_integral = sum;
 
-    for (int i = 0; i < m_numValues; ++i)
+    for (uint32_t i = 0; i < m_numValues; ++i)
         PMF[i] /= m_integral;
     m_PMF.unmap();
 
@@ -84,7 +84,7 @@ initialize(CUcontext cuContext, cudau::BufferType type, const RealType* values, 
 
     std::vector<IndexAndWeight> smallGroup;
     std::vector<IndexAndWeight> largeGroup;
-    for (int i = 0; i < m_numValues; ++i) {
+    for (uint32_t i = 0; i < m_numValues; ++i) {
         RealType weight = values[i];
         IndexAndWeight entry(i, weight);
         if (weight <= avgWeight)
@@ -144,12 +144,12 @@ initialize(CUcontext cuContext, cudau::BufferType type, const RealType* values, 
     std::memcpy(PMF, values, sizeof(RealType) * m_numValues);
 
     CompensatedSum<RealType> sum(0);
-    for (int i = 0; i < m_numValues; ++i) {
+    for (uint32_t i = 0; i < m_numValues; ++i) {
         CDF[i] = sum;
         sum += PMF[i];
     }
     m_integral = sum;
-    for (int i = 0; i < m_numValues; ++i) {
+    for (uint32_t i = 0; i < m_numValues; ++i) {
         PMF[i] /= m_integral;
         CDF[i] /= m_integral;
     }
@@ -177,12 +177,12 @@ initialize(CUcontext cuContext, cudau::BufferType type, const RealType* values, 
     std::memcpy(PDF, values, sizeof(RealType) * m_numValues);
 
     CompensatedSum<RealType> sum(0);
-    for (int i = 0; i < m_numValues; ++i)
+    for (uint32_t i = 0; i < m_numValues; ++i)
         sum += values[i];
     RealType avgWeight = sum / m_numValues;
     m_integral = avgWeight;
 
-    for (int i = 0; i < m_numValues; ++i)
+    for (uint32_t i = 0; i < m_numValues; ++i)
         PDF[i] /= m_integral;
     m_PDF.unmap();
 
@@ -196,7 +196,7 @@ initialize(CUcontext cuContext, cudau::BufferType type, const RealType* values, 
 
     std::vector<IndexAndWeight> smallGroup;
     std::vector<IndexAndWeight> largeGroup;
-    for (int i = 0; i < m_numValues; ++i) {
+    for (uint32_t i = 0; i < m_numValues; ++i) {
         RealType weight = values[i];
         IndexAndWeight entry(i, weight);
         if (weight <= avgWeight)
@@ -257,12 +257,12 @@ initialize(CUcontext cuContext, cudau::BufferType type, const RealType* values, 
     std::memcpy(PDF, values, sizeof(RealType) * m_numValues);
 
     CompensatedSum<RealType> sum{ 0 };
-    for (int i = 0; i < m_numValues; ++i) {
+    for (uint32_t i = 0; i < m_numValues; ++i) {
         CDF[i] = sum;
         sum += PDF[i] / m_numValues;
     }
     m_integral = sum;
-    for (int i = 0; i < m_numValues; ++i) {
+    for (uint32_t i = 0; i < m_numValues; ++i) {
         PDF[i] /= m_integral;
         CDF[i] /= m_integral;
     }
@@ -281,7 +281,7 @@ template <typename RealType>
 void RegularConstantContinuousDistribution2DTemplate<RealType>::
 initialize(CUcontext cuContext, cudau::BufferType type, const RealType* values, size_t numD1, size_t numD2) {
     m_1DDists = new RegularConstantContinuousDistribution1DTemplate<RealType>[numD2];
-    m_raw1DDists.initialize(cuContext, type, numD2);
+    m_raw1DDists.initialize(cuContext, type, static_cast<uint32_t>(numD2));
 
     shared::RegularConstantContinuousDistribution1DTemplate<RealType>* rawDists = m_raw1DDists.map();
 
@@ -289,7 +289,7 @@ initialize(CUcontext cuContext, cudau::BufferType type, const RealType* values, 
     // EN: First, create Distribution1D's for every rows.
     CompensatedSum<RealType> sum(0);
     RealType* integrals = new RealType[numD2];
-    for (int i = 0; i < numD2; ++i) {
+    for (uint32_t i = 0; i < numD2; ++i) {
         RegularConstantContinuousDistribution1DTemplate<RealType> &dist = m_1DDists[i];
         dist.initialize(cuContext, type, values + i * numD1, numD1);
         dist.getDeviceType(&rawDists[i]);

@@ -45,10 +45,10 @@ CUDA_DEVICE_FUNCTION uint32_t calcCellLinearIndex(
 template <typename T>
 CUDA_DEVICE_FUNCTION uint32_t getFNV1Hash32(const T &x) {
     static const uint32_t FNV_OFFSET_BASIS_32 = 2166136261U;
-    static const uint64_t FNV_OFFSET_BASIS_64 = 14695981039346656037U;
+    //static const uint64_t FNV_OFFSET_BASIS_64 = 14695981039346656037U;
 
     static const uint32_t FNV_PRIME_32 = 16777619U;
-    static const uint64_t FNV_PRIME_64 = 1099511628211LLU;
+    //static const uint64_t FNV_PRIME_64 = 1099511628211LLU;
 
     uint32_t hash = FNV_OFFSET_BASIS_32;
     auto bytes = reinterpret_cast<const uint8_t*>(&x);
