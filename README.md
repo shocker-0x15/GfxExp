@@ -48,9 +48,9 @@ Programs here use [OptiX Utility](https://github.com/shocker-0x15/OptiX_Utility)
 現状以下の環境で動作を確認しています。\
 I've confirmed that the program runs correctly in the following environment.
 
-* Windows 10 (21H1) & Visual Studio Community 2019 (16.11.4)
+* Windows 10 (21H1) & Visual Studio Community 2019 (16.11.5)
 * Core i9-9900K, 32GB, RTX 3080 10GB
-* NVIDIA Driver 472.12
+* NVIDIA Driver 496.13
 
 動作させるにあたっては以下のライブラリが必要です。\
 It requires the following libraries.

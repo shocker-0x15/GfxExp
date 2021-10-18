@@ -921,7 +921,7 @@ CUDA_DEVICE_FUNCTION void generateInitialCandidatesAndTemporalReuse() {
             // JP: 現在のサンプルが生き残る確率密度の逆数の推定値を計算する。
             // EN: Calculate the estimate of the reciprocal of the probability density that the current sample suvives.
             recPDFEstimate = weightForEstimate * reservoir.getSumWeights() / selectedTargetDensity;
-            if (!isfinite(reservoirInfo.recPDFEstimate)) {
+            if (!isfinite(recPDFEstimate)) {
                 recPDFEstimate = 0.0f;
                 selectedTargetDensity = 0.0f;
             }
