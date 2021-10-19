@@ -54,6 +54,7 @@
     <ClInclude Include="..\utils\optixu_on_cudau.h" />
     <ClInclude Include="..\utils\optix_util.h" />
     <ClInclude Include="..\utils\optix_util_private.h" />
+    <ClInclude Include="regir_scene.h" />
     <ClInclude Include="regir_shared.h" />
   </ItemGroup>
   <ItemGroup>

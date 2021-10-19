@@ -937,7 +937,7 @@ CUDA_DEVICE_FUNCTION void performInitialAndTemporalRIS() {
     }
 }
 
-CUDA_DEVICE_KERNEL void RT_RG_NAME(generateInitialCandidates)() {
+CUDA_DEVICE_KERNEL void RT_RG_NAME(performInitialRIS)() {
     performInitialAndTemporalRIS<false, false>();
 }
 
