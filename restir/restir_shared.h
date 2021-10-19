@@ -268,6 +268,9 @@ namespace shared {
         unsigned int numSpatialNeighbors : 4;
         unsigned int useLowDiscrepancyNeighbors : 1;
         unsigned int reuseVisibility : 1;
+        unsigned int enableTemporalReuse : 1;
+        unsigned int enableSpatialReuse : 1;
+        unsigned int useUnbiasedEstimator : 1;
         unsigned int bufferIndex : 1;
         unsigned int resetFlowBuffer : 1;
         unsigned int enableJittering : 1;

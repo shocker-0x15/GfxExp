@@ -253,7 +253,7 @@ namespace glu {
         }
         template <typename T>
         void write(const std::vector<T> &values) const {
-            write(values.data(), values.size());
+            write(values.data(), static_cast<uint32_t>(values.size()));
         }
         template <typename T>
         void fill(const T &value) const {

@@ -481,11 +481,11 @@ struct GPUEnvironment {
     optixu::ProgramGroup setupGBuffersHitProgramGroup;
     optixu::ProgramGroup setupGBuffersMissProgram;
 
-    optixu::ProgramGroup generateInitialCandidatesRayGenProgram;
-    optixu::ProgramGroup generateInitialCandidatesAndTemporalReuseBiasedRayGenProgram;
-    optixu::ProgramGroup generateInitialCandidatesAndTemporalReuseUnbiasedRayGenProgram;
-    optixu::ProgramGroup combineSpatialNeighborsBiasedRayGenProgram;
-    optixu::ProgramGroup combineSpatialNeighborsUnbiasedRayGenProgram;
+    optixu::ProgramGroup performInitialRISRayGenProgram;
+    optixu::ProgramGroup performInitialAndTemporalRISBiasedRayGenProgram;
+    optixu::ProgramGroup performInitialAndTemporalRISUnbiasedRayGenProgram;
+    optixu::ProgramGroup performSpatialRISBiasedRayGenProgram;
+    optixu::ProgramGroup performSpatialRISUnbiasedRayGenProgram;
 
     optixu::ProgramGroup shadingRayGenProgram;
     optixu::ProgramGroup visibilityHitProgramGroup;
@@ -548,16 +548,18 @@ struct GPUEnvironment {
         setupGBuffersMissProgram = pipeline.createMissProgram(
             mainModule, RT_MS_NAME_STR("setupGBuffers"));
 
-        generateInitialCandidatesRayGenProgram = pipeline.createRayGenProgram(
-            mainModule, RT_RG_NAME_STR("generateInitialCandidates"));
-        generateInitialCandidatesAndTemporalReuseBiasedRayGenProgram = pipeline.createRayGenProgram(
-            mainModule, RT_RG_NAME_STR("generateInitialCandidatesAndTemporalReuseBiased"));
-        generateInitialCandidatesAndTemporalReuseUnbiasedRayGenProgram = pipeline.createRayGenProgram(
-            mainModule, RT_RG_NAME_STR("generateInitialCandidatesAndTemporalReuseUnbiased"));
-        combineSpatialNeighborsBiasedRayGenProgram = pipeline.createRayGenProgram(
-            mainModule, RT_RG_NAME_STR("combineSpatialNeighborsBiased"));
-        combineSpatialNeighborsUnbiasedRayGenProgram = pipeline.createRayGenProgram(
-            mainModule, RT_RG_NAME_STR("combineSpatialNeighborsUnbiased"));
+        performInitialRISRayGenProgram = pipeline.createRayGenProgram(
+            mainModule, RT_RG_NAME_STR("performInitialRIS"));
+        performInitialAndTemporalRISBiasedRayGenProgram =
+            pipeline.createRayGenProgram(
+                mainModule, RT_RG_NAME_STR("performInitialAndTemporalRISBiased"));
+        performInitialAndTemporalRISUnbiasedRayGenProgram =
+            pipeline.createRayGenProgram(
+                mainModule, RT_RG_NAME_STR("performInitialAndTemporalRISUnbiased"));
+        performSpatialRISBiasedRayGenProgram = pipeline.createRayGenProgram(
+            mainModule, RT_RG_NAME_STR("performSpatialRISBiased"));
+        performSpatialRISUnbiasedRayGenProgram = pipeline.createRayGenProgram(
+            mainModule, RT_RG_NAME_STR("performSpatialRISUnbiased"));
 
         shadingRayGenProgram = pipeline.createRayGenProgram(
             mainModule, RT_RG_NAME_STR("shading"));
@@ -636,11 +638,11 @@ struct GPUEnvironment {
             callablePrograms[i].destroy();
         visibilityHitProgramGroup.destroy();
         shadingRayGenProgram.destroy();
-        combineSpatialNeighborsUnbiasedRayGenProgram.destroy();
-        combineSpatialNeighborsBiasedRayGenProgram.destroy();
-        generateInitialCandidatesAndTemporalReuseUnbiasedRayGenProgram.destroy();
-        generateInitialCandidatesAndTemporalReuseBiasedRayGenProgram.destroy();
-        generateInitialCandidatesRayGenProgram.destroy();
+        performSpatialRISUnbiasedRayGenProgram.destroy();
+        performSpatialRISBiasedRayGenProgram.destroy();
+        performInitialAndTemporalRISUnbiasedRayGenProgram.destroy();
+        performInitialAndTemporalRISBiasedRayGenProgram.destroy();
+        performInitialRISRayGenProgram.destroy();
         setupGBuffersMissProgram.destroy();
         setupGBuffersHitProgramGroup.destroy();
         setupGBuffersRayGenProgram.destroy();
@@ -2756,8 +2758,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
         cudau::Timer frame;
         cudau::Timer update;
         cudau::Timer setupGBuffers;
-        cudau::Timer generateInitialCandidates;
-        cudau::Timer combineSpatialNeighbors;
+        cudau::Timer performInitialAndTemporalRIS;
+        cudau::Timer performSpatialRIS;
         cudau::Timer shading;
         cudau::Timer denoise;
 
@@ -2765,16 +2767,16 @@ int32_t main(int32_t argc, const char* argv[]) try {
             frame.initialize(context);
             update.initialize(context);
             setupGBuffers.initialize(context);
-            generateInitialCandidates.initialize(context);
-            combineSpatialNeighbors.initialize(context);
+            performInitialAndTemporalRIS.initialize(context);
+            performSpatialRIS.initialize(context);
             shading.initialize(context);
             denoise.initialize(context);
         }
         void finalize() {
             denoise.finalize();
             shading.finalize();
-            combineSpatialNeighbors.finalize();
-            generateInitialCandidates.finalize();
+            performSpatialRIS.finalize();
+            performInitialAndTemporalRIS.finalize();
             setupGBuffers.finalize();
             update.finalize();
             frame.finalize();
@@ -3141,16 +3143,16 @@ int32_t main(int32_t argc, const char* argv[]) try {
             static MovingAverageTime cudaFrameTime;
             static MovingAverageTime updateTime;
             static MovingAverageTime setupGBuffersTime;
-            static MovingAverageTime generateInitialCandidatesTime;
-            static MovingAverageTime combineSpatialNeighborsTime;
+            static MovingAverageTime performInitialAndTemporalRISTime;
+            static MovingAverageTime performSpatialRISTime;
             static MovingAverageTime shadingTime;
             static MovingAverageTime denoiseTime;
 
             cudaFrameTime.append(frameIndex >= 2 ? curGPUTimer.frame.report() : 0.0f);
             updateTime.append(frameIndex >= 2 ? curGPUTimer.update.report() : 0.0f);
             setupGBuffersTime.append(frameIndex >= 2 ? curGPUTimer.setupGBuffers.report() : 0.0f);
-            generateInitialCandidatesTime.append(frameIndex >= 2 ? curGPUTimer.generateInitialCandidates.report() : 0.0f);
-            combineSpatialNeighborsTime.append(frameIndex >= 2 ? curGPUTimer.combineSpatialNeighbors.report() : 0.0f);
+            performInitialAndTemporalRISTime.append(frameIndex >= 2 ? curGPUTimer.performInitialAndTemporalRIS.report() : 0.0f);
+            performSpatialRISTime.append(frameIndex >= 2 ? curGPUTimer.performSpatialRIS.report() : 0.0f);
             shadingTime.append(frameIndex >= 2 ? curGPUTimer.shading.report() : 0.0f);
             denoiseTime.append(frameIndex >= 2 ? curGPUTimer.denoise.report() : 0.0f);
 
@@ -3158,9 +3160,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
             ImGui::Text("CUDA/OptiX GPU %.3f [ms]:", cudaFrameTime.getAverage());
             ImGui::Text("  Update: %.3f [ms]", updateTime.getAverage());
             ImGui::Text("  setupGBuffers: %.3f [ms]", setupGBuffersTime.getAverage());
-            ImGui::Text("  generateInitialCandidates +");
-            ImGui::Text("  Temporal Reuse: %.3f [ms]", generateInitialCandidatesTime.getAverage());
-            ImGui::Text("  combineSpatialNeighbors: %.3f [ms]", combineSpatialNeighborsTime.getAverage());
+            ImGui::Text("  performInitialRIS +");
+            ImGui::Text("    TemporalRIS: %.3f [ms]", performInitialAndTemporalRISTime.getAverage());
+            ImGui::Text("  performSpatialRIS: %.3f [ms]", performSpatialRISTime.getAverage());
             ImGui::Text("  shading: %.3f [ms]", shadingTime.getAverage());
             ImGui::Text("  Denoise: %.3f [ms]", denoiseTime.getAverage());
 
@@ -3227,6 +3229,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
             numSpatialNeighborsBiased;
         perFramePlp.useLowDiscrepancyNeighbors = useLowDiscrepancySpatialNeighbors;
         perFramePlp.reuseVisibility = reuseVisibility;
+        perFramePlp.enableTemporalReuse = enableTemporalReuse;
+        perFramePlp.enableSpatialReuse = enableSpatialReuse;
+        perFramePlp.useUnbiasedEstimator = useUnbiasedEstimator;
         perFramePlp.bufferIndex = bufferIndex;
         perFramePlp.resetFlowBuffer = newSequence;
         perFramePlp.enableJittering = enableJittering;
@@ -3257,36 +3262,33 @@ int32_t main(int32_t argc, const char* argv[]) try {
         // EN: Perform independent streaming RIS on each pixel.
         //     Then combine reservoirs between the current pixel and
         //     (temporally) neighboring pixel from the previous frame.
-        curGPUTimer.generateInitialCandidates.start(cuStream);
+        curGPUTimer.performInitialAndTemporalRIS.start(cuStream);
         if (enableTemporalReuse && !newSequence) {
             if (useUnbiasedEstimator)
                 gpuEnv.pipeline.setRayGenerationProgram(
-                    gpuEnv.generateInitialCandidatesAndTemporalReuseUnbiasedRayGenProgram);
+                    gpuEnv.performInitialAndTemporalRISUnbiasedRayGenProgram);
             else
                 gpuEnv.pipeline.setRayGenerationProgram(
-                    gpuEnv.generateInitialCandidatesAndTemporalReuseBiasedRayGenProgram);
+                    gpuEnv.performInitialAndTemporalRISBiasedRayGenProgram);
         }
         else {
-            gpuEnv.pipeline.setRayGenerationProgram(
-                gpuEnv.generateInitialCandidatesRayGenProgram);
+            gpuEnv.pipeline.setRayGenerationProgram(gpuEnv.performInitialRISRayGenProgram);
         }
         gpuEnv.pipeline.launch(cuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);
-        curGPUTimer.generateInitialCandidates.stop(cuStream);
+        curGPUTimer.performInitialAndTemporalRIS.stop(cuStream);
 
         // JP: 各ピクセルにおいて(空間的)隣接ピクセルとの間でReservoirの結合を行う。
         // EN: For each pixel, combine reservoirs between the current pixel and
         //     (Spatially) neighboring pixels.
-        curGPUTimer.combineSpatialNeighbors.start(cuStream);
+        curGPUTimer.performSpatialRIS.start(cuStream);
         if (enableSpatialReuse) {
             int32_t numSpatialReusePasses;
             if (useUnbiasedEstimator) {
-                gpuEnv.pipeline.setRayGenerationProgram(
-                    gpuEnv.combineSpatialNeighborsUnbiasedRayGenProgram);
+                gpuEnv.pipeline.setRayGenerationProgram(gpuEnv.performSpatialRISUnbiasedRayGenProgram);
                 numSpatialReusePasses = numSpatialReusePassesUnbiased;
             }
             else {
-                gpuEnv.pipeline.setRayGenerationProgram(
-                    gpuEnv.combineSpatialNeighborsBiasedRayGenProgram);
+                gpuEnv.pipeline.setRayGenerationProgram(gpuEnv.performSpatialRISBiasedRayGenProgram);
                 numSpatialReusePasses = numSpatialReusePassesBiased;
             }
 
@@ -3299,7 +3301,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
             }
             lastSpatialNeighborBaseIndex += numSpatialNeighborsBiased * numSpatialReusePasses;
         }
-        curGPUTimer.combineSpatialNeighbors.stop(cuStream);
+        curGPUTimer.performSpatialRIS.stop(cuStream);
 
         // JP: 生き残ったサンプルを使ってシェーディングを実行。
         // EN: Perform shading using the survived samples.

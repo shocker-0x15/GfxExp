@@ -674,9 +674,9 @@ static constexpr bool useMIS_RIS = true;
 
 
 
-template <bool useTemporalReuse, bool useUnbiasedEstimator>
-CUDA_DEVICE_FUNCTION void generateInitialCandidatesAndTemporalReuse() {
-    static_assert(useTemporalReuse || !useUnbiasedEstimator, "Invalid combination.");
+template <bool performTemporalRIS, bool useUnbiasedEstimator>
+CUDA_DEVICE_FUNCTION void performInitialAndTemporalRIS() {
+    static_assert(performTemporalRIS || !useUnbiasedEstimator, "Invalid combination.");
 
     int2 launchIndex = make_int2(optixGetLaunchIndex().x, optixGetLaunchIndex().y);
 
@@ -780,7 +780,7 @@ CUDA_DEVICE_FUNCTION void generateInitialCandidatesAndTemporalReuse() {
             }
         }
 
-        if constexpr (useTemporalReuse) {
+        if constexpr (performTemporalRIS) {
             uint32_t prevBufIdx = (curBufIdx + 1) % 2;
             uint32_t prevResIndex = (curResIndex + 1) % 2;
 
@@ -938,21 +938,21 @@ CUDA_DEVICE_FUNCTION void generateInitialCandidatesAndTemporalReuse() {
 }
 
 CUDA_DEVICE_KERNEL void RT_RG_NAME(generateInitialCandidates)() {
-    generateInitialCandidatesAndTemporalReuse<false, false>();
+    performInitialAndTemporalRIS<false, false>();
 }
 
-CUDA_DEVICE_KERNEL void RT_RG_NAME(generateInitialCandidatesAndTemporalReuseBiased)() {
-    generateInitialCandidatesAndTemporalReuse<true, false>();
+CUDA_DEVICE_KERNEL void RT_RG_NAME(performInitialAndTemporalRISBiased)() {
+    performInitialAndTemporalRIS<true, false>();
 }
 
-CUDA_DEVICE_KERNEL void RT_RG_NAME(generateInitialCandidatesAndTemporalReuseUnbiased)() {
-    generateInitialCandidatesAndTemporalReuse<true, true>();
+CUDA_DEVICE_KERNEL void RT_RG_NAME(performInitialAndTemporalRISUnbiased)() {
+    performInitialAndTemporalRIS<true, true>();
 }
 
 
 
 template <bool useUnbiasedEstimator>
-CUDA_DEVICE_FUNCTION void combineSpatialNeighbors() {
+CUDA_DEVICE_FUNCTION void performSpatialRIS() {
     int2 launchIndex = make_int2(optixGetLaunchIndex().x, optixGetLaunchIndex().y);
 
     PCG32RNG rng = plp.s->rngBuffer.read(launchIndex);
@@ -1071,6 +1071,7 @@ CUDA_DEVICE_FUNCTION void combineSpatialNeighbors() {
 
             // JP: まずは現在のピクセルのターゲットPDFに対応する量を計算。
             // EN: First, calculate a quantity corresponding to the current pixel's target PDF.
+            bool visibility = true;
             {
                 float3 cont;
                 if (plp.f->reuseVisibility)
@@ -1080,6 +1081,8 @@ CUDA_DEVICE_FUNCTION void combineSpatialNeighbors() {
                     cont = performDirectLighting<false>(
                         positionInWorld, vOutLocal, shadingFrame, bsdf, selectedLightSample);
                 float targetDensityForSelf = convertToWeight(cont);
+                if (plp.f->reuseVisibility)
+                    visibility = targetDensityForSelf > 0.0f;
                 if constexpr (useMIS_RIS) {
                     numWeight = targetDensityForSelf;
                     denomWeight = targetDensityForSelf * self.getStreamLength();
@@ -1169,6 +1172,8 @@ CUDA_DEVICE_FUNCTION void combineSpatialNeighbors() {
             }
 
             weightForEstimate = numWeight / denomWeight;
+            if (plp.f->reuseVisibility && !visibility)
+                weightForEstimate = 0.0f;
         }
         else {
             weightForEstimate = 1.0f / combinedReservoir.getStreamLength();
@@ -1189,12 +1194,12 @@ CUDA_DEVICE_FUNCTION void combineSpatialNeighbors() {
     }
 }
 
-CUDA_DEVICE_KERNEL void RT_RG_NAME(combineSpatialNeighborsBiased)() {
-    combineSpatialNeighbors<false>();
+CUDA_DEVICE_KERNEL void RT_RG_NAME(performSpatialRISBiased)() {
+    performSpatialRIS<false>();
 }
 
-CUDA_DEVICE_KERNEL void RT_RG_NAME(combineSpatialNeighborsUnbiased)() {
-    combineSpatialNeighbors<true>();
+CUDA_DEVICE_KERNEL void RT_RG_NAME(performSpatialRISUnbiased)() {
+    performSpatialRIS<true>();
 }
 
 
@@ -1250,10 +1255,16 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(shading)() {
         const LightSample &lightSample = reservoir.getSample();
         float3 directCont = make_float3(0.0f);
         float recPDFEstimate = reservoirInfo.recPDFEstimate;
-        if (recPDFEstimate > 0 && isfinite(recPDFEstimate))
-            directCont = recPDFEstimate * performDirectLighting<true>(positionInWorld, vOutLocal, shadingFrame, bsdf, lightSample);
+        if (recPDFEstimate > 0 && isfinite(recPDFEstimate)) {
+            bool visDone = plp.f->reuseVisibility &&
+                (!plp.f->enableTemporalReuse || (plp.f->enableSpatialReuse && plp.f->useUnbiasedEstimator));
+            if (visDone)
+                directCont = performDirectLighting<false>(positionInWorld, vOutLocal, shadingFrame, bsdf, lightSample);
+            else
+                directCont = performDirectLighting<true>(positionInWorld, vOutLocal, shadingFrame, bsdf, lightSample);
+        }
 
-        contribution += directCont;
+        contribution += recPDFEstimate * directCont;
     }
     else {
         // JP: 環境光源を直接見ている場合の寄与を蓄積。
