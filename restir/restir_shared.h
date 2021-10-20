@@ -138,15 +138,10 @@ namespace shared {
 
 
     struct LightSample {
-        uint32_t instIndex;
-        uint32_t geomInstIndex;
-        uint32_t primIndex;
-        float b1;
-        float b2;
-
-        CUDA_DEVICE_FUNCTION bool atInfinity() const {
-            return instIndex == 0xFFFFFFFF;
-        }
+        float3 M;
+        float3 position;
+        float3 normal;
+        unsigned int atInfinity : 1;
     };
 
     using WeightSum = float;
