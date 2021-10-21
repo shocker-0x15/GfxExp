@@ -370,33 +370,28 @@ CUDA_DEVICE_KERNEL void RT_MS_NAME(setupGBuffers)() {
 
 
 
-CUDA_DEVICE_FUNCTION float3 sampleLight(
+CUDA_DEVICE_FUNCTION void sampleLight(
     float ul, bool sampleEnvLight, float u0, float u1,
-    LightSample* lightSample, float3* lightPosition, float3* lightNormal, float* areaPDensity) {
+    LightSample* lightSample, float* areaPDensity) {
     CUtexObject texEmittance = 0;
     float3 emittance = make_float3(0.0f, 0.0f, 0.0f);
     float2 texCoord;
     if (sampleEnvLight) {
-        lightSample->instIndex = 0xFFFFFFFF;
-        lightSample->geomInstIndex = 0xFFFFFFFF;
-        lightSample->primIndex = 0xFFFFFFFF;
-
         float u, v;
         float uvPDF;
         plp.s->envLightImportanceMap.sample(u0, u1, &u, &v, &uvPDF);
         float phi = 2 * Pi * u;
         float theta = Pi * v;
-        lightSample->b1 = phi;
-        lightSample->b2 = theta;
 
         float posPhi = phi - plp.f->envLightRotation;
         posPhi = posPhi - floorf(posPhi / (2 * Pi)) * 2 * Pi;
 
         float3 direction = fromPolarYUp(posPhi, theta);
         float3 position = make_float3(direction.x, direction.y, direction.z);
-        *lightPosition = position;
+        lightSample->position = position;
+        lightSample->atInfinity = true;
 
-        *lightNormal = -position;
+        lightSample->normal = -position;
 
         // JP: テクスチャー空間中のPDFを面積に関するものに変換する。
         // EN: convert the PDF in texture space to one with respect to area.
@@ -421,7 +416,6 @@ CUDA_DEVICE_FUNCTION float3 sampleLight(
         uint32_t instIndex = plp.s->lightInstDist.sample(ul, &instProb, &uGeomInst);
         lightProb *= instProb;
         const InstanceData &inst = plp.f->instanceDataBuffer[instIndex];
-        lightSample->instIndex = instIndex;
 
         // JP: 次にサンプルしたインスタンスに属するジオメトリインスタンスをサンプルする。
         // EN: Next, sample a geometry instance which belongs to the sampled instance.
@@ -431,14 +425,12 @@ CUDA_DEVICE_FUNCTION float3 sampleLight(
         uint32_t geomInstIndex = inst.geomInstSlots[geomInstIndexInInst];
         lightProb *= geomInstProb;
         const GeometryInstanceData &geomInst = plp.s->geometryInstanceDataBuffer[geomInstIndex];
-        lightSample->geomInstIndex = geomInstIndex;
 
         // JP: 最後に、サンプルしたジオメトリインスタンスに属するプリミティブをサンプルする。
         // EN: Finally, sample a primitive which belongs to the sampled geometry instance.
         float primProb;
         uint32_t primIndex = geomInst.emitterPrimDist.sample(uPrim, &primProb);
         lightProb *= primProb;
-        lightSample->primIndex = primIndex;
 
         // Uniform sampling on unit triangle
         // A Low-Distortion Map Between Triangle and Square
@@ -450,9 +442,6 @@ CUDA_DEVICE_FUNCTION float3 sampleLight(
         else
             t0 -= offset;
         float t2 = 1 - (t0 + t1);
-
-        lightSample->b1 = t1;
-        lightSample->b2 = t2;
 
         //printf("%u-%u-%u: %g\n", instIndex, geomInstIndex, primIndex, lightProb);
 
@@ -471,11 +460,12 @@ CUDA_DEVICE_FUNCTION float3 sampleLight(
         };
 
         float3 geomNormal = cross(p[1] - p[0], p[2] - p[0]);
-        *lightPosition = t0 * p[0] + t1 * p[1] + t2 * p[2];
+        lightSample->position = t0 * p[0] + t1 * p[1] + t2 * p[2];
+        lightSample->atInfinity = false;
         float recArea = 1.0f / length(geomNormal);
-        //*lightNormal = geomNormal * recArea;
-        *lightNormal = t0 * v[0].normal + t1 * v[1].normal + t2 * v[2].normal;
-        *lightNormal = normalize(inst.normalMatrix * *lightNormal);
+        //lightSample->normal = geomNormal * recArea;
+        lightSample->normal = t0 * v[0].normal + t1 * v[1].normal + t2 * v[2].normal;
+        lightSample->normal = normalize(inst.normalMatrix * lightSample->normal);
         recArea *= 2;
         *areaPDensity = lightProb * recArea;
 
@@ -497,100 +487,7 @@ CUDA_DEVICE_FUNCTION float3 sampleLight(
         float4 texValue = tex2DLod<float4>(texEmittance, texCoord.x, texCoord.y, 0.0f);
         emittance *= make_float3(texValue);
     }
-
-    return emittance;
-}
-
-CUDA_DEVICE_FUNCTION float3 evaluateLight(
-    const LightSample &lightSample, float3* lightPosition, float3* lightNormal) {
-    if (lightSample.atInfinity()) {
-        float phi = lightSample.b1;
-        float theta = lightSample.b2;
-        float u = phi / (2 * Pi);
-        float v = theta / Pi;
-
-        float posPhi = phi - plp.f->envLightRotation;
-        posPhi = posPhi - floorf(posPhi / (2 * Pi)) * 2 * Pi;
-
-        float3 direction = fromPolarYUp(posPhi, theta);
-        float3 position = make_float3(direction.x, direction.y, direction.z);
-        *lightPosition = position;
-
-        *lightNormal = -position;
-
-        float4 texValue = tex2DLod<float4>(plp.s->envLightTexture, u, v, 0.0f);
-        float3 emittance = make_float3(texValue);
-        emittance *= Pi * plp.f->envLightPowerCoeff;
-
-        return emittance;
-    }
-    else {
-        const InstanceData &inst = plp.f->instanceDataBuffer[lightSample.instIndex];
-        const GeometryInstanceData &geomInst = plp.s->geometryInstanceDataBuffer[lightSample.geomInstIndex];
-        const MaterialData &mat = plp.s->materialDataBuffer[geomInst.materialSlot];
-
-        const shared::Triangle &tri = geomInst.triangleBuffer[lightSample.primIndex];
-        const shared::Vertex (&v)[3] = {
-            geomInst.vertexBuffer[tri.index0],
-            geomInst.vertexBuffer[tri.index1],
-            geomInst.vertexBuffer[tri.index2]
-        };
-        float3 p[3] = {
-            inst.transform * v[0].position,
-            inst.transform * v[1].position,
-            inst.transform * v[2].position,
-        };
-
-        float t1 = lightSample.b1;
-        float t2 = lightSample.b2;
-        float t0 = 1.0f - (t1 + t2);
-
-        //float3 geomNormal = cross(p[1] - p[0], p[2] - p[0]);
-        *lightPosition = t0 * p[0] + t1 * p[1] + t2 * p[2];
-        //float recArea = 1.0f / length(*lightNormal);
-        //*lightNormal = geomNormal * recArea;
-        *lightNormal = t0 * v[0].normal + t1 * v[1].normal + t2 * v[2].normal;
-        *lightNormal = normalize(inst.normalMatrix * *lightNormal);
-
-        float3 emittance = make_float3(0.0f, 0.0f, 0.0f);
-        if (mat.emittance) {
-            float2 texCoord = t0 * v[0].texCoord + t1 * v[1].texCoord + t2 * v[2].texCoord;
-            float4 texValue = tex2DLod<float4>(mat.emittance, texCoord.x, texCoord.y, 0.0f);
-            emittance = make_float3(texValue);
-        }
-
-        return emittance;
-    }
-}
-
-CUDA_DEVICE_FUNCTION float3 sampleUnshadowedContribution(
-    const float3 &shadingPoint, const float3 &vOutLocal, const ReferenceFrame &shadingFrame, const BSDF &bsdf,
-    float uLight, bool sampleEnvLight, float uPos0, float uPos1, LightSample* lightSample, float* probDensity) {
-    float3 lp;
-    float3 lpn;
-    float3 M = sampleLight(uLight, sampleEnvLight, uPos0, uPos1,
-                           lightSample, &lp, &lpn, probDensity);
-    bool atInfinity = lightSample->atInfinity();
-
-    float3 shadowRayDir = atInfinity ? lp : (lp - shadingPoint);
-    float dist2 = sqLength(shadowRayDir);
-    float dist = std::sqrt(dist2);
-    shadowRayDir /= dist;
-    float3 shadowRayDirLocal = shadingFrame.toLocal(shadowRayDir);
-
-    float lpCos = dot(-shadowRayDir, lpn);
-    float spCos = shadowRayDirLocal.z;
-
-    if (lpCos > 0) {
-        float3 Le = M / Pi; // assume diffuse emitter.
-        float3 fsValue = bsdf.evaluate(vOutLocal, shadowRayDirLocal);
-        float G = lpCos * std::fabs(spCos) / dist2;
-        float3 ret = fsValue * Le * G;
-        return ret;
-    }
-    else {
-        return make_float3(0.0f, 0.0f, 0.0f);
-    }
+    lightSample->emittance = emittance;
 }
 
 template <bool withVisibility>
@@ -598,20 +495,17 @@ CUDA_DEVICE_FUNCTION float3 performDirectLighting(
     const float3 &shadingPoint, const float3 &vOutLocal,
     const ReferenceFrame &shadingFrame, const BSDF &bsdf,
     const LightSample &lightSample) {
-    float3 lp;
-    float3 lpn;
-    float3 M = evaluateLight(lightSample, &lp, &lpn);
-    bool atInfinity = lightSample.atInfinity();
-
-    float3 shadowRayDir = atInfinity ? lp : (lp - shadingPoint);
+    float3 shadowRayDir = lightSample.atInfinity ?
+        lightSample.position :
+        (lightSample.position - shadingPoint);
     float dist2 = sqLength(shadowRayDir);
     float dist = std::sqrt(dist2);
     shadowRayDir /= dist;
-    if (atInfinity)
+    if (lightSample.atInfinity)
         dist = 1e+10f;
     float3 shadowRayDirLocal = shadingFrame.toLocal(shadowRayDir);
 
-    float lpCos = dot(-shadowRayDir, lpn);
+    float lpCos = dot(-shadowRayDir, lightSample.normal);
     float spCos = shadowRayDirLocal.z;
 
     float visibility = 1.0f;
@@ -625,7 +519,7 @@ CUDA_DEVICE_FUNCTION float3 performDirectLighting(
     }
 
     if (visibility > 0 && lpCos > 0) {
-        float3 Le = M / Pi; // assume diffuse emitter.
+        float3 Le = lightSample.emittance / Pi; // assume diffuse emitter.
         float3 fsValue = bsdf.evaluate(vOutLocal, shadowRayDirLocal);
         float G = lpCos * std::fabs(spCos) / dist2;
         float3 ret = fsValue * Le * G;
@@ -638,16 +532,13 @@ CUDA_DEVICE_FUNCTION float3 performDirectLighting(
 
 CUDA_DEVICE_FUNCTION bool evaluateVisibility(
     const float3 &shadingPoint, const ReferenceFrame &shadingFrame, const LightSample &lightSample) {
-    float3 lp;
-    float3 lpn;
-    evaluateLight(lightSample, &lp, &lpn);
-    bool atInfinity = lightSample.atInfinity();
-
-    float3 shadowRayDir = atInfinity ? lp : (lp - shadingPoint);
+    float3 shadowRayDir = lightSample.atInfinity ?
+        lightSample.position :
+        (lightSample.position - shadingPoint);
     float dist2 = sqLength(shadowRayDir);
     float dist = std::sqrt(dist2);
     shadowRayDir /= dist;
-    if (atInfinity)
+    if (lightSample.atInfinity)
         dist = 1e+10f;
 
     float visibility = 1.0f;
@@ -766,20 +657,19 @@ CUDA_DEVICE_FUNCTION float3 performNextEventEstimation(
                 }
             }
             LightSample lightSample;
-            float3 lightPosition;
-            float3 lightNormal;
             float areaPDensity;
-            float3 M = sampleLight(uLight, selectEnvLight, rng.getFloat0cTo1o(), rng.getFloat0cTo1o(),
-                                   &lightSample, &lightPosition, &lightNormal, &areaPDensity);
+            sampleLight(uLight, selectEnvLight, rng.getFloat0cTo1o(), rng.getFloat0cTo1o(),
+                        &lightSample, &areaPDensity);
             areaPDensity *= probToSampleCurLightType;
             float misWeight = 1.0f;
             if constexpr (useMultipleImportanceSampling) {
-                bool atInfinity = lightSample.atInfinity();
-                float3 shadowRay = atInfinity ? lightPosition : (lightPosition - shadingPoint);
+                float3 shadowRay = lightSample.atInfinity ?
+                    lightSample.position :
+                    (lightSample.position - shadingPoint);
                 float dist2 = sqLength(shadowRay);
                 shadowRay /= std::sqrt(dist2);
                 float3 vInLocal = shadingFrame.toLocal(shadowRay);
-                float lpCos = std::fabs(dot(shadowRay, lightNormal));
+                float lpCos = std::fabs(dot(shadowRay, lightSample.normal));
                 float bsdfPDensity = bsdf.evaluatePDF(vOutLocal, vInLocal) * lpCos / dist2;
                 if (!isfinite(bsdfPDensity))
                     bsdfPDensity = 0.0f;

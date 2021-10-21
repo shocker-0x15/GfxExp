@@ -1,46 +1,41 @@
-#include "regir_shared.h"
+ï»¿#include "regir_shared.h"
 #include "../common/common_device.cuh"
 
 using namespace shared;
 
 CUDA_DEVICE_MEM static PipelineLaunchParameters plp;
 
-CUDA_DEVICE_FUNCTION float3 sampleLight(
+CUDA_DEVICE_FUNCTION void sampleLight(
     float ul, bool sampleEnvLight, float u0, float u1,
-    LightSample* lightSample, float3* lightPosition, float3* lightNormal, float* areaPDensity) {
+    LightSample* lightSample, float* areaPDensity) {
     CUtexObject texEmittance = 0;
     float3 emittance = make_float3(0.0f, 0.0f, 0.0f);
     float2 texCoord;
     if (sampleEnvLight) {
-        lightSample->instIndex = 0xFFFFFFFF;
-        lightSample->geomInstIndex = 0xFFFFFFFF;
-        lightSample->primIndex = 0xFFFFFFFF;
-
         float u, v;
         float uvPDF;
         plp.s->envLightImportanceMap.sample(u0, u1, &u, &v, &uvPDF);
         float phi = 2 * Pi * u;
         float theta = Pi * v;
-        lightSample->b1 = phi;
-        lightSample->b2 = theta;
 
         float posPhi = phi - plp.f->envLightRotation;
         posPhi = posPhi - floorf(posPhi / (2 * Pi)) * 2 * Pi;
 
         float3 direction = fromPolarYUp(posPhi, theta);
         float3 position = make_float3(direction.x, direction.y, direction.z);
-        *lightPosition = position;
+        lightSample->position = position;
+        lightSample->atInfinity = true;
 
-        *lightNormal = -position;
+        lightSample->normal = -position;
 
-        // JP: ƒeƒNƒXƒ`ƒƒ[‹óŠÔ’†‚ÌPDF‚ğ–ÊÏ‚ÉŠÖ‚·‚é‚à‚Ì‚É•ÏŠ·‚·‚éB
+        // JP: ãƒ†ã‚¯ã‚¹ãƒãƒ£ãƒ¼ç©ºé–“ä¸­ã®PDFã‚’é¢ç©ã«é–¢ã™ã‚‹ã‚‚ã®ã«å¤‰æ›ã™ã‚‹ã€‚
         // EN: convert the PDF in texture space to one with respect to area.
         // The true value is: lim_{l to inf} uvPDF / (2 * Pi * Pi * std::sin(theta)) / l^2
         *areaPDensity = uvPDF / (2 * Pi * Pi * std::sin(theta));
 
         texEmittance = plp.s->envLightTexture;
-        // JP: ŠÂ‹«ƒ}ƒbƒvƒeƒNƒXƒ`ƒƒ[‚Ì’l‚ÉŒW”‚ğ‚©‚¯‚ÄA’Êí‚ÌŒõŒ¹‚Æ“¯‚¶‚æ‚¤‚É•Ô‚è’l‚ğŒõ‘©”­U“x
-        //     ‚Æ‚µ‚Äˆµ‚¦‚é‚æ‚¤‚É‚·‚éB
+        // JP: ç’°å¢ƒãƒãƒƒãƒ—ãƒ†ã‚¯ã‚¹ãƒãƒ£ãƒ¼ã®å€¤ã«ä¿‚æ•°ã‚’ã‹ã‘ã¦ã€é€šå¸¸ã®å…‰æºã¨åŒã˜ã‚ˆã†ã«è¿”ã‚Šå€¤ã‚’å…‰æŸç™ºæ•£åº¦
+        //     ã¨ã—ã¦æ‰±ãˆã‚‹ã‚ˆã†ã«ã™ã‚‹ã€‚
         // EN: Multiply a coefficient to make the return value possible to be handled as luminous emittance.
         emittance = make_float3(Pi * plp.f->envLightPowerCoeff);
         texCoord.x = u;
@@ -49,16 +44,15 @@ CUDA_DEVICE_FUNCTION float3 sampleLight(
     else {
         float lightProb = 1.0f;
 
-        // JP: ‚Ü‚¸‚ÍƒCƒ“ƒXƒ^ƒ“ƒX‚ğƒTƒ“ƒvƒ‹‚·‚éB
+        // JP: ã¾ãšã¯ã‚¤ãƒ³ã‚¹ã‚¿ãƒ³ã‚¹ã‚’ã‚µãƒ³ãƒ—ãƒ«ã™ã‚‹ã€‚
         // EN: First, sample an instance.
         float instProb;
         float uGeomInst;
         uint32_t instIndex = plp.s->lightInstDist.sample(ul, &instProb, &uGeomInst);
         lightProb *= instProb;
         const InstanceData &inst = plp.f->instanceDataBuffer[instIndex];
-        lightSample->instIndex = instIndex;
 
-        // JP: Ÿ‚ÉƒTƒ“ƒvƒ‹‚µ‚½ƒCƒ“ƒXƒ^ƒ“ƒX‚É‘®‚·‚éƒWƒIƒƒgƒŠƒCƒ“ƒXƒ^ƒ“ƒX‚ğƒTƒ“ƒvƒ‹‚·‚éB
+        // JP: æ¬¡ã«ã‚µãƒ³ãƒ—ãƒ«ã—ãŸã‚¤ãƒ³ã‚¹ã‚¿ãƒ³ã‚¹ã«å±ã™ã‚‹ã‚¸ã‚ªãƒ¡ãƒˆãƒªã‚¤ãƒ³ã‚¹ã‚¿ãƒ³ã‚¹ã‚’ã‚µãƒ³ãƒ—ãƒ«ã™ã‚‹ã€‚
         // EN: Next, sample a geometry instance which belongs to the sampled instance.
         float geomInstProb;
         float uPrim;
@@ -66,14 +60,12 @@ CUDA_DEVICE_FUNCTION float3 sampleLight(
         uint32_t geomInstIndex = inst.geomInstSlots[geomInstIndexInInst];
         lightProb *= geomInstProb;
         const GeometryInstanceData &geomInst = plp.s->geometryInstanceDataBuffer[geomInstIndex];
-        lightSample->geomInstIndex = geomInstIndex;
 
-        // JP: ÅŒã‚ÉAƒTƒ“ƒvƒ‹‚µ‚½ƒWƒIƒƒgƒŠƒCƒ“ƒXƒ^ƒ“ƒX‚É‘®‚·‚éƒvƒŠƒ~ƒeƒBƒu‚ğƒTƒ“ƒvƒ‹‚·‚éB
+        // JP: æœ€å¾Œã«ã€ã‚µãƒ³ãƒ—ãƒ«ã—ãŸã‚¸ã‚ªãƒ¡ãƒˆãƒªã‚¤ãƒ³ã‚¹ã‚¿ãƒ³ã‚¹ã«å±ã™ã‚‹ãƒ—ãƒªãƒŸãƒ†ã‚£ãƒ–ã‚’ã‚µãƒ³ãƒ—ãƒ«ã™ã‚‹ã€‚
         // EN: Finally, sample a primitive which belongs to the sampled geometry instance.
         float primProb;
         uint32_t primIndex = geomInst.emitterPrimDist.sample(uPrim, &primProb);
         lightProb *= primProb;
-        lightSample->primIndex = primIndex;
 
         // Uniform sampling on unit triangle
         // A Low-Distortion Map Between Triangle and Square
@@ -85,9 +77,6 @@ CUDA_DEVICE_FUNCTION float3 sampleLight(
         else
             t0 -= offset;
         float t2 = 1 - (t0 + t1);
-
-        lightSample->b1 = t1;
-        lightSample->b2 = t2;
 
         //printf("%u-%u-%u: %g\n", instIndex, geomInstIndex, primIndex, lightProb);
 
@@ -106,11 +95,12 @@ CUDA_DEVICE_FUNCTION float3 sampleLight(
         };
 
         float3 geomNormal = cross(p[1] - p[0], p[2] - p[0]);
-        *lightPosition = t0 * p[0] + t1 * p[1] + t2 * p[2];
+        lightSample->position = t0 * p[0] + t1 * p[1] + t2 * p[2];
+        lightSample->atInfinity = false;
         float recArea = 1.0f / length(geomNormal);
-        //*lightNormal = geomNormal * recArea;
-        *lightNormal = t0 * v[0].normal + t1 * v[1].normal + t2 * v[2].normal;
-        *lightNormal = normalize(inst.normalMatrix * *lightNormal);
+        //lightSample->normal = geomNormal * recArea;
+        lightSample->normal = t0 * v[0].normal + t1 * v[1].normal + t2 * v[2].normal;
+        lightSample->normal = normalize(inst.normalMatrix * lightSample->normal);
         recArea *= 2;
         *areaPDensity = lightProb * recArea;
 
@@ -132,32 +122,30 @@ CUDA_DEVICE_FUNCTION float3 sampleLight(
         float4 texValue = tex2DLod<float4>(texEmittance, texCoord.x, texCoord.y, 0.0f);
         emittance *= make_float3(texValue);
     }
-
-    return emittance;
+    lightSample->emittance = emittance;
 }
 
-// TODO: ƒZƒ‹‚Ì’†‰›‚¾‚¯‚ÌƒTƒ“ƒvƒŠƒ“ƒO‚¾‚ÆAƒZƒ‹‚Ì’†‰›‚ªŒõŒ¹‚Ì— ‘¤‚É‰ñ‚Á‚Ä‚µ‚Ü‚Á‚Ä‚¢‚éê‡‚ÉA
-//       Šñ—^‚Ì‰Â”\«‚Ì‚ ‚éƒTƒ“ƒvƒ‹‚ğŠü‹p‚µ‚Ä‚µ‚Ü‚¤B‘ã•\“_‚ğƒ‰ƒ“ƒ_ƒ€‚ÉŒˆ’è‚·‚é‚È‚Ç‚Å‰ğŒˆ‚Å‚«‚»‚¤‚¾‚ªA
-//       PDF‚ª–ˆ‰ñ•Ï‚í‚é‚Ì‚Å‚»‚ê‚ğl—¶‚·‚é•K—v‚ ‚èH
+// TODO: ã‚»ãƒ«ã®ä¸­å¤®ã ã‘ã®ã‚µãƒ³ãƒ—ãƒªãƒ³ã‚°ã ã¨ã€ã‚»ãƒ«ã®ä¸­å¤®ãŒå…‰æºã®è£å´ã«å›ã£ã¦ã—ã¾ã£ã¦ã„ã‚‹å ´åˆã«ã€
+//       å¯„ä¸ã®å¯èƒ½æ€§ã®ã‚ã‚‹ã‚µãƒ³ãƒ—ãƒ«ã‚’æ£„å´ã—ã¦ã—ã¾ã†ã€‚ä»£è¡¨ç‚¹ã‚’ãƒ©ãƒ³ãƒ€ãƒ ã«æ±ºå®šã™ã‚‹ãªã©ã§è§£æ±ºã§ããã†ã ãŒã€
+//       PDFãŒæ¯å›å¤‰ã‚ã‚‹ã®ã§ãã‚Œã‚’è€ƒæ…®ã™ã‚‹å¿…è¦ã‚ã‚Šï¼Ÿ
 CUDA_DEVICE_FUNCTION float3 sampleIntensity(
     const float3 &shadingPoint, float minSquaredDistance,
     float uLight, bool sampleEnvLight, float uPos0, float uPos1,
     LightSample* lightSample, float* probDensity) {
-    float3 lp;
-    float3 lpn;
-    float3 M = sampleLight(uLight, sampleEnvLight, uPos0, uPos1,
-                           lightSample, &lp, &lpn, probDensity);
-    bool atInfinity = lightSample->atInfinity();
+    sampleLight(uLight, sampleEnvLight, uPos0, uPos1,
+                lightSample, probDensity);
 
-    float3 shadowRayDir = atInfinity ? lp : (lp - shadingPoint);
+    float3 shadowRayDir = lightSample->atInfinity ?
+        lightSample->position :
+        (lightSample->position - shadingPoint);
     float dist2 = sqLength(shadowRayDir);
     float dist = std::sqrt(dist2);
     shadowRayDir /= dist;
 
-    float lpCos = dot(-shadowRayDir, lpn);
+    float lpCos = dot(-shadowRayDir, lightSample->normal);
 
     if (lpCos > 0) {
-        float3 Le = M / Pi;
+        float3 Le = lightSample->emittance / Pi;
         float3 ret = Le * (lpCos / dist2);
         return ret;
     }
@@ -199,16 +187,16 @@ CUDA_DEVICE_FUNCTION void buildCellReservoirsAndTemporalReuse(const PipelineLaun
     Reservoir<LightSample> reservoir;
     reservoir.initialize();
 
-    // JP: ƒZƒ‹‚Ì‘ã•\“_‚É“’B‚·‚éŒõ“x‚ğƒ^[ƒQƒbƒgPDF‚Æ‚µ‚ÄStreaming RIS‚ğÀsB
+    // JP: ã‚»ãƒ«ã®ä»£è¡¨ç‚¹ã«åˆ°é”ã™ã‚‹å…‰åº¦ã‚’ã‚¿ãƒ¼ã‚²ãƒƒãƒˆPDFã¨ã—ã¦Streaming RISã‚’å®Ÿè¡Œã€‚
     // EN: Perform streaming RIS with luminous intensity reaching to a cell's representative point
     //     as the target PDF.
     const uint32_t numCandidates = 1 << plp.f->log2NumCandidatesPerLightSlot;
     for (int candIdx = 0; candIdx < numCandidates; ++candIdx) {
-        // JP: ŠÂ‹«ŒõƒeƒNƒXƒ`ƒƒ[‚ªİ’è‚³‚ê‚Ä‚¢‚éê‡‚Íˆê’è‚ÌŠm—¦‚ÅƒTƒ“ƒvƒ‹‚·‚éB
-        //     ƒ_ƒCƒo[ƒWƒFƒ“ƒX‚ğ—}‚¦‚é‚½‚ß‚ÉAƒ‹[ƒv‚ÌÅ‰‚Æ‚»‚êˆÈŠO‚ÅŠÂ‹«Œõ‚©‚»‚êˆÈŠO‚ÌƒTƒ“ƒvƒŠƒ“ƒO‚ğ•ª‚¯‚éB
-        //     ‚½‚¾‚µA‚»‚à‚»‚àReGIR‚Í2’iŠK‚ÌRIS‚É‚¨‚¢‚ÄVisibility‚ğˆêØl—¶‚µ‚Ä‚¢‚È‚¢‚½‚ßAŠÂ‹«Œõ‚Í(“Á‚É‚‚¢ƒGƒlƒ‹ƒM[‚Ìê‡)A
-        //     Reservoir’†‚ÌƒTƒ“ƒvƒ‹‚É–³‘Ê‚È‚à‚Ì‚ğ‘‚â‚µ‚Ä‚µ‚Ü‚¢A‚Ş‚µ‚ë•ªU‚ª‘‚¦‚éŒXŒü‚É‚ ‚éB
-        //     ŠÂ‹«Œõ‚ÌƒTƒ“ƒvƒŠƒ“ƒO‚Í•Ê‚Ås‚¤‚Ù‚¤‚ª—Ç‚¢‚©‚à‚µ‚ê‚È‚¢B
+        // JP: ç’°å¢ƒå…‰ãƒ†ã‚¯ã‚¹ãƒãƒ£ãƒ¼ãŒè¨­å®šã•ã‚Œã¦ã„ã‚‹å ´åˆã¯ä¸€å®šã®ç¢ºç‡ã§ã‚µãƒ³ãƒ—ãƒ«ã™ã‚‹ã€‚
+        //     ãƒ€ã‚¤ãƒãƒ¼ã‚¸ã‚§ãƒ³ã‚¹ã‚’æŠ‘ãˆã‚‹ãŸã‚ã«ã€ãƒ«ãƒ¼ãƒ—ã®æœ€åˆã¨ãã‚Œä»¥å¤–ã§ç’°å¢ƒå…‰ã‹ãã‚Œä»¥å¤–ã®ã‚µãƒ³ãƒ—ãƒªãƒ³ã‚°ã‚’åˆ†ã‘ã‚‹ã€‚
+        //     ãŸã ã—ã€ãã‚‚ãã‚‚ReGIRã¯2æ®µéšã®RISã«ãŠã„ã¦Visibilityã‚’ä¸€åˆ‡è€ƒæ…®ã—ã¦ã„ãªã„ãŸã‚ã€ç’°å¢ƒå…‰ã¯(ç‰¹ã«é«˜ã„ã‚¨ãƒãƒ«ã‚®ãƒ¼ã®å ´åˆ)ã€
+        //     Reservoirä¸­ã®ã‚µãƒ³ãƒ—ãƒ«ã«ç„¡é§„ãªã‚‚ã®ã‚’å¢—ã‚„ã—ã¦ã—ã¾ã„ã€ã‚€ã—ã‚åˆ†æ•£ãŒå¢—ãˆã‚‹å‚¾å‘ã«ã‚ã‚‹ã€‚
+        //     ç’°å¢ƒå…‰ã®ã‚µãƒ³ãƒ—ãƒªãƒ³ã‚°ã¯åˆ¥ã§è¡Œã†ã»ã†ãŒè‰¯ã„ã‹ã‚‚ã—ã‚Œãªã„ã€‚
         // EN: Sample an environmental light texture with a fixed probability if it is set.
         //     Separate sampling from the environmental light and the others to
         //     the beginning of the loop and the rest to avoid divergence.
@@ -232,8 +220,8 @@ CUDA_DEVICE_FUNCTION void buildCellReservoirsAndTemporalReuse(const PipelineLaun
             }
         }
 
-        // JP: Œó•âƒTƒ“ƒvƒ‹‚ğ¶¬‚µ‚ÄAƒ^[ƒQƒbƒgPDF‚ğŒvZ‚·‚éB
-        //     ƒ^[ƒQƒbƒgPDF‚Í³‹K‰»‚³‚ê‚Ä‚¢‚È‚­‚Ä‚à—Ç‚¢B
+        // JP: å€™è£œã‚µãƒ³ãƒ—ãƒ«ã‚’ç”Ÿæˆã—ã¦ã€ã‚¿ãƒ¼ã‚²ãƒƒãƒˆPDFã‚’è¨ˆç®—ã™ã‚‹ã€‚
+        //     ã‚¿ãƒ¼ã‚²ãƒƒãƒˆPDFã¯æ­£è¦åŒ–ã•ã‚Œã¦ã„ãªãã¦ã‚‚è‰¯ã„ã€‚
         // EN: Generate a candidate sample then calculate the target PDF for it.
         //     Target PDF doesn't require to be normalized.
         LightSample lightSample;
@@ -245,7 +233,7 @@ CUDA_DEVICE_FUNCTION void buildCellReservoirsAndTemporalReuse(const PipelineLaun
         areaPDensity *= probToSampleCurLightType;
         float targetPDensity = convertToWeight(cont);
 
-        // JP: Œó•âƒTƒ“ƒvƒ‹¶¬—p‚ÌPDF‚Æƒ^[ƒQƒbƒgPDF‚ÍˆÙ‚È‚é‚½‚ßƒTƒ“ƒvƒ‹‚É‚ÍƒEƒFƒCƒg‚ª‚©‚©‚éB
+        // JP: å€™è£œã‚µãƒ³ãƒ—ãƒ«ç”Ÿæˆç”¨ã®PDFã¨ã‚¿ãƒ¼ã‚²ãƒƒãƒˆPDFã¯ç•°ãªã‚‹ãŸã‚ã‚µãƒ³ãƒ—ãƒ«ã«ã¯ã‚¦ã‚§ã‚¤ãƒˆãŒã‹ã‹ã‚‹ã€‚
         // EN: The sample has a weight since the PDF to generate the candidate sample and the target PDF are
         //     different.
         float weight = targetPDensity / areaPDensity;
@@ -257,7 +245,7 @@ CUDA_DEVICE_FUNCTION void buildCellReservoirsAndTemporalReuse(const PipelineLaun
             selectedTargetPDensity = targetPDensity;
     }
 
-    // JP: Œ»İ‚ÌƒTƒ“ƒvƒ‹‚ª¶‚«c‚éŠm—¦–§“x‚Ì‹t”‚Ì„’è’l‚ğŒvZ‚·‚éB
+    // JP: ç¾åœ¨ã®ã‚µãƒ³ãƒ—ãƒ«ãŒç”Ÿãæ®‹ã‚‹ç¢ºç‡å¯†åº¦ã®é€†æ•°ã®æ¨å®šå€¤ã‚’è¨ˆç®—ã™ã‚‹ã€‚
     // EN: Calculate the estimate of the reciprocal of the probability density that the current sample suvives.
     float recPDFEstimate = reservoir.getSumWeights() / (selectedTargetPDensity * reservoir.getStreamLength());
     if (!isfinite(recPDFEstimate)) {
@@ -265,8 +253,8 @@ CUDA_DEVICE_FUNCTION void buildCellReservoirsAndTemporalReuse(const PipelineLaun
         selectedTargetPDensity = 0.0f;
     }
 
-    // JP: Œ³‚Ì•¶Œ£‚Å‚Í‰ß‹”ƒtƒŒ[ƒ€•ª‚ÌƒXƒgƒŠ[ƒ€’·‚Å³‹K‰»‚³‚ê‚½Reservoir‚ğ•Û‚µ‚ÄA‚»‚ê‚ç‚ğŒ‹‡‚µ‚Ä‚¢‚é‚ªA
-    //     ‚±‚±‚Å‚Í³‹K‰»‚Ís‚í‚¸Œ»İƒtƒŒ[ƒ€‚Æ‰ß‹ƒtƒŒ[ƒ€‚Ì—İÏReservoir‚Ì2‚Â‚ğŒ‹‡‚·‚éB
+    // JP: å…ƒã®æ–‡çŒ®ã§ã¯éå»æ•°ãƒ•ãƒ¬ãƒ¼ãƒ åˆ†ã®ã‚¹ãƒˆãƒªãƒ¼ãƒ é•·ã§æ­£è¦åŒ–ã•ã‚ŒãŸReservoirã‚’ä¿æŒã—ã¦ã€ãã‚Œã‚‰ã‚’çµåˆã—ã¦ã„ã‚‹ãŒã€
+    //     ã“ã“ã§ã¯æ­£è¦åŒ–ã¯è¡Œã‚ãšç¾åœ¨ãƒ•ãƒ¬ãƒ¼ãƒ ã¨éå»ãƒ•ãƒ¬ãƒ¼ãƒ ã®ç´¯ç©Reservoirã®2ã¤ã‚’çµåˆã™ã‚‹ã€‚
     // EN: The original literature suggests using stream length normalized reservoirs of several previous
     //     frames, then combine them, but here it doesn't use normalization and combines two reservoirs, one from
     //     the current frame and the other is the accumulation of the previous frames.
@@ -281,12 +269,12 @@ CUDA_DEVICE_FUNCTION void buildCellReservoirsAndTemporalReuse(const PipelineLaun
         uint32_t combinedStreamLength = selfStreamLength;
         uint32_t maxNumPrevSamples = 20 * selfStreamLength;
 
-        // JP: ÛŒÀ‚È‚­‰ß‹ƒtƒŒ[ƒ€‚Å“¾‚½ƒTƒ“ƒvƒ‹‚ªƒEƒFƒCƒg‚ğ‘‚â‚³‚È‚¢‚æ‚¤‚ÉA
-        //     ‘OƒtƒŒ[ƒ€‚ÌƒXƒgƒŠ[ƒ€’·‚ğAŒ»İƒtƒŒ[ƒ€‚ÌReservoir‚É‘Î‚µ‚Ä20”{‚Ü‚Å‚É§ŒÀ‚·‚éB
+        // JP: éš›é™ãªãéå»ãƒ•ãƒ¬ãƒ¼ãƒ ã§å¾—ãŸã‚µãƒ³ãƒ—ãƒ«ãŒã‚¦ã‚§ã‚¤ãƒˆã‚’å¢—ã‚„ã•ãªã„ã‚ˆã†ã«ã€
+        //     å‰ãƒ•ãƒ¬ãƒ¼ãƒ ã®ã‚¹ãƒˆãƒªãƒ¼ãƒ é•·ã‚’ã€ç¾åœ¨ãƒ•ãƒ¬ãƒ¼ãƒ ã®Reservoirã«å¯¾ã—ã¦20å€ã¾ã§ã«åˆ¶é™ã™ã‚‹ã€‚
         // EN: Limit the stream length of the previous frame by 20 times of that of the current frame
         //     in order to avoid a sample obtained in the past getting a unlimited weight.
-        // TODO: ŒõŒ¹ƒAƒjƒ[ƒVƒ‡ƒ“‚ª‚ ‚éê‡‚É‚Í‘OƒtƒŒ[ƒ€‚Æ¡‚ÌƒtƒŒ[ƒ€‚Åƒ^[ƒQƒbƒgPDF‚ªˆÙ‚È‚é‚Ì‚Å
-        //       ƒEƒFƒCƒg‚ğ’²®‚·‚é‚×‚«H
+        // TODO: å…‰æºã‚¢ãƒ‹ãƒ¡ãƒ¼ã‚·ãƒ§ãƒ³ãŒã‚ã‚‹å ´åˆã«ã¯å‰ãƒ•ãƒ¬ãƒ¼ãƒ ã¨ä»Šã®ãƒ•ãƒ¬ãƒ¼ãƒ ã§ã‚¿ãƒ¼ã‚²ãƒƒãƒˆPDFãŒç•°ãªã‚‹ã®ã§
+        //       ã‚¦ã‚§ã‚¤ãƒˆã‚’èª¿æ•´ã™ã‚‹ã¹ãï¼Ÿ
         const Reservoir<LightSample> &prevReservoir = prevReservoirs[linearThreadIndex];
         const ReservoirInfo &prevResInfo = prevReservoirInfos[linearThreadIndex];
         const LightSample &prevLightSample = prevReservoir.getSample();
@@ -299,7 +287,7 @@ CUDA_DEVICE_FUNCTION void buildCellReservoirsAndTemporalReuse(const PipelineLaun
         combinedStreamLength += prevStreamLength;
         reservoir.setStreamLength(combinedStreamLength);
 
-        // JP: Œ»İ‚ÌƒTƒ“ƒvƒ‹‚ª¶‚«c‚éŠm—¦–§“x‚Ì‹t”‚Ì„’è’l‚ğŒvZ‚·‚éB
+        // JP: ç¾åœ¨ã®ã‚µãƒ³ãƒ—ãƒ«ãŒç”Ÿãæ®‹ã‚‹ç¢ºç‡å¯†åº¦ã®é€†æ•°ã®æ¨å®šå€¤ã‚’è¨ˆç®—ã™ã‚‹ã€‚
         // EN: Calculate the estimate of the reciprocal of the probability density that the current sample suvives.
         float weightForEstimate = 1.0f / reservoir.getStreamLength();
         recPDFEstimate = weightForEstimate * reservoir.getSumWeights() / selectedTargetPDensity;
@@ -329,7 +317,7 @@ CUDA_DEVICE_KERNEL void buildCellReservoirsAndTemporalReuse(PipelineLaunchParame
 CUDA_DEVICE_KERNEL void updateLastAccessFrameIndices(PipelineLaunchParameters _plp, uint32_t frameIndex) {
     plp = _plp;
 
-    // JP: Œ»İ‚ÌƒtƒŒ[ƒ€’†‚ÅƒAƒNƒZƒX‚³‚ê‚½ƒZƒ‹‚ÉƒtƒŒ[ƒ€”Ô†‚ğ‹L˜^‚·‚éB
+    // JP: ç¾åœ¨ã®ãƒ•ãƒ¬ãƒ¼ãƒ ä¸­ã§ã‚¢ã‚¯ã‚»ã‚¹ã•ã‚ŒãŸã‚»ãƒ«ã«ãƒ•ãƒ¬ãƒ¼ãƒ ç•ªå·ã‚’è¨˜éŒ²ã™ã‚‹ã€‚
     // EN: Record the frame number to cells that accessed in the current frame.
     uint32_t linearThreadIndex = blockDim.x * blockIdx.x + threadIdx.x;
     uint32_t cellLinearIndex = linearThreadIndex;

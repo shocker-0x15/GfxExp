@@ -138,7 +138,7 @@ namespace shared {
 
 
     struct LightSample {
-        float3 M;
+        float3 emittance;
         float3 position;
         float3 normal;
         unsigned int atInfinity : 1;
