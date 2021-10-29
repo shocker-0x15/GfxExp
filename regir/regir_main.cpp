@@ -1544,30 +1544,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
             ImGui::Separator();
 
-            resetAccumulation |= ImGui::SliderInt("Max Path Length", &maxPathLength, 2, 15);
-
-            bool tempUseReGIR = useReGIR;
-            if (ImGui::RadioButton("Baseline Path Tracing", !useReGIR))
-                useReGIR = false;
-            if (ImGui::RadioButton("Path Tracing + ReGIR", useReGIR))
-                useReGIR = true;
-            resetAccumulation |= useReGIR != tempUseReGIR;
-
-            ImGui::InputLog2Int("#Light Slot Candidates", &log2NumCandidatesPerLightSlot, 8);
-            ImGui::InputLog2Int("#Shading Candidates", &log2NumCandidatesPerCell, 8);
-            resetAccumulation |= ImGui::Checkbox("Temporal Reuse", &enableTemporalReuse);
-            resetAccumulation |= ImGui::Checkbox("Cell Randomization", &enableCellRandomization);
-
-            ImGui::PushID("Debug Switches");
-            for (int i = lengthof(debugSwitches) - 1; i >= 0; --i) {
-                ImGui::PushID(i);
-                resetAccumulation |= ImGui::Checkbox("", &debugSwitches[i]);
-                ImGui::PopID();
-                if (i > 0)
-                    ImGui::SameLine();
-            }
-            ImGui::PopID();
-
             uint32_t numActiveCellsOnHost = 0;
             if (useReGIR)
                 numActiveCells[bufferIndex].read(&numActiveCellsOnHost, 1, cuStream);
@@ -1575,43 +1551,81 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
             ImGui::Separator();
 
-            ImGui::Checkbox("Visualize Cells", &visualizeCells);
-            ImGui::Text("Buffer to Display");
-            ImGui::RadioButtonE("Noisy Beauty", &bufferTypeToDisplay, shared::BufferToDisplay::NoisyBeauty);
-            ImGui::RadioButtonE("Albedo", &bufferTypeToDisplay, shared::BufferToDisplay::Albedo);
-            ImGui::RadioButtonE("Normal", &bufferTypeToDisplay, shared::BufferToDisplay::Normal);
-            ImGui::RadioButtonE("Flow", &bufferTypeToDisplay, shared::BufferToDisplay::Flow);
-            ImGui::RadioButtonE("Denoised Beauty", &bufferTypeToDisplay, shared::BufferToDisplay::DenoisedBeauty);
+            if (ImGui::BeginTabBar("MyTabBar")) {
+                if (ImGui::BeginTabItem("Renderer")) {
+                    resetAccumulation |= ImGui::SliderInt("Max Path Length", &maxPathLength, 2, 15);
 
-            if (ImGui::Checkbox("Temporal Denoiser", &useTemporalDenosier)) {
-                CUDADRV_CHECK(cuStreamSynchronize(cuStream));
-                denoiser.destroy();
+                    bool tempUseReGIR = useReGIR;
+                    if (ImGui::RadioButton("Baseline Path Tracing", !useReGIR))
+                        useReGIR = false;
+                    if (ImGui::RadioButton("Path Tracing + ReGIR", useReGIR))
+                        useReGIR = true;
+                    resetAccumulation |= useReGIR != tempUseReGIR;
 
-                OptixDenoiserModelKind modelKind = useTemporalDenosier ?
-                    OPTIX_DENOISER_MODEL_KIND_TEMPORAL :
-                    OPTIX_DENOISER_MODEL_KIND_HDR;
-                denoiser = gpuEnv.optixContext.createDenoiser(modelKind, true, true);
+                    ImGui::InputLog2Int("#Light Slot Candidates", &log2NumCandidatesPerLightSlot, 8);
+                    ImGui::InputLog2Int("#Shading Candidates", &log2NumCandidatesPerCell, 8);
+                    resetAccumulation |= ImGui::Checkbox("Temporal Reuse", &enableTemporalReuse);
+                    resetAccumulation |= ImGui::Checkbox("Cell Randomization", &enableCellRandomization);
 
-                size_t stateSize;
-                size_t scratchSize;
-                size_t scratchSizeForComputeIntensity;
-                uint32_t numTasks;
-                denoiser.prepare(renderTargetSizeX, renderTargetSizeY, tileWidth, tileHeight,
-                                 &stateSize, &scratchSize, &scratchSizeForComputeIntensity,
-                                 &numTasks);
-                hpprintf("Denoiser State Buffer: %llu bytes\n", stateSize);
-                hpprintf("Denoiser Scratch Buffer: %llu bytes\n", scratchSize);
-                hpprintf("Compute Intensity Scratch Buffer: %llu bytes\n", scratchSizeForComputeIntensity);
-                denoiserStateBuffer.resize(stateSize, 1);
-                denoiserScratchBuffer.resize(std::max(scratchSize, scratchSizeForComputeIntensity), 1);
+                    ImGui::PushID("Debug Switches");
+                    for (int i = lengthof(debugSwitches) - 1; i >= 0; --i) {
+                        ImGui::PushID(i);
+                        resetAccumulation |= ImGui::Checkbox("", &debugSwitches[i]);
+                        ImGui::PopID();
+                        if (i > 0)
+                            ImGui::SameLine();
+                    }
+                    ImGui::PopID();
 
-                denoisingTasks.resize(numTasks);
-                denoiser.getTasks(denoisingTasks.data());
+                    ImGui::EndTabItem();
+                }
 
-                denoiser.setupState(cuStream, denoiserStateBuffer, denoiserScratchBuffer);
+                if (ImGui::BeginTabItem("Visualize")) {
+                    ImGui::Checkbox("Visualize Cells", &visualizeCells);
+                    ImGui::Text("Buffer to Display");
+                    ImGui::RadioButtonE("Noisy Beauty", &bufferTypeToDisplay, shared::BufferToDisplay::NoisyBeauty);
+                    ImGui::RadioButtonE("Albedo", &bufferTypeToDisplay, shared::BufferToDisplay::Albedo);
+                    ImGui::RadioButtonE("Normal", &bufferTypeToDisplay, shared::BufferToDisplay::Normal);
+                    ImGui::RadioButtonE("Motion Vector", &bufferTypeToDisplay, shared::BufferToDisplay::Flow);
+                    ImGui::RadioButtonE("Denoised Beauty", &bufferTypeToDisplay, shared::BufferToDisplay::DenoisedBeauty);
+
+                    if (ImGui::Checkbox("Temporal Denoiser", &useTemporalDenosier)) {
+                        CUDADRV_CHECK(cuStreamSynchronize(cuStream));
+                        denoiser.destroy();
+
+                        OptixDenoiserModelKind modelKind = useTemporalDenosier ?
+                            OPTIX_DENOISER_MODEL_KIND_TEMPORAL :
+                            OPTIX_DENOISER_MODEL_KIND_HDR;
+                        denoiser = gpuEnv.optixContext.createDenoiser(modelKind, true, true);
+
+                        size_t stateSize;
+                        size_t scratchSize;
+                        size_t scratchSizeForComputeIntensity;
+                        uint32_t numTasks;
+                        denoiser.prepare(renderTargetSizeX, renderTargetSizeY, tileWidth, tileHeight,
+                                         &stateSize, &scratchSize, &scratchSizeForComputeIntensity,
+                                         &numTasks);
+                        hpprintf("Denoiser State Buffer: %llu bytes\n", stateSize);
+                        hpprintf("Denoiser Scratch Buffer: %llu bytes\n", scratchSize);
+                        hpprintf("Compute Intensity Scratch Buffer: %llu bytes\n", scratchSizeForComputeIntensity);
+                        denoiserStateBuffer.resize(stateSize, 1);
+                        denoiserScratchBuffer.resize(std::max(scratchSize, scratchSizeForComputeIntensity), 1);
+
+                        denoisingTasks.resize(numTasks);
+                        denoiser.getTasks(denoisingTasks.data());
+
+                        denoiser.setupState(cuStream, denoiserStateBuffer, denoiserScratchBuffer);
+                    }
+
+                    ImGui::SliderFloat("Motion Vector Scale", &motionVectorScale, -2.0f, 2.0f);
+
+                    ImGui::EndTabItem();
+                }
+
+                ImGui::EndTabBar();
             }
 
-            ImGui::SliderFloat("Motion Vector Scale", &motionVectorScale, -2.0f, 2.0f);
+            ImGui::Separator();
 
             ImGui::End();
         }

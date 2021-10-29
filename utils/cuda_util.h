@@ -726,6 +726,10 @@ namespace cudau {
             unmap(mipmapLevel, stream);
         }
         template <typename T>
+        void write(const std::vector<T> &values, uint32_t mipmapLevel = 0, CUstream stream = 0) {
+            write(values.data(), static_cast<uint32_t>(values.size()), mipmapLevel, stream);
+        }
+        template <typename T>
         void read(T* dstValues, uint32_t numValues, uint32_t mipmapLevel = 0, CUstream stream = 0) {
             uint32_t width = std::max<uint32_t>(1, m_width >> mipmapLevel);
             uint32_t height = std::max<uint32_t>(1, m_height >> mipmapLevel);
@@ -736,6 +740,10 @@ namespace cudau {
             auto srcValues = map<T>(mipmapLevel, stream);
             std::copy_n(srcValues, numValues, dstValues);
             unmap(mipmapLevel, stream);
+        }
+        template <typename T>
+        void read(std::vector<T> &values, uint32_t mipmapLevel = 0, CUstream stream = 0) {
+            read(values.data(), static_cast<uint32_t>(values.size()), mipmapLevel, stream);
         }
         template <typename T>
         void fill(const T &value, uint32_t mipmapLevel = 0, CUstream stream = 0) {

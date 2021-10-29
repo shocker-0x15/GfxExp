@@ -492,8 +492,7 @@ CUDA_DEVICE_FUNCTION void sampleLight(
 
 template <bool withVisibility>
 CUDA_DEVICE_FUNCTION float3 performDirectLighting(
-    const float3 &shadingPoint, const float3 &vOutLocal,
-    const ReferenceFrame &shadingFrame, const BSDF &bsdf,
+    const float3 &shadingPoint, const float3 &vOutLocal, const ReferenceFrame &shadingFrame, const BSDF &bsdf,
     const LightSample &lightSample) {
     float3 shadowRayDir = lightSample.atInfinity ?
         lightSample.position :
@@ -531,7 +530,7 @@ CUDA_DEVICE_FUNCTION float3 performDirectLighting(
 }
 
 CUDA_DEVICE_FUNCTION bool evaluateVisibility(
-    const float3 &shadingPoint, const ReferenceFrame &shadingFrame, const LightSample &lightSample) {
+    const float3 &shadingPoint, const LightSample &lightSample) {
     float3 shadowRayDir = lightSample.atInfinity ?
         lightSample.position :
         (lightSample.position - shadingPoint);
@@ -636,7 +635,7 @@ CUDA_DEVICE_FUNCTION float3 performNextEventEstimation(
             plp.f->frameIndex, rng,
             &lightSample, &recProbDensityEstimate);
         if (recProbDensityEstimate > 0.0f) {
-            float visibility = evaluateVisibility(shadingPoint, shadingFrame, lightSample);
+            float visibility = evaluateVisibility(shadingPoint, lightSample);
             ret = unshadowedContribution * (visibility * recProbDensityEstimate);
         }
     }
