@@ -62,6 +62,7 @@
     <CudaCompile Include="optix_kernels.cu">
       <GPUDebugInfo Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</GPUDebugInfo>
     </CudaCompile>
+    <CudaCompile Include="light_pre_sampling.cu" />
   </ItemGroup>
   <ItemGroup>
     <CopyFileToFolders Include="shaders\drawOptiXResult.frag">

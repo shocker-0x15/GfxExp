@@ -490,8 +490,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
     glfwWindowHint(GLFW_SRGB_CAPABLE, GLFW_TRUE);
 
-    int32_t renderTargetSizeX = 1280;
-    int32_t renderTargetSizeY = 720;
+    int32_t renderTargetSizeX = 1920;
+    int32_t renderTargetSizeY = 1080;
 
     // JP: ウインドウの初期化。
     // EN: Initialize a window.
@@ -894,8 +894,32 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
 
     // ----------------------------------------------------------------
+    // JP: 
+    
+    cudau::TypedBuffer<shared::PCG32RNG> lightPreSamplingRngs;
+    cudau::TypedBuffer<shared::PreSampledLight> preSampledLights;
+
+    constexpr uint32_t numPreSampledLights = shared::numLightSubsets * shared::lightSubsetSize;
+    lightPreSamplingRngs.initialize(gpuEnv.cuContext, GPUEnvironment::bufferType, numPreSampledLights);
+    {
+        shared::PCG32RNG* rngs = lightPreSamplingRngs.map();
+        std::mt19937_64 rngSeed(894213312210);
+        for (int i = 0; i < numPreSampledLights; ++i)
+            rngs[i].setState(rngSeed());
+        lightPreSamplingRngs.unmap();
+    }
+    preSampledLights.initialize(gpuEnv.cuContext, GPUEnvironment::bufferType, numPreSampledLights);
+
+    // END: 
+    // ----------------------------------------------------------------
+
+
+
+    // ----------------------------------------------------------------
     // JP: スクリーン関連のバッファーを初期化。
     // EN: Initialize screen-related buffers.
+
+    cudau::Array perTileLightSubsetIndexBuffer;
 
     cudau::Array gBuffer0[2];
     cudau::Array gBuffer1[2];
@@ -903,6 +927,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
     optixu::HostBlockBuffer2D<shared::Reservoir<shared::LightSample>, 1> reservoirBuffer[2];
     cudau::Array reservoirInfoBuffer[2];
+    cudau::Array sampleVisibilityBuffer[2];
     
     cudau::Array beautyAccumBuffer;
     cudau::Array albedoAccumBuffer;
@@ -917,6 +942,13 @@ int32_t main(int32_t argc, const char* argv[]) try {
     cudau::Array rngBuffer;
 
     const auto initializeScreenRelatedBuffers = [&]() {
+        perTileLightSubsetIndexBuffer.initialize2D(
+            gpuEnv.cuContext, cudau::ArrayElementType::UInt32, 1,
+            cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable,
+            (renderTargetSizeX + shared::tileSizeX - 1) / shared::tileSizeX,
+            (renderTargetSizeY + shared::tileSizeY - 1) / shared::tileSizeY,
+            1);
+
         for (int i = 0; i < 2; ++i) {
             gBuffer0[i].initialize2D(
                 gpuEnv.cuContext, cudau::ArrayElementType::UInt32, (sizeof(shared::GBuffer0) + 3) / 4,
@@ -935,6 +967,11 @@ int32_t main(int32_t argc, const char* argv[]) try {
                                           renderTargetSizeX, renderTargetSizeY);
             reservoirInfoBuffer[i].initialize2D(
                 gpuEnv.cuContext, cudau::ArrayElementType::UInt32, (sizeof(shared::ReservoirInfo) + 3) / 4,
+                cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable,
+                renderTargetSizeX, renderTargetSizeY, 1);
+
+            sampleVisibilityBuffer[i].initialize2D(
+                gpuEnv.cuContext, cudau::ArrayElementType::UInt32, (sizeof(shared::SampleVisibility) + 3) / 4,
                 cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable,
                 renderTargetSizeX, renderTargetSizeY, 1);
         }
@@ -991,6 +1028,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
         beautyAccumBuffer.finalize();
 
         for (int i = 1; i >= 0; --i) {
+            sampleVisibilityBuffer[i].finalize();
+
             reservoirInfoBuffer[i].finalize();
             reservoirBuffer[i].finalize();
 
@@ -998,9 +1037,16 @@ int32_t main(int32_t argc, const char* argv[]) try {
             gBuffer1[i].finalize();
             gBuffer0[i].finalize();
         }
+
+        perTileLightSubsetIndexBuffer.finalize();
     };
 
     const auto resizeScreenRelatedBuffers = [&](uint32_t width, uint32_t height) {
+        perTileLightSubsetIndexBuffer.resize(
+            (width + shared::tileSizeX - 1) / shared::tileSizeX,
+            (height + shared::tileSizeY - 1) / shared::tileSizeY,
+            1);
+
         for (int i = 0; i < 2; ++i) {
             gBuffer0[i].resize(width, height);
             gBuffer1[i].resize(width, height);
@@ -1008,6 +1054,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
             reservoirBuffer[i].resize(renderTargetSizeX, renderTargetSizeY);
             reservoirInfoBuffer[i].resize(renderTargetSizeX, renderTargetSizeY);
+
+            sampleVisibilityBuffer[i].resize(renderTargetSizeX, renderTargetSizeY);
         }
 
         beautyAccumBuffer.resize(width, height);
@@ -1176,6 +1224,11 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
     shared::StaticPipelineLaunchParameters staticPlp = {};
     staticPlp.imageSize = int2(renderTargetSizeX, renderTargetSizeY);
+    staticPlp.numTiles = int2((renderTargetSizeX + shared::tileSizeX - 1) / shared::tileSizeX,
+                              (renderTargetSizeY + shared::tileSizeY - 1) / shared::tileSizeY);
+    staticPlp.lightPreSamplingRngs = lightPreSamplingRngs.getDevicePointer();
+    staticPlp.preSampledLights = preSampledLights.getDevicePointer();
+    staticPlp.perTileLightSubsetIndexBuffer = perTileLightSubsetIndexBuffer.getSurfaceObject(0);
     staticPlp.rngBuffer = rngBuffer.getSurfaceObject(0);
     staticPlp.GBuffer0[0] = gBuffer0[0].getSurfaceObject(0);
     staticPlp.GBuffer0[1] = gBuffer0[1].getSurfaceObject(0);
@@ -1187,6 +1240,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
     staticPlp.reservoirBuffer[1] = reservoirBuffer[1].getBlockBuffer2D();
     staticPlp.reservoirInfoBuffer[0] = reservoirInfoBuffer[0].getSurfaceObject(0);
     staticPlp.reservoirInfoBuffer[1] = reservoirInfoBuffer[1].getSurfaceObject(0);
+    staticPlp.sampleVisibilityBuffer[0] = sampleVisibilityBuffer[0].getSurfaceObject(0);
+    staticPlp.sampleVisibilityBuffer[1] = sampleVisibilityBuffer[1].getSurfaceObject(0);
     staticPlp.spatialNeighborDeltas = spatialNeighborDeltas.getDevicePointer();
     staticPlp.materialDataBuffer = gpuEnv.materialDataBuffer.getDevicePointer();
     staticPlp.geometryInstanceDataBuffer = gpuEnv.geomInstDataBuffer.getDevicePointer();
@@ -1249,22 +1304,40 @@ int32_t main(int32_t argc, const char* argv[]) try {
         cudau::Timer performInitialAndTemporalRIS;
         cudau::Timer performSpatialRIS;
         cudau::Timer shading;
+        cudau::Timer performPreSamplingLights;
+        cudau::Timer performPerPixelRIS;
+        cudau::Timer traceShadowRays;
+        cudau::Timer shadeAndResample;
         cudau::Timer denoise;
 
         void initialize(CUcontext context) {
             frame.initialize(context);
             update.initialize(context);
             setupGBuffers.initialize(context);
+
             performInitialAndTemporalRIS.initialize(context);
             performSpatialRIS.initialize(context);
             shading.initialize(context);
+
+            performPerPixelRIS.initialize(context);
+            performPreSamplingLights.initialize(context);
+            traceShadowRays.initialize(context);
+            shadeAndResample.initialize(context);
+
             denoise.initialize(context);
         }
         void finalize() {
             denoise.finalize();
+
+            shadeAndResample.finalize();
+            traceShadowRays.finalize();
+            performPreSamplingLights.finalize();
+
             shading.finalize();
             performSpatialRIS.finalize();
             performInitialAndTemporalRIS.finalize();
+            performPerPixelRIS.finalize();
+
             setupGBuffers.finalize();
             update.finalize();
             frame.finalize();
@@ -1337,6 +1410,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
             // EN: update the pipeline parameters.
             staticPlp.imageSize = int2(renderTargetSizeX, renderTargetSizeY);
+            staticPlp.numTiles = int2((renderTargetSizeX + shared::tileSizeX - 1) / shared::tileSizeX,
+                                      (renderTargetSizeY + shared::tileSizeY - 1) / shared::tileSizeY);
+            staticPlp.perTileLightSubsetIndexBuffer = perTileLightSubsetIndexBuffer.getSurfaceObject(0);
             staticPlp.rngBuffer = rngBuffer.getSurfaceObject(0);
             staticPlp.GBuffer0[0] = gBuffer0[0].getSurfaceObject(0);
             staticPlp.GBuffer0[1] = gBuffer0[1].getSurfaceObject(0);
@@ -1348,6 +1424,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
             staticPlp.reservoirBuffer[1] = reservoirBuffer[1].getBlockBuffer2D();
             staticPlp.reservoirInfoBuffer[0] = reservoirInfoBuffer[0].getSurfaceObject(0);
             staticPlp.reservoirInfoBuffer[1] = reservoirInfoBuffer[1].getSurfaceObject(0);
+            staticPlp.sampleVisibilityBuffer[0] = sampleVisibilityBuffer[0].getSurfaceObject(0);
+            staticPlp.sampleVisibilityBuffer[1] = sampleVisibilityBuffer[1].getSurfaceObject(0);
             staticPlp.beautyAccumBuffer = beautyAccumBuffer.getSurfaceObject(0);
             staticPlp.albedoAccumBuffer = albedoAccumBuffer.getSurfaceObject(0);
             staticPlp.normalAccumBuffer = normalAccumBuffer.getSurfaceObject(0);
@@ -1428,8 +1506,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
                                g_keyUpward.getState() || g_keyDownward.getState() ||
                                g_keyTiltLeft.getState() || g_keyTiltRight.getState() ||
                                g_buttonRotate.getState());
-            cameraIsActuallyMoving = (trackZ != 0 || trackX != 0 || trackY != 0 ||
-                                      tiltZ != 0 || (g_mouseX != g_prevMouseX) || (g_mouseY != g_prevMouseY))
+            cameraIsActuallyMoving =
+                (trackZ != 0 || trackX != 0 || trackY != 0 ||
+                 tiltZ != 0 || (g_mouseX != g_prevMouseX) || (g_mouseY != g_prevMouseY))
                 && operatingCamera;
 
             g_prevMouseX = g_mouseX;
@@ -1490,6 +1569,46 @@ int32_t main(int32_t argc, const char* argv[]) try {
             ImGui::End();
         }
 
+        struct ReSTIRConfigs {
+            int32_t log2NumCandidateSamples;
+            bool enableTemporalReuse = true;
+            bool enableSpatialReuse = true;
+            int32_t numSpatialReusePasses;
+            int32_t numSpatialNeighbors;
+            float spatialNeighborRadius = 20.0f;
+            float radiusThresholdForSpatialVisReuse = 10.0f;
+            bool useLowDiscrepancySpatialNeighbors = true;
+            bool reuseVisibility = true;
+            bool reuseVisibilityForTemporal = true;
+            bool reuseVisibilityForSpatiotemporal = true;
+
+            ReSTIRConfigs(uint32_t _log2NumCandidateSamples,
+                          uint32_t _numSpatialReusePasses, uint32_t _numSpatialNeighbors) :
+                log2NumCandidateSamples(_log2NumCandidateSamples),
+                numSpatialReusePasses(_numSpatialReusePasses),
+                numSpatialNeighbors(_numSpatialNeighbors) {}
+        };
+        enum class Renderer {
+            OriginalReSTIRBiased = 0,
+            OriginalReSTIRUnbiased,
+            RearchitectedReSTIRBiased,
+            RearchitectedReSTIRUnbiased,
+        };
+
+        static ReSTIRConfigs orgRestirBiasedConfigs(5, 2, 5);
+        static ReSTIRConfigs orgRestirUnbiasedConfigs(5, 1, 3);
+        static ReSTIRConfigs rearchRestirBiasedConfigs(5, 1, 1);
+        static ReSTIRConfigs rearchRestirUnbiasedConfigs(5, 1, 1);
+        //static bool tempInit = false;
+        //if (!tempInit) {
+        //    rearchRestirBiasedConfigs.enableTemporalReuse = false;
+        //    rearchRestirBiasedConfigs.enableSpatialReuse = false;
+        //    tempInit = true;
+        //}
+        static Renderer curRenderer = Renderer::OriginalReSTIRBiased;
+        static ReSTIRConfigs* curRendererConfigs = &orgRestirBiasedConfigs;
+        static uint32_t numFramesForCurRenderer = 0;
+        static float spatialVisibilityReuseRatio = 50.0f;
         static bool useTemporalDenosier = true;
         static shared::BufferToDisplay bufferTypeToDisplay = shared::BufferToDisplay::NoisyBeauty;
         static float motionVectorScale = -1.0f;
@@ -1498,18 +1617,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
         static bool enableJittering = false;
         static bool enableBumpMapping = false;
         bool lastFrameWasAnimated = false;
-        static bool useUnbiasedEstimator = false;
-        static int32_t log2NumCandidateSamples = 5;
-        static int32_t log2NumSamples = 0;
-        static bool enableTemporalReuse = true;
-        static bool enableSpatialReuse = true;
-        static int32_t numSpatialReusePassesBiased = 2;
-        static int32_t numSpatialReusePassesUnbiased = 1;
-        static int32_t numSpatialNeighborsBiased = 5;
-        static int32_t numSpatialNeighborsUnbiased = 3;
-        static float spatialNeighborRadius = 20.0f;
-        static bool useLowDiscrepancySpatialNeighbors = true;
-        static bool reuseVisibility = true;
         static bool debugSwitches[] = {
             false, false, false, false, false, false, false, false
         };
@@ -1555,71 +1662,118 @@ int32_t main(int32_t argc, const char* argv[]) try {
                         pickInfoOnHost.emittance.z);
             ImGui::Separator();
 
-            resetAccumulation |= ImGui::Checkbox("Unbiased", &useUnbiasedEstimator);
+            if (ImGui::BeginTabBar("MyTabBar")) {
+                if (ImGui::BeginTabItem("Renderer")) {
+                    Renderer prevRenderer = curRenderer;
+                    resetAccumulation |= ImGui::RadioButtonE("Original ReSTIR (Biased)", &curRenderer,
+                                                             Renderer::OriginalReSTIRBiased);
+                    resetAccumulation |= ImGui::RadioButtonE("Original ReSTIR (Unbiased)", &curRenderer,
+                                                             Renderer::OriginalReSTIRUnbiased);
+                    resetAccumulation |= ImGui::RadioButtonE("Rearchitected ReSTIR (Biased)", &curRenderer,
+                                                             Renderer::RearchitectedReSTIRBiased);
+                    resetAccumulation |= ImGui::RadioButtonE("Rearchitected ReSTIR (Unbiased)", &curRenderer,
+                                                             Renderer::RearchitectedReSTIRUnbiased);
+                    if (curRenderer != prevRenderer)
+                        numFramesForCurRenderer = 0;
 
-            ImGui::InputLog2Int("#Candidates", &log2NumCandidateSamples, 8);
-            //ImGui::InputLog2Int("#Samples", &log2NumSamples, 3);
+                    if (curRenderer == Renderer::OriginalReSTIRBiased)
+                        curRendererConfigs = &orgRestirBiasedConfigs;
+                    else if (curRenderer == Renderer::OriginalReSTIRUnbiased)
+                        curRendererConfigs = &orgRestirUnbiasedConfigs;
+                    else if (curRenderer == Renderer::RearchitectedReSTIRBiased)
+                        curRendererConfigs = &rearchRestirBiasedConfigs;
+                    else if (curRenderer == Renderer::RearchitectedReSTIRUnbiased)
+                        curRendererConfigs = &rearchRestirUnbiasedConfigs;
 
-            resetAccumulation |= ImGui::Checkbox("Temporal Reuse", &enableTemporalReuse);
-            resetAccumulation |= ImGui::Checkbox("Spatial Reuse", &enableSpatialReuse);
-            ImGui::SliderInt("#Spatial Reuse Passes",
-                             useUnbiasedEstimator ? &numSpatialReusePassesUnbiased : &numSpatialReusePassesBiased,
-                             1, 5);
-            ImGui::SliderInt("#Spatial Neighbors",
-                             useUnbiasedEstimator ? &numSpatialNeighborsUnbiased : &numSpatialNeighborsBiased,
-                             1, 10);
-            ImGui::SliderFloat("Radius", &spatialNeighborRadius, 3.0f, 30.0f);
-            resetAccumulation |= ImGui::Checkbox("Low Discrepancy", &useLowDiscrepancySpatialNeighbors);
-            resetAccumulation |= ImGui::Checkbox("Reuse Visibility", &reuseVisibility);
+                    ImGui::InputLog2Int("#Candidates", &curRendererConfigs->log2NumCandidateSamples, 8);
+                    //ImGui::InputLog2Int("#Samples", &curRendererConfigs->log2NumSamples, 3);
 
-            ImGui::PushID("Debug Switches");
-            for (int i = lengthof(debugSwitches) - 1; i >= 0; --i) {
-                ImGui::PushID(i);
-                resetAccumulation |= ImGui::Checkbox("", &debugSwitches[i]);
-                ImGui::PopID();
-                if (i > 0)
-                    ImGui::SameLine();
+                    resetAccumulation |= ImGui::Checkbox("Temporal Reuse", &curRendererConfigs->enableTemporalReuse);
+                    resetAccumulation |= ImGui::Checkbox("Spatial Reuse", &curRendererConfigs->enableSpatialReuse);
+                    resetAccumulation |= ImGui::SliderFloat(
+                        "Radius", &curRendererConfigs->spatialNeighborRadius, 3.0f, 30.0f);
+                    if (curRenderer == Renderer::OriginalReSTIRBiased ||
+                        curRenderer == Renderer::OriginalReSTIRUnbiased) {
+                        resetAccumulation |= ImGui::SliderInt(
+                            "#Reuse Passes",
+                            &curRendererConfigs->numSpatialReusePasses, 1, 5);
+                        // TODO: Allow the rearchicted version use this parameter?
+                        resetAccumulation |= ImGui::SliderInt(
+                            "#Neighbors",
+                            &curRendererConfigs->numSpatialNeighbors, 1, 10);
+                    }
+                    resetAccumulation |= ImGui::Checkbox("Low Discrepancy",
+                                                         &curRendererConfigs->useLowDiscrepancySpatialNeighbors);
+                    resetAccumulation |= ImGui::Checkbox("Reuse Visibility",
+                                                         &curRendererConfigs->reuseVisibility);
+                    if (curRenderer == Renderer::RearchitectedReSTIRBiased) {
+                        resetAccumulation |= ImGui::Checkbox("Reuse Temporal Visibility",
+                                                             &curRendererConfigs->reuseVisibilityForTemporal);
+                        resetAccumulation |= ImGui::Checkbox("Reuse Spatial Visibility",
+                                                             &curRendererConfigs->reuseVisibilityForSpatiotemporal);
+                        resetAccumulation |= ImGui::SliderFloat(
+                            "Reuse Ratio (%)", &spatialVisibilityReuseRatio, 0.0f, 100.0f);
+                        float reusableRadius = curRendererConfigs->spatialNeighborRadius *
+                            std::sqrt(spatialVisibilityReuseRatio / 100.0f);
+                        curRendererConfigs->radiusThresholdForSpatialVisReuse = reusableRadius;
+                    }
+
+                    ImGui::PushID("Debug Switches");
+                    for (int i = lengthof(debugSwitches) - 1; i >= 0; --i) {
+                        ImGui::PushID(i);
+                        resetAccumulation |= ImGui::Checkbox("", &debugSwitches[i]);
+                        ImGui::PopID();
+                        if (i > 0)
+                            ImGui::SameLine();
+                    }
+                    ImGui::PopID();
+
+                    ImGui::EndTabItem();
+                }
+
+                if (ImGui::BeginTabItem("Visualize")) {
+                    ImGui::Text("Buffer to Display");
+                    ImGui::RadioButtonE("Noisy Beauty", &bufferTypeToDisplay, shared::BufferToDisplay::NoisyBeauty);
+                    ImGui::RadioButtonE("Albedo", &bufferTypeToDisplay, shared::BufferToDisplay::Albedo);
+                    ImGui::RadioButtonE("Normal", &bufferTypeToDisplay, shared::BufferToDisplay::Normal);
+                    ImGui::RadioButtonE("Motion Vector", &bufferTypeToDisplay, shared::BufferToDisplay::Flow);
+                    ImGui::RadioButtonE("Denoised Beauty", &bufferTypeToDisplay, shared::BufferToDisplay::DenoisedBeauty);
+
+                    if (ImGui::Checkbox("Temporal Denoiser", &useTemporalDenosier)) {
+                        CUDADRV_CHECK(cuStreamSynchronize(cuStream));
+                        denoiser.destroy();
+
+                        OptixDenoiserModelKind modelKind = useTemporalDenosier ?
+                            OPTIX_DENOISER_MODEL_KIND_TEMPORAL :
+                            OPTIX_DENOISER_MODEL_KIND_HDR;
+                        denoiser = gpuEnv.optixContext.createDenoiser(modelKind, true, true);
+
+                        size_t stateSize;
+                        size_t scratchSize;
+                        size_t scratchSizeForComputeIntensity;
+                        uint32_t numTasks;
+                        denoiser.prepare(renderTargetSizeX, renderTargetSizeY, tileWidth, tileHeight,
+                                         &stateSize, &scratchSize, &scratchSizeForComputeIntensity,
+                                         &numTasks);
+                        hpprintf("Denoiser State Buffer: %llu bytes\n", stateSize);
+                        hpprintf("Denoiser Scratch Buffer: %llu bytes\n", scratchSize);
+                        hpprintf("Compute Intensity Scratch Buffer: %llu bytes\n", scratchSizeForComputeIntensity);
+                        denoiserStateBuffer.resize(stateSize, 1);
+                        denoiserScratchBuffer.resize(std::max(scratchSize, scratchSizeForComputeIntensity), 1);
+
+                        denoisingTasks.resize(numTasks);
+                        denoiser.getTasks(denoisingTasks.data());
+
+                        denoiser.setupState(cuStream, denoiserStateBuffer, denoiserScratchBuffer);
+                    }
+
+                    ImGui::SliderFloat("Motion Vector Scale", &motionVectorScale, -2.0f, 2.0f);
+
+                    ImGui::EndTabItem();
+                }
+
+                ImGui::EndTabBar();
             }
-            ImGui::PopID();
-
-            ImGui::Separator();
-
-            ImGui::Text("Buffer to Display");
-            ImGui::RadioButtonE("Noisy Beauty", &bufferTypeToDisplay, shared::BufferToDisplay::NoisyBeauty);
-            ImGui::RadioButtonE("Albedo", &bufferTypeToDisplay, shared::BufferToDisplay::Albedo);
-            ImGui::RadioButtonE("Normal", &bufferTypeToDisplay, shared::BufferToDisplay::Normal);
-            ImGui::RadioButtonE("Flow", &bufferTypeToDisplay, shared::BufferToDisplay::Flow);
-            ImGui::RadioButtonE("Denoised Beauty", &bufferTypeToDisplay, shared::BufferToDisplay::DenoisedBeauty);
-
-            if (ImGui::Checkbox("Temporal Denoiser", &useTemporalDenosier)) {
-                CUDADRV_CHECK(cuStreamSynchronize(cuStream));
-                denoiser.destroy();
-
-                OptixDenoiserModelKind modelKind = useTemporalDenosier ?
-                    OPTIX_DENOISER_MODEL_KIND_TEMPORAL :
-                    OPTIX_DENOISER_MODEL_KIND_HDR;
-                denoiser = gpuEnv.optixContext.createDenoiser(modelKind, true, true);
-
-                size_t stateSize;
-                size_t scratchSize;
-                size_t scratchSizeForComputeIntensity;
-                uint32_t numTasks;
-                denoiser.prepare(renderTargetSizeX, renderTargetSizeY, tileWidth, tileHeight,
-                                 &stateSize, &scratchSize, &scratchSizeForComputeIntensity,
-                                 &numTasks);
-                hpprintf("Denoiser State Buffer: %llu bytes\n", stateSize);
-                hpprintf("Denoiser Scratch Buffer: %llu bytes\n", scratchSize);
-                hpprintf("Compute Intensity Scratch Buffer: %llu bytes\n", scratchSizeForComputeIntensity);
-                denoiserStateBuffer.resize(stateSize, 1);
-                denoiserScratchBuffer.resize(std::max(scratchSize, scratchSizeForComputeIntensity), 1);
-
-                denoisingTasks.resize(numTasks);
-                denoiser.getTasks(denoisingTasks.data());
-
-                denoiser.setupState(cuStream, denoiserStateBuffer, denoiserScratchBuffer);
-            }
-
-            ImGui::SliderFloat("Motion Vector Scale", &motionVectorScale, -2.0f, 2.0f);
 
             ImGui::End();
         }
@@ -1631,26 +1785,56 @@ int32_t main(int32_t argc, const char* argv[]) try {
             static MovingAverageTime cudaFrameTime;
             static MovingAverageTime updateTime;
             static MovingAverageTime setupGBuffersTime;
+
             static MovingAverageTime performInitialAndTemporalRISTime;
             static MovingAverageTime performSpatialRISTime;
             static MovingAverageTime shadingTime;
+
+            static MovingAverageTime performPreSamplingLightsTime;
+            static MovingAverageTime performPerPixelRISTime;
+            static MovingAverageTime traceShadowRaysTime;
+            static MovingAverageTime shadeAndResampleTime;
+
             static MovingAverageTime denoiseTime;
 
-            cudaFrameTime.append(frameIndex >= 2 ? curGPUTimer.frame.report() : 0.0f);
-            updateTime.append(frameIndex >= 2 ? curGPUTimer.update.report() : 0.0f);
-            setupGBuffersTime.append(frameIndex >= 2 ? curGPUTimer.setupGBuffers.report() : 0.0f);
-            performInitialAndTemporalRISTime.append(frameIndex >= 2 ? curGPUTimer.performInitialAndTemporalRIS.report() : 0.0f);
-            performSpatialRISTime.append(frameIndex >= 2 ? curGPUTimer.performSpatialRIS.report() : 0.0f);
-            shadingTime.append(frameIndex >= 2 ? curGPUTimer.shading.report() : 0.0f);
-            denoiseTime.append(frameIndex >= 2 ? curGPUTimer.denoise.report() : 0.0f);
+            if (frameIndex >= 2) {
+                cudaFrameTime.append(curGPUTimer.frame.report());
+                updateTime.append(curGPUTimer.update.report());
+                setupGBuffersTime.append(curGPUTimer.setupGBuffers.report());
+                denoiseTime.append(curGPUTimer.denoise.report());
+            }
+
+            if (numFramesForCurRenderer >= 2) {
+                if (curRenderer == Renderer::OriginalReSTIRBiased ||
+                    curRenderer == Renderer::OriginalReSTIRUnbiased) {
+                    performInitialAndTemporalRISTime.append(curGPUTimer.performInitialAndTemporalRIS.report());
+                    performSpatialRISTime.append(curGPUTimer.performSpatialRIS.report());
+                    shadingTime.append(curGPUTimer.shading.report());
+                }
+                else {
+                    performPreSamplingLightsTime.append(curGPUTimer.performPreSamplingLights.report());
+                    performPerPixelRISTime.append(curGPUTimer.performPerPixelRIS.report());
+                    traceShadowRaysTime.append(curGPUTimer.traceShadowRays.report());
+                    shadeAndResampleTime.append(curGPUTimer.shadeAndResample.report());
+                }
+            }
 
             //ImGui::SetNextItemWidth(100.0f);
             ImGui::Text("CUDA/OptiX GPU %.3f [ms]:", cudaFrameTime.getAverage());
             ImGui::Text("  Update: %.3f [ms]", updateTime.getAverage());
             ImGui::Text("  Setup G-Buffers: %.3f [ms]", setupGBuffersTime.getAverage());
-            ImGui::Text("  Initial RIS + Temporal RIS: %.3f [ms]", performInitialAndTemporalRISTime.getAverage());
-            ImGui::Text("  Spatial RIS: %.3f [ms]", performSpatialRISTime.getAverage());
-            ImGui::Text("  Shading: %.3f [ms]", shadingTime.getAverage());
+            if (curRenderer == Renderer::OriginalReSTIRBiased ||
+                curRenderer == Renderer::OriginalReSTIRUnbiased) {
+                ImGui::Text("  Initial RIS + Temporal RIS: %.3f [ms]", performInitialAndTemporalRISTime.getAverage());
+                ImGui::Text("  Spatial RIS: %.3f [ms]", performSpatialRISTime.getAverage());
+                ImGui::Text("  Shading: %.3f [ms]", shadingTime.getAverage());
+            }
+            else {
+                ImGui::Text("  Light Pre-sampling: %.3f [ms]", performPreSamplingLightsTime.getAverage());
+                ImGui::Text("  Per-Pixel RIS: %.3f [ms]", performPerPixelRISTime.getAverage());
+                ImGui::Text("  Trace Shadow Rays: %.3f [ms]", traceShadowRaysTime.getAverage());
+                ImGui::Text("  Shade and Resample: %.3f [ms]", shadeAndResampleTime.getAverage());
+            }
             ImGui::Text("  Denoise: %.3f [ms]", denoiseTime.getAverage());
 
             ImGui::Text("%u [spp]", numAccumFrames + 1);
@@ -1705,20 +1889,23 @@ int32_t main(int32_t argc, const char* argv[]) try {
         perFramePlp.instanceDataBuffer = gpuEnv.instDataBuffer[bufferIndex].getDevicePointer();
         perFramePlp.envLightPowerCoeff = std::pow(10.0f, log10EnvLightPowerCoeff);
         perFramePlp.envLightRotation = envLightRotation;
-        perFramePlp.spatialNeighborRadius = spatialNeighborRadius;
+        perFramePlp.spatialNeighborRadius = curRendererConfigs->spatialNeighborRadius;
+        perFramePlp.radiusThresholdForSpatialVisReuse = curRendererConfigs->radiusThresholdForSpatialVisReuse;
         perFramePlp.mousePosition = int2(static_cast<int32_t>(g_mouseX),
                                          static_cast<int32_t>(g_mouseY));
         perFramePlp.pickInfo = pickInfos[bufferIndex].getDevicePointer();
 
-        perFramePlp.log2NumCandidateSamples = log2NumCandidateSamples;
-        perFramePlp.numSpatialNeighbors = useUnbiasedEstimator ?
-            numSpatialNeighborsUnbiased :
-            numSpatialNeighborsBiased;
-        perFramePlp.useLowDiscrepancyNeighbors = useLowDiscrepancySpatialNeighbors;
-        perFramePlp.reuseVisibility = reuseVisibility;
-        perFramePlp.enableTemporalReuse = enableTemporalReuse;
-        perFramePlp.enableSpatialReuse = enableSpatialReuse;
-        perFramePlp.useUnbiasedEstimator = useUnbiasedEstimator;
+        perFramePlp.log2NumCandidateSamples = curRendererConfigs->log2NumCandidateSamples;
+        perFramePlp.numSpatialNeighbors = curRendererConfigs->numSpatialNeighbors;
+        perFramePlp.useLowDiscrepancyNeighbors = curRendererConfigs->useLowDiscrepancySpatialNeighbors;
+        perFramePlp.reuseVisibility = curRendererConfigs->reuseVisibility;
+        perFramePlp.reuseVisibilityForTemporal = curRendererConfigs->reuseVisibilityForTemporal;
+        perFramePlp.reuseVisibilityForSpatiotemporal = curRendererConfigs->reuseVisibilityForSpatiotemporal;
+        perFramePlp.enableTemporalReuse = curRendererConfigs->enableTemporalReuse;
+        perFramePlp.enableSpatialReuse = curRendererConfigs->enableSpatialReuse;
+        perFramePlp.useUnbiasedEstimator =
+            curRenderer == Renderer::OriginalReSTIRUnbiased ||
+            curRenderer == Renderer::RearchitectedReSTIRUnbiased;
         perFramePlp.bufferIndex = bufferIndex;
         perFramePlp.resetFlowBuffer = newSequence;
         perFramePlp.enableJittering = enableJittering;
@@ -1733,6 +1920,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         //hpprintf("%u\n", currentReservoirIndex);
 
         plp.currentReservoirIndex = currentReservoirIndex;
+        plp.spatialNeighborBaseIndex = lastSpatialNeighborBaseIndex;
         CUDADRV_CHECK(cuMemcpyHtoDAsync(plpOnDevice, &plp, sizeof(plp), cuStream));
 
         // JP: Gバッファーのセットアップ。
@@ -1744,59 +1932,122 @@ int32_t main(int32_t argc, const char* argv[]) try {
         gpuEnv.pipeline.launch(cuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);
         curGPUTimer.setupGBuffers.stop(cuStream);
 
-        // JP: 各ピクセルで独立したStreaming RISを実行。
-        //     そして前フレームの(時間的)隣接ピクセルとの間でReservoirの結合を行う。
-        // EN: Perform independent streaming RIS on each pixel.
-        //     Then combine reservoirs between the current pixel and
-        //     (temporally) neighboring pixel from the previous frame.
-        curGPUTimer.performInitialAndTemporalRIS.start(cuStream);
-        if (enableTemporalReuse && !newSequence) {
-            if (useUnbiasedEstimator)
-                gpuEnv.pipeline.setRayGenerationProgram(
-                    gpuEnv.performInitialAndTemporalRISUnbiasedRayGenProgram);
-            else
-                gpuEnv.pipeline.setRayGenerationProgram(
-                    gpuEnv.performInitialAndTemporalRISBiasedRayGenProgram);
-        }
-        else {
-            gpuEnv.pipeline.setRayGenerationProgram(gpuEnv.performInitialRISRayGenProgram);
-        }
-        gpuEnv.pipeline.launch(cuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);
-        curGPUTimer.performInitialAndTemporalRIS.stop(cuStream);
-
-        // JP: 各ピクセルにおいて(空間的)隣接ピクセルとの間でReservoirの結合を行う。
-        // EN: For each pixel, combine reservoirs between the current pixel and
-        //     (Spatially) neighboring pixels.
-        curGPUTimer.performSpatialRIS.start(cuStream);
-        if (enableSpatialReuse) {
-            int32_t numSpatialReusePasses;
-            if (useUnbiasedEstimator) {
-                gpuEnv.pipeline.setRayGenerationProgram(gpuEnv.performSpatialRISUnbiasedRayGenProgram);
-                numSpatialReusePasses = numSpatialReusePassesUnbiased;
+        if (curRenderer == Renderer::OriginalReSTIRBiased ||
+            curRenderer == Renderer::OriginalReSTIRUnbiased) {
+            // JP: 各ピクセルで独立したStreaming RISを実行。
+            //     そして前フレームの(時間的)隣接ピクセルとの間でReservoirの結合を行う。
+            // EN: Perform independent streaming RIS on each pixel.
+            //     Then combine reservoirs between the current pixel and
+            //     (temporally) neighboring pixel from the previous frame.
+            curGPUTimer.performInitialAndTemporalRIS.start(cuStream);
+            if (curRendererConfigs->enableTemporalReuse && !newSequence) {
+                if (curRenderer == Renderer::OriginalReSTIRUnbiased)
+                    gpuEnv.pipeline.setRayGenerationProgram(
+                        gpuEnv.performInitialAndTemporalRISUnbiasedRayGenProgram);
+                else
+                    gpuEnv.pipeline.setRayGenerationProgram(
+                        gpuEnv.performInitialAndTemporalRISBiasedRayGenProgram);
             }
             else {
-                gpuEnv.pipeline.setRayGenerationProgram(gpuEnv.performSpatialRISBiasedRayGenProgram);
-                numSpatialReusePasses = numSpatialReusePassesBiased;
+                gpuEnv.pipeline.setRayGenerationProgram(gpuEnv.performInitialRISRayGenProgram);
             }
+            gpuEnv.pipeline.launch(cuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);
+            curGPUTimer.performInitialAndTemporalRIS.stop(cuStream);
 
-            for (int i = 0; i < numSpatialReusePasses; ++i) {
-                plp.spatialNeighborBaseIndex = lastSpatialNeighborBaseIndex + numSpatialNeighborsBiased * i;
-                CUDADRV_CHECK(cuMemcpyHtoDAsync(plpOnDevice, &plp, sizeof(plp), cuStream));
-                gpuEnv.pipeline.launch(cuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);
-                currentReservoirIndex = (currentReservoirIndex + 1) % 2;
-                plp.currentReservoirIndex = currentReservoirIndex;
+            // JP: 各ピクセルにおいて(空間的)隣接ピクセルとの間でReservoirの結合を行う。
+            // EN: For each pixel, combine reservoirs between the current pixel and
+            //     (Spatially) neighboring pixels.
+            curGPUTimer.performSpatialRIS.start(cuStream);
+            if (curRendererConfigs->enableSpatialReuse) {
+                int32_t numSpatialReusePasses;
+                if (curRenderer == Renderer::OriginalReSTIRUnbiased)
+                    gpuEnv.pipeline.setRayGenerationProgram(gpuEnv.performSpatialRISUnbiasedRayGenProgram);
+                else
+                    gpuEnv.pipeline.setRayGenerationProgram(gpuEnv.performSpatialRISBiasedRayGenProgram);
+                numSpatialReusePasses = curRendererConfigs->numSpatialReusePasses;
+
+                for (int i = 0; i < numSpatialReusePasses; ++i) {
+                    uint32_t baseIndex = lastSpatialNeighborBaseIndex + curRendererConfigs->numSpatialNeighbors * i;
+                    plp.spatialNeighborBaseIndex = baseIndex;
+                    CUDADRV_CHECK(cuMemcpyHtoDAsync(plpOnDevice, &plp, sizeof(plp), cuStream));
+                    gpuEnv.pipeline.launch(cuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);
+                    currentReservoirIndex = (currentReservoirIndex + 1) % 2;
+                    plp.currentReservoirIndex = currentReservoirIndex;
+                }
+                lastSpatialNeighborBaseIndex += curRendererConfigs->numSpatialNeighbors * numSpatialReusePasses;
             }
-            lastSpatialNeighborBaseIndex += numSpatialNeighborsBiased * numSpatialReusePasses;
+            curGPUTimer.performSpatialRIS.stop(cuStream);
+
+            // JP: 生き残ったサンプルを使ってシェーディングを実行。
+            // EN: Perform shading using the survived samples.
+            curGPUTimer.shading.start(cuStream);
+            CUDADRV_CHECK(cuMemcpyHtoDAsync(plpOnDevice, &plp, sizeof(plp), cuStream));
+            gpuEnv.pipeline.setRayGenerationProgram(gpuEnv.shadingRayGenProgram);
+            gpuEnv.pipeline.launch(cuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);
+            curGPUTimer.shading.stop(cuStream);
         }
-        curGPUTimer.performSpatialRIS.stop(cuStream);
+        else {
+            constexpr uint32_t numPreSampledLights = shared::numLightSubsets * shared::lightSubsetSize;
 
-        // JP: 生き残ったサンプルを使ってシェーディングを実行。
-        // EN: Perform shading using the survived samples.
-        curGPUTimer.shading.start(cuStream);
-        CUDADRV_CHECK(cuMemcpyHtoDAsync(plpOnDevice, &plp, sizeof(plp), cuStream));
-        gpuEnv.pipeline.setRayGenerationProgram(gpuEnv.shadingRayGenProgram);
-        gpuEnv.pipeline.launch(cuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);
-        curGPUTimer.shading.stop(cuStream);
+            // JP:
+            // EN:
+            curGPUTimer.performPreSamplingLights.start(cuStream);
+            gpuEnv.kernelPerformLightPreSampling(
+                cuStream, gpuEnv.kernelPerformLightPreSampling.calcGridDim(numPreSampledLights),
+                plp);
+            gpuEnv.kernelSamplePerTileLightSubsetIndices(
+                cuStream, gpuEnv.kernelSamplePerTileLightSubsetIndices.calcGridDim(staticPlp.numTiles.x, staticPlp.numTiles.y),
+                plp);
+            curGPUTimer.performPreSamplingLights.stop(cuStream);
+
+            // JP:
+            // EN:
+            curGPUTimer.performPerPixelRIS.start(cuStream);
+            gpuEnv.pipeline.setRayGenerationProgram(gpuEnv.performPerPixelRISRayGenProgram);
+            gpuEnv.pipeline.launch(cuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);
+            curGPUTimer.performPerPixelRIS.stop(cuStream);
+
+            // JP:
+            // EN:
+            curGPUTimer.traceShadowRays.start(cuStream);
+            optixu::ProgramGroup traceShadowRaysRayGenProgram;
+            if ((curRendererConfigs->enableTemporalReuse && !newSequence) &&
+                curRendererConfigs->enableSpatialReuse)
+                traceShadowRaysRayGenProgram = gpuEnv.traceShadowRaysWithSpatioTemporalReuseRayGenProgram;
+            else if (curRendererConfigs->enableTemporalReuse && !newSequence)
+                traceShadowRaysRayGenProgram = gpuEnv.traceShadowRaysWithTemporalReuseRayGenProgram;
+            else if (curRendererConfigs->enableSpatialReuse)
+                traceShadowRaysRayGenProgram = gpuEnv.traceShadowRaysWithSpatialReuseRayGenProgram;
+            else
+                traceShadowRaysRayGenProgram = gpuEnv.traceShadowRaysRayGenProgram;
+            gpuEnv.pipeline.setRayGenerationProgram(traceShadowRaysRayGenProgram);
+            gpuEnv.pipeline.launch(cuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);
+            curGPUTimer.traceShadowRays.stop(cuStream);
+
+            // JP:
+            // EN:
+            curGPUTimer.shadeAndResample.start(cuStream);
+            optixu::ProgramGroup shadeRayGenProgram;
+            if (curRenderer == Renderer::RearchitectedReSTIRBiased) {
+                if ((curRendererConfigs->enableTemporalReuse && !newSequence) &&
+                    curRendererConfigs->enableSpatialReuse)
+                    shadeRayGenProgram = gpuEnv.shadeAndResampleWithSpatiotemporalReuseBiasedRayGenProgram;
+                else if (curRendererConfigs->enableTemporalReuse && !newSequence)
+                    shadeRayGenProgram = gpuEnv.shadeAndResampleWithTemporalReuseBiasedRayGenProgram;
+                else if (curRendererConfigs->enableSpatialReuse)
+                    shadeRayGenProgram = gpuEnv.shadeAndResampleWithSpatialReuseBiasedRayGenProgram;
+                else
+                    shadeRayGenProgram = gpuEnv.shadeAndResampleRayGenProgram;
+            }
+            else {
+                Assert_NotImplemented();
+            }
+            gpuEnv.pipeline.setRayGenerationProgram(shadeRayGenProgram);
+            gpuEnv.pipeline.launch(cuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);
+            curGPUTimer.shadeAndResample.stop(cuStream);
+
+            ++lastSpatialNeighborBaseIndex;
+        }
 
         lastReservoirIndex = currentReservoirIndex;
 
@@ -1912,6 +2163,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         glfwSwapBuffers(window);
 
         ++frameIndex;
+        ++numFramesForCurRenderer;
     }
 
     CUDADRV_CHECK(cuStreamSynchronize(cuStream));
@@ -1947,6 +2199,10 @@ int32_t main(int32_t argc, const char* argv[]) try {
     denoiser.destroy();
     
     finalizeScreenRelatedBuffers();
+
+    perTileLightSubsetIndexBuffer.finalize();
+    preSampledLights.finalize();
+    lightPreSamplingRngs.finalize();
 
 
 

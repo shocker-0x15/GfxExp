@@ -7,6 +7,11 @@ struct BSDF;
 namespace shared {
     static constexpr float probToSampleEnvLight = 0.25f;
 
+    static constexpr uint32_t numLightSubsets = 128;
+    static constexpr uint32_t lightSubsetSize = 1024;
+    static constexpr int tileSizeX = 8;
+    static constexpr int tileSizeY = 8;
+
 
 
     enum RayType {
@@ -144,6 +149,11 @@ namespace shared {
         unsigned int atInfinity : 1;
     };
 
+    struct PreSampledLight {
+        LightSample sample;
+        float areaPDensity;
+    };
+
     using WeightSum = float;
     //using WeightSum = FloatSum;
 
@@ -186,6 +196,20 @@ namespace shared {
         float targetDensity;
     };
 
+    union SampleVisibility {
+        uint32_t asUInt;
+        struct {
+            unsigned int newSample : 1;
+            unsigned int hasValidTemporalSample : 1;
+            unsigned int temporalSample : 1;
+            unsigned int hasValidSpatiotemporalSample : 1;
+            unsigned int spatiotemporalSample : 1;
+            unsigned int selectedSample : 1;
+        };
+
+        CUDA_DEVICE_FUNCTION SampleVisibility() : asUInt(0) {}
+    };
+
 
 
     struct PickInfo {
@@ -221,6 +245,13 @@ namespace shared {
     
     struct StaticPipelineLaunchParameters {
         int2 imageSize;
+        int2 numTiles;
+
+        // only for rearchitected ver.
+        PCG32RNG* lightPreSamplingRngs;
+        PreSampledLight* preSampledLights;
+        optixu::NativeBlockBuffer2D<uint32_t> perTileLightSubsetIndexBuffer;
+
         optixu::NativeBlockBuffer2D<PCG32RNG> rngBuffer;
 
         optixu::NativeBlockBuffer2D<GBuffer0> GBuffer0[2];
@@ -229,7 +260,8 @@ namespace shared {
 
         optixu::BlockBuffer2D<Reservoir<LightSample>, 1> reservoirBuffer[2];
         optixu::NativeBlockBuffer2D<ReservoirInfo> reservoirInfoBuffer[2];
-        const float2* spatialNeighborDeltas;
+        optixu::NativeBlockBuffer2D<SampleVisibility> sampleVisibilityBuffer[2];
+        const float2* spatialNeighborDeltas; // only for rearchitected ver.
 
         const MaterialData* materialDataBuffer;
         const GeometryInstanceData* geometryInstanceDataBuffer;
@@ -255,6 +287,7 @@ namespace shared {
         float envLightRotation;
 
         float spatialNeighborRadius;
+        float radiusThresholdForSpatialVisReuse; // only for rearchitected ver.
 
         int2 mousePosition;
         PickInfo* pickInfo;
@@ -263,6 +296,8 @@ namespace shared {
         unsigned int numSpatialNeighbors : 4;
         unsigned int useLowDiscrepancyNeighbors : 1;
         unsigned int reuseVisibility : 1;
+        unsigned int reuseVisibilityForTemporal : 1; // only for rearchitected ver.
+        unsigned int reuseVisibilityForSpatiotemporal : 1; // only for rearchitected ver.
         unsigned int enableTemporalReuse : 1;
         unsigned int enableSpatialReuse : 1;
         unsigned int useUnbiasedEstimator : 1;

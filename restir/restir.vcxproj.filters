@@ -157,6 +157,7 @@
   <ItemGroup>
     <CudaCompile Include="optix_kernels.cu" />
     <CudaCompile Include="copy_buffers.cu" />
+    <CudaCompile Include="light_pre_sampling.cu" />
   </ItemGroup>
   <ItemGroup>
     <CopyFileToFolders Include="shaders\drawOptiXResult.frag">

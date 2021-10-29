@@ -56,6 +56,10 @@ struct GPUEnvironment {
     CUcontext cuContext;
     optixu::Context optixContext;
 
+    CUmodule preSamplingModule;
+    cudau::Kernel kernelPerformLightPreSampling;
+    cudau::Kernel kernelSamplePerTileLightSubsetIndices;
+
     optixu::Pipeline pipeline;
     optixu::Module mainModule;
     optixu::ProgramGroup emptyMissProgram;
@@ -68,8 +72,18 @@ struct GPUEnvironment {
     optixu::ProgramGroup performInitialAndTemporalRISUnbiasedRayGenProgram;
     optixu::ProgramGroup performSpatialRISBiasedRayGenProgram;
     optixu::ProgramGroup performSpatialRISUnbiasedRayGenProgram;
-
     optixu::ProgramGroup shadingRayGenProgram;
+
+    optixu::ProgramGroup performPerPixelRISRayGenProgram;
+    optixu::ProgramGroup traceShadowRaysRayGenProgram;
+    optixu::ProgramGroup traceShadowRaysWithTemporalReuseRayGenProgram;
+    optixu::ProgramGroup traceShadowRaysWithSpatialReuseRayGenProgram;
+    optixu::ProgramGroup traceShadowRaysWithSpatioTemporalReuseRayGenProgram;
+    optixu::ProgramGroup shadeAndResampleRayGenProgram;
+    optixu::ProgramGroup shadeAndResampleWithTemporalReuseBiasedRayGenProgram;
+    optixu::ProgramGroup shadeAndResampleWithSpatialReuseBiasedRayGenProgram;
+    optixu::ProgramGroup shadeAndResampleWithSpatiotemporalReuseBiasedRayGenProgram;
+
     optixu::ProgramGroup visibilityHitProgramGroup;
     std::vector<optixu::ProgramGroup> callablePrograms;
 
@@ -94,6 +108,12 @@ struct GPUEnvironment {
         CUDADRV_CHECK(cuCtxSetCurrent(cuContext));
 
         optixContext = optixu::Context::create(cuContext/*, 4, DEBUG_SELECT(true, false)*/);
+
+        CUDADRV_CHECK(cuModuleLoad(&preSamplingModule, (getExecutableDirectory() / "restir/ptxes/light_pre_sampling.ptx").string().c_str()));
+        kernelPerformLightPreSampling =
+            cudau::Kernel(preSamplingModule, "performLightPreSampling", cudau::dim3(32), 0);
+        kernelSamplePerTileLightSubsetIndices =
+            cudau::Kernel(preSamplingModule, "samplePerTileLightSubsetIndices", cudau::dim3(8, 4), 0);
 
         pipeline = optixContext.createPipeline();
 
@@ -132,19 +152,36 @@ struct GPUEnvironment {
 
         performInitialRISRayGenProgram = pipeline.createRayGenProgram(
             mainModule, RT_RG_NAME_STR("performInitialRIS"));
-        performInitialAndTemporalRISBiasedRayGenProgram =
-            pipeline.createRayGenProgram(
-                mainModule, RT_RG_NAME_STR("performInitialAndTemporalRISBiased"));
-        performInitialAndTemporalRISUnbiasedRayGenProgram =
-            pipeline.createRayGenProgram(
-                mainModule, RT_RG_NAME_STR("performInitialAndTemporalRISUnbiased"));
+        performInitialAndTemporalRISBiasedRayGenProgram = pipeline.createRayGenProgram(
+            mainModule, RT_RG_NAME_STR("performInitialAndTemporalRISBiased"));
+        performInitialAndTemporalRISUnbiasedRayGenProgram = pipeline.createRayGenProgram(
+            mainModule, RT_RG_NAME_STR("performInitialAndTemporalRISUnbiased"));
         performSpatialRISBiasedRayGenProgram = pipeline.createRayGenProgram(
             mainModule, RT_RG_NAME_STR("performSpatialRISBiased"));
         performSpatialRISUnbiasedRayGenProgram = pipeline.createRayGenProgram(
             mainModule, RT_RG_NAME_STR("performSpatialRISUnbiased"));
-
         shadingRayGenProgram = pipeline.createRayGenProgram(
             mainModule, RT_RG_NAME_STR("shading"));
+
+        performPerPixelRISRayGenProgram = pipeline.createRayGenProgram(
+            mainModule, RT_RG_NAME_STR("performPerPixelRIS"));
+        traceShadowRaysRayGenProgram = pipeline.createRayGenProgram(
+            mainModule, RT_RG_NAME_STR("traceShadowRays"));
+        traceShadowRaysWithTemporalReuseRayGenProgram = pipeline.createRayGenProgram(
+            mainModule, RT_RG_NAME_STR("traceShadowRaysWithTemporalReuse"));
+        traceShadowRaysWithSpatialReuseRayGenProgram = pipeline.createRayGenProgram(
+            mainModule, RT_RG_NAME_STR("traceShadowRaysWithSpatialReuse"));
+        traceShadowRaysWithSpatioTemporalReuseRayGenProgram = pipeline.createRayGenProgram(
+            mainModule, RT_RG_NAME_STR("traceShadowRaysWithSpatioTemporalReuse"));
+        shadeAndResampleRayGenProgram = pipeline.createRayGenProgram(
+            mainModule, RT_RG_NAME_STR("shadeAndResample"));
+        shadeAndResampleWithTemporalReuseBiasedRayGenProgram = pipeline.createRayGenProgram(
+            mainModule, RT_RG_NAME_STR("shadeAndResampleWithTemporalReuseBiased"));
+        shadeAndResampleWithSpatialReuseBiasedRayGenProgram = pipeline.createRayGenProgram(
+            mainModule, RT_RG_NAME_STR("shadeAndResampleWithSpatialReuseBiased"));
+        shadeAndResampleWithSpatiotemporalReuseBiasedRayGenProgram = pipeline.createRayGenProgram(
+            mainModule, RT_RG_NAME_STR("shadeAndResampleWithSpatioTemporalReuseBiased"));
+
         visibilityHitProgramGroup = pipeline.createHitProgramGroupForBuiltinIS(
             OPTIX_PRIMITIVE_TYPE_TRIANGLE,
             emptyModule, nullptr,
@@ -219,12 +256,24 @@ struct GPUEnvironment {
         for (int i = 0; i < NumCallablePrograms; ++i)
             callablePrograms[i].destroy();
         visibilityHitProgramGroup.destroy();
+
+        shadeAndResampleWithSpatiotemporalReuseBiasedRayGenProgram.destroy();
+        shadeAndResampleWithSpatialReuseBiasedRayGenProgram.destroy();
+        shadeAndResampleWithTemporalReuseBiasedRayGenProgram.destroy();
+        shadeAndResampleRayGenProgram.destroy();
+        traceShadowRaysWithSpatioTemporalReuseRayGenProgram.destroy();
+        traceShadowRaysWithSpatialReuseRayGenProgram.destroy();
+        traceShadowRaysWithTemporalReuseRayGenProgram.destroy();
+        traceShadowRaysRayGenProgram.destroy();
+        performPerPixelRISRayGenProgram.destroy();
+
         shadingRayGenProgram.destroy();
         performSpatialRISUnbiasedRayGenProgram.destroy();
         performSpatialRISBiasedRayGenProgram.destroy();
         performInitialAndTemporalRISUnbiasedRayGenProgram.destroy();
         performInitialAndTemporalRISBiasedRayGenProgram.destroy();
         performInitialRISRayGenProgram.destroy();
+
         setupGBuffersMissProgram.destroy();
         setupGBuffersHitProgramGroup.destroy();
         setupGBuffersRayGenProgram.destroy();
@@ -232,6 +281,8 @@ struct GPUEnvironment {
         mainModule.destroy();
 
         pipeline.destroy();
+
+        CUDADRV_CHECK(cuModuleUnload(preSamplingModule));
 
         optixContext.destroy();
 
