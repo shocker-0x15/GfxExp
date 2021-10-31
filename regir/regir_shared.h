@@ -54,6 +54,7 @@ namespace shared {
     };
 
 
+
     struct Vertex {
         float3 position;
         float3 normal;
@@ -99,7 +100,7 @@ namespace shared {
         float3(const uint32_t* data, const float3 &vGiven, const float3 &vSampled)>;
     using BSDFEvaluatePDF = DynamicFunction<
         float(const uint32_t* data, const float3 &vGiven, const float3 &vSampled)>;
-    using BSDFEvaluateDHReflectanceEstimate = optixu::DirectCallableProgramID<
+    using BSDFEvaluateDHReflectanceEstimate = DynamicFunction<
         float3(const uint32_t* data, const float3 &vGiven)>;
 
     struct MaterialData {
