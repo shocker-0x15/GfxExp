@@ -180,7 +180,7 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
     const MaterialData &mat = plp.s->materialDataBuffer[geomInst.materialSlot];
 
     BSDF bsdf;
-    mat.setupBSDF(mat, texCoord, &bsdf);
+    bsdf.setup(mat, texCoord);
     ReferenceFrame shadingFrame(shadingNormalInWorld, texCoord0DirInWorld);
     float3 modLocalNormal = mat.readModifiedNormal(mat.normal, texCoord, mat.normalDimension);
     if (plp.f->enableBumpMapping)
@@ -446,7 +446,7 @@ CUDA_DEVICE_FUNCTION void pathTrace_rayGen_generic() {
             }
 
             BSDF bsdf;
-            mat.setupBSDF(mat, texCoord, &bsdf);
+            bsdf.setup(mat, texCoord);
 
             // Next event estimation (explicit light sampling) on the first hit.
             contribution += alpha * performNextEventEstimation<useReGIR>(
@@ -620,7 +620,7 @@ CUDA_DEVICE_FUNCTION void pathTrace_closestHit_generic() {
     }
 
     BSDF bsdf;
-    mat.setupBSDF(mat, texCoord, &bsdf);
+    bsdf.setup(mat, texCoord);
 
     // Next Event Estimation (Explicit Light Sampling)
     rwPayload->contribution += rwPayload->alpha * performNextEventEstimation<useReGIR>(

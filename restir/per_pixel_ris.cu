@@ -60,7 +60,7 @@ CUDA_DEVICE_KERNEL void performPerPixelRIS() {
     float frontHit = dot(vOut, geometricNormalInWorld) >= 0.0f ? 1.0f : -1.0f;
 
     BSDF bsdf;
-    mat.setupBSDF(mat, texCoord, &bsdf);
+    bsdf.setup(mat, texCoord);
     ReferenceFrame shadingFrame(shadingNormalInWorld);
     positionInWorld = offsetRayOriginNaive(positionInWorld, frontHit * geometricNormalInWorld);
     float dist = length(vOut);

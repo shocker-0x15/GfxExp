@@ -655,7 +655,7 @@ static Material* createLambertMaterial(
     matData.normalWidth = mat->normal.getWidth();
     matData.normalHeight = mat->normal.getHeight();
     matData.readModifiedNormal = shared::ReadModifiedNormal(dcReadModifiedNormal);
-    matData.setupBSDF = shared::SetupBSDF(CallableProgram_SetupLambertBRDF);
+    matData.setupBSDFBody = shared::SetupBSDFBody(CallableProgram_SetupLambertBRDF);
     matData.bsdfSampleThroughput = shared::BSDFSampleThroughput(CallableProgram_LambertBRDF_sampleThroughput);
     matData.bsdfEvaluate = shared::BSDFEvaluate(CallableProgram_LambertBRDF_evaluate);
     matData.bsdfEvaluatePDF = shared::BSDFEvaluatePDF(CallableProgram_LambertBRDF_evaluatePDF);
@@ -795,7 +795,7 @@ static Material* createDiffuseAndSpecularMaterial(
     matData.normalWidth = mat->normal.getWidth();
     matData.normalHeight = mat->normal.getHeight();
     matData.readModifiedNormal = shared::ReadModifiedNormal(dcReadModifiedNormal);
-    matData.setupBSDF = shared::SetupBSDF(CallableProgram_SetupDiffuseAndSpecularBRDF);
+    matData.setupBSDFBody = shared::SetupBSDFBody(CallableProgram_SetupDiffuseAndSpecularBRDF);
     matData.bsdfSampleThroughput = shared::BSDFSampleThroughput(CallableProgram_DiffuseAndSpecularBRDF_sampleThroughput);
     matData.bsdfEvaluate = shared::BSDFEvaluate(CallableProgram_DiffuseAndSpecularBRDF_evaluate);
     matData.bsdfEvaluatePDF = shared::BSDFEvaluatePDF(CallableProgram_DiffuseAndSpecularBRDF_evaluatePDF);
@@ -920,7 +920,7 @@ static Material* createSimplePBRMaterial(
     matData.normalWidth = mat->normal.getWidth();
     matData.normalHeight = mat->normal.getHeight();
     matData.readModifiedNormal = shared::ReadModifiedNormal(dcReadModifiedNormal);
-    matData.setupBSDF = shared::SetupBSDF(CallableProgram_SetupSimplePBR_BRDF);
+    matData.setupBSDFBody = shared::SetupBSDFBody(CallableProgram_SetupSimplePBR_BRDF);
     matData.bsdfSampleThroughput = shared::BSDFSampleThroughput(CallableProgram_DiffuseAndSpecularBRDF_sampleThroughput);
     matData.bsdfEvaluate = shared::BSDFEvaluate(CallableProgram_DiffuseAndSpecularBRDF_evaluate);
     matData.bsdfEvaluatePDF = shared::BSDFEvaluatePDF(CallableProgram_DiffuseAndSpecularBRDF_evaluatePDF);

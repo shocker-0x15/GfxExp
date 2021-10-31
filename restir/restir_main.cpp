@@ -1820,7 +1820,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
                 ImGui::Text("  Trace Shadow Rays: %.3f [ms]", traceShadowRaysTime.getAverage());
                 ImGui::Text("  Shade and Resample: %.3f [ms]", shadeAndResampleTime.getAverage());
             }
-            ImGui::Text("  Denoise: %.3f [ms]", denoiseTime.getAverage());
+            if (bufferTypeToDisplay == shared::BufferToDisplay::DenoisedBeauty)
+                ImGui::Text("  Denoise: %.3f [ms]", denoiseTime.getAverage());
 
             ImGui::Text("%u [spp]", numAccumFrames + 1);
 
@@ -2014,8 +2015,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
             // EN:
             curGPUTimer.shadeAndResample.start(cuStream);
             optixu::ProgramGroup shadeRayGenProgram;
-            if (curRenderer == Renderer::RearchitectedReSTIRBiased) {
-                if (!newSequence) {
+            if (!newSequence) {
+                if (curRenderer == Renderer::RearchitectedReSTIRBiased) {
                     if (curRendererConfigs->enableTemporalReuse && curRendererConfigs->enableSpatialReuse)
                         shadeRayGenProgram = gpuEnv.shadeAndResampleWithSpatiotemporalReuseBiasedRayGenProgram;
                     else if (curRendererConfigs->enableTemporalReuse)
@@ -2026,11 +2027,18 @@ int32_t main(int32_t argc, const char* argv[]) try {
                         shadeRayGenProgram = gpuEnv.shadeAndResampleRayGenProgram;
                 }
                 else {
-                    shadeRayGenProgram = gpuEnv.shadeAndResampleRayGenProgram;
+                    if (curRendererConfigs->enableTemporalReuse && curRendererConfigs->enableSpatialReuse)
+                        shadeRayGenProgram = gpuEnv.shadeAndResampleWithSpatiotemporalReuseUnbiasedRayGenProgram;
+                    else if (curRendererConfigs->enableTemporalReuse)
+                        shadeRayGenProgram = gpuEnv.shadeAndResampleWithTemporalReuseUnbiasedRayGenProgram;
+                    else if (curRendererConfigs->enableSpatialReuse)
+                        shadeRayGenProgram = gpuEnv.shadeAndResampleWithSpatialReuseUnbiasedRayGenProgram;
+                    else
+                        shadeRayGenProgram = gpuEnv.shadeAndResampleRayGenProgram;
                 }
             }
             else {
-                Assert_NotImplemented();
+                shadeRayGenProgram = gpuEnv.shadeAndResampleRayGenProgram;
             }
             gpuEnv.pipeline.setRayGenerationProgram(shadeRayGenProgram);
             gpuEnv.pipeline.launch(cuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);
@@ -2040,8 +2048,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
         }
 
         lastReservoirIndex = currentReservoirIndex;
-
-        curGPUTimer.denoise.start(cuStream);
 
         // JP: 結果をリニアバッファーにコピーする。(法線の正規化も行う。)
         // EN: Copy the results to the linear buffers (and normalize normals).
@@ -2057,22 +2063,26 @@ int32_t main(int32_t argc, const char* argv[]) try {
                                   linearFlowBuffer.getDevicePointer(),
                                   uint2(renderTargetSizeX, renderTargetSizeY));
 
-        denoiser.computeIntensity(cuStream,
-                                  linearBeautyBuffer, OPTIX_PIXEL_FORMAT_FLOAT4,
-                                  denoiserScratchBuffer, hdrIntensity);
-        //float hdrIntensityOnHost;
-        //CUDADRV_CHECK(cuMemcpyDtoH(&hdrIntensityOnHost, hdrIntensity, sizeof(hdrIntensityOnHost)));
-        //printf("%g\n", hdrIntensityOnHost);
-        for (int i = 0; i < denoisingTasks.size(); ++i)
-            denoiser.invoke(cuStream,
-                            false, hdrIntensity, 0.0f,
-                            linearBeautyBuffer, OPTIX_PIXEL_FORMAT_FLOAT4,
-                            linearAlbedoBuffer, OPTIX_PIXEL_FORMAT_FLOAT4,
-                            linearNormalBuffer, OPTIX_PIXEL_FORMAT_FLOAT4,
-                            linearFlowBuffer, OPTIX_PIXEL_FORMAT_FLOAT2,
-                            newSequence ? linearBeautyBuffer : linearDenoisedBeautyBuffer,
-                            linearDenoisedBeautyBuffer,
-                            denoisingTasks[i]);
+        curGPUTimer.denoise.start(cuStream);
+        if (bufferTypeToDisplay == shared::BufferToDisplay::DenoisedBeauty) {
+            denoiser.computeIntensity(cuStream,
+                                      linearBeautyBuffer, OPTIX_PIXEL_FORMAT_FLOAT4,
+                                      denoiserScratchBuffer, hdrIntensity);
+            //float hdrIntensityOnHost;
+            //CUDADRV_CHECK(cuMemcpyDtoH(&hdrIntensityOnHost, hdrIntensity, sizeof(hdrIntensityOnHost)));
+            //printf("%g\n", hdrIntensityOnHost);
+            for (int i = 0; i < denoisingTasks.size(); ++i)
+                denoiser.invoke(cuStream,
+                                false, hdrIntensity, 0.0f,
+                                linearBeautyBuffer, OPTIX_PIXEL_FORMAT_FLOAT4,
+                                linearAlbedoBuffer, OPTIX_PIXEL_FORMAT_FLOAT4,
+                                linearNormalBuffer, OPTIX_PIXEL_FORMAT_FLOAT4,
+                                linearFlowBuffer, OPTIX_PIXEL_FORMAT_FLOAT2,
+                                newSequence ? linearBeautyBuffer : linearDenoisedBeautyBuffer,
+                                linearDenoisedBeautyBuffer,
+                                denoisingTasks[i]);
+        }
+        curGPUTimer.denoise.stop(cuStream);
 
         outputBufferSurfaceHolder.beginCUDAAccess(cuStream);
 
@@ -2109,8 +2119,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
             uint2(renderTargetSizeX, renderTargetSizeY));
 
         outputBufferSurfaceHolder.endCUDAAccess(cuStream);
-
-        curGPUTimer.denoise.stop(cuStream);
 
         curGPUTimer.frame.stop(cuStream);
 

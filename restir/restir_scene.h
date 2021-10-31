@@ -21,7 +21,7 @@ struct GPUEnvironment {
     CUcontext cuContext;
     optixu::Context optixContext;
 
-    CUmodule preSamplingModule;
+    CUmodule perPixelRISModule;
     cudau::Kernel kernelPerformLightPreSampling;
     cudau::Kernel kernelPerformPerPixelRIS;
     CUdeviceptr plpPtr;
@@ -48,6 +48,9 @@ struct GPUEnvironment {
     optixu::ProgramGroup shadeAndResampleWithTemporalReuseBiasedRayGenProgram;
     optixu::ProgramGroup shadeAndResampleWithSpatialReuseBiasedRayGenProgram;
     optixu::ProgramGroup shadeAndResampleWithSpatiotemporalReuseBiasedRayGenProgram;
+    optixu::ProgramGroup shadeAndResampleWithTemporalReuseUnbiasedRayGenProgram;
+    optixu::ProgramGroup shadeAndResampleWithSpatialReuseUnbiasedRayGenProgram;
+    optixu::ProgramGroup shadeAndResampleWithSpatiotemporalReuseUnbiasedRayGenProgram;
 
     optixu::ProgramGroup visibilityHitProgramGroup;
     std::vector<optixu::ProgramGroup> callablePrograms;
@@ -74,15 +77,15 @@ struct GPUEnvironment {
 
         optixContext = optixu::Context::create(cuContext/*, 4, DEBUG_SELECT(true, false)*/);
 
-        CUDADRV_CHECK(cuModuleLoad(&preSamplingModule, (getExecutableDirectory() / "restir/ptxes/light_pre_sampling.ptx").string().c_str()));
+        CUDADRV_CHECK(cuModuleLoad(&perPixelRISModule, (getExecutableDirectory() / "restir/ptxes/per_pixel_ris.ptx").string().c_str()));
         kernelPerformLightPreSampling =
-            cudau::Kernel(preSamplingModule, "performLightPreSampling", cudau::dim3(32), 0);
+            cudau::Kernel(perPixelRISModule, "performLightPreSampling", cudau::dim3(32), 0);
         kernelPerformPerPixelRIS =
-            cudau::Kernel(preSamplingModule, "performPerPixelRIS",
+            cudau::Kernel(perPixelRISModule, "performPerPixelRIS",
                           cudau::dim3(shared::tileSizeX, shared::tileSizeY), 0);
 
         size_t plpSize;
-        CUDADRV_CHECK(cuModuleGetGlobal(&plpPtr, &plpSize, preSamplingModule, "plp"));
+        CUDADRV_CHECK(cuModuleGetGlobal(&plpPtr, &plpSize, perPixelRISModule, "plp"));
         Assert(sizeof(shared::PipelineLaunchParameters) == plpSize, "Unexpected plp size.");
 
         pipeline = optixContext.createPipeline();
@@ -149,6 +152,12 @@ struct GPUEnvironment {
             mainModule, RT_RG_NAME_STR("shadeAndResampleWithSpatialReuseBiased"));
         shadeAndResampleWithSpatiotemporalReuseBiasedRayGenProgram = pipeline.createRayGenProgram(
             mainModule, RT_RG_NAME_STR("shadeAndResampleWithSpatioTemporalReuseBiased"));
+        shadeAndResampleWithTemporalReuseUnbiasedRayGenProgram = pipeline.createRayGenProgram(
+            mainModule, RT_RG_NAME_STR("shadeAndResampleWithTemporalReuseUnbiased"));
+        shadeAndResampleWithSpatialReuseUnbiasedRayGenProgram = pipeline.createRayGenProgram(
+            mainModule, RT_RG_NAME_STR("shadeAndResampleWithSpatialReuseUnbiased"));
+        shadeAndResampleWithSpatiotemporalReuseUnbiasedRayGenProgram = pipeline.createRayGenProgram(
+            mainModule, RT_RG_NAME_STR("shadeAndResampleWithSpatioTemporalReuseUnbiased"));
 
         visibilityHitProgramGroup = pipeline.createHitProgramGroupForBuiltinIS(
             OPTIX_PRIMITIVE_TYPE_TRIANGLE,
@@ -175,7 +184,7 @@ struct GPUEnvironment {
 
             CUdeviceptr symbolPtr;
             size_t symbolSize;
-            CUDADRV_CHECK(cuModuleGetGlobal(&symbolPtr, &symbolSize, preSamplingModule,
+            CUDADRV_CHECK(cuModuleGetGlobal(&symbolPtr, &symbolSize, perPixelRISModule,
                                             callableProgramPointerNames[i]));
             void* funcPtrOnDevice;
             Assert(symbolSize == sizeof(funcPtrOnDevice), "Unexpected symbol size");
@@ -186,18 +195,20 @@ struct GPUEnvironment {
         CUdeviceptr callableToPointerMapPtr;
         size_t callableToPointerMapSize;
         CUDADRV_CHECK(cuModuleGetGlobal(
-            &callableToPointerMapPtr, &callableToPointerMapSize, preSamplingModule,
+            &callableToPointerMapPtr, &callableToPointerMapSize, perPixelRISModule,
             "c_callableToPointerMap"));
         CUDADRV_CHECK(cuMemcpyHtoD(callableToPointerMapPtr, callablePointers.data(),
                                    callableToPointerMapSize));
 
+#if !defined(USE_HARD_CODED_BSDF_FUNCTIONS)
         CUdeviceptr callableToPointerMapAliasPtr;
         size_t callableToPointerMapAliasSize;
         CUDADRV_CHECK(cuModuleGetGlobal(
-            &callableToPointerMapAliasPtr, &callableToPointerMapAliasSize, preSamplingModule,
+            &callableToPointerMapAliasPtr, &callableToPointerMapAliasSize, perPixelRISModule,
             "c_callableToPointerMapAlias"));
         CUDADRV_CHECK(cuMemcpyHtoD(callableToPointerMapAliasPtr, &callableToPointerMapPtr,
                                    callableToPointerMapAliasSize));
+#endif
 
         pipeline.link(2, DEBUG_SELECT(OPTIX_COMPILE_DEBUG_LEVEL_FULL, OPTIX_COMPILE_DEBUG_LEVEL_NONE));
 
@@ -251,6 +262,9 @@ struct GPUEnvironment {
             callablePrograms[i].destroy();
         visibilityHitProgramGroup.destroy();
 
+        shadeAndResampleWithSpatiotemporalReuseUnbiasedRayGenProgram.destroy();
+        shadeAndResampleWithSpatialReuseUnbiasedRayGenProgram.destroy();
+        shadeAndResampleWithTemporalReuseUnbiasedRayGenProgram.destroy();
         shadeAndResampleWithSpatiotemporalReuseBiasedRayGenProgram.destroy();
         shadeAndResampleWithSpatialReuseBiasedRayGenProgram.destroy();
         shadeAndResampleWithTemporalReuseBiasedRayGenProgram.destroy();
@@ -275,7 +289,7 @@ struct GPUEnvironment {
 
         pipeline.destroy();
 
-        CUDADRV_CHECK(cuModuleUnload(preSamplingModule));
+        CUDADRV_CHECK(cuModuleUnload(perPixelRISModule));
 
         optixContext.destroy();
 
@@ -711,7 +725,7 @@ static Material* createLambertMaterial(
     matData.normalWidth = mat->normal.getWidth();
     matData.normalHeight = mat->normal.getHeight();
     matData.readModifiedNormal = shared::ReadModifiedNormal(dcReadModifiedNormal);
-    matData.setupBSDF = shared::SetupBSDF(CallableProgram_SetupLambertBRDF);
+    matData.setupBSDFBody = shared::SetupBSDFBody(CallableProgram_SetupLambertBRDF);
     matData.bsdfSampleThroughput = shared::BSDFSampleThroughput(CallableProgram_LambertBRDF_sampleThroughput);
     matData.bsdfEvaluate = shared::BSDFEvaluate(CallableProgram_LambertBRDF_evaluate);
     matData.bsdfEvaluatePDF = shared::BSDFEvaluatePDF(CallableProgram_LambertBRDF_evaluatePDF);
@@ -851,7 +865,7 @@ static Material* createDiffuseAndSpecularMaterial(
     matData.normalWidth = mat->normal.getWidth();
     matData.normalHeight = mat->normal.getHeight();
     matData.readModifiedNormal = shared::ReadModifiedNormal(dcReadModifiedNormal);
-    matData.setupBSDF = shared::SetupBSDF(CallableProgram_SetupDiffuseAndSpecularBRDF);
+    matData.setupBSDFBody = shared::SetupBSDFBody(CallableProgram_SetupDiffuseAndSpecularBRDF);
     matData.bsdfSampleThroughput = shared::BSDFSampleThroughput(CallableProgram_DiffuseAndSpecularBRDF_sampleThroughput);
     matData.bsdfEvaluate = shared::BSDFEvaluate(CallableProgram_DiffuseAndSpecularBRDF_evaluate);
     matData.bsdfEvaluatePDF = shared::BSDFEvaluatePDF(CallableProgram_DiffuseAndSpecularBRDF_evaluatePDF);
@@ -976,7 +990,7 @@ static Material* createSimplePBRMaterial(
     matData.normalWidth = mat->normal.getWidth();
     matData.normalHeight = mat->normal.getHeight();
     matData.readModifiedNormal = shared::ReadModifiedNormal(dcReadModifiedNormal);
-    matData.setupBSDF = shared::SetupBSDF(CallableProgram_SetupSimplePBR_BRDF);
+    matData.setupBSDFBody = shared::SetupBSDFBody(CallableProgram_SetupSimplePBR_BRDF);
     matData.bsdfSampleThroughput = shared::BSDFSampleThroughput(CallableProgram_DiffuseAndSpecularBRDF_sampleThroughput);
     matData.bsdfEvaluate = shared::BSDFEvaluate(CallableProgram_DiffuseAndSpecularBRDF_evaluate);
     matData.bsdfEvaluatePDF = shared::BSDFEvaluatePDF(CallableProgram_DiffuseAndSpecularBRDF_evaluatePDF);

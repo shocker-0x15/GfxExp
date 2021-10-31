@@ -1486,7 +1486,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         static shared::BufferToDisplay bufferTypeToDisplay = shared::BufferToDisplay::NoisyBeauty;
         static float motionVectorScale = -1.0f;
         static bool animate = /*true*/false;
-        static bool enableAccumulation = true;
+        static bool enableAccumulation = /*true*/false;
         static bool enableJittering = false;
         static bool enableBumpMapping = false;
         bool lastFrameWasAnimated = false;
@@ -1655,7 +1655,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
             ImGui::Text("  buildCellReservoirs + ");
             ImGui::Text("  Temporal Reuse: %.3f [ms]", buildCellReservoirsTime.getAverage());
             ImGui::Text("  pathTrace: %.3f [ms]", pathTraceTime.getAverage());
-            ImGui::Text("  Denoise: %.3f [ms]", denoiseTime.getAverage());
+            if (bufferTypeToDisplay == shared::BufferToDisplay::DenoisedBeauty)
+                ImGui::Text("  Denoise: %.3f [ms]", denoiseTime.getAverage());
 
             ImGui::Text("%u [spp]", numAccumFrames + 1);
 
@@ -1777,8 +1778,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
                 static_cast<uint32_t>(frameIndex));
         }
 
-        curGPUTimer.denoise.start(cuStream);
-
         // JP: 結果をリニアバッファーにコピーする。(法線の正規化も行う。)
         // EN: Copy the results to the linear buffers (and normalize normals).
         cudau::dim3 dimCopyBuffers = kernelCopyToLinearBuffers.calcGridDim(renderTargetSizeX, renderTargetSizeY);
@@ -1793,22 +1792,26 @@ int32_t main(int32_t argc, const char* argv[]) try {
                                   linearFlowBuffer.getDevicePointer(),
                                   uint2(renderTargetSizeX, renderTargetSizeY));
 
-        denoiser.computeIntensity(cuStream,
-                                  linearBeautyBuffer, OPTIX_PIXEL_FORMAT_FLOAT4,
-                                  denoiserScratchBuffer, hdrIntensity);
-        //float hdrIntensityOnHost;
-        //CUDADRV_CHECK(cuMemcpyDtoH(&hdrIntensityOnHost, hdrIntensity, sizeof(hdrIntensityOnHost)));
-        //printf("%g\n", hdrIntensityOnHost);
-        for (int i = 0; i < denoisingTasks.size(); ++i)
-            denoiser.invoke(cuStream,
-                            false, hdrIntensity, 0.0f,
-                            linearBeautyBuffer, OPTIX_PIXEL_FORMAT_FLOAT4,
-                            linearAlbedoBuffer, OPTIX_PIXEL_FORMAT_FLOAT4,
-                            linearNormalBuffer, OPTIX_PIXEL_FORMAT_FLOAT4,
-                            linearFlowBuffer, OPTIX_PIXEL_FORMAT_FLOAT2,
-                            newSequence ? linearBeautyBuffer : linearDenoisedBeautyBuffer,
-                            linearDenoisedBeautyBuffer,
-                            denoisingTasks[i]);
+        curGPUTimer.denoise.start(cuStream);
+        if (bufferTypeToDisplay == shared::BufferToDisplay::DenoisedBeauty) {
+            denoiser.computeIntensity(cuStream,
+                                      linearBeautyBuffer, OPTIX_PIXEL_FORMAT_FLOAT4,
+                                      denoiserScratchBuffer, hdrIntensity);
+            //float hdrIntensityOnHost;
+            //CUDADRV_CHECK(cuMemcpyDtoH(&hdrIntensityOnHost, hdrIntensity, sizeof(hdrIntensityOnHost)));
+            //printf("%g\n", hdrIntensityOnHost);
+            for (int i = 0; i < denoisingTasks.size(); ++i)
+                denoiser.invoke(cuStream,
+                                false, hdrIntensity, 0.0f,
+                                linearBeautyBuffer, OPTIX_PIXEL_FORMAT_FLOAT4,
+                                linearAlbedoBuffer, OPTIX_PIXEL_FORMAT_FLOAT4,
+                                linearNormalBuffer, OPTIX_PIXEL_FORMAT_FLOAT4,
+                                linearFlowBuffer, OPTIX_PIXEL_FORMAT_FLOAT2,
+                                newSequence ? linearBeautyBuffer : linearDenoisedBeautyBuffer,
+                                linearDenoisedBeautyBuffer,
+                                denoisingTasks[i]);
+        }
+        curGPUTimer.denoise.stop(cuStream);
 
         outputBufferSurfaceHolder.beginCUDAAccess(cuStream);
 
@@ -1847,8 +1850,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
             uint2(renderTargetSizeX, renderTargetSizeY));
 
         outputBufferSurfaceHolder.endCUDAAccess(cuStream);
-
-        curGPUTimer.denoise.stop(cuStream);
 
         curGPUTimer.frame.stop(cuStream);
 
