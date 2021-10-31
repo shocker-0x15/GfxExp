@@ -164,13 +164,21 @@ namespace cudau {
     template <typename... ArgTypes>
     void callKernel(CUstream stream, CUfunction kernel, const dim3 &gridDim, const dim3 &blockDim, uint32_t sharedMemSize,
                     ArgTypes&&... args) {
-        ConstVoidPtr argPointers[sizeof...(args)];
-        addArgPointer(argPointers, std::forward<ArgTypes>(args)...);
+        if constexpr (sizeof...(args) > 0) {
+            ConstVoidPtr argPointers[sizeof...(args)];
+            addArgPointer(argPointers, std::forward<ArgTypes>(args)...);
 
-        CUDADRV_CHECK(cuLaunchKernel(kernel,
-                                     gridDim.x, gridDim.y, gridDim.z,
-                                     blockDim.x, blockDim.y, blockDim.z,
-                                     sharedMemSize, stream, const_cast<void**>(argPointers), nullptr));
+            CUDADRV_CHECK(cuLaunchKernel(kernel,
+                                         gridDim.x, gridDim.y, gridDim.z,
+                                         blockDim.x, blockDim.y, blockDim.z,
+                                         sharedMemSize, stream, const_cast<void**>(argPointers), nullptr));
+        }
+        else {
+            CUDADRV_CHECK(cuLaunchKernel(kernel,
+                                         gridDim.x, gridDim.y, gridDim.z,
+                                         blockDim.x, blockDim.y, blockDim.z,
+                                         sharedMemSize, stream, nullptr, nullptr));
+        }
     }
 
 
@@ -379,12 +387,18 @@ namespace cudau {
         }
         void unmap(CUstream stream = 0);
         void* getMappedPointer() const {
+            if (m_type == BufferType::ZeroCopy ||
+                m_type == BufferType::Managed)
+                return m_hostPointer;
             if (m_mappedPointer == nullptr)
                 throw std::runtime_error("The buffer is not not mapped.");
             return m_mappedPointer;
         }
         template <typename T>
         T* getMappedPointer() const {
+            if (m_type == BufferType::ZeroCopy ||
+                m_type == BufferType::Managed)
+                return reinterpret_cast<T*>(m_hostPointer);
             if (m_mappedPointer == nullptr)
                 throw std::runtime_error("The buffer is not not mapped.");
             return reinterpret_cast<T*>(m_mappedPointer);

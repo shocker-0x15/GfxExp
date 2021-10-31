@@ -919,8 +919,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
     // JP: スクリーン関連のバッファーを初期化。
     // EN: Initialize screen-related buffers.
 
-    cudau::Array perTileLightSubsetIndexBuffer;
-
     cudau::Array gBuffer0[2];
     cudau::Array gBuffer1[2];
     cudau::Array gBuffer2[2];
@@ -942,13 +940,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
     cudau::Array rngBuffer;
 
     const auto initializeScreenRelatedBuffers = [&]() {
-        perTileLightSubsetIndexBuffer.initialize2D(
-            gpuEnv.cuContext, cudau::ArrayElementType::UInt32, 1,
-            cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable,
-            (renderTargetSizeX + shared::tileSizeX - 1) / shared::tileSizeX,
-            (renderTargetSizeY + shared::tileSizeY - 1) / shared::tileSizeY,
-            1);
-
         for (int i = 0; i < 2; ++i) {
             gBuffer0[i].initialize2D(
                 gpuEnv.cuContext, cudau::ArrayElementType::UInt32, (sizeof(shared::GBuffer0) + 3) / 4,
@@ -1037,16 +1028,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
             gBuffer1[i].finalize();
             gBuffer0[i].finalize();
         }
-
-        perTileLightSubsetIndexBuffer.finalize();
     };
 
     const auto resizeScreenRelatedBuffers = [&](uint32_t width, uint32_t height) {
-        perTileLightSubsetIndexBuffer.resize(
-            (width + shared::tileSizeX - 1) / shared::tileSizeX,
-            (height + shared::tileSizeY - 1) / shared::tileSizeY,
-            1);
-
         for (int i = 0; i < 2; ++i) {
             gBuffer0[i].resize(width, height);
             gBuffer1[i].resize(width, height);
@@ -1228,7 +1212,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
                               (renderTargetSizeY + shared::tileSizeY - 1) / shared::tileSizeY);
     staticPlp.lightPreSamplingRngs = lightPreSamplingRngs.getDevicePointer();
     staticPlp.preSampledLights = preSampledLights.getDevicePointer();
-    staticPlp.perTileLightSubsetIndexBuffer = perTileLightSubsetIndexBuffer.getSurfaceObject(0);
     staticPlp.rngBuffer = rngBuffer.getSurfaceObject(0);
     staticPlp.GBuffer0[0] = gBuffer0[0].getSurfaceObject(0);
     staticPlp.GBuffer0[1] = gBuffer0[1].getSurfaceObject(0);
@@ -1412,7 +1395,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
             staticPlp.imageSize = int2(renderTargetSizeX, renderTargetSizeY);
             staticPlp.numTiles = int2((renderTargetSizeX + shared::tileSizeX - 1) / shared::tileSizeX,
                                       (renderTargetSizeY + shared::tileSizeY - 1) / shared::tileSizeY);
-            staticPlp.perTileLightSubsetIndexBuffer = perTileLightSubsetIndexBuffer.getSurfaceObject(0);
             staticPlp.rngBuffer = rngBuffer.getSurfaceObject(0);
             staticPlp.GBuffer0[0] = gBuffer0[0].getSurfaceObject(0);
             staticPlp.GBuffer0[1] = gBuffer0[1].getSurfaceObject(0);
@@ -1580,7 +1562,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
             bool useLowDiscrepancySpatialNeighbors = true;
             bool reuseVisibility = true;
             bool reuseVisibilityForTemporal = true;
-            bool reuseVisibilityForSpatiotemporal = true;
+            bool reuseVisibilityForSpatiotemporal = false;
 
             ReSTIRConfigs(uint32_t _log2NumCandidateSamples,
                           uint32_t _numSpatialReusePasses, uint32_t _numSpatialNeighbors) :
@@ -1605,7 +1587,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
         //    rearchRestirBiasedConfigs.enableSpatialReuse = false;
         //    tempInit = true;
         //}
-        static Renderer curRenderer = Renderer::OriginalReSTIRBiased;
+        static Renderer curRenderer = Renderer::RearchitectedReSTIRBiased;
+        //static Renderer curRenderer = Renderer::OriginalReSTIRBiased;
         static ReSTIRConfigs* curRendererConfigs = &orgRestirBiasedConfigs;
         static uint32_t numFramesForCurRenderer = 0;
         static float spatialVisibilityReuseRatio = 50.0f;
@@ -1613,7 +1596,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         static shared::BufferToDisplay bufferTypeToDisplay = shared::BufferToDisplay::NoisyBeauty;
         static float motionVectorScale = -1.0f;
         static bool animate = /*true*/false;
-        static bool enableAccumulation = true;
+        static bool enableAccumulation = /*true*/false;
         static bool enableJittering = false;
         static bool enableBumpMapping = false;
         bool lastFrameWasAnimated = false;
@@ -1629,8 +1612,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
                 animate = !animate;
             }
             ImGui::SameLine();
-            if (ImGui::Button("Reset Accum"))
-                resetAccumulation = true;
+            resetAccumulation |= ImGui::Button("Reset Accum");
             ImGui::Checkbox("Enable Accumulation", &enableAccumulation);
             resetAccumulation |= ImGui::Checkbox("Enable Jittering", &enableJittering);
             resetAccumulation |= ImGui::Checkbox("Enable Bump Mapping", &enableBumpMapping);
@@ -1665,16 +1647,18 @@ int32_t main(int32_t argc, const char* argv[]) try {
             if (ImGui::BeginTabBar("MyTabBar")) {
                 if (ImGui::BeginTabItem("Renderer")) {
                     Renderer prevRenderer = curRenderer;
-                    resetAccumulation |= ImGui::RadioButtonE("Original ReSTIR (Biased)", &curRenderer,
-                                                             Renderer::OriginalReSTIRBiased);
-                    resetAccumulation |= ImGui::RadioButtonE("Original ReSTIR (Unbiased)", &curRenderer,
-                                                             Renderer::OriginalReSTIRUnbiased);
-                    resetAccumulation |= ImGui::RadioButtonE("Rearchitected ReSTIR (Biased)", &curRenderer,
-                                                             Renderer::RearchitectedReSTIRBiased);
-                    resetAccumulation |= ImGui::RadioButtonE("Rearchitected ReSTIR (Unbiased)", &curRenderer,
-                                                             Renderer::RearchitectedReSTIRUnbiased);
-                    if (curRenderer != prevRenderer)
+                    ImGui::RadioButtonE("Original ReSTIR (Biased)", &curRenderer,
+                                        Renderer::OriginalReSTIRBiased);
+                    ImGui::RadioButtonE("Original ReSTIR (Unbiased)", &curRenderer,
+                                        Renderer::OriginalReSTIRUnbiased);
+                    ImGui::RadioButtonE("Rearchitected ReSTIR (Biased)", &curRenderer,
+                                        Renderer::RearchitectedReSTIRBiased);
+                    ImGui::RadioButtonE("Rearchitected ReSTIR (Unbiased)", &curRenderer,
+                                        Renderer::RearchitectedReSTIRUnbiased);
+                    if (curRenderer != prevRenderer) {
                         numFramesForCurRenderer = 0;
+                        resetAccumulation = true;
+                    }
 
                     if (curRenderer == Renderer::OriginalReSTIRBiased)
                         curRendererConfigs = &orgRestirBiasedConfigs;
@@ -1711,8 +1695,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
                                                              &curRendererConfigs->reuseVisibilityForTemporal);
                         resetAccumulation |= ImGui::Checkbox("Reuse Spatial Visibility",
                                                              &curRendererConfigs->reuseVisibilityForSpatiotemporal);
-                        resetAccumulation |= ImGui::SliderFloat(
-                            "Reuse Ratio (%)", &spatialVisibilityReuseRatio, 0.0f, 100.0f);
+                        resetAccumulation |= ImGui::InputFloat("Reuse Ratio (%)", &spatialVisibilityReuseRatio,
+                                                               25.0f, 25.0f, 1);
+                        spatialVisibilityReuseRatio = std::min(std::max(spatialVisibilityReuseRatio, 0.0f), 100.0f);
                         float reusableRadius = curRendererConfigs->spatialNeighborRadius *
                             std::sqrt(spatialVisibilityReuseRatio / 100.0f);
                         curRendererConfigs->radiusThresholdForSpatialVisReuse = reusableRadius;
@@ -1922,6 +1907,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         plp.currentReservoirIndex = currentReservoirIndex;
         plp.spatialNeighborBaseIndex = lastSpatialNeighborBaseIndex;
         CUDADRV_CHECK(cuMemcpyHtoDAsync(plpOnDevice, &plp, sizeof(plp), cuStream));
+        CUDADRV_CHECK(cuMemcpyHtoDAsync(gpuEnv.plpPtr, &plp, sizeof(plp), cuStream));
 
         // JP: Gバッファーのセットアップ。
         //     ここではレイトレースを使ってGバッファーを生成しているがもちろんラスタライザーで生成可能。
@@ -1993,33 +1979,33 @@ int32_t main(int32_t argc, const char* argv[]) try {
             // EN:
             curGPUTimer.performPreSamplingLights.start(cuStream);
             gpuEnv.kernelPerformLightPreSampling(
-                cuStream, gpuEnv.kernelPerformLightPreSampling.calcGridDim(numPreSampledLights),
-                plp);
-            gpuEnv.kernelSamplePerTileLightSubsetIndices(
-                cuStream, gpuEnv.kernelSamplePerTileLightSubsetIndices.calcGridDim(staticPlp.numTiles.x, staticPlp.numTiles.y),
-                plp);
+                cuStream, gpuEnv.kernelPerformLightPreSampling.calcGridDim(numPreSampledLights));
             curGPUTimer.performPreSamplingLights.stop(cuStream);
 
             // JP:
             // EN:
             curGPUTimer.performPerPixelRIS.start(cuStream);
-            gpuEnv.pipeline.setRayGenerationProgram(gpuEnv.performPerPixelRISRayGenProgram);
-            gpuEnv.pipeline.launch(cuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);
+            gpuEnv.kernelPerformPerPixelRIS(
+                cuStream, gpuEnv.kernelPerformPerPixelRIS.calcGridDim(renderTargetSizeX, renderTargetSizeY));
             curGPUTimer.performPerPixelRIS.stop(cuStream);
 
             // JP:
             // EN:
             curGPUTimer.traceShadowRays.start(cuStream);
             optixu::ProgramGroup traceShadowRaysRayGenProgram;
-            if ((curRendererConfigs->enableTemporalReuse && !newSequence) &&
-                curRendererConfigs->enableSpatialReuse)
-                traceShadowRaysRayGenProgram = gpuEnv.traceShadowRaysWithSpatioTemporalReuseRayGenProgram;
-            else if (curRendererConfigs->enableTemporalReuse && !newSequence)
-                traceShadowRaysRayGenProgram = gpuEnv.traceShadowRaysWithTemporalReuseRayGenProgram;
-            else if (curRendererConfigs->enableSpatialReuse)
-                traceShadowRaysRayGenProgram = gpuEnv.traceShadowRaysWithSpatialReuseRayGenProgram;
-            else
+            if (!newSequence) {
+                if (curRendererConfigs->enableTemporalReuse && curRendererConfigs->enableSpatialReuse)
+                    traceShadowRaysRayGenProgram = gpuEnv.traceShadowRaysWithSpatioTemporalReuseRayGenProgram;
+                else if (curRendererConfigs->enableTemporalReuse)
+                    traceShadowRaysRayGenProgram = gpuEnv.traceShadowRaysWithTemporalReuseRayGenProgram;
+                else if (curRendererConfigs->enableSpatialReuse)
+                    traceShadowRaysRayGenProgram = gpuEnv.traceShadowRaysWithSpatialReuseRayGenProgram;
+                else
+                    traceShadowRaysRayGenProgram = gpuEnv.traceShadowRaysRayGenProgram;
+            }
+            else {
                 traceShadowRaysRayGenProgram = gpuEnv.traceShadowRaysRayGenProgram;
+            }
             gpuEnv.pipeline.setRayGenerationProgram(traceShadowRaysRayGenProgram);
             gpuEnv.pipeline.launch(cuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);
             curGPUTimer.traceShadowRays.stop(cuStream);
@@ -2029,15 +2015,19 @@ int32_t main(int32_t argc, const char* argv[]) try {
             curGPUTimer.shadeAndResample.start(cuStream);
             optixu::ProgramGroup shadeRayGenProgram;
             if (curRenderer == Renderer::RearchitectedReSTIRBiased) {
-                if ((curRendererConfigs->enableTemporalReuse && !newSequence) &&
-                    curRendererConfigs->enableSpatialReuse)
-                    shadeRayGenProgram = gpuEnv.shadeAndResampleWithSpatiotemporalReuseBiasedRayGenProgram;
-                else if (curRendererConfigs->enableTemporalReuse && !newSequence)
-                    shadeRayGenProgram = gpuEnv.shadeAndResampleWithTemporalReuseBiasedRayGenProgram;
-                else if (curRendererConfigs->enableSpatialReuse)
-                    shadeRayGenProgram = gpuEnv.shadeAndResampleWithSpatialReuseBiasedRayGenProgram;
-                else
+                if (!newSequence) {
+                    if (curRendererConfigs->enableTemporalReuse && curRendererConfigs->enableSpatialReuse)
+                        shadeRayGenProgram = gpuEnv.shadeAndResampleWithSpatiotemporalReuseBiasedRayGenProgram;
+                    else if (curRendererConfigs->enableTemporalReuse)
+                        shadeRayGenProgram = gpuEnv.shadeAndResampleWithTemporalReuseBiasedRayGenProgram;
+                    else if (curRendererConfigs->enableSpatialReuse)
+                        shadeRayGenProgram = gpuEnv.shadeAndResampleWithSpatialReuseBiasedRayGenProgram;
+                    else
+                        shadeRayGenProgram = gpuEnv.shadeAndResampleRayGenProgram;
+                }
+                else {
                     shadeRayGenProgram = gpuEnv.shadeAndResampleRayGenProgram;
+                }
             }
             else {
                 Assert_NotImplemented();
@@ -2200,7 +2190,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
     
     finalizeScreenRelatedBuffers();
 
-    perTileLightSubsetIndexBuffer.finalize();
     preSampledLights.finalize();
     lightPreSamplingRngs.finalize();
 

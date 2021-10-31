@@ -2,7 +2,61 @@
 
 #include "../common/common_shared.h"
 
-struct BSDF;
+enum CallableProgram {
+    CallableProgram_ReadModifiedNormalFromNormalMap = 0,
+    CallableProgram_ReadModifiedNormalFromNormalMap2ch,
+    CallableProgram_ReadModifiedNormalFromHeightMap,
+    CallableProgram_SetupLambertBRDF,
+    CallableProgram_LambertBRDF_sampleThroughput,
+    CallableProgram_LambertBRDF_evaluate,
+    CallableProgram_LambertBRDF_evaluatePDF,
+    CallableProgram_LambertBRDF_evaluateDHReflectanceEstimate,
+    CallableProgram_SetupDiffuseAndSpecularBRDF,
+    CallableProgram_SetupSimplePBR_BRDF,
+    CallableProgram_DiffuseAndSpecularBRDF_sampleThroughput,
+    CallableProgram_DiffuseAndSpecularBRDF_evaluate,
+    CallableProgram_DiffuseAndSpecularBRDF_evaluatePDF,
+    CallableProgram_DiffuseAndSpecularBRDF_evaluateDHReflectanceEstimate,
+    NumCallablePrograms
+};
+
+#if (defined(__CUDA_ARCH__) && defined(PURE_CUDA)) || defined(OPTIXU_Platform_CodeCompletion)
+CUDA_CONSTANT_MEM void* c_callableToPointerMap[NumCallablePrograms];
+#endif
+
+constexpr const char* callableProgramEntryPoints[] = {
+    RT_DC_NAME_STR("readModifiedNormalFromNormalMap"),
+    RT_DC_NAME_STR("readModifiedNormalFromNormalMap2ch"),
+    RT_DC_NAME_STR("readModifiedNormalFromHeightMap"),
+    RT_DC_NAME_STR("setupLambertBRDF"),
+    RT_DC_NAME_STR("LambertBRDF_sampleThroughput"),
+    RT_DC_NAME_STR("LambertBRDF_evaluate"),
+    RT_DC_NAME_STR("LambertBRDF_evaluatePDF"),
+    RT_DC_NAME_STR("LambertBRDF_evaluateDHReflectanceEstimate"),
+    RT_DC_NAME_STR("setupDiffuseAndSpecularBRDF"),
+    RT_DC_NAME_STR("setupSimplePBR_BRDF"),
+    RT_DC_NAME_STR("DiffuseAndSpecularBRDF_sampleThroughput"),
+    RT_DC_NAME_STR("DiffuseAndSpecularBRDF_evaluate"),
+    RT_DC_NAME_STR("DiffuseAndSpecularBRDF_evaluatePDF"),
+    RT_DC_NAME_STR("DiffuseAndSpecularBRDF_evaluateDHReflectanceEstimate"),
+};
+
+constexpr const char* callableProgramPointerNames[] = {
+    CUDA_CALLABLE_PROGRAM_POINTER_NAME_STR("readModifiedNormalFromNormalMap"),
+    CUDA_CALLABLE_PROGRAM_POINTER_NAME_STR("readModifiedNormalFromNormalMap2ch"),
+    CUDA_CALLABLE_PROGRAM_POINTER_NAME_STR("readModifiedNormalFromHeightMap"),
+    CUDA_CALLABLE_PROGRAM_POINTER_NAME_STR("setupLambertBRDF"),
+    CUDA_CALLABLE_PROGRAM_POINTER_NAME_STR("LambertBRDF_sampleThroughput"),
+    CUDA_CALLABLE_PROGRAM_POINTER_NAME_STR("LambertBRDF_evaluate"),
+    CUDA_CALLABLE_PROGRAM_POINTER_NAME_STR("LambertBRDF_evaluatePDF"),
+    CUDA_CALLABLE_PROGRAM_POINTER_NAME_STR("LambertBRDF_evaluateDHReflectanceEstimate"),
+    CUDA_CALLABLE_PROGRAM_POINTER_NAME_STR("setupDiffuseAndSpecularBRDF"),
+    CUDA_CALLABLE_PROGRAM_POINTER_NAME_STR("setupSimplePBR_BRDF"),
+    CUDA_CALLABLE_PROGRAM_POINTER_NAME_STR("DiffuseAndSpecularBRDF_sampleThroughput"),
+    CUDA_CALLABLE_PROGRAM_POINTER_NAME_STR("DiffuseAndSpecularBRDF_evaluate"),
+    CUDA_CALLABLE_PROGRAM_POINTER_NAME_STR("DiffuseAndSpecularBRDF_evaluatePDF"),
+    CUDA_CALLABLE_PROGRAM_POINTER_NAME_STR("DiffuseAndSpecularBRDF_evaluateDHReflectanceEstimate"),
+};
 
 namespace shared {
     static constexpr float probToSampleEnvLight = 0.25f;
@@ -57,17 +111,18 @@ namespace shared {
 
 
     struct MaterialData;
+    struct BSDF;
 
-    using SetupBSDF = optixu::DirectCallableProgramID<
+    using SetupBSDF = DynamicFunction<
         void(const MaterialData &matData, const float2 &texCoord, BSDF* bsdf)>;
-    using BSDFSampleThroughput = optixu::DirectCallableProgramID<
+    using BSDFSampleThroughput = DynamicFunction<
         float3(const uint32_t* data, const float3 &vGiven, float uDir0, float uDir1,
                float3* vSampled, float* dirPDensity)>;
-    using BSDFEvaluate = optixu::DirectCallableProgramID<
+    using BSDFEvaluate = DynamicFunction<
         float3(const uint32_t* data, const float3 &vGiven, const float3 &vSampled)>;
-    using BSDFEvaluatePDF = optixu::DirectCallableProgramID<
+    using BSDFEvaluatePDF = DynamicFunction<
         float(const uint32_t* data, const float3 &vGiven, const float3 &vSampled)>;
-    using BSDFEvaluateDHReflectanceEstimate = optixu::DirectCallableProgramID<
+    using BSDFEvaluateDHReflectanceEstimate = DynamicFunction<
         float3(const uint32_t* data, const float3 &vGiven)>;
 
     struct MaterialData {
@@ -250,7 +305,6 @@ namespace shared {
         // only for rearchitected ver.
         PCG32RNG* lightPreSamplingRngs;
         PreSampledLight* preSampledLights;
-        optixu::NativeBlockBuffer2D<uint32_t> perTileLightSubsetIndexBuffer;
 
         optixu::NativeBlockBuffer2D<PCG32RNG> rngBuffer;
 
@@ -337,3 +391,304 @@ namespace shared {
 
 #define PrimaryRayPayloadSignature shared::HitPointParams*, shared::PickInfo*
 #define VisibilityRayPayloadSignature float
+
+
+
+#if defined(__CUDA_ARCH__) || defined(OPTIXU_Platform_CodeCompletion)
+
+#include "../common/common_device.cuh"
+
+#if defined(PURE_CUDA)
+CUDA_CONSTANT_MEM shared::PipelineLaunchParameters plp;
+#else
+RT_PIPELINE_LAUNCH_PARAMETERS shared::PipelineLaunchParameters plp;
+#endif
+
+namespace shared {
+    struct BSDF {
+        static constexpr uint32_t NumDwords = 16;
+        BSDFSampleThroughput m_sampleThroughput;
+        BSDFEvaluate m_evaluate;
+        BSDFEvaluatePDF m_evaluatePDF;
+        BSDFEvaluateDHReflectanceEstimate m_evaluateDHReflectanceEstimate;
+        uint32_t m_data[NumDwords];
+
+        CUDA_DEVICE_FUNCTION float3 sampleThroughput(const float3 &vGiven, float uDir0, float uDir1,
+                                                     float3* vSampled, float* dirPDensity) const {
+            return m_sampleThroughput(m_data, vGiven, uDir0, uDir1, vSampled, dirPDensity);
+        }
+        CUDA_DEVICE_FUNCTION float3 evaluate(const float3 &vGiven, const float3 &vSampled) const {
+            return m_evaluate(m_data, vGiven, vSampled);
+        }
+        CUDA_DEVICE_FUNCTION float evaluatePDF(const float3 &vGiven, const float3 &vSampled) const {
+            return m_evaluatePDF(m_data, vGiven, vSampled);
+        }
+        CUDA_DEVICE_FUNCTION float3 evaluateDHReflectanceEstimate(const float3 &vGiven) const {
+            return m_evaluateDHReflectanceEstimate(m_data, vGiven);
+        }
+    };
+
+    template <typename BSDFType>
+    CUDA_DEVICE_FUNCTION void setupBSDF(const MaterialData &matData, const float2 &texCoord, BSDF* bsdf);
+
+    template<>
+    CUDA_DEVICE_FUNCTION void setupBSDF<LambertBRDF>(const MaterialData &matData, const float2 &texCoord, BSDF* bsdf) {
+        float4 reflectance = tex2DLod<float4>(matData.asLambert.reflectance, texCoord.x, texCoord.y, 0.0f);
+        auto &bsdfBody = *reinterpret_cast<LambertBRDF*>(bsdf->m_data);
+        bsdfBody = LambertBRDF(make_float3(reflectance.x, reflectance.y, reflectance.z));
+    }
+
+    template<>
+    CUDA_DEVICE_FUNCTION void setupBSDF<DiffuseAndSpecularBRDF>(const MaterialData &matData, const float2 &texCoord, BSDF* bsdf) {
+        float4 diffuseColor = tex2DLod<float4>(matData.asDiffuseAndSpecular.diffuse, texCoord.x, texCoord.y, 0.0f);
+        float4 specularF0Color = tex2DLod<float4>(matData.asDiffuseAndSpecular.specular, texCoord.x, texCoord.y, 0.0f);
+        float smoothness = tex2DLod<float>(matData.asDiffuseAndSpecular.smoothness, texCoord.x, texCoord.y, 0.0f);
+        auto &bsdfBody = *reinterpret_cast<DiffuseAndSpecularBRDF*>(bsdf->m_data);
+        bsdfBody = DiffuseAndSpecularBRDF(make_float3(diffuseColor),
+                                          make_float3(specularF0Color),
+                                          min(smoothness, 0.999f));
+    }
+
+
+
+#define DEFINE_BSDF_CALLABLES(BSDFType) \
+    RT_CALLABLE_PROGRAM void RT_DC_NAME(setup ## BSDFType)(\
+        const MaterialData &matData, const float2 &texCoord, BSDF* bsdf) {\
+        bsdf->m_sampleThroughput = matData.bsdfSampleThroughput;\
+        bsdf->m_evaluate = matData.bsdfEvaluate;\
+        bsdf->m_evaluatePDF = matData.bsdfEvaluatePDF;\
+        bsdf->m_evaluateDHReflectanceEstimate = matData.bsdfEvaluateDHReflectanceEstimate;\
+        setupBSDF<BSDFType>(matData, texCoord, bsdf);\
+    }\
+    CUDA_DECLARE_CALLABLE_PROGRAM_POINTER(setup ## BSDFType);\
+    RT_CALLABLE_PROGRAM float3 RT_DC_NAME(BSDFType ## _sampleThroughput)(\
+        const uint32_t* data, const float3 &vGiven, float uDir0, float uDir1,\
+        float3* vSampled, float* dirPDensity) {\
+        auto &bsdf = *reinterpret_cast<const BSDFType*>(data);\
+        return bsdf.sampleThroughput(vGiven, uDir0, uDir1, vSampled, dirPDensity);\
+    }\
+    CUDA_DECLARE_CALLABLE_PROGRAM_POINTER(BSDFType ## _sampleThroughput);\
+    RT_CALLABLE_PROGRAM float3 RT_DC_NAME(BSDFType ## _evaluate)(\
+        const uint32_t* data, const float3 &vGiven, const float3 &vSampled) {\
+        auto &bsdf = *reinterpret_cast<const BSDFType*>(data);\
+        return bsdf.evaluate(vGiven, vSampled);\
+    }\
+    CUDA_DECLARE_CALLABLE_PROGRAM_POINTER(BSDFType ## _evaluate);\
+    RT_CALLABLE_PROGRAM float RT_DC_NAME(BSDFType ## _evaluatePDF)(\
+        const uint32_t* data, const float3 &vGiven, const float3 &vSampled) {\
+        auto &bsdf = *reinterpret_cast<const BSDFType*>(data);\
+        return bsdf.evaluatePDF(vGiven, vSampled);\
+    }\
+    CUDA_DECLARE_CALLABLE_PROGRAM_POINTER(BSDFType ## _evaluatePDF);\
+    RT_CALLABLE_PROGRAM float3 RT_DC_NAME(BSDFType ## _evaluateDHReflectanceEstimate)(\
+        const uint32_t* data, const float3 &vGiven) {\
+        auto &bsdf = *reinterpret_cast<const BSDFType*>(data);\
+        return bsdf.evaluateDHReflectanceEstimate(vGiven);\
+    }\
+    CUDA_DECLARE_CALLABLE_PROGRAM_POINTER(BSDFType ## _evaluateDHReflectanceEstimate);
+
+    DEFINE_BSDF_CALLABLES(LambertBRDF);
+    DEFINE_BSDF_CALLABLES(DiffuseAndSpecularBRDF);
+
+    RT_CALLABLE_PROGRAM void RT_DC_NAME(setupSimplePBR_BRDF)(
+        const MaterialData &matData, const float2 &texCoord, BSDF* bsdf) {
+        bsdf->m_sampleThroughput = matData.bsdfSampleThroughput;
+        bsdf->m_evaluate = matData.bsdfEvaluate;
+        bsdf->m_evaluatePDF = matData.bsdfEvaluatePDF;
+        bsdf->m_evaluateDHReflectanceEstimate = matData.bsdfEvaluateDHReflectanceEstimate;
+
+        float4 baseColor_opacity = tex2DLod<float4>(matData.asSimplePBR.baseColor_opacity, texCoord.x, texCoord.y, 0.0f);
+        float4 occlusion_roughness_metallic = tex2DLod<float4>(matData.asSimplePBR.occlusion_roughness_metallic, texCoord.x, texCoord.y, 0.0f);
+        float3 baseColor = make_float3(baseColor_opacity);
+        float smoothness = min(1.0f - occlusion_roughness_metallic.y, 0.999f);
+        float metallic = occlusion_roughness_metallic.z;
+        auto &bsdfBody = *reinterpret_cast<DiffuseAndSpecularBRDF*>(bsdf->m_data);
+        bsdfBody = DiffuseAndSpecularBRDF(baseColor, 0.5f, smoothness, metallic);
+    }
+    CUDA_DECLARE_CALLABLE_PROGRAM_POINTER(setupSimplePBR_BRDF);
+
+
+
+    CUDA_DEVICE_FUNCTION void sampleLight(
+        float ul, bool sampleEnvLight, float u0, float u1,
+        LightSample* lightSample, float* areaPDensity) {
+        CUtexObject texEmittance = 0;
+        float3 emittance = make_float3(0.0f, 0.0f, 0.0f);
+        float2 texCoord;
+        if (sampleEnvLight) {
+            float u, v;
+            float uvPDF;
+            plp.s->envLightImportanceMap.sample(u0, u1, &u, &v, &uvPDF);
+            float phi = 2 * Pi * u;
+            float theta = Pi * v;
+
+            float posPhi = phi - plp.f->envLightRotation;
+            posPhi = posPhi - floorf(posPhi / (2 * Pi)) * 2 * Pi;
+
+            float3 direction = fromPolarYUp(posPhi, theta);
+            float3 position = make_float3(direction.x, direction.y, direction.z);
+            lightSample->position = position;
+            lightSample->atInfinity = true;
+
+            lightSample->normal = -position;
+
+            // JP: テクスチャー空間中のPDFを面積に関するものに変換する。
+            // EN: convert the PDF in texture space to one with respect to area.
+            // The true value is: lim_{l to inf} uvPDF / (2 * Pi * Pi * std::sin(theta)) / l^2
+            *areaPDensity = uvPDF / (2 * Pi * Pi * std::sin(theta));
+
+            texEmittance = plp.s->envLightTexture;
+            // JP: 環境マップテクスチャーの値に係数をかけて、通常の光源と同じように返り値を光束発散度
+            //     として扱えるようにする。
+            // EN: Multiply a coefficient to make the return value possible to be handled as luminous emittance.
+            emittance = make_float3(Pi * plp.f->envLightPowerCoeff);
+            texCoord.x = u;
+            texCoord.y = v;
+        }
+        else {
+            float lightProb = 1.0f;
+
+            // JP: まずはインスタンスをサンプルする。
+            // EN: First, sample an instance.
+            float instProb;
+            float uGeomInst;
+            uint32_t instIndex = plp.s->lightInstDist.sample(ul, &instProb, &uGeomInst);
+            lightProb *= instProb;
+            const InstanceData &inst = plp.f->instanceDataBuffer[instIndex];
+
+            // JP: 次にサンプルしたインスタンスに属するジオメトリインスタンスをサンプルする。
+            // EN: Next, sample a geometry instance which belongs to the sampled instance.
+            float geomInstProb;
+            float uPrim;
+            uint32_t geomInstIndexInInst = inst.lightGeomInstDist.sample(uGeomInst, &geomInstProb, &uPrim);
+            uint32_t geomInstIndex = inst.geomInstSlots[geomInstIndexInInst];
+            lightProb *= geomInstProb;
+            const GeometryInstanceData &geomInst = plp.s->geometryInstanceDataBuffer[geomInstIndex];
+
+            // JP: 最後に、サンプルしたジオメトリインスタンスに属するプリミティブをサンプルする。
+            // EN: Finally, sample a primitive which belongs to the sampled geometry instance.
+            float primProb;
+            uint32_t primIndex = geomInst.emitterPrimDist.sample(uPrim, &primProb);
+            lightProb *= primProb;
+
+            // Uniform sampling on unit triangle
+            // A Low-Distortion Map Between Triangle and Square
+            float t0 = 0.5f * u0;
+            float t1 = 0.5f * u1;
+            float offset = t1 - t0;
+            if (offset > 0)
+                t1 += offset;
+            else
+                t0 -= offset;
+            float t2 = 1 - (t0 + t1);
+
+            //printf("%u-%u-%u: %g\n", instIndex, geomInstIndex, primIndex, lightProb);
+
+            const MaterialData &mat = plp.s->materialDataBuffer[geomInst.materialSlot];
+
+            const shared::Triangle &tri = geomInst.triangleBuffer[primIndex];
+            const shared::Vertex(&v)[3] = {
+                geomInst.vertexBuffer[tri.index0],
+                geomInst.vertexBuffer[tri.index1],
+                geomInst.vertexBuffer[tri.index2]
+            };
+            float3 p[3] = {
+                inst.transform * v[0].position,
+                inst.transform * v[1].position,
+                inst.transform * v[2].position,
+            };
+
+            float3 geomNormal = cross(p[1] - p[0], p[2] - p[0]);
+            lightSample->position = t0 * p[0] + t1 * p[1] + t2 * p[2];
+            lightSample->atInfinity = false;
+            float recArea = 1.0f / length(geomNormal);
+            //lightSample->normal = geomNormal * recArea;
+            lightSample->normal = t0 * v[0].normal + t1 * v[1].normal + t2 * v[2].normal;
+            lightSample->normal = normalize(inst.normalMatrix * lightSample->normal);
+            recArea *= 2;
+            *areaPDensity = lightProb * recArea;
+
+            //printf("%u-%u-%u: (%g, %g, %g), PDF: %g\n", instIndex, geomInstIndex, primIndex,
+            //       mat.emittance.x, mat.emittance.y, mat.emittance.z, *areaPDensity);
+
+            //printf("%u-%u-%u: (%g, %g, %g), (%g, %g, %g)\n", instIndex, geomInstIndex, primIndex,
+            //       lightPosition->x, lightPosition->y, lightPosition->z,
+            //       lightNormal->x, lightNormal->y, lightNormal->z);
+
+            if (mat.emittance) {
+                texEmittance = mat.emittance;
+                emittance = make_float3(1.0f, 1.0f, 1.0f);
+                texCoord = t0 * v[0].texCoord + t1 * v[1].texCoord + t2 * v[2].texCoord;
+            }
+        }
+
+        if (texEmittance) {
+            float4 texValue = tex2DLod<float4>(texEmittance, texCoord.x, texCoord.y, 0.0f);
+            emittance *= make_float3(texValue);
+        }
+        lightSample->emittance = emittance;
+    }
+
+    template <bool withVisibility>
+    CUDA_DEVICE_FUNCTION float3 performDirectLighting(
+        const float3 &shadingPoint, const float3 &vOutLocal, const ReferenceFrame &shadingFrame, const BSDF &bsdf,
+        const LightSample &lightSample) {
+        float3 shadowRayDir = lightSample.atInfinity ?
+            lightSample.position :
+            (lightSample.position - shadingPoint);
+        float dist2 = sqLength(shadowRayDir);
+        float dist = std::sqrt(dist2);
+        shadowRayDir /= dist;
+        float3 shadowRayDirLocal = shadingFrame.toLocal(shadowRayDir);
+
+        float lpCos = dot(-shadowRayDir, lightSample.normal);
+        float spCos = shadowRayDirLocal.z;
+
+        float visibility = 1.0f;
+        if constexpr (withVisibility) {
+            if (lightSample.atInfinity)
+                dist = 1e+10f;
+            optixu::trace<VisibilityRayPayloadSignature>(
+                plp.f->travHandle,
+                shadingPoint, shadowRayDir, 0.0f, dist * 0.9999f, 0.0f,
+                0xFF, OPTIX_RAY_FLAG_NONE,
+                RayType_Visibility, NumRayTypes, RayType_Visibility,
+                visibility);
+        }
+
+        if (visibility > 0 && lpCos > 0) {
+            float3 Le = lightSample.emittance / Pi; // assume diffuse emitter.
+            float3 fsValue = bsdf.evaluate(vOutLocal, shadowRayDirLocal);
+            float G = lpCos * std::fabs(spCos) / dist2;
+            float3 ret = fsValue * Le * G;
+            return ret;
+        }
+        else {
+            return make_float3(0.0f, 0.0f, 0.0f);
+        }
+    }
+
+    CUDA_DEVICE_FUNCTION bool evaluateVisibility(
+        const float3 &shadingPoint, const LightSample &lightSample) {
+        float3 shadowRayDir = lightSample.atInfinity ?
+            lightSample.position :
+            (lightSample.position - shadingPoint);
+        float dist2 = sqLength(shadowRayDir);
+        float dist = std::sqrt(dist2);
+        shadowRayDir /= dist;
+        if (lightSample.atInfinity)
+            dist = 1e+10f;
+
+        float visibility = 1.0f;
+        optixu::trace<VisibilityRayPayloadSignature>(
+            plp.f->travHandle,
+            shadingPoint, shadowRayDir, 0.0f, dist * 0.9999f, 0.0f,
+            0xFF, OPTIX_RAY_FLAG_NONE,
+            RayType_Visibility, NumRayTypes, RayType_Visibility,
+            visibility);
+
+        return visibility > 0.0f;
+    }
+}
+
+#endif

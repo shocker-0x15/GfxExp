@@ -12,41 +12,6 @@
 
 
 
-enum CallableProgram {
-    CallableProgram_ReadModifiedNormalFromNormalMap = 0,
-    CallableProgram_ReadModifiedNormalFromNormalMap2ch,
-    CallableProgram_ReadModifiedNormalFromHeightMap,
-    CallableProgram_SetupLambertBRDF,
-    CallableProgram_LambertBRDF_sampleThroughput,
-    CallableProgram_LambertBRDF_evaluate,
-    CallableProgram_LambertBRDF_evaluatePDF,
-    CallableProgram_LambertBRDF_evaluateDHReflectanceEstimate,
-    CallableProgram_SetupDiffuseAndSpecularBRDF,
-    CallableProgram_SetupSimplePBR_BRDF,
-    CallableProgram_DiffuseAndSpecularBRDF_sampleThroughput,
-    CallableProgram_DiffuseAndSpecularBRDF_evaluate,
-    CallableProgram_DiffuseAndSpecularBRDF_evaluatePDF,
-    CallableProgram_DiffuseAndSpecularBRDF_evaluateDHReflectanceEstimate,
-    NumCallablePrograms
-};
-
-constexpr const char* callableProgramEntryPoints[] = {
-    RT_DC_NAME_STR("readModifiedNormalFromNormalMap"),
-    RT_DC_NAME_STR("readModifiedNormalFromNormalMap2ch"),
-    RT_DC_NAME_STR("readModifiedNormalFromHeightMap"),
-    RT_DC_NAME_STR("setupLambertBRDF"),
-    RT_DC_NAME_STR("LambertBRDF_sampleThroughput"),
-    RT_DC_NAME_STR("LambertBRDF_evaluate"),
-    RT_DC_NAME_STR("LambertBRDF_evaluatePDF"),
-    RT_DC_NAME_STR("LambertBRDF_evaluateDHReflectanceEstimate"),
-    RT_DC_NAME_STR("setupDiffuseAndSpecularBRDF"),
-    RT_DC_NAME_STR("setupSimplePBR_BRDF"),
-    RT_DC_NAME_STR("DiffuseAndSpecularBRDF_sampleThroughput"),
-    RT_DC_NAME_STR("DiffuseAndSpecularBRDF_evaluate"),
-    RT_DC_NAME_STR("DiffuseAndSpecularBRDF_evaluatePDF"),
-    RT_DC_NAME_STR("DiffuseAndSpecularBRDF_evaluateDHReflectanceEstimate"),
-};
-
 struct GPUEnvironment {
     static constexpr cudau::BufferType bufferType = cudau::BufferType::Device;
     static constexpr uint32_t maxNumMaterials = 1024;
@@ -58,7 +23,8 @@ struct GPUEnvironment {
 
     CUmodule preSamplingModule;
     cudau::Kernel kernelPerformLightPreSampling;
-    cudau::Kernel kernelSamplePerTileLightSubsetIndices;
+    cudau::Kernel kernelPerformPerPixelRIS;
+    CUdeviceptr plpPtr;
 
     optixu::Pipeline pipeline;
     optixu::Module mainModule;
@@ -74,7 +40,6 @@ struct GPUEnvironment {
     optixu::ProgramGroup performSpatialRISUnbiasedRayGenProgram;
     optixu::ProgramGroup shadingRayGenProgram;
 
-    optixu::ProgramGroup performPerPixelRISRayGenProgram;
     optixu::ProgramGroup traceShadowRaysRayGenProgram;
     optixu::ProgramGroup traceShadowRaysWithTemporalReuseRayGenProgram;
     optixu::ProgramGroup traceShadowRaysWithSpatialReuseRayGenProgram;
@@ -112,8 +77,13 @@ struct GPUEnvironment {
         CUDADRV_CHECK(cuModuleLoad(&preSamplingModule, (getExecutableDirectory() / "restir/ptxes/light_pre_sampling.ptx").string().c_str()));
         kernelPerformLightPreSampling =
             cudau::Kernel(preSamplingModule, "performLightPreSampling", cudau::dim3(32), 0);
-        kernelSamplePerTileLightSubsetIndices =
-            cudau::Kernel(preSamplingModule, "samplePerTileLightSubsetIndices", cudau::dim3(8, 4), 0);
+        kernelPerformPerPixelRIS =
+            cudau::Kernel(preSamplingModule, "performPerPixelRIS",
+                          cudau::dim3(shared::tileSizeX, shared::tileSizeY), 0);
+
+        size_t plpSize;
+        CUDADRV_CHECK(cuModuleGetGlobal(&plpPtr, &plpSize, preSamplingModule, "plp"));
+        Assert(sizeof(shared::PipelineLaunchParameters) == plpSize, "Unexpected plp size.");
 
         pipeline = optixContext.createPipeline();
 
@@ -163,8 +133,6 @@ struct GPUEnvironment {
         shadingRayGenProgram = pipeline.createRayGenProgram(
             mainModule, RT_RG_NAME_STR("shading"));
 
-        performPerPixelRISRayGenProgram = pipeline.createRayGenProgram(
-            mainModule, RT_RG_NAME_STR("performPerPixelRIS"));
         traceShadowRaysRayGenProgram = pipeline.createRayGenProgram(
             mainModule, RT_RG_NAME_STR("traceShadowRays"));
         traceShadowRaysWithTemporalReuseRayGenProgram = pipeline.createRayGenProgram(
@@ -197,13 +165,39 @@ struct GPUEnvironment {
 
         pipeline.setNumCallablePrograms(NumCallablePrograms);
         callablePrograms.resize(NumCallablePrograms);
+        std::vector<void*> callablePointers(NumCallablePrograms);
         for (int i = 0; i < NumCallablePrograms; ++i) {
             optixu::ProgramGroup program = pipeline.createCallableProgramGroup(
                 mainModule, callableProgramEntryPoints[i],
                 emptyModule, nullptr);
             callablePrograms[i] = program;
             pipeline.setCallableProgram(i, program);
+
+            CUdeviceptr symbolPtr;
+            size_t symbolSize;
+            CUDADRV_CHECK(cuModuleGetGlobal(&symbolPtr, &symbolSize, preSamplingModule,
+                                            callableProgramPointerNames[i]));
+            void* funcPtrOnDevice;
+            Assert(symbolSize == sizeof(funcPtrOnDevice), "Unexpected symbol size");
+            CUDADRV_CHECK(cuMemcpyDtoH(&funcPtrOnDevice, symbolPtr, sizeof(funcPtrOnDevice)));
+            callablePointers[i] = funcPtrOnDevice;
         }
+
+        CUdeviceptr callableToPointerMapPtr;
+        size_t callableToPointerMapSize;
+        CUDADRV_CHECK(cuModuleGetGlobal(
+            &callableToPointerMapPtr, &callableToPointerMapSize, preSamplingModule,
+            "c_callableToPointerMap"));
+        CUDADRV_CHECK(cuMemcpyHtoD(callableToPointerMapPtr, callablePointers.data(),
+                                   callableToPointerMapSize));
+
+        CUdeviceptr callableToPointerMapAliasPtr;
+        size_t callableToPointerMapAliasSize;
+        CUDADRV_CHECK(cuModuleGetGlobal(
+            &callableToPointerMapAliasPtr, &callableToPointerMapAliasSize, preSamplingModule,
+            "c_callableToPointerMapAlias"));
+        CUDADRV_CHECK(cuMemcpyHtoD(callableToPointerMapAliasPtr, &callableToPointerMapPtr,
+                                   callableToPointerMapAliasSize));
 
         pipeline.link(2, DEBUG_SELECT(OPTIX_COMPILE_DEBUG_LEVEL_FULL, OPTIX_COMPILE_DEBUG_LEVEL_NONE));
 
@@ -265,7 +259,6 @@ struct GPUEnvironment {
         traceShadowRaysWithSpatialReuseRayGenProgram.destroy();
         traceShadowRaysWithTemporalReuseRayGenProgram.destroy();
         traceShadowRaysRayGenProgram.destroy();
-        performPerPixelRISRayGenProgram.destroy();
 
         shadingRayGenProgram.destroy();
         performSpatialRISUnbiasedRayGenProgram.destroy();

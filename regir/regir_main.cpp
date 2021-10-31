@@ -491,8 +491,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
     glfwWindowHint(GLFW_SRGB_CAPABLE, GLFW_TRUE);
 
-    int32_t renderTargetSizeX = 1280;
-    int32_t renderTargetSizeY = 720;
+    int32_t renderTargetSizeX = 1920;
+    int32_t renderTargetSizeY = 1080;
 
     // JP: ウインドウの初期化。
     // EN: Initialize a window.
@@ -1729,6 +1729,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         CUDADRV_CHECK(cuMemcpyHtoDAsync(perFramePlpOnDevice, &perFramePlp, sizeof(perFramePlp), cuStream));
 
         CUDADRV_CHECK(cuMemcpyHtoDAsync(plpOnDevice, &plp, sizeof(plp), cuStream));
+        CUDADRV_CHECK(cuMemcpyHtoDAsync(gpuEnv.plpPtr, &plp, sizeof(plp), cuStream));
 
         // JP: Gバッファーのセットアップ。
         //     ここではレイトレースを使ってGバッファーを生成しているがもちろんラスタライザーで生成可能。
@@ -1749,11 +1750,11 @@ int32_t main(int32_t argc, const char* argv[]) try {
             if (enableTemporalReuse && !newSequence)
                 gpuEnv.kernelBuildCellReservoirsAndTemporalReuse(
                     cuStream, gpuEnv.kernelBuildCellReservoirsAndTemporalReuse.calcGridDim(numLightSlots),
-                    plp, static_cast<uint32_t>(frameIndex));
+                    static_cast<uint32_t>(frameIndex));
             else
                 gpuEnv.kernelBuildCellReservoirs(
                     cuStream, gpuEnv.kernelBuildCellReservoirs.calcGridDim(numLightSlots),
-                    plp, static_cast<uint32_t>(frameIndex));
+                    static_cast<uint32_t>(frameIndex));
         }
         curGPUTimer.buildCellReservoirs.stop(cuStream);
 
@@ -1773,7 +1774,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         if (useReGIR) {
             gpuEnv.kernelUpdateLastAccessFrameIndices(
                 cuStream, gpuEnv.kernelUpdateLastAccessFrameIndices.calcGridDim(numCells),
-                plp, static_cast<uint32_t>(frameIndex));
+                static_cast<uint32_t>(frameIndex));
         }
 
         curGPUTimer.denoise.start(cuStream);

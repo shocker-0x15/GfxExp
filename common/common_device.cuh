@@ -154,6 +154,7 @@ RT_CALLABLE_PROGRAM float3 RT_DC_NAME(readModifiedNormalFromNormalMap)
     modLocalNormal.y *= -1; // DirectX convention
     return modLocalNormal;
 }
+CUDA_DECLARE_CALLABLE_PROGRAM_POINTER(readModifiedNormalFromNormalMap);
 
 RT_CALLABLE_PROGRAM float3 RT_DC_NAME(readModifiedNormalFromNormalMap2ch)
 (CUtexObject texture, const float2 &texCoord, uint32_t) {
@@ -164,6 +165,7 @@ RT_CALLABLE_PROGRAM float3 RT_DC_NAME(readModifiedNormalFromNormalMap2ch)
     modLocalNormal.y *= -1; // DirectX convention
     return modLocalNormal;
 }
+CUDA_DECLARE_CALLABLE_PROGRAM_POINTER(readModifiedNormalFromNormalMap2ch);
 
 RT_CALLABLE_PROGRAM float3 RT_DC_NAME(readModifiedNormalFromHeightMap)
 (CUtexObject texture, const float2 &texCoord, uint32_t texDim) {
@@ -176,6 +178,7 @@ RT_CALLABLE_PROGRAM float3 RT_DC_NAME(readModifiedNormalFromHeightMap)
     float3 modLocalNormal = normalize(make_float3(-dhdu, dhdv, 1));
     return modLocalNormal;
 }
+CUDA_DECLARE_CALLABLE_PROGRAM_POINTER(readModifiedNormalFromHeightMap);
 
 
 

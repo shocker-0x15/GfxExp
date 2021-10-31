@@ -1194,6 +1194,44 @@ struct AABB {
 #define USE_WALKER_ALIAS_METHOD
 
 namespace shared {
+    extern "C" CUDA_CONSTANT_MEM void** c_callableToPointerMapAlias;
+
+#if defined(PURE_CUDA)
+#   define CUDA_DECLARE_CALLABLE_PROGRAM_POINTER(name) extern "C" CUDA_DEVICE_MEM auto ptr_ ## name = RT_DC_NAME(name)
+#else
+#   define CUDA_DECLARE_CALLABLE_PROGRAM_POINTER(name)
+#endif
+#define CUDA_CALLABLE_PROGRAM_POINTER_NAME_STR(name) "ptr_" name
+
+    template <typename FuncType>
+    class DynamicFunction;
+
+    template <typename ReturnType, typename... ArgTypes>
+    class DynamicFunction<ReturnType(ArgTypes...)> {
+        using Signature = ReturnType (*)(ArgTypes...);
+        optixu::DirectCallableProgramID<ReturnType(ArgTypes...)> m_callableHandle;
+
+    public:
+        CUDA_DEVICE_FUNCTION DynamicFunction() {}
+        CUDA_DEVICE_FUNCTION DynamicFunction(uint32_t sbtIndex) : m_callableHandle(sbtIndex) {}
+
+        CUDA_DEVICE_FUNCTION explicit operator uint32_t() const { return static_cast<uint32_t>(m_callableHandle); }
+
+#if defined(__CUDA_ARCH__) || defined(OPTIXU_Platform_CodeCompletion)
+        CUDA_DEVICE_FUNCTION ReturnType operator()(const ArgTypes &... args) const {
+#   if defined(PURE_CUDA)
+            void* ptr = c_callableToPointerMapAlias[static_cast<uint32_t>(m_callableHandle)];
+            auto func = reinterpret_cast<Signature>(ptr);
+            return func(args...);
+#   else
+            return m_callableHandle(args...);
+#   endif
+        }
+#endif
+    };
+
+
+
     class PCG32RNG {
         uint64_t state;
 
@@ -1652,6 +1690,6 @@ namespace shared {
 
 
 
-    using ReadModifiedNormal = optixu::DirectCallableProgramID<
+    using ReadModifiedNormal = DynamicFunction<
         float3(CUtexObject texture, const float2 &texCoord, uint32_t texDim)>;
 }
