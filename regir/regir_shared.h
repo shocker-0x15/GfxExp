@@ -4,6 +4,7 @@
 
 // To see performance without dynamic functions.
 //#define USE_HARD_CODED_BSDF_FUNCTIONS
+#define HARD_CODED_BSDF DiffuseAndSpecularBRDF
 
 enum CallableProgram {
     CallableProgram_ReadModifiedNormalFromNormalMap = 0,
@@ -395,6 +396,18 @@ namespace shared {
                                           min(smoothness, 0.999f));
     }
 
+    template<>
+    CUDA_DEVICE_FUNCTION void setupBSDFBody<SimplePBR_BRDF>(
+        const MaterialData &matData, const float2 &texCoord, uint32_t* bodyData) {
+        float4 baseColor_opacity = tex2DLod<float4>(matData.asSimplePBR.baseColor_opacity, texCoord.x, texCoord.y, 0.0f);
+        float4 occlusion_roughness_metallic = tex2DLod<float4>(matData.asSimplePBR.occlusion_roughness_metallic, texCoord.x, texCoord.y, 0.0f);
+        float3 baseColor = make_float3(baseColor_opacity);
+        float smoothness = min(1.0f - occlusion_roughness_metallic.y, 0.999f);
+        float metallic = occlusion_roughness_metallic.z;
+        auto &bsdfBody = *reinterpret_cast<SimplePBR_BRDF*>(bodyData);
+        bsdfBody = SimplePBR_BRDF(baseColor, 0.5f, smoothness, metallic);
+    }
+
 
 
     struct BSDF {
@@ -411,14 +424,7 @@ namespace shared {
 
         CUDA_DEVICE_FUNCTION void setup(const MaterialData &matData, const float2 &texCoord) {
 #if defined(USE_HARD_CODED_BSDF_FUNCTIONS)
-            setupBSDFBody<DiffuseAndSpecularBRDF>(matData, texCoord, m_data);
-            //float4 baseColor_opacity = tex2DLod<float4>(matData.asSimplePBR.baseColor_opacity, texCoord.x, texCoord.y, 0.0f);
-            //float4 occlusion_roughness_metallic = tex2DLod<float4>(matData.asSimplePBR.occlusion_roughness_metallic, texCoord.x, texCoord.y, 0.0f);
-            //float3 baseColor = make_float3(baseColor_opacity);
-            //float smoothness = min(1.0f - occlusion_roughness_metallic.y, 0.999f);
-            //float metallic = occlusion_roughness_metallic.z;
-            //auto &bsdfBody = *reinterpret_cast<DiffuseAndSpecularBRDF*>(m_data);
-            //bsdfBody = DiffuseAndSpecularBRDF(baseColor, 0.5f, smoothness, metallic);
+            setupBSDFBody<HARD_CODED_BSDF>(matData, texCoord, m_data);
 #else
             m_sampleThroughput = matData.bsdfSampleThroughput;
             m_evaluate = matData.bsdfEvaluate;
@@ -430,7 +436,7 @@ namespace shared {
         CUDA_DEVICE_FUNCTION float3 sampleThroughput(const float3 &vGiven, float uDir0, float uDir1,
                                                      float3* vSampled, float* dirPDensity) const {
 #if defined(USE_HARD_CODED_BSDF_FUNCTIONS)
-            auto &bsdf = *reinterpret_cast<const DiffuseAndSpecularBRDF*>(m_data);
+            auto &bsdf = *reinterpret_cast<const HARD_CODED_BSDF*>(m_data);
             return bsdf.sampleThroughput(vGiven, uDir0, uDir1, vSampled, dirPDensity);
 #else
             return m_sampleThroughput(m_data, vGiven, uDir0, uDir1, vSampled, dirPDensity);
@@ -438,7 +444,7 @@ namespace shared {
         }
         CUDA_DEVICE_FUNCTION float3 evaluate(const float3 &vGiven, const float3 &vSampled) const {
 #if defined(USE_HARD_CODED_BSDF_FUNCTIONS)
-            auto &bsdf = *reinterpret_cast<const DiffuseAndSpecularBRDF*>(m_data);
+            auto &bsdf = *reinterpret_cast<const HARD_CODED_BSDF*>(m_data);
             return bsdf.evaluate(vGiven, vSampled);
 #else
             return m_evaluate(m_data, vGiven, vSampled);
@@ -446,7 +452,7 @@ namespace shared {
         }
         CUDA_DEVICE_FUNCTION float evaluatePDF(const float3 &vGiven, const float3 &vSampled) const {
 #if defined(USE_HARD_CODED_BSDF_FUNCTIONS)
-            auto &bsdf = *reinterpret_cast<const DiffuseAndSpecularBRDF*>(m_data);
+            auto &bsdf = *reinterpret_cast<const HARD_CODED_BSDF*>(m_data);
             return bsdf.evaluatePDF(vGiven, vSampled);
 #else
             return m_evaluatePDF(m_data, vGiven, vSampled);
@@ -454,7 +460,7 @@ namespace shared {
         }
         CUDA_DEVICE_FUNCTION float3 evaluateDHReflectanceEstimate(const float3 &vGiven) const {
 #if defined(USE_HARD_CODED_BSDF_FUNCTIONS)
-            auto &bsdf = *reinterpret_cast<const DiffuseAndSpecularBRDF*>(m_data);
+            auto &bsdf = *reinterpret_cast<const HARD_CODED_BSDF*>(m_data);
             return bsdf.evaluateDHReflectanceEstimate(vGiven);
 #else
             return m_evaluateDHReflectanceEstimate(m_data, vGiven);
@@ -469,47 +475,13 @@ namespace shared {
         const MaterialData &matData, const float2 &texCoord, uint32_t* bodyData) {\
         setupBSDFBody<BSDFType>(matData, texCoord, bodyData);\
     }\
-    CUDA_DECLARE_CALLABLE_PROGRAM_POINTER(setup ## BSDFType);\
-    RT_CALLABLE_PROGRAM float3 RT_DC_NAME(BSDFType ## _sampleThroughput)(\
-        const uint32_t* data, const float3 &vGiven, float uDir0, float uDir1,\
-        float3* vSampled, float* dirPDensity) {\
-        auto &bsdf = *reinterpret_cast<const BSDFType*>(data);\
-        return bsdf.sampleThroughput(vGiven, uDir0, uDir1, vSampled, dirPDensity);\
-    }\
-    CUDA_DECLARE_CALLABLE_PROGRAM_POINTER(BSDFType ## _sampleThroughput);\
-    RT_CALLABLE_PROGRAM float3 RT_DC_NAME(BSDFType ## _evaluate)(\
-        const uint32_t* data, const float3 &vGiven, const float3 &vSampled) {\
-        auto &bsdf = *reinterpret_cast<const BSDFType*>(data);\
-        return bsdf.evaluate(vGiven, vSampled);\
-    }\
-    CUDA_DECLARE_CALLABLE_PROGRAM_POINTER(BSDFType ## _evaluate);\
-    RT_CALLABLE_PROGRAM float RT_DC_NAME(BSDFType ## _evaluatePDF)(\
-        const uint32_t* data, const float3 &vGiven, const float3 &vSampled) {\
-        auto &bsdf = *reinterpret_cast<const BSDFType*>(data);\
-        return bsdf.evaluatePDF(vGiven, vSampled);\
-    }\
-    CUDA_DECLARE_CALLABLE_PROGRAM_POINTER(BSDFType ## _evaluatePDF);\
-    RT_CALLABLE_PROGRAM float3 RT_DC_NAME(BSDFType ## _evaluateDHReflectanceEstimate)(\
-        const uint32_t* data, const float3 &vGiven) {\
-        auto &bsdf = *reinterpret_cast<const BSDFType*>(data);\
-        return bsdf.evaluateDHReflectanceEstimate(vGiven);\
-    }\
-    CUDA_DECLARE_CALLABLE_PROGRAM_POINTER(BSDFType ## _evaluateDHReflectanceEstimate);
+    CUDA_DECLARE_CALLABLE_PROGRAM_POINTER(setup ## BSDFType)
 
     DEFINE_BSDF_CALLABLES(LambertBRDF);
     DEFINE_BSDF_CALLABLES(DiffuseAndSpecularBRDF);
+    DEFINE_BSDF_CALLABLES(SimplePBR_BRDF);
 
-    RT_CALLABLE_PROGRAM void RT_DC_NAME(setupSimplePBR_BRDF)(
-        const MaterialData &matData, const float2 &texCoord, uint32_t* bodyData) {
-        float4 baseColor_opacity = tex2DLod<float4>(matData.asSimplePBR.baseColor_opacity, texCoord.x, texCoord.y, 0.0f);
-        float4 occlusion_roughness_metallic = tex2DLod<float4>(matData.asSimplePBR.occlusion_roughness_metallic, texCoord.x, texCoord.y, 0.0f);
-        float3 baseColor = make_float3(baseColor_opacity);
-        float smoothness = min(1.0f - occlusion_roughness_metallic.y, 0.999f);
-        float metallic = occlusion_roughness_metallic.z;
-        auto &bsdfBody = *reinterpret_cast<DiffuseAndSpecularBRDF*>(bodyData);
-        bsdfBody = DiffuseAndSpecularBRDF(baseColor, 0.5f, smoothness, metallic);
-    }
-    CUDA_DECLARE_CALLABLE_PROGRAM_POINTER(setupSimplePBR_BRDF);
+#undef DEFINE_BSDF_CALLABLES
 
 
 

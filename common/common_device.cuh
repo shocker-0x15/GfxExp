@@ -374,20 +374,16 @@ class DiffuseAndSpecularBRDF {
         }
     };
 
+protected:
     float3 m_diffuseColor;
     float3 m_specularF0Color;
     float m_roughness;
 
 public:
+    CUDA_DEVICE_FUNCTION DiffuseAndSpecularBRDF() {}
     CUDA_DEVICE_FUNCTION DiffuseAndSpecularBRDF(const float3 &diffuseColor, const float3 &specularF0Color, float smoothness) {
         m_diffuseColor = diffuseColor;
         m_specularF0Color = specularF0Color;
-        m_roughness = 1 - smoothness;
-    }
-
-    CUDA_DEVICE_FUNCTION DiffuseAndSpecularBRDF(const float3 &baseColor, float reflectance, float smoothness, float metallic) {
-        m_diffuseColor = baseColor * (1 - metallic);
-        m_specularF0Color = make_float3(0.16f * pow2(reflectance) * (1 - metallic)) + baseColor * metallic;
         m_roughness = 1 - smoothness;
     }
 
@@ -612,3 +608,46 @@ public:
         return min(diffuseDHR + specularDHR, make_float3(1.0f));
     }
 };
+
+class SimplePBR_BRDF : public DiffuseAndSpecularBRDF {
+public:
+    CUDA_DEVICE_FUNCTION SimplePBR_BRDF(const float3 &baseColor, float reflectance, float smoothness, float metallic) {
+        m_diffuseColor = baseColor * (1 - metallic);
+        m_specularF0Color = make_float3(0.16f * pow2(reflectance) * (1 - metallic)) + baseColor * metallic;
+        m_roughness = 1 - smoothness;
+    }
+};
+
+
+
+#define DEFINE_BSDF_CALLABLES(BSDFType) \
+    RT_CALLABLE_PROGRAM float3 RT_DC_NAME(BSDFType ## _sampleThroughput)(\
+        const uint32_t* data, const float3 &vGiven, float uDir0, float uDir1,\
+        float3* vSampled, float* dirPDensity) {\
+        auto &bsdf = *reinterpret_cast<const BSDFType*>(data);\
+        return bsdf.sampleThroughput(vGiven, uDir0, uDir1, vSampled, dirPDensity);\
+    }\
+    CUDA_DECLARE_CALLABLE_PROGRAM_POINTER(BSDFType ## _sampleThroughput);\
+    RT_CALLABLE_PROGRAM float3 RT_DC_NAME(BSDFType ## _evaluate)(\
+        const uint32_t* data, const float3 &vGiven, const float3 &vSampled) {\
+        auto &bsdf = *reinterpret_cast<const BSDFType*>(data);\
+        return bsdf.evaluate(vGiven, vSampled);\
+    }\
+    CUDA_DECLARE_CALLABLE_PROGRAM_POINTER(BSDFType ## _evaluate);\
+    RT_CALLABLE_PROGRAM float RT_DC_NAME(BSDFType ## _evaluatePDF)(\
+        const uint32_t* data, const float3 &vGiven, const float3 &vSampled) {\
+        auto &bsdf = *reinterpret_cast<const BSDFType*>(data);\
+        return bsdf.evaluatePDF(vGiven, vSampled);\
+    }\
+    CUDA_DECLARE_CALLABLE_PROGRAM_POINTER(BSDFType ## _evaluatePDF);\
+    RT_CALLABLE_PROGRAM float3 RT_DC_NAME(BSDFType ## _evaluateDHReflectanceEstimate)(\
+        const uint32_t* data, const float3 &vGiven) {\
+        auto &bsdf = *reinterpret_cast<const BSDFType*>(data);\
+        return bsdf.evaluateDHReflectanceEstimate(vGiven);\
+    }\
+    CUDA_DECLARE_CALLABLE_PROGRAM_POINTER(BSDFType ## _evaluateDHReflectanceEstimate);
+
+DEFINE_BSDF_CALLABLES(LambertBRDF);
+DEFINE_BSDF_CALLABLES(DiffuseAndSpecularBRDF);
+
+#undef DEFINE_BSDF_CALLABLES

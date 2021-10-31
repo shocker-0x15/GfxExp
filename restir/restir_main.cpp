@@ -1872,6 +1872,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
             hpprintf("New sequence started.\n");
 
         perFramePlp.numAccumFrames = numAccumFrames;
+        perFramePlp.frameIndex = frameIndex;
         perFramePlp.instanceDataBuffer = gpuEnv.instDataBuffer[bufferIndex].getDevicePointer();
         perFramePlp.envLightPowerCoeff = std::pow(10.0f, log10EnvLightPowerCoeff);
         perFramePlp.envLightRotation = envLightRotation;
