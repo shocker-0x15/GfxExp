@@ -8,6 +8,12 @@ CUDA_DEVICE_KERNEL void performLightPreSampling() {
     //uint32_t subsetIndex = linearThreadIndex / lightSubsetSize;
     uint32_t indexInSubset = linearThreadIndex % lightSubsetSize;
     PCG32RNG rng = plp.s->lightPreSamplingRngs[linearThreadIndex];
+
+    // JP: 環境光テクスチャーが設定されている場合は一定の確率でサンプルする。
+    //     ダイバージェンスを抑えるために、サブセットの最初とそれ以外で環境光かそれ以外のサンプリングを分ける。
+    // EN: Sample an environmental light texture with a fixed probability if it is set.
+    //     Separate sampling from the environmental light and the others to
+    //     the beginning of the subset and the rest to avoid divergence.
     float probToSampleCurLightType = 1.0f;
     bool sampleEnvLight = false;
     if (plp.s->envLightTexture && plp.f->enableEnvLight) {
@@ -15,6 +21,7 @@ CUDA_DEVICE_KERNEL void performLightPreSampling() {
         probToSampleCurLightType = sampleEnvLight ?
             probToSampleEnvLight : (1 - probToSampleEnvLight);
     }
+
     PreSampledLight preSampledLight;
     sampleLight(
         rng.getFloat0cTo1o(), sampleEnvLight, rng.getFloat0cTo1o(), rng.getFloat0cTo1o(),
@@ -41,6 +48,8 @@ CUDA_DEVICE_KERNEL void performPerPixelRIS() {
     float2 texCoord = make_float2(gBuffer0.texCoord_x, gBuffer1.texCoord_y);
     uint32_t materialSlot = gBuffer2.materialSlot;
 
+    // JP: タイルごとに共通のライトサブセットを選択することでメモリアクセスのコヒーレンシーを改善する。
+    // EN: Select a common light subset for each tile to improve memory access coherency.
     PCG32RNG rng = plp.s->rngBuffer.read(launchIndex);
     CUDA_SHARED_MEM uint32_t sm_perTileLightSubsetIndex;
     if (threadIdx.x == 0 && threadIdx.y == 0)

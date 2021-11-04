@@ -41,16 +41,16 @@ struct GPUEnvironment {
     optixu::ProgramGroup shadingRayGenProgram;
 
     optixu::ProgramGroup traceShadowRaysRayGenProgram;
-    optixu::ProgramGroup traceShadowRaysWithTemporalReuseRayGenProgram;
-    optixu::ProgramGroup traceShadowRaysWithSpatialReuseRayGenProgram;
-    optixu::ProgramGroup traceShadowRaysWithSpatioTemporalReuseRayGenProgram;
+    optixu::ProgramGroup traceShadowRaysWithTemporalReuseBiasedRayGenProgram;
+    optixu::ProgramGroup traceShadowRaysWithSpatialReuseBiasedRayGenProgram;
+    optixu::ProgramGroup traceShadowRaysWithSpatioTemporalReuseBiasedRayGenProgram;
+    optixu::ProgramGroup traceShadowRaysWithTemporalReuseUnbiasedRayGenProgram;
+    optixu::ProgramGroup traceShadowRaysWithSpatialReuseUnbiasedRayGenProgram;
+    optixu::ProgramGroup traceShadowRaysWithSpatioTemporalReuseUnbiasedRayGenProgram;
     optixu::ProgramGroup shadeAndResampleRayGenProgram;
-    optixu::ProgramGroup shadeAndResampleWithTemporalReuseBiasedRayGenProgram;
-    optixu::ProgramGroup shadeAndResampleWithSpatialReuseBiasedRayGenProgram;
-    optixu::ProgramGroup shadeAndResampleWithSpatiotemporalReuseBiasedRayGenProgram;
-    optixu::ProgramGroup shadeAndResampleWithTemporalReuseUnbiasedRayGenProgram;
-    optixu::ProgramGroup shadeAndResampleWithSpatialReuseUnbiasedRayGenProgram;
-    optixu::ProgramGroup shadeAndResampleWithSpatiotemporalReuseUnbiasedRayGenProgram;
+    optixu::ProgramGroup shadeAndResampleWithTemporalReuseRayGenProgram;
+    optixu::ProgramGroup shadeAndResampleWithSpatialReuseRayGenProgram;
+    optixu::ProgramGroup shadeAndResampleWithSpatiotemporalReuseRayGenProgram;
 
     optixu::ProgramGroup visibilityHitProgramGroup;
     std::vector<optixu::ProgramGroup> callablePrograms;
@@ -138,26 +138,26 @@ struct GPUEnvironment {
 
         traceShadowRaysRayGenProgram = pipeline.createRayGenProgram(
             mainModule, RT_RG_NAME_STR("traceShadowRays"));
-        traceShadowRaysWithTemporalReuseRayGenProgram = pipeline.createRayGenProgram(
-            mainModule, RT_RG_NAME_STR("traceShadowRaysWithTemporalReuse"));
-        traceShadowRaysWithSpatialReuseRayGenProgram = pipeline.createRayGenProgram(
-            mainModule, RT_RG_NAME_STR("traceShadowRaysWithSpatialReuse"));
-        traceShadowRaysWithSpatioTemporalReuseRayGenProgram = pipeline.createRayGenProgram(
-            mainModule, RT_RG_NAME_STR("traceShadowRaysWithSpatioTemporalReuse"));
+        traceShadowRaysWithTemporalReuseBiasedRayGenProgram = pipeline.createRayGenProgram(
+            mainModule, RT_RG_NAME_STR("traceShadowRaysWithTemporalReuseBiased"));
+        traceShadowRaysWithSpatialReuseBiasedRayGenProgram = pipeline.createRayGenProgram(
+            mainModule, RT_RG_NAME_STR("traceShadowRaysWithSpatialReuseBiased"));
+        traceShadowRaysWithSpatioTemporalReuseBiasedRayGenProgram = pipeline.createRayGenProgram(
+            mainModule, RT_RG_NAME_STR("traceShadowRaysWithSpatioTemporalReuseBiased"));
+        traceShadowRaysWithTemporalReuseUnbiasedRayGenProgram = pipeline.createRayGenProgram(
+            mainModule, RT_RG_NAME_STR("traceShadowRaysWithTemporalReuseUnbiased"));
+        traceShadowRaysWithSpatialReuseUnbiasedRayGenProgram = pipeline.createRayGenProgram(
+            mainModule, RT_RG_NAME_STR("traceShadowRaysWithSpatialReuseUnbiased"));
+        traceShadowRaysWithSpatioTemporalReuseUnbiasedRayGenProgram = pipeline.createRayGenProgram(
+            mainModule, RT_RG_NAME_STR("traceShadowRaysWithSpatioTemporalReuseUnbiased"));
         shadeAndResampleRayGenProgram = pipeline.createRayGenProgram(
             mainModule, RT_RG_NAME_STR("shadeAndResample"));
-        shadeAndResampleWithTemporalReuseBiasedRayGenProgram = pipeline.createRayGenProgram(
-            mainModule, RT_RG_NAME_STR("shadeAndResampleWithTemporalReuseBiased"));
-        shadeAndResampleWithSpatialReuseBiasedRayGenProgram = pipeline.createRayGenProgram(
-            mainModule, RT_RG_NAME_STR("shadeAndResampleWithSpatialReuseBiased"));
-        shadeAndResampleWithSpatiotemporalReuseBiasedRayGenProgram = pipeline.createRayGenProgram(
-            mainModule, RT_RG_NAME_STR("shadeAndResampleWithSpatioTemporalReuseBiased"));
-        shadeAndResampleWithTemporalReuseUnbiasedRayGenProgram = pipeline.createRayGenProgram(
-            mainModule, RT_RG_NAME_STR("shadeAndResampleWithTemporalReuseUnbiased"));
-        shadeAndResampleWithSpatialReuseUnbiasedRayGenProgram = pipeline.createRayGenProgram(
-            mainModule, RT_RG_NAME_STR("shadeAndResampleWithSpatialReuseUnbiased"));
-        shadeAndResampleWithSpatiotemporalReuseUnbiasedRayGenProgram = pipeline.createRayGenProgram(
-            mainModule, RT_RG_NAME_STR("shadeAndResampleWithSpatioTemporalReuseUnbiased"));
+        shadeAndResampleWithTemporalReuseRayGenProgram = pipeline.createRayGenProgram(
+            mainModule, RT_RG_NAME_STR("shadeAndResampleWithTemporalReuse"));
+        shadeAndResampleWithSpatialReuseRayGenProgram = pipeline.createRayGenProgram(
+            mainModule, RT_RG_NAME_STR("shadeAndResampleWithSpatialReuse"));
+        shadeAndResampleWithSpatiotemporalReuseRayGenProgram = pipeline.createRayGenProgram(
+            mainModule, RT_RG_NAME_STR("shadeAndResampleWithSpatioTemporalReuse"));
 
         visibilityHitProgramGroup = pipeline.createHitProgramGroupForBuiltinIS(
             OPTIX_PRIMITIVE_TYPE_TRIANGLE,
@@ -262,16 +262,16 @@ struct GPUEnvironment {
             callablePrograms[i].destroy();
         visibilityHitProgramGroup.destroy();
 
-        shadeAndResampleWithSpatiotemporalReuseUnbiasedRayGenProgram.destroy();
-        shadeAndResampleWithSpatialReuseUnbiasedRayGenProgram.destroy();
-        shadeAndResampleWithTemporalReuseUnbiasedRayGenProgram.destroy();
-        shadeAndResampleWithSpatiotemporalReuseBiasedRayGenProgram.destroy();
-        shadeAndResampleWithSpatialReuseBiasedRayGenProgram.destroy();
-        shadeAndResampleWithTemporalReuseBiasedRayGenProgram.destroy();
+        shadeAndResampleWithSpatiotemporalReuseRayGenProgram.destroy();
+        shadeAndResampleWithSpatialReuseRayGenProgram.destroy();
+        shadeAndResampleWithTemporalReuseRayGenProgram.destroy();
         shadeAndResampleRayGenProgram.destroy();
-        traceShadowRaysWithSpatioTemporalReuseRayGenProgram.destroy();
-        traceShadowRaysWithSpatialReuseRayGenProgram.destroy();
-        traceShadowRaysWithTemporalReuseRayGenProgram.destroy();
+        traceShadowRaysWithSpatioTemporalReuseUnbiasedRayGenProgram.destroy();
+        traceShadowRaysWithSpatialReuseUnbiasedRayGenProgram.destroy();
+        traceShadowRaysWithTemporalReuseUnbiasedRayGenProgram.destroy();
+        traceShadowRaysWithSpatioTemporalReuseBiasedRayGenProgram.destroy();
+        traceShadowRaysWithSpatialReuseBiasedRayGenProgram.destroy();
+        traceShadowRaysWithTemporalReuseBiasedRayGenProgram.destroy();
         traceShadowRaysRayGenProgram.destroy();
 
         shadingRayGenProgram.destroy();

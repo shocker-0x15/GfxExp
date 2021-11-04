@@ -2,7 +2,10 @@
 
 #include "../common/common_shared.h"
 
-// To see performance without dynamic functions.
+// JP: Callable Programや関数ポインターによる動的な関数呼び出しを
+//     無くした場合の性能を見たい場合にこのマクロを有効化する。
+// EN: Enable this switch when you want to see performance
+//     without dynamic function calls by callable programs or function pointers.
 //#define USE_HARD_CODED_BSDF_FUNCTIONS
 #define HARD_CODED_BSDF DiffuseAndSpecularBRDF
 

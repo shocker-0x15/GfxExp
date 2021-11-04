@@ -1585,6 +1585,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
         //if (!tempInit) {
         //    rearchRestirBiasedConfigs.enableTemporalReuse = false;
         //    rearchRestirBiasedConfigs.enableSpatialReuse = false;
+        //    rearchRestirUnbiasedConfigs.enableTemporalReuse = false;
+        //    rearchRestirUnbiasedConfigs.enableSpatialReuse = false;
         //    tempInit = true;
         //}
         static Renderer curRenderer = Renderer::RearchitectedReSTIRBiased;
@@ -1977,33 +1979,49 @@ int32_t main(int32_t argc, const char* argv[]) try {
         else {
             constexpr uint32_t numPreSampledLights = shared::numLightSubsets * shared::lightSubsetSize;
 
-            // JP:
-            // EN:
+            // JP: あらかじめライトを複数回サンプリングしたサブセットを複数個作成しておく。
+            //     後のカーネルでPer-pixelのサンプリングを行う際には、あるサブセット中からのサンプリングに
+            //     限定されることでメモリアクセスのコヒーレンシーが向上する。
+            // EN: Create multiple light subsets each of which samples lights multiple times.
+            //     The subsequent kernel performs per-pixel sampling limited to a subset to improve
+            //     memory access coherency.
             curGPUTimer.performPreSamplingLights.start(cuStream);
             gpuEnv.kernelPerformLightPreSampling(
                 cuStream, gpuEnv.kernelPerformLightPreSampling.calcGridDim(numPreSampledLights));
             curGPUTimer.performPreSamplingLights.stop(cuStream);
 
-            // JP:
-            // EN:
+            // JP: Per-pixelでライトのリサンプリングを行う。
+            // EN: Perform per-pixel light resampling.
             curGPUTimer.performPerPixelRIS.start(cuStream);
             gpuEnv.kernelPerformPerPixelRIS(
                 cuStream, gpuEnv.kernelPerformPerPixelRIS.calcGridDim(renderTargetSizeX, renderTargetSizeY));
             curGPUTimer.performPerPixelRIS.stop(cuStream);
 
-            // JP:
-            // EN:
+            // JP: 新たなサンプル、Temporalサンプル、SpatiotemporalサンプルそれぞれのVisibilityを計算する。
+            // EN: Compute visibility for the new sample, a temporal sample, and a spatiotemporal sample.
             curGPUTimer.traceShadowRays.start(cuStream);
             optixu::ProgramGroup traceShadowRaysRayGenProgram;
             if (!newSequence) {
-                if (curRendererConfigs->enableTemporalReuse && curRendererConfigs->enableSpatialReuse)
-                    traceShadowRaysRayGenProgram = gpuEnv.traceShadowRaysWithSpatioTemporalReuseRayGenProgram;
-                else if (curRendererConfigs->enableTemporalReuse)
-                    traceShadowRaysRayGenProgram = gpuEnv.traceShadowRaysWithTemporalReuseRayGenProgram;
-                else if (curRendererConfigs->enableSpatialReuse)
-                    traceShadowRaysRayGenProgram = gpuEnv.traceShadowRaysWithSpatialReuseRayGenProgram;
-                else
-                    traceShadowRaysRayGenProgram = gpuEnv.traceShadowRaysRayGenProgram;
+                if (curRenderer == Renderer::RearchitectedReSTIRBiased) {
+                    if (curRendererConfigs->enableTemporalReuse && curRendererConfigs->enableSpatialReuse)
+                        traceShadowRaysRayGenProgram = gpuEnv.traceShadowRaysWithSpatioTemporalReuseBiasedRayGenProgram;
+                    else if (curRendererConfigs->enableTemporalReuse)
+                        traceShadowRaysRayGenProgram = gpuEnv.traceShadowRaysWithTemporalReuseBiasedRayGenProgram;
+                    else if (curRendererConfigs->enableSpatialReuse)
+                        traceShadowRaysRayGenProgram = gpuEnv.traceShadowRaysWithSpatialReuseBiasedRayGenProgram;
+                    else
+                        traceShadowRaysRayGenProgram = gpuEnv.traceShadowRaysRayGenProgram;
+                }
+                else {
+                    if (curRendererConfigs->enableTemporalReuse && curRendererConfigs->enableSpatialReuse)
+                        traceShadowRaysRayGenProgram = gpuEnv.traceShadowRaysWithSpatioTemporalReuseUnbiasedRayGenProgram;
+                    else if (curRendererConfigs->enableTemporalReuse)
+                        traceShadowRaysRayGenProgram = gpuEnv.traceShadowRaysWithTemporalReuseUnbiasedRayGenProgram;
+                    else if (curRendererConfigs->enableSpatialReuse)
+                        traceShadowRaysRayGenProgram = gpuEnv.traceShadowRaysWithSpatialReuseUnbiasedRayGenProgram;
+                    else
+                        traceShadowRaysRayGenProgram = gpuEnv.traceShadowRaysRayGenProgram;
+                }
             }
             else {
                 traceShadowRaysRayGenProgram = gpuEnv.traceShadowRaysRayGenProgram;
@@ -2012,31 +2030,21 @@ int32_t main(int32_t argc, const char* argv[]) try {
             gpuEnv.pipeline.launch(cuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);
             curGPUTimer.traceShadowRays.stop(cuStream);
 
-            // JP:
-            // EN:
+            // JP: それぞれのサンプルに対してシェーディングを実行、
+            //     リサンプリングも行い次のフレームで再利用されるサンプルを選ぶ。
+            // EN: Perform shading to every sample, then resample them to select a sample
+            //     reused in the next frame.
             curGPUTimer.shadeAndResample.start(cuStream);
             optixu::ProgramGroup shadeRayGenProgram;
             if (!newSequence) {
-                if (curRenderer == Renderer::RearchitectedReSTIRBiased) {
-                    if (curRendererConfigs->enableTemporalReuse && curRendererConfigs->enableSpatialReuse)
-                        shadeRayGenProgram = gpuEnv.shadeAndResampleWithSpatiotemporalReuseBiasedRayGenProgram;
-                    else if (curRendererConfigs->enableTemporalReuse)
-                        shadeRayGenProgram = gpuEnv.shadeAndResampleWithTemporalReuseBiasedRayGenProgram;
-                    else if (curRendererConfigs->enableSpatialReuse)
-                        shadeRayGenProgram = gpuEnv.shadeAndResampleWithSpatialReuseBiasedRayGenProgram;
-                    else
-                        shadeRayGenProgram = gpuEnv.shadeAndResampleRayGenProgram;
-                }
-                else {
-                    if (curRendererConfigs->enableTemporalReuse && curRendererConfigs->enableSpatialReuse)
-                        shadeRayGenProgram = gpuEnv.shadeAndResampleWithSpatiotemporalReuseUnbiasedRayGenProgram;
-                    else if (curRendererConfigs->enableTemporalReuse)
-                        shadeRayGenProgram = gpuEnv.shadeAndResampleWithTemporalReuseUnbiasedRayGenProgram;
-                    else if (curRendererConfigs->enableSpatialReuse)
-                        shadeRayGenProgram = gpuEnv.shadeAndResampleWithSpatialReuseUnbiasedRayGenProgram;
-                    else
-                        shadeRayGenProgram = gpuEnv.shadeAndResampleRayGenProgram;
-                }
+                if (curRendererConfigs->enableTemporalReuse && curRendererConfigs->enableSpatialReuse)
+                    shadeRayGenProgram = gpuEnv.shadeAndResampleWithSpatiotemporalReuseRayGenProgram;
+                else if (curRendererConfigs->enableTemporalReuse)
+                    shadeRayGenProgram = gpuEnv.shadeAndResampleWithTemporalReuseRayGenProgram;
+                else if (curRendererConfigs->enableSpatialReuse)
+                    shadeRayGenProgram = gpuEnv.shadeAndResampleWithSpatialReuseRayGenProgram;
+                else
+                    shadeRayGenProgram = gpuEnv.shadeAndResampleRayGenProgram;
             }
             else {
                 shadeRayGenProgram = gpuEnv.shadeAndResampleRayGenProgram;
