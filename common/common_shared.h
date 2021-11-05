@@ -1692,4 +1692,14 @@ namespace shared {
 
     using ReadModifiedNormal = DynamicFunction<
         float3(CUtexObject texture, const float2 &texCoord, uint32_t texDim)>;
+
+    using BSDFSampleThroughput = DynamicFunction<
+        float3(const uint32_t* data, const float3 &vGiven, float uDir0, float uDir1,
+               float3* vSampled, float* dirPDensity)>;
+    using BSDFEvaluate = DynamicFunction<
+        float3(const uint32_t* data, const float3 &vGiven, const float3 &vSampled)>;
+    using BSDFEvaluatePDF = DynamicFunction<
+        float(const uint32_t* data, const float3 &vGiven, const float3 &vSampled)>;
+    using BSDFEvaluateDHReflectanceEstimate = DynamicFunction<
+        float3(const uint32_t* data, const float3 &vGiven)>;
 }

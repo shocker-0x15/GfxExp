@@ -548,6 +548,9 @@ CUDA_DEVICE_FUNCTION void pathTrace_closestHit_generic() {
     float3 geometricNormalInWorld;
     float2 texCoord;
     float hypAreaPDensity;
+    if (!useMultipleImportanceSampling)
+        (void)hypAreaPDensity;
+
     {
         const Triangle &tri = geomInst.triangleBuffer[hp.primIndex];
         const Vertex &v0 = geomInst.vertexBuffer[tri.index0];

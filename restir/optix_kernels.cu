@@ -391,7 +391,11 @@ CUDA_DEVICE_FUNCTION void performInitialAndTemporalRIS() {
         uint32_t prevBufIdx = (curBufIdx + 1) % 2;
         uint32_t prevResIndex = (curResIndex + 1) % 2;
 
-        bool neighborIsSelected = false;
+        bool neighborIsSelected;
+        if constexpr (useUnbiasedEstimator)
+            neighborIsSelected = false;
+        else
+            (void)neighborIsSelected;
         uint32_t selfStreamLength = reservoir.getStreamLength();
         if (recPDFEstimate == 0.0f)
             reservoir.initialize();
@@ -431,8 +435,6 @@ CUDA_DEVICE_FUNCTION void performInitialAndTemporalRIS() {
                 selectedTargetDensity = targetDensity;
                 if constexpr (useUnbiasedEstimator)
                     neighborIsSelected = true;
-                else
-                    (void)neighborIsSelected;
             }
 
             combinedStreamLength += nbStreamLength;
@@ -595,10 +597,14 @@ CUDA_DEVICE_FUNCTION void performSpatialRIS() {
     uint32_t srcResIndex = plp.currentReservoirIndex;
     uint32_t dstResIndex = (srcResIndex + 1) % 2;
 
-    float selectedTargetDensity = 0.0f;
-    int32_t selectedNeighborIndex = -1;
     Reservoir<LightSample> combinedReservoir;
     combinedReservoir.initialize();
+    float selectedTargetDensity = 0.0f;
+    int32_t selectedNeighborIndex;
+    if constexpr (useUnbiasedEstimator)
+        selectedNeighborIndex = -1;
+    else
+        (void)selectedNeighborIndex;
 
     // JP: まず現在のピクセルのReservoirを結合する。
     // EN: First combine the reservoir for the current pixel.
@@ -656,8 +662,6 @@ CUDA_DEVICE_FUNCTION void performSpatialRIS() {
                 selectedTargetDensity = targetDensity;
                 if constexpr (useUnbiasedEstimator)
                     selectedNeighborIndex = nIdx;
-                else
-                    (void)selectedNeighborIndex;
             }
 
             combinedStreamLength += nbStreamLength;
@@ -905,12 +909,20 @@ CUDA_DEVICE_FUNCTION void traceShadowRays() {
     int2 launchIndex = make_int2(optixGetLaunchIndex().x, optixGetLaunchIndex().y);
 
     uint32_t curBufIdx = plp.f->bufferIndex;
-    uint32_t prevBufIdx = (curBufIdx + 1) % 2;
     uint32_t curResIndex = plp.currentReservoirIndex;
-    uint32_t prevResIndex = (curResIndex + 1) % 2;
+    uint32_t prevBufIdx;
+    uint32_t prevResIndex;
     GBuffer0 gBuffer0 = plp.s->GBuffer0[curBufIdx].read(launchIndex);
     GBuffer1 gBuffer1 = plp.s->GBuffer1[curBufIdx].read(launchIndex);
     GBuffer2 gBuffer2 = plp.s->GBuffer2[curBufIdx].read(launchIndex);
+    if constexpr (withTemporalRIS || withSpatialRIS) {
+        prevBufIdx = (curBufIdx + 1) % 2;
+        prevResIndex = (curResIndex + 1) % 2;
+    }
+    else {
+        (void)prevBufIdx;
+        (void)prevResIndex;
+    }
 
     float3 positionInWorld = gBuffer0.positionInWorld;
     float3 shadingNormalInWorld = gBuffer1.normalInWorld;
@@ -949,7 +961,7 @@ CUDA_DEVICE_FUNCTION void traceShadowRays() {
         //     leads to increased bias. Reject such a pixel.
         sampleVis.hasValidTemporalSample = testNeighbor<true>(prevBufIdx, tNbCoord, dist, shadingNormalInWorld);
         if (sampleVis.hasValidTemporalSample) {
-            if (plp.f->reuseVisibilityForTemporal) {
+            if (plp.f->reuseVisibilityForTemporal/* && !useUnbiasedEstimator*/) {
                 SampleVisibility prevSampleVis = plp.s->sampleVisibilityBuffer[prevBufIdx].read(tNbCoord);
                 sampleVis.temporalSample = prevSampleVis.selectedSample;
             }
@@ -961,6 +973,9 @@ CUDA_DEVICE_FUNCTION void traceShadowRays() {
                 }
             }
         }
+    }
+    else {
+        (void)tNbCoord;
     }
 
     // Spatiotemporal Sample
@@ -994,8 +1009,7 @@ CUDA_DEVICE_FUNCTION void traceShadowRays() {
         sampleVis.hasValidSpatiotemporalSample &= stNbCoord.x != launchIndex.x || stNbCoord.y != launchIndex.y;
         if (sampleVis.hasValidSpatiotemporalSample) {
             bool reused = false;
-            if (plp.f->reuseVisibilityForSpatiotemporal &&
-                !plp.f->useUnbiasedEstimator) {
+            if (plp.f->reuseVisibilityForSpatiotemporal && !useUnbiasedEstimator) {
                 float threshold2 = pow2(plp.f->radiusThresholdForSpatialVisReuse);
                 float dist2 = pow2(deltaX) + pow2(deltaY);
                 reused = dist2 < threshold2;
@@ -1012,6 +1026,9 @@ CUDA_DEVICE_FUNCTION void traceShadowRays() {
                 }
             }
         }
+    }
+    else {
+        (void)stNbCoord;
     }
 
     if constexpr (useUnbiasedEstimator) {
@@ -1034,6 +1051,9 @@ CUDA_DEVICE_FUNCTION void traceShadowRays() {
                 sampleVis.newSampleOnTemporal = evaluateVisibility(tNbPositionInWorld, reservoir.getSample());
             }
         }
+        else {
+            (void)tNbPositionInWorld;
+        }
         float3 stNbPositionInWorld;
         if constexpr (withSpatialRIS) {
             if (sampleVis.hasValidSpatiotemporalSample) {
@@ -1051,6 +1071,9 @@ CUDA_DEVICE_FUNCTION void traceShadowRays() {
 
                 sampleVis.newSampleOnSpatiotemporal = evaluateVisibility(stNbPositionInWorld, reservoir.getSample());
             }
+        }
+        else {
+            (void)stNbPositionInWorld;
         }
 
         if constexpr (withTemporalRIS) {
@@ -1125,21 +1148,24 @@ CUDA_DEVICE_FUNCTION float computeMISWeight(
     const int2 &launchIndex, uint32_t prevBufIdx, uint32_t prevResIndex,
     uint32_t maxPrevStreamLength, const SampleVisibility &sampleVis,
     uint32_t selfStreamLength, const float3 &positionInWorld, const float3 &vOutLocal,
-    const ReferenceFrame &shadingFrame, const BSDF &bsdf, const float2 &motionVector,
+    const ReferenceFrame &shadingFrame, const BSDF &bsdf,
+    const int2 &tNbCoord, const int2 &stNbCoord,
     uint32_t streamLength, const LightSample &lightSample, float sampleTargetDensity) {
     float numMisWeight = sampleTargetDensity;
     float denomMisWeight = numMisWeight * streamLength;
 
     if constexpr (sampleType != SampleType::New) {
+        // JP: 与えられたサンプルを現在のシェーディング点で得る確率密度を計算する。
+        // EN: Compute a probability density to get the given sample at the current shading point.
         float3 cont = performDirectLighting<false>(
             positionInWorld, vOutLocal, shadingFrame, bsdf, lightSample);
-
         float targetDensity = convertToWeight(cont);
         if (plp.f->useUnbiasedEstimator) {
             targetDensity *= sampleType == SampleType::Temporal ?
                 sampleVis.temporalSampleOnCurrent :
                 sampleVis.spatiotemporalSampleOnCurrent;
         }
+
         if constexpr (useMIS_RIS) {
             denomMisWeight += targetDensity * selfStreamLength;
         }
@@ -1151,12 +1177,9 @@ CUDA_DEVICE_FUNCTION float computeMISWeight(
 
     if constexpr (sampleType != SampleType::Temporal && withTemporalRIS) {
         if (sampleVis.hasValidTemporalSample) {
-            int2 nbCoord = make_int2(launchIndex.x + 0.5f - motionVector.x,
-                                     launchIndex.y + 0.5f - motionVector.y);
-
-            GBuffer0 nbGBuffer0 = plp.s->GBuffer0[prevBufIdx].read(nbCoord);
-            GBuffer1 nbGBuffer1 = plp.s->GBuffer1[prevBufIdx].read(nbCoord);
-            GBuffer2 nbGBuffer2 = plp.s->GBuffer2[prevBufIdx].read(nbCoord);
+            GBuffer0 nbGBuffer0 = plp.s->GBuffer0[prevBufIdx].read(tNbCoord);
+            GBuffer1 nbGBuffer1 = plp.s->GBuffer1[prevBufIdx].read(tNbCoord);
+            GBuffer2 nbGBuffer2 = plp.s->GBuffer2[prevBufIdx].read(tNbCoord);
             float3 nbPositionInWorld = nbGBuffer0.positionInWorld;
             float3 nbShadingNormalInWorld = nbGBuffer1.normalInWorld;
             float2 nbTexCoord = make_float2(nbGBuffer0.texCoord_x, nbGBuffer1.texCoord_y);
@@ -1177,8 +1200,9 @@ CUDA_DEVICE_FUNCTION float computeMISWeight(
             nbVOut /= nbDist;
             float3 nbVOutLocal = nbShadingFrame.toLocal(nbVOut);
 
-            const Reservoir<LightSample> /*&*/neighbor = plp.s->reservoirBuffer[prevResIndex][nbCoord];
-
+            // JP: 与えられたサンプルを前のフレームで対応するシェーディング点で得る確率密度を計算する。
+            // EN: Compute a probability density to get the given sample at the corresponding shading point
+            //     in the previous frame.
             float3 cont = performDirectLighting<false>(
                 nbPositionInWorld, nbVOutLocal, nbShadingFrame, nbBsdf, lightSample);
             float nbTargetDensity = convertToWeight(cont);
@@ -1187,6 +1211,8 @@ CUDA_DEVICE_FUNCTION float computeMISWeight(
                     sampleVis.newSampleOnTemporal :
                     sampleVis.spatiotemporalSampleOnTemporal;
             }
+
+            const Reservoir<LightSample> /*&*/neighbor = plp.s->reservoirBuffer[prevResIndex][tNbCoord];
             uint32_t nbStreamLength = min(neighbor.getStreamLength(), maxPrevStreamLength);
             if constexpr (useMIS_RIS) {
                 denomMisWeight += nbTargetDensity * nbStreamLength;
@@ -1200,29 +1226,9 @@ CUDA_DEVICE_FUNCTION float computeMISWeight(
 
     if constexpr (sampleType != SampleType::Spatiotemporal && withSpatialRIS) {
         if (sampleVis.hasValidSpatiotemporalSample) {
-            // JP: 周辺ピクセルの座標をランダムに決定。
-            // EN: Randomly determine the coordinates of a neighboring pixel.
-            float radius = plp.f->spatialNeighborRadius;
-            float deltaX, deltaY;
-            if (plp.f->useLowDiscrepancyNeighbors) {
-                uint32_t deltaIndex = plp.spatialNeighborBaseIndex +
-                    5 * launchIndex.x + 7 * launchIndex.y;
-                float2 delta = plp.s->spatialNeighborDeltas[deltaIndex % 1024];
-                deltaX = radius * delta.x;
-                deltaY = radius * delta.y;
-            }
-            else {
-                //radius *= std::sqrt(rng.getFloat0cTo1o());
-                //float angle = 2 * Pi * rng.getFloat0cTo1o();
-                //deltaX = radius * std::cos(angle);
-                //deltaY = radius * std::sin(angle);
-            }
-            int2 nbCoord = make_int2(launchIndex.x + 0.5f + deltaX,
-                                     launchIndex.y + 0.5f + deltaY);
-
-            GBuffer0 nbGBuffer0 = plp.s->GBuffer0[prevBufIdx].read(nbCoord);
-            GBuffer1 nbGBuffer1 = plp.s->GBuffer1[prevBufIdx].read(nbCoord);
-            GBuffer2 nbGBuffer2 = plp.s->GBuffer2[prevBufIdx].read(nbCoord);
+            GBuffer0 nbGBuffer0 = plp.s->GBuffer0[prevBufIdx].read(stNbCoord);
+            GBuffer1 nbGBuffer1 = plp.s->GBuffer1[prevBufIdx].read(stNbCoord);
+            GBuffer2 nbGBuffer2 = plp.s->GBuffer2[prevBufIdx].read(stNbCoord);
             float3 nbPositionInWorld = nbGBuffer0.positionInWorld;
             float3 nbShadingNormalInWorld = nbGBuffer1.normalInWorld;
             float2 nbTexCoord = make_float2(nbGBuffer0.texCoord_x, nbGBuffer1.texCoord_y);
@@ -1243,8 +1249,9 @@ CUDA_DEVICE_FUNCTION float computeMISWeight(
             nbVOut /= nbDist;
             float3 nbVOutLocal = nbShadingFrame.toLocal(nbVOut);
 
-            const Reservoir<LightSample> /*&*/neighbor = plp.s->reservoirBuffer[prevResIndex][nbCoord];
-
+            // JP: 与えられたサンプルを近傍のシェーディング点(前フレーム)で得る確率密度を計算する。
+            // EN: Compute a probability density to get the given sample at a shading point on the neighbor
+            //     (in the previous frame).
             float3 cont = performDirectLighting<false>(
                 nbPositionInWorld, nbVOutLocal, nbShadingFrame, nbBsdf, lightSample);
             float nbTargetDensity = convertToWeight(cont);
@@ -1253,6 +1260,8 @@ CUDA_DEVICE_FUNCTION float computeMISWeight(
                     sampleVis.newSampleOnSpatiotemporal :
                     sampleVis.temporalSampleOnSpatiotemporal;
             }
+
+            const Reservoir<LightSample> /*&*/neighbor = plp.s->reservoirBuffer[prevResIndex][stNbCoord];
             uint32_t nbStreamLength = min(neighbor.getStreamLength(), maxPrevStreamLength);
             if constexpr (useMIS_RIS) {
                 denomMisWeight += nbTargetDensity * nbStreamLength;
@@ -1272,12 +1281,20 @@ CUDA_DEVICE_FUNCTION void shadeAndResample() {
     int2 launchIndex = make_int2(optixGetLaunchIndex().x, optixGetLaunchIndex().y);
 
     uint32_t curBufIdx = plp.f->bufferIndex;
-    uint32_t prevBufIdx = (curBufIdx + 1) % 2;
+    uint32_t prevBufIdx;
     uint32_t curResIndex = plp.currentReservoirIndex;
-    uint32_t prevResIndex = (curResIndex + 1) % 2;
+    uint32_t prevResIndex;
     GBuffer0 gBuffer0 = plp.s->GBuffer0[curBufIdx].read(launchIndex);
     GBuffer1 gBuffer1 = plp.s->GBuffer1[curBufIdx].read(launchIndex);
     GBuffer2 gBuffer2 = plp.s->GBuffer2[curBufIdx].read(launchIndex);
+    if constexpr (withTemporalRIS || withSpatialRIS) {
+        prevBufIdx = (curBufIdx + 1) % 2;
+        prevResIndex = (curResIndex + 1) % 2;
+    }
+    else {
+        (void)prevBufIdx;
+        (void)prevResIndex;
+    }
 
     float2 texCoord = make_float2(gBuffer0.texCoord_x, gBuffer1.texCoord_y);
     uint32_t materialSlot = gBuffer2.materialSlot;
@@ -1289,7 +1306,41 @@ CUDA_DEVICE_FUNCTION void shadeAndResample() {
         float3 positionInWorld = gBuffer0.positionInWorld;
         float3 shadingNormalInWorld = gBuffer1.normalInWorld;
         float2 texCoord = make_float2(gBuffer0.texCoord_x, gBuffer1.texCoord_y);
-        float2 motionVector = gBuffer2.motionVector;
+
+        int2 tNbCoord;
+        if constexpr (withTemporalRIS) {
+            float2 motionVector = gBuffer2.motionVector;
+            tNbCoord = make_int2(launchIndex.x + 0.5f - motionVector.x,
+                                 launchIndex.y + 0.5f - motionVector.y);
+        }
+        else {
+            (void)tNbCoord;
+        }
+        int2 stNbCoord;
+        if constexpr (withSpatialRIS) {
+            // JP: 周辺ピクセルの座標をランダムに決定。
+            // EN: Randomly determine the coordinates of a neighboring pixel.
+            float radius = plp.f->spatialNeighborRadius;
+            float deltaX, deltaY;
+            if (plp.f->useLowDiscrepancyNeighbors) {
+                uint32_t deltaIndex = plp.spatialNeighborBaseIndex +
+                    5 * launchIndex.x + 7 * launchIndex.y;
+                float2 delta = plp.s->spatialNeighborDeltas[deltaIndex % 1024];
+                deltaX = radius * delta.x;
+                deltaY = radius * delta.y;
+            }
+            else {
+                //radius *= std::sqrt(rng.getFloat0cTo1o());
+                //float angle = 2 * Pi * rng.getFloat0cTo1o();
+                //deltaX = radius * std::cos(angle);
+                //deltaY = radius * std::sin(angle);
+            }
+            stNbCoord = make_int2(launchIndex.x + 0.5f + deltaX,
+                                  launchIndex.y + 0.5f + deltaY);
+        }
+        else {
+            (void)stNbCoord;
+        }
 
         const MaterialData &mat = plp.s->materialDataBuffer[materialSlot];
 
@@ -1328,11 +1379,16 @@ CUDA_DEVICE_FUNCTION void shadeAndResample() {
         float3 directCont = make_float3(0.0f, 0.0f, 0.0f);
         float selectedMisWeight = 0.0f;
 
-        // New sample for the current pixel.
         const Reservoir<LightSample> /*&*/selfRes = plp.s->reservoirBuffer[curResIndex][launchIndex];
         const ReservoirInfo selfResInfo = plp.s->reservoirInfoBuffer[curResIndex].read(launchIndex);
         uint32_t selfStreamLength = selfRes.getStreamLength();
-        uint32_t maxPrevStreamLength = 20 * selfStreamLength;
+        uint32_t maxPrevStreamLength;
+        if constexpr (withTemporalRIS || withSpatialRIS)
+            maxPrevStreamLength = 20 * selfStreamLength;
+        else
+            (void)maxPrevStreamLength;
+
+        // New sample for the current pixel.
         {
             if (selfResInfo.recPDFEstimate > 0.0f && sampleVis.newSample) {
                 LightSample lightSample = selfRes.getSample();
@@ -1343,13 +1399,14 @@ CUDA_DEVICE_FUNCTION void shadeAndResample() {
                     misWeight = computeMISWeight<SampleType::New, withTemporalRIS, withSpatialRIS>(
                         launchIndex, prevBufIdx, prevResIndex,
                         maxPrevStreamLength, sampleVis,
-                        selfStreamLength, positionInWorld, vOutLocal, shadingFrame, bsdf, motionVector,
+                        selfStreamLength, positionInWorld, vOutLocal, shadingFrame, bsdf,
+                        tNbCoord, stNbCoord,
                         selfStreamLength, lightSample, selfResInfo.targetDensity);
                 else
                     misWeight = 1.0f / selfStreamLength;
                 selectedMisWeight = misWeight;
                 float contWeight = selfStreamLength * misWeight * selfResInfo.recPDFEstimate;
-                float3 rawDirectCont = /*sampleVis.newSample * */contWeight * cont;
+                float3 rawDirectCont = sampleVis.newSample * contWeight * cont;
                 float weight = selfRes.getSumWeights();
                 directCont += /*weight * */rawDirectCont;
                 combinedReservoir = selfRes;
@@ -1361,12 +1418,9 @@ CUDA_DEVICE_FUNCTION void shadeAndResample() {
 
         // Temporal Sample
         if constexpr (withTemporalRIS) {
-            float2 motionVector = gBuffer2.motionVector;
-            int2 nbCoord = make_int2(launchIndex.x + 0.5f - motionVector.x,
-                                     launchIndex.y + 0.5f - motionVector.y);
             if (sampleVis.hasValidTemporalSample) {
-                const Reservoir<LightSample> /*&*/neighbor = plp.s->reservoirBuffer[prevResIndex][nbCoord];
-                const ReservoirInfo neighborInfo = plp.s->reservoirInfoBuffer[prevResIndex].read(nbCoord);
+                const Reservoir<LightSample> /*&*/neighbor = plp.s->reservoirBuffer[prevResIndex][tNbCoord];
+                const ReservoirInfo neighborInfo = plp.s->reservoirInfoBuffer[prevResIndex].read(tNbCoord);
                 // JP: 際限なく過去フレームで得たサンプルがウェイトを増やさないように、
                 //     前フレームのストリーム長を、現在フレームのReservoirに対して20倍までに制限する。
                 // EN: Limit the stream length of the previous frame by 20 times of that of the current frame
@@ -1386,7 +1440,8 @@ CUDA_DEVICE_FUNCTION void shadeAndResample() {
                     float misWeight = computeMISWeight<SampleType::Temporal, withTemporalRIS, withSpatialRIS>(
                         launchIndex, prevBufIdx, prevResIndex,
                         maxPrevStreamLength, sampleVis,
-                        selfStreamLength, positionInWorld, vOutLocal, shadingFrame, bsdf, motionVector,
+                        selfStreamLength, positionInWorld, vOutLocal, shadingFrame, bsdf,
+                        tNbCoord, stNbCoord,
                         nbStreamLength, nbLightSample, neighborInfo.targetDensity);
                     float contWeight = nbStreamLength * misWeight * neighborInfo.recPDFEstimate;
                     float3 rawDirectCont = (sampleVis.temporalSample * contWeight) * cont;
@@ -1404,28 +1459,9 @@ CUDA_DEVICE_FUNCTION void shadeAndResample() {
 
         // Spatiotemporal Sample
         if constexpr (withSpatialRIS) {
-            // JP: 周辺ピクセルの座標をランダムに決定。
-            // EN: Randomly determine the coordinates of a neighboring pixel.
-            float radius = plp.f->spatialNeighborRadius;
-            float deltaX, deltaY;
-            if (plp.f->useLowDiscrepancyNeighbors) {
-                uint32_t deltaIndex = plp.spatialNeighborBaseIndex +
-                    5 * launchIndex.x + 7 * launchIndex.y;
-                float2 delta = plp.s->spatialNeighborDeltas[deltaIndex % 1024];
-                deltaX = radius * delta.x;
-                deltaY = radius * delta.y;
-            }
-            else {
-                //radius *= std::sqrt(rng.getFloat0cTo1o());
-                //float angle = 2 * Pi * rng.getFloat0cTo1o();
-                //deltaX = radius * std::cos(angle);
-                //deltaY = radius * std::sin(angle);
-            }
-            int2 nbCoord = make_int2(launchIndex.x + 0.5f + deltaX,
-                                     launchIndex.y + 0.5f + deltaY);
             if (sampleVis.hasValidSpatiotemporalSample) {
-                const Reservoir<LightSample> /*&*/neighbor = plp.s->reservoirBuffer[prevResIndex][nbCoord];
-                const ReservoirInfo neighborInfo = plp.s->reservoirInfoBuffer[prevResIndex].read(nbCoord);
+                const Reservoir<LightSample> /*&*/neighbor = plp.s->reservoirBuffer[prevResIndex][stNbCoord];
+                const ReservoirInfo neighborInfo = plp.s->reservoirInfoBuffer[prevResIndex].read(stNbCoord);
                 // JP: 際限なく過去フレームで得たサンプルがウェイトを増やさないように、
                 //     前フレームのストリーム長を、現在フレームのReservoirに対して20倍までに制限する。
                 // EN: Limit the stream length of the previous frame by 20 times of that of the current frame
@@ -1435,8 +1471,6 @@ CUDA_DEVICE_FUNCTION void shadeAndResample() {
                     // JP: 隣接ピクセルが持つ候補サンプルの「現在の」ピクセルにおける確率密度を計算する。
                     // EN: Calculate the probability density at the "current" pixel of the candidate sample
                     //     the neighboring pixel holds.
-                    // TODO: アニメーションやジッタリングがある場合には前フレームの対応ピクセルのターゲットPDFは
-                    //       変わってしまっているはず。この場合にはUnbiasedにするにはもうちょっと工夫がいる？
                     LightSample nbLightSample = neighbor.getSample();
                     float3 cont = performDirectLighting<false>(
                         positionInWorld, vOutLocal, shadingFrame, bsdf, nbLightSample);
@@ -1448,7 +1482,8 @@ CUDA_DEVICE_FUNCTION void shadeAndResample() {
                     float misWeight = computeMISWeight<SampleType::Spatiotemporal, withTemporalRIS, withSpatialRIS>(
                         launchIndex, prevBufIdx, prevResIndex,
                         maxPrevStreamLength, sampleVis,
-                        selfStreamLength, positionInWorld, vOutLocal, shadingFrame, bsdf, motionVector,
+                        selfStreamLength, positionInWorld, vOutLocal, shadingFrame, bsdf,
+                        tNbCoord, stNbCoord,
                         nbStreamLength, nbLightSample, neighborInfo.targetDensity);
                     float contWeight = nbStreamLength * misWeight * neighborInfo.recPDFEstimate;
                     float3 rawDirectCont = (sampleVis.spatiotemporalSample * contWeight) * cont;
