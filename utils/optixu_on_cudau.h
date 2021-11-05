@@ -149,15 +149,21 @@ namespace optixu {
 
 #if defined(__CUDA_ARCH__) || defined(OPTIXU_Platform_CodeCompletion)
         RT_DEVICE_FUNCTION constexpr uint32_t calcLinearIndex(uint32_t idxX, uint32_t idxY) const {
-            constexpr uint32_t blockWidth = 1 << log2BlockWidth;
-            constexpr uint32_t mask = blockWidth - 1;
-            uint32_t blockIdxX = idxX >> log2BlockWidth;
-            uint32_t blockIdxY = idxY >> log2BlockWidth;
-            uint32_t blockOffset = (blockIdxY * m_numXBlocks + blockIdxX) * (blockWidth * blockWidth);
-            uint32_t idxXInBlock = idxX & mask;
-            uint32_t idxYInBlock = idxY & mask;
-            uint32_t linearIndexInBlock = idxYInBlock * blockWidth + idxXInBlock;
-            return blockOffset + linearIndexInBlock;
+            if constexpr (log2BlockWidth > 0) {
+                constexpr uint32_t blockWidth = 1 << log2BlockWidth;
+                constexpr uint32_t mask = blockWidth - 1;
+                uint32_t blockIdxX = idxX >> log2BlockWidth;
+                uint32_t blockIdxY = idxY >> log2BlockWidth;
+                uint32_t blockOffset = (blockIdxY * m_numXBlocks + blockIdxX) * (blockWidth * blockWidth);
+                uint32_t idxXInBlock = idxX & mask;
+                uint32_t idxYInBlock = idxY & mask;
+                uint32_t linearIndexInBlock = idxYInBlock * blockWidth + idxXInBlock;
+                return blockOffset + linearIndexInBlock;
+            }
+            else {
+                return m_width * idxY + idxX;
+            }
+            return 0;
         }
 #endif
 

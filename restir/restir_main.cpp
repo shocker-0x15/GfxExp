@@ -923,7 +923,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
     cudau::Array gBuffer1[2];
     cudau::Array gBuffer2[2];
 
-    optixu::HostBlockBuffer2D<shared::Reservoir<shared::LightSample>, 1> reservoirBuffer[2];
+    optixu::HostBlockBuffer2D<shared::Reservoir<shared::LightSample>, 0> reservoirBuffer[2];
     cudau::Array reservoirInfoBuffer[2];
     cudau::Array sampleVisibilityBuffer[2];
     

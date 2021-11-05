@@ -254,11 +254,11 @@ namespace shared {
             unsigned int newSample : 1;
             unsigned int newSampleOnTemporal : 1;
             unsigned int newSampleOnSpatiotemporal : 1;
-            unsigned int hasValidTemporalSample : 1;
+            unsigned int temporalPassedHeuristic : 1;
             unsigned int temporalSample : 1;
             unsigned int temporalSampleOnCurrent : 1;
             unsigned int temporalSampleOnSpatiotemporal : 1;
-            unsigned int hasValidSpatiotemporalSample : 1;
+            unsigned int spatiotemporalPassedHeuristic : 1;
             unsigned int spatiotemporalSample : 1;
             unsigned int spatiotemporalSampleOnCurrent : 1;
             unsigned int spatiotemporalSampleOnTemporal : 1;
@@ -315,7 +315,7 @@ namespace shared {
         optixu::NativeBlockBuffer2D<GBuffer1> GBuffer1[2];
         optixu::NativeBlockBuffer2D<GBuffer2> GBuffer2[2];
 
-        optixu::BlockBuffer2D<Reservoir<LightSample>, 1> reservoirBuffer[2];
+        optixu::BlockBuffer2D<Reservoir<LightSample>, 0> reservoirBuffer[2];
         optixu::NativeBlockBuffer2D<ReservoirInfo> reservoirInfoBuffer[2];
         optixu::NativeBlockBuffer2D<SampleVisibility> sampleVisibilityBuffer[2];
         const float2* spatialNeighborDeltas; // only for rearchitected ver.
