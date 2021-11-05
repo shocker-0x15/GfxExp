@@ -971,17 +971,14 @@ CUDA_DEVICE_FUNCTION void traceShadowRays() {
         if (sampleVis.temporalPassedHeuristic) {
             Reservoir<LightSample> neighbor;
             LightSample temporalSample;
-            if (useUnbiasedEstimator || !plp.f->reuseVisibilityForTemporal) {
-                neighbor = plp.s->reservoirBuffer[prevResIndex][tNbCoord];
-                temporalSample = neighbor.getSample();
-                temporalSampleIsValid = neighbor.getSumWeights() > 0.0f;
-            }
-
-            if (plp.f->reuseVisibilityForTemporal/* && !useUnbiasedEstimator*/) {
+            if (plp.f->reuseVisibilityForTemporal && !useUnbiasedEstimator) {
                 SampleVisibility prevSampleVis = plp.s->sampleVisibilityBuffer[prevBufIdx].read(tNbCoord);
                 sampleVis.temporalSample = prevSampleVis.selectedSample;
             }
             else {
+                neighbor = plp.s->reservoirBuffer[prevResIndex][tNbCoord];
+                temporalSample = neighbor.getSample();
+                temporalSampleIsValid = neighbor.getSumWeights() > 0.0f;
                 if (temporalSampleIsValid)
                     sampleVis.temporalSample = evaluateVisibility(positionInWorld, temporalSample);
             }
@@ -1050,25 +1047,23 @@ CUDA_DEVICE_FUNCTION void traceShadowRays() {
         sampleVis.spatiotemporalPassedHeuristic = testNeighbor<true>(prevBufIdx, stNbCoord, dist, shadingNormalInWorld);
         sampleVis.spatiotemporalPassedHeuristic &= stNbCoord.x != launchIndex.x || stNbCoord.y != launchIndex.y;
         if (sampleVis.spatiotemporalPassedHeuristic) {
-            Reservoir<LightSample> neighbor;
-            LightSample spatiotemporalSample;
-            if (useUnbiasedEstimator || !plp.f->reuseVisibilityForSpatiotemporal) {
-                neighbor = plp.s->reservoirBuffer[prevResIndex][stNbCoord];
-                spatiotemporalSample = neighbor.getSample();
-                spatiotemporalSampleIsValid = neighbor.getSumWeights() > 0.0f;
-            }
-
             bool reused = false;
             if (plp.f->reuseVisibilityForSpatiotemporal && !useUnbiasedEstimator) {
                 float threshold2 = pow2(plp.f->radiusThresholdForSpatialVisReuse);
                 float dist2 = pow2(deltaX) + pow2(deltaY);
                 reused = dist2 < threshold2;
-                if (reused) {
-                    SampleVisibility prevSampleVis = plp.s->sampleVisibilityBuffer[prevBufIdx].read(stNbCoord);
-                    sampleVis.spatiotemporalSample = prevSampleVis.selectedSample;
-                }
             }
-            if (!reused) {
+
+            Reservoir<LightSample> neighbor;
+            LightSample spatiotemporalSample;
+            if (reused) {
+                SampleVisibility prevSampleVis = plp.s->sampleVisibilityBuffer[prevBufIdx].read(stNbCoord);
+                sampleVis.spatiotemporalSample = prevSampleVis.selectedSample;
+            }
+            else {
+                neighbor = plp.s->reservoirBuffer[prevResIndex][stNbCoord];
+                spatiotemporalSample = neighbor.getSample();
+                spatiotemporalSampleIsValid = neighbor.getSumWeights() > 0.0f;
                 if (spatiotemporalSampleIsValid)
                     sampleVis.spatiotemporalSample = evaluateVisibility(positionInWorld, spatiotemporalSample);
             }
