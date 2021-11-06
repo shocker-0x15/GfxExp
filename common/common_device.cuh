@@ -105,6 +105,7 @@ struct ReferenceFrame {
     float3 bitangent;
     float3 normal;
 
+    CUDA_DEVICE_FUNCTION ReferenceFrame() {}
     CUDA_DEVICE_FUNCTION ReferenceFrame(const float3 &_tangent, const float3 &_bitangent, const float3 &_normal) :
         tangent(_tangent), bitangent(_bitangent), normal(_normal) {}
     CUDA_DEVICE_FUNCTION ReferenceFrame(const float3 &_normal) : normal(_normal) {
