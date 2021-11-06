@@ -28,14 +28,28 @@ You can load a 3D model for example by downloading from the internet.
 JP: このプログラムはReSTIR (Reservoir-based Spatio-Temporal Importance Resampling) [1]の実装例です。
     ReSTIRでは、Resampled Importance Sampling (RIS), Weighted Reservoir Sampling (WRS)、
     そして複数のReservoirを結合する際の特性を利用することで大量の発光プリミティブからの効率的なサンプリングが可能となります。
+    さらにRearchitected ReSTIR [2]の実装も行っています。
+    Rearchitected版はアルゴリズムの構造を変更することでオリジナルのReSTIRにあったボトルネックを解消、
+    劇的な性能向上・品質向上を実現しています。
+    ※デフォルトではBRDFにOptiXのCallable ProgramやCUDAの関数ポインターを使用した汎用的な実装になっており、
+      性能上のオーバーヘッドが著しいため、純粋な性能を見る上では restir_shared.h の USE_HARD_CODED_BSDF_FUNCTIONS
+      を有効化したほうがよいかもしれません。
 
 EN: This program is an example implementation of ReSTIR (Reservoir-based Spatio-Temporal Importance Resampling) [1].
     ReSTIR enables efficient sampling from a massive amount of emitter primitives by
     Resampled Importance Sampling (RIS), Weighted Reservoir Sampling (WRS) and exploiting the property of
     combining multiple reservoirs.
+    Additionally this implements the rearchitected ReSTIR [2] as well.
+    The rearchitected variant achieves significant improvements on performance and quality
+    by changing algorithmic structure to remove the bottlenecks in the original ReSTIR.
+    * The program is generic implementation with OptiX's callable program and CUDA's function pointer,
+      and has significant performance overhead, therefore it may be recommended to enable USE_HARD_CODED_BSDF_FUNCTIONS
+      in restir_shared.h to see pure performance.
 
 [1] Spatiotemporal reservoir resampling for real-time ray tracing with dynamic direct lighting
     https://research.nvidia.com/publication/2020-07_Spatiotemporal-reservoir-resampling
+[2] Rearchitecting Spatiotemporal Resampling for Production
+    https://research.nvidia.com/publication/2021-07_Rearchitecting-Spatiotemporal-Resampling
 
 */
 
