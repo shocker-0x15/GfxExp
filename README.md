@@ -48,9 +48,9 @@ Programs here use [OptiX Utility](https://github.com/shocker-0x15/OptiX_Utility)
 現状以下の環境で動作を確認しています。\
 I've confirmed that the program runs correctly in the following environment.
 
-* Windows 10 (21H1) & Visual Studio Community 2019 (16.11.5)
+* Windows 10 (21H2) & Visual Studio Community 2019 (16.11.7)
 * Core i9-9900K, 32GB, RTX 3080 10GB
-* NVIDIA Driver 496.13
+* NVIDIA Driver 496.76
 
 動作させるにあたっては以下のライブラリが必要です。\
 It requires the following libraries.
@@ -60,7 +60,7 @@ It requires the following libraries.
   ※CUDA 11.3.0にはバグがあり、OptiX Utilityと一緒に使用することができません。Update 1以降が必要です。\
   OptiX Utility may work with a bit older versions. The sample code just assumes this version.\
   \* CUDA 11.3.0 has a bug which prevents to use it with OptiX Utility. You need to use Update 1 or later.
-* OptiX 7.3.0 (requires Maxwell or later generation NVIDIA GPU)
+* OptiX 7.4.0 (requires Maxwell or later generation NVIDIA GPU)
 
 ## オープンソースソフトウェア / Open Source Software
 - [Open Asset Import Library (assimp)](https://github.com/assimp/assimp)

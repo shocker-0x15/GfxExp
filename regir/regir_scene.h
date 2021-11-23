@@ -105,8 +105,7 @@ struct GPUEnvironment {
 
         setupGBuffersRayGenProgram = pipeline.createRayGenProgram(
             mainModule, RT_RG_NAME_STR("setupGBuffers"));
-        setupGBuffersHitProgramGroup = pipeline.createHitProgramGroupForBuiltinIS(
-            OPTIX_PRIMITIVE_TYPE_TRIANGLE,
+        setupGBuffersHitProgramGroup = pipeline.createHitProgramGroupForTriangleIS(
             mainModule, RT_CH_NAME_STR("setupGBuffers"),
             emptyModule, nullptr);
         setupGBuffersMissProgram = pipeline.createMissProgram(
@@ -116,20 +115,17 @@ struct GPUEnvironment {
             mainModule, RT_RG_NAME_STR("pathTraceBaseline"));
         pathTraceBaselineMissProgram = pipeline.createMissProgram(
             mainModule, RT_MS_NAME_STR("pathTraceBaseline"));
-        pathTraceBaselineHitProgramGroup = pipeline.createHitProgramGroupForBuiltinIS(
-            OPTIX_PRIMITIVE_TYPE_TRIANGLE,
+        pathTraceBaselineHitProgramGroup = pipeline.createHitProgramGroupForTriangleIS(
             mainModule, RT_CH_NAME_STR("pathTraceBaseline"),
             emptyModule, nullptr);
 
         pathTraceRegirRayGenProgram = pipeline.createRayGenProgram(
             mainModule, RT_RG_NAME_STR("pathTraceRegir"));
-        pathTraceRegirHitProgramGroup = pipeline.createHitProgramGroupForBuiltinIS(
-            OPTIX_PRIMITIVE_TYPE_TRIANGLE,
+        pathTraceRegirHitProgramGroup = pipeline.createHitProgramGroupForTriangleIS(
             mainModule, RT_CH_NAME_STR("pathTraceRegir"),
             emptyModule, nullptr);
 
-        visibilityHitProgramGroup = pipeline.createHitProgramGroupForBuiltinIS(
-            OPTIX_PRIMITIVE_TYPE_TRIANGLE,
+        visibilityHitProgramGroup = pipeline.createHitProgramGroupForTriangleIS(
             emptyModule, nullptr,
             mainModule, RT_AH_NAME_STR("visibility"));
 

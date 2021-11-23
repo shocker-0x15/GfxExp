@@ -121,12 +121,12 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <LibraryPath>C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v11.3\lib\x64;$(SolutionDir)ext\glfw\lib;$(LibraryPath)</LibraryPath>
     <TargetName>regir</TargetName>
-    <ExternalIncludePath>$(SolutionDir)ext\miniz;$(SolutionDir)ext\assimp\include;$(SolutionDir)ext\gl3w\include;$(SolutionDir)ext\glfw\include;$(SolutionDir)ext\imgui;C:\ProgramData\NVIDIA Corporation\OptiX SDK 7.3.0\include;$(ExternalIncludePath)</ExternalIncludePath>
+    <ExternalIncludePath>$(SolutionDir)ext\miniz;$(SolutionDir)ext\assimp\include;$(SolutionDir)ext\gl3w\include;$(SolutionDir)ext\glfw\include;$(SolutionDir)ext\imgui;C:\ProgramData\NVIDIA Corporation\OptiX SDK 7.4.0\include;$(ExternalIncludePath)</ExternalIncludePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <LibraryPath>C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v11.3\lib\x64;$(SolutionDir)ext\glfw\lib;$(LibraryPath)</LibraryPath>
     <TargetName>regir</TargetName>
-    <ExternalIncludePath>$(SolutionDir)ext\miniz;$(SolutionDir)ext\assimp\include;$(SolutionDir)ext\gl3w\include;$(SolutionDir)ext\glfw\include;$(SolutionDir)ext\imgui;C:\ProgramData\NVIDIA Corporation\OptiX SDK 7.3.0\include;$(ExternalIncludePath)</ExternalIncludePath>
+    <ExternalIncludePath>$(SolutionDir)ext\miniz;$(SolutionDir)ext\assimp\include;$(SolutionDir)ext\gl3w\include;$(SolutionDir)ext\glfw\include;$(SolutionDir)ext\imgui;C:\ProgramData\NVIDIA Corporation\OptiX SDK 7.4.0\include;$(ExternalIncludePath)</ExternalIncludePath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>

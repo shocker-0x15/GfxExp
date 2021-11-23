@@ -116,8 +116,7 @@ struct GPUEnvironment {
 
         setupGBuffersRayGenProgram = pipeline.createRayGenProgram(
             mainModule, RT_RG_NAME_STR("setupGBuffers"));
-        setupGBuffersHitProgramGroup = pipeline.createHitProgramGroupForBuiltinIS(
-            OPTIX_PRIMITIVE_TYPE_TRIANGLE,
+        setupGBuffersHitProgramGroup = pipeline.createHitProgramGroupForTriangleIS(
             mainModule, RT_CH_NAME_STR("setupGBuffers"),
             emptyModule, nullptr);
         setupGBuffersMissProgram = pipeline.createMissProgram(
@@ -159,8 +158,7 @@ struct GPUEnvironment {
         shadeAndResampleWithSpatiotemporalReuseRayGenProgram = pipeline.createRayGenProgram(
             mainModule, RT_RG_NAME_STR("shadeAndResampleWithSpatioTemporalReuse"));
 
-        visibilityHitProgramGroup = pipeline.createHitProgramGroupForBuiltinIS(
-            OPTIX_PRIMITIVE_TYPE_TRIANGLE,
+        visibilityHitProgramGroup = pipeline.createHitProgramGroupForTriangleIS(
             emptyModule, nullptr,
             mainModule, RT_AH_NAME_STR("visibility"));
 
