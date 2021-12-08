@@ -23,7 +23,8 @@ CUDA_DEVICE_KERNEL void performLightPreSampling() {
     }
 
     PreSampledLight preSampledLight;
-    sampleLight(
+    sampleLight<false>(
+        make_float3(0.0f),
         rng.getFloat0cTo1o(), sampleEnvLight, rng.getFloat0cTo1o(), rng.getFloat0cTo1o(),
         &preSampledLight.sample, &preSampledLight.areaPDensity);
     preSampledLight.areaPDensity *= probToSampleCurLightType;

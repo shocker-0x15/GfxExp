@@ -352,8 +352,10 @@ CUDA_DEVICE_FUNCTION void performInitialAndTemporalRIS() {
         //     Target PDF doesn't require to be normalized.
         LightSample lightSample;
         float probDensity;
-        sampleLight(ul, sampleEnvLight, rng.getFloat0cTo1o(), rng.getFloat0cTo1o(),
-                    &lightSample, &probDensity);
+        sampleLight<false>(
+            positionInWorld,
+            ul, sampleEnvLight, rng.getFloat0cTo1o(), rng.getFloat0cTo1o(),
+            &lightSample, &probDensity);
         float3 cont = performDirectLighting<false>(
             positionInWorld, vOutLocal, shadingFrame, bsdf,
             lightSample);

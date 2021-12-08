@@ -10,8 +10,10 @@ CUDA_DEVICE_FUNCTION float3 sampleIntensity(
     const float3 &shadingPoint, float minSquaredDistance,
     float uLight, bool sampleEnvLight, float uPos0, float uPos1,
     LightSample* lightSample, float* probDensity) {
-    sampleLight(uLight, sampleEnvLight, uPos0, uPos1,
-                lightSample, probDensity);
+    sampleLight<false>(
+        shadingPoint,
+        uLight, sampleEnvLight, uPos0, uPos1,
+        lightSample, probDensity);
 
     float3 shadowRayDir = lightSample->atInfinity ?
         lightSample->position :

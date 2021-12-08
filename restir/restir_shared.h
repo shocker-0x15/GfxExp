@@ -521,7 +521,9 @@ namespace shared {
 
 
 
+    template <bool useSolidAngleSampling>
     CUDA_DEVICE_FUNCTION void sampleLight(
+        const float3 &shadingPoint,
         float ul, bool sampleEnvLight, float u0, float u1,
         LightSample* lightSample, float* areaPDensity) {
         CUtexObject texEmittance = 0;
@@ -583,49 +585,109 @@ namespace shared {
             uint32_t primIndex = geomInst.emitterPrimDist.sample(uPrim, &primProb);
             lightProb *= primProb;
 
-            // Uniform sampling on unit triangle
-            // A Low-Distortion Map Between Triangle and Square
-            float t0 = 0.5f * u0;
-            float t1 = 0.5f * u1;
-            float offset = t1 - t0;
-            if (offset > 0)
-                t1 += offset;
-            else
-                t0 -= offset;
-            float t2 = 1 - (t0 + t1);
-
             //printf("%u-%u-%u: %g\n", instIndex, geomInstIndex, primIndex, lightProb);
 
             const MaterialData &mat = plp.s->materialDataBuffer[geomInst.materialSlot];
 
             const shared::Triangle &tri = geomInst.triangleBuffer[primIndex];
-            const shared::Vertex(&v)[3] = {
+            const shared::Vertex (&v)[3] = {
                 geomInst.vertexBuffer[tri.index0],
                 geomInst.vertexBuffer[tri.index1],
                 geomInst.vertexBuffer[tri.index2]
             };
-            float3 p[3] = {
+            const float3 p[3] = {
                 inst.transform * v[0].position,
                 inst.transform * v[1].position,
                 inst.transform * v[2].position,
             };
 
             float3 geomNormal = cross(p[1] - p[0], p[2] - p[0]);
+
+            float t0, t1, t2;
+            if constexpr (useSolidAngleSampling) {
+                // Uniform sampling in solid angle subtended by the triangle for the shading point.
+                float dist;
+                float3 dir;
+                float dirPDF;
+                {
+                    const auto project = [](const float3 &vA, const float3 &vB) {
+                        return normalize(vA - dot(vA, vB) * vB);
+                    };
+
+                    // TODO: ? compute in the local coordinates.
+                    float3 A = normalize(p[0] - shadingPoint);
+                    float3 B = normalize(p[1] - shadingPoint);
+                    float3 C = normalize(p[2] - shadingPoint);
+                    float3 cAB = normalize(cross(A, B));
+                    float3 cBC = normalize(cross(B, C));
+                    float3 cCA = normalize(cross(C, A));
+                    //float cos_a = dot(B, C);
+                    //float cos_b = dot(C, A);
+                    float cos_c = dot(A, B);
+                    float cosAlpha = -dot(cAB, cCA);
+                    float cosBeta = -dot(cBC, cAB);
+                    float cosGamma = -dot(cCA, cBC);
+                    float alpha = std::acos(cosAlpha);
+                    float sinAlpha = std::sqrt(1 - pow2(cosAlpha));
+                    float sphArea = alpha + std::acos(cosBeta) + std::acos(cosGamma) - Pi;
+
+                    float sphAreaHat = sphArea * u0;
+                    float s = std::sin(sphAreaHat - alpha);
+                    float t = std::cos(sphAreaHat - alpha);
+                    float uu = t - cosAlpha;
+                    float vv = s + sinAlpha * cos_c;
+                    float q = ((vv * t - uu * s) * cosAlpha - vv) / ((vv * s + uu * t) * sinAlpha);
+
+                    float3 cHat = q * A + std::sqrt(1 - pow2(q)) * project(C, A);
+                    float z = 1 - u1 * (1 - dot(cHat, B));
+                    float3 P = z * B + std::sqrt(1 - pow2(z)) * project(cHat, B);
+
+                    const auto restoreBarycentrics = [&geomNormal]
+                    (const float3 &org, const float3 &dir,
+                     const float3 &pA, const float3 &pB, const float3 &pC,
+                     float* dist, float* b1, float* b2) {
+                         float3 eAB = pB - pA;
+                         float3 eAC = pC - pA;
+                         float3 pVec = cross(dir, eAC);
+                         float recDet = 1.0f / dot(eAB, pVec);
+                         float3 tVec = org - pA;
+                         *b1 = dot(tVec, pVec) * recDet;
+                         float3 qVec = cross(tVec, eAB);
+                         *b2 = dot(dir, qVec) * recDet;
+                         *dist = dot(eAC, qVec) * recDet;
+                    };
+                    dir = P;
+                    restoreBarycentrics(shadingPoint, dir, p[0], p[1], p[2], &dist, &t1, &t2);
+                    t0 = 1 - t1 - t2;
+                    dirPDF = 1 / sphArea;
+                }
+
+                geomNormal = normalize(geomNormal);
+                float lpCos = -dot(dir, geomNormal);
+                if (lpCos > 0 && isfinite(dirPDF))
+                    *areaPDensity = lightProb * (dirPDF * lpCos / pow2(dist));
+                else
+                    *areaPDensity = 0.0f;
+            }
+            else {
+                // Uniform sampling on unit triangle
+                // A Low-Distortion Map Between Triangle and Square
+                t0 = 0.5f * u0;
+                t1 = 0.5f * u1;
+                float offset = t1 - t0;
+                if (offset > 0)
+                    t1 += offset;
+                else
+                    t0 -= offset;
+                t2 = 1 - (t0 + t1);
+
+                float recArea = 2.0f / length(geomNormal);
+                *areaPDensity = lightProb * recArea;
+            }
             lightSample->position = t0 * p[0] + t1 * p[1] + t2 * p[2];
             lightSample->atInfinity = false;
-            float recArea = 1.0f / length(geomNormal);
-            //lightSample->normal = geomNormal * recArea;
             lightSample->normal = t0 * v[0].normal + t1 * v[1].normal + t2 * v[2].normal;
             lightSample->normal = normalize(inst.normalMatrix * lightSample->normal);
-            recArea *= 2;
-            *areaPDensity = lightProb * recArea;
-
-            //printf("%u-%u-%u: (%g, %g, %g), PDF: %g\n", instIndex, geomInstIndex, primIndex,
-            //       mat.emittance.x, mat.emittance.y, mat.emittance.z, *areaPDensity);
-
-            //printf("%u-%u-%u: (%g, %g, %g), (%g, %g, %g)\n", instIndex, geomInstIndex, primIndex,
-            //       lightPosition->x, lightPosition->y, lightPosition->z,
-            //       lightNormal->x, lightNormal->y, lightNormal->z);
 
             if (mat.emittance) {
                 texEmittance = mat.emittance;
@@ -700,6 +762,89 @@ namespace shared {
             visibility);
 
         return visibility > 0.0f;
+    }
+
+    template <bool computeHypotheticalAreaPDensity, bool useSolidAngleSampling>
+    CUDA_DEVICE_FUNCTION void computeSurfacePoint(
+        const InstanceData &inst, const GeometryInstanceData &geomInst, uint32_t primIndex, float b1, float b2,
+        const float3 &referencePoint,
+        float3* positionInWorld, float3* shadingNormalInWorld, float3* texCoord0DirInWorld,
+        float3* geometricNormalInWorld, float2* texCoord,
+        float* hypAreaPDensity) {
+        const Triangle &tri = geomInst.triangleBuffer[primIndex];
+        const Vertex &v0 = geomInst.vertexBuffer[tri.index0];
+        const Vertex &v1 = geomInst.vertexBuffer[tri.index1];
+        const Vertex &v2 = geomInst.vertexBuffer[tri.index2];
+        const float3 p[3] = {
+            optixTransformPointFromObjectToWorldSpace(v0.position),
+            optixTransformPointFromObjectToWorldSpace(v1.position),
+            optixTransformPointFromObjectToWorldSpace(v2.position),
+        };
+        float b0 = 1 - (b1 + b2);
+
+        // JP: ヒットポイントのローカル座標中の各値を計算する。
+        // EN: Compute hit point properties in the local coordinates.
+        float3 position = b0 * v0.position + b1 * v1.position + b2 * v2.position;
+        float3 shadingNormal = b0 * v0.normal + b1 * v1.normal + b2 * v2.normal;
+        float3 texCoord0Dir = b0 * v0.texCoord0Dir + b1 * v1.texCoord0Dir + b2 * v2.texCoord0Dir;
+        float3 geometricNormal = cross(p[1] - p[0], p[2] - p[0]);
+        float area;
+        if constexpr (computeHypotheticalAreaPDensity && !useSolidAngleSampling)
+            area = 0.5f * length(geometricNormal);
+        else
+            (void)area;
+        *texCoord = b0 * v0.texCoord + b1 * v1.texCoord + b2 * v2.texCoord;
+
+        // JP: ローカル座標中の値をワールド座標中の値へと変換する。
+        // EN: Convert the local properties to ones in world coordinates.
+        *positionInWorld = optixTransformPointFromObjectToWorldSpace(position);
+        *shadingNormalInWorld = normalize(optixTransformNormalFromObjectToWorldSpace(shadingNormal));
+        *texCoord0DirInWorld = normalize(optixTransformVectorFromObjectToWorldSpace(texCoord0Dir));
+        *geometricNormalInWorld = normalize(geometricNormal);
+        if (!allFinite(*shadingNormalInWorld)) {
+            *shadingNormalInWorld = make_float3(0, 0, 1);
+            *texCoord0DirInWorld = make_float3(1, 0, 0);
+        }
+
+        if constexpr (computeHypotheticalAreaPDensity) {
+            // JP: 交点をExplicit Light Samplingでサンプルする場合の仮想的な確率密度を求める。
+            // EN: Compute a hypothetical probability density with which the intersection point
+            //     is sampled by explicit light sampling.
+            float lightProb = 1.0f;
+            if (plp.s->envLightTexture && plp.f->enableEnvLight)
+                lightProb *= (1 - probToSampleEnvLight);
+            lightProb *= inst.lightGeomInstDist.integral() / plp.s->lightInstDist.integral();
+            lightProb *= geomInst.emitterPrimDist.integral() / inst.lightGeomInstDist.integral();
+            lightProb *= geomInst.emitterPrimDist.evaluatePMF(primIndex);
+            if constexpr (useSolidAngleSampling) {
+                // TODO: ? compute in the local coordinates.
+                float3 A = normalize(p[0] - referencePoint);
+                float3 B = normalize(p[1] - referencePoint);
+                float3 C = normalize(p[2] - referencePoint);
+                float3 cAB = normalize(cross(A, B));
+                float3 cBC = normalize(cross(B, C));
+                float3 cCA = normalize(cross(C, A));
+                float cosAlpha = -dot(cAB, cCA);
+                float cosBeta = -dot(cBC, cAB);
+                float cosGamma = -dot(cCA, cBC);
+                float sphArea = std::acos(cosAlpha) + std::acos(cosBeta) + std::acos(cosGamma) - Pi;
+                float dirPDF = 1.0f / sphArea;
+                float3 refDir = referencePoint - *positionInWorld;
+                float dist2ToRefPoint = sqLength(refDir);
+                refDir /= std::sqrt(dist2ToRefPoint);
+                float lpCos = dot(refDir, *geometricNormalInWorld);
+                if (lpCos > 0 && isfinite(dirPDF))
+                    *hypAreaPDensity = lightProb * (dirPDF * lpCos / dist2ToRefPoint);
+                else
+                    *hypAreaPDensity = 0.0f;
+            }
+            else {
+                *hypAreaPDensity = lightProb / area;
+            }
+        }
+        else {
+            (void)*hypAreaPDensity;
+        }
     }
 }
 

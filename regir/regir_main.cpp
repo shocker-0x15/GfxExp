@@ -1493,6 +1493,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         static float motionVectorScale = -1.0f;
         static bool animate = /*true*/false;
         static bool enableAccumulation = /*true*/false;
+        static int32_t log2MaxNumAccums = 16;
         static bool enableJittering = false;
         static bool enableBumpMapping = false;
         bool lastFrameWasAnimated = false;
@@ -1518,6 +1519,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
             if (ImGui::Button("Reset Accum"))
                 resetAccumulation = true;
             ImGui::Checkbox("Enable Accumulation", &enableAccumulation);
+            ImGui::InputLog2Int("#MaxNumAccum", &log2MaxNumAccums, 16, 5);
             resetAccumulation |= ImGui::Checkbox("Enable Jittering", &enableJittering);
             resetAccumulation |= ImGui::Checkbox("Enable Bump Mapping", &enableBumpMapping);
 
@@ -1664,7 +1666,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
             if (bufferTypeToDisplay == shared::BufferToDisplay::DenoisedBeauty)
                 ImGui::Text("  Denoise: %.3f [ms]", denoiseTime.getAverage());
 
-            ImGui::Text("%u [spp]", numAccumFrames + 1);
+            ImGui::Text("%u [spp]", std::min(numAccumFrames + 1, (1u << log2MaxNumAccums)));
 
             ImGui::End();
         }
@@ -1708,7 +1710,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         if (firstAccumFrame)
             numAccumFrames = 0;
         else
-            ++numAccumFrames;
+            numAccumFrames = std::min(numAccumFrames + 1, (1u << log2MaxNumAccums));
         if (newSequence)
             hpprintf("New sequence started.\n");
 

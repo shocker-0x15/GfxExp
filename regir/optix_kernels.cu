@@ -267,6 +267,7 @@ CUDA_DEVICE_KERNEL void RT_MS_NAME(setupGBuffers)() {
 
 
 
+static constexpr bool useSolidAngleSampling = true;
 static constexpr bool useImplicitLightSampling = true;
 static constexpr bool useExplicitLightSampling = true;
 static constexpr bool useMultipleImportanceSampling = useImplicitLightSampling && useExplicitLightSampling;
@@ -371,8 +372,10 @@ CUDA_DEVICE_FUNCTION float3 performNextEventEstimation(
             }
             LightSample lightSample;
             float areaPDensity;
-            sampleLight(uLight, selectEnvLight, rng.getFloat0cTo1o(), rng.getFloat0cTo1o(),
-                        &lightSample, &areaPDensity);
+            sampleLight<useSolidAngleSampling>(
+                shadingPoint,
+                uLight, selectEnvLight, rng.getFloat0cTo1o(), rng.getFloat0cTo1o(),
+                &lightSample, &areaPDensity);
             areaPDensity *= probToSampleCurLightType;
             float misWeight = 1.0f;
             if constexpr (useMultipleImportanceSampling) {
@@ -389,8 +392,9 @@ CUDA_DEVICE_FUNCTION float3 performNextEventEstimation(
                 float lightPDensity = areaPDensity;
                 misWeight = pow2(lightPDensity) / (pow2(bsdfPDensity) + pow2(lightPDensity));
             }
-            ret = performDirectLighting<true>(
-                shadingPoint, vOutLocal, shadingFrame, bsdf, lightSample) * (misWeight / areaPDensity);
+            if (areaPDensity > 0.0f)
+                ret = performDirectLighting<true>(
+                    shadingPoint, vOutLocal, shadingFrame, bsdf, lightSample) * (misWeight / areaPDensity);
         }
     }
 
@@ -414,7 +418,7 @@ CUDA_DEVICE_FUNCTION void pathTrace_rayGen_generic() {
     const PerspectiveCamera &camera = plp.f->camera;
 
     bool useEnvLight = plp.s->envLightTexture && plp.f->enableEnvLight;
-    float3 contribution = make_float3(0.01f, 0.01f, 0.01f);
+    float3 contribution = make_float3(0.001f, 0.001f, 0.001f);
     if (materialSlot != 0xFFFFFFFF) {
         float3 alpha = make_float3(1.0f);
         float initImportance = sRGB_calcLuminance(alpha);
@@ -541,6 +545,8 @@ CUDA_DEVICE_FUNCTION void pathTrace_closestHit_generic() {
     optixu::getPayloads<PathTraceRayPayloadSignature>(&woPayload, &rwPayload);
     PCG32RNG &rng = rwPayload->rng;
 
+    const float3 rayOrigin = optixGetWorldRayOrigin();
+
     auto hp = HitPointParameter::get();
     float3 positionInWorld;
     float3 shadingNormalInWorld;
@@ -548,45 +554,13 @@ CUDA_DEVICE_FUNCTION void pathTrace_closestHit_generic() {
     float3 geometricNormalInWorld;
     float2 texCoord;
     float hypAreaPDensity;
-    if (!useMultipleImportanceSampling)
+    computeSurfacePoint<useMultipleImportanceSampling && !useReGIR, useSolidAngleSampling>(
+        inst, geomInst, hp.primIndex, hp.b1, hp.b2,
+        rayOrigin,
+        &positionInWorld, &shadingNormalInWorld, &texCoord0DirInWorld,
+        &geometricNormalInWorld, &texCoord, &hypAreaPDensity);
+    if (!useMultipleImportanceSampling || useReGIR)
         (void)hypAreaPDensity;
-
-    {
-        const Triangle &tri = geomInst.triangleBuffer[hp.primIndex];
-        const Vertex &v0 = geomInst.vertexBuffer[tri.index0];
-        const Vertex &v1 = geomInst.vertexBuffer[tri.index1];
-        const Vertex &v2 = geomInst.vertexBuffer[tri.index2];
-        float b1 = hp.b1;
-        float b2 = hp.b2;
-        float b0 = 1 - (b1 + b2);
-        float3 localP = b0 * v0.position + b1 * v1.position + b2 * v2.position;
-        shadingNormalInWorld = b0 * v0.normal + b1 * v1.normal + b2 * v2.normal;
-        texCoord0DirInWorld = b0 * v0.texCoord0Dir + b1 * v1.texCoord0Dir + b2 * v2.texCoord0Dir;
-        geometricNormalInWorld = cross(v1.position - v0.position, v2.position - v0.position);
-        if constexpr (useMultipleImportanceSampling && !useReGIR) {
-            // JP: 交点をExplicit Light Samplingでサンプルする場合の仮想的な確率密度を求める。
-            // EN: Compute a hypothetical probability density with which the intersection point
-            //     is sampled by explicit light sampling.
-            float lightProb = 1.0f;
-            if (plp.s->envLightTexture && plp.f->enableEnvLight)
-                lightProb *= (1 - probToSampleEnvLight);
-            lightProb *= inst.lightGeomInstDist.integral() / plp.s->lightInstDist.integral();
-            lightProb *= geomInst.emitterPrimDist.integral() / inst.lightGeomInstDist.integral();
-            lightProb *= geomInst.emitterPrimDist.evaluatePMF(hp.primIndex);
-            float area = 0.5f * length(geometricNormalInWorld);
-            hypAreaPDensity = lightProb / area;
-        }
-        texCoord = b0 * v0.texCoord + b1 * v1.texCoord + b2 * v2.texCoord;
-
-        positionInWorld = optixTransformPointFromObjectToWorldSpace(localP);
-        shadingNormalInWorld = normalize(optixTransformNormalFromObjectToWorldSpace(shadingNormalInWorld));
-        texCoord0DirInWorld = normalize(optixTransformVectorFromObjectToWorldSpace(texCoord0DirInWorld));
-        geometricNormalInWorld = normalize(optixTransformNormalFromObjectToWorldSpace(geometricNormalInWorld));
-        if (!allFinite(shadingNormalInWorld)) {
-            shadingNormalInWorld = make_float3(0, 0, 1);
-            texCoord0DirInWorld = make_float3(1, 0, 0);
-        }
-    }
 
     const MaterialData &mat = plp.s->materialDataBuffer[geomInst.materialSlot];
 
@@ -607,7 +581,7 @@ CUDA_DEVICE_FUNCTION void pathTrace_closestHit_generic() {
             float3 emittance = make_float3(texValue);
             float misWeight = 1.0f;
             if constexpr (useMultipleImportanceSampling) {
-                float dist2 = squaredDistance(optixGetWorldRayOrigin(), positionInWorld);
+                float dist2 = squaredDistance(rayOrigin, positionInWorld);
                 float lightPDensity = hypAreaPDensity * dist2 / vOutLocal.z;
                 float bsdfPDensity = rwPayload->prevDirPDensity;
                 misWeight = pow2(bsdfPDensity) / (pow2(bsdfPDensity) + pow2(lightPDensity));
