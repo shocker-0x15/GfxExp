@@ -232,34 +232,47 @@ enum class MaterialConvention {
 
 struct Material {
     struct Lambert {
-        cudau::Array reflectance;
+        const cudau::Array* reflectance;
         CUtexObject texReflectance;
+        Lambert() :
+            reflectance(nullptr), texReflectance(0) {}
     };
     struct DiffuseAndSpecular {
-        cudau::Array diffuse;
+        const cudau::Array* diffuse;
         CUtexObject texDiffuse;
-        cudau::Array specular;
+        const cudau::Array* specular;
         CUtexObject texSpecular;
-        cudau::Array smoothness;
+        const cudau::Array* smoothness;
         CUtexObject texSmoothness;
+        DiffuseAndSpecular() :
+            diffuse(nullptr), texDiffuse(0),
+            specular(nullptr), texSpecular(0),
+            smoothness(nullptr), texSmoothness(0) {}
     };
     struct SimplePBR {
-        cudau::Array baseColor_opacity;
+        const cudau::Array* baseColor_opacity;
         CUtexObject texBaseColor_opacity;
-        cudau::Array occlusion_roughness_metallic;
+        const cudau::Array* occlusion_roughness_metallic;
         CUtexObject texOcclusion_roughness_metallic;
+
+        SimplePBR() :
+            baseColor_opacity(nullptr), texBaseColor_opacity(0),
+            occlusion_roughness_metallic(nullptr), texOcclusion_roughness_metallic(0) {}
     };
     std::variant<
         Lambert,
         DiffuseAndSpecular,
         SimplePBR> body;
-    cudau::Array normal;
+    const cudau::Array* normal;
     CUtexObject texNormal;
-    cudau::Array emittance;
+    const cudau::Array* emittance;
     CUtexObject texEmittance;
     uint32_t materialSlot;
 
-    Material() {}
+    Material() :
+        normal(nullptr), texNormal(0),
+        emittance(nullptr), texEmittance(0),
+        materialSlot(0) {}
 };
 
 struct GeometryInstance {
@@ -377,58 +390,6 @@ static void translate(dds::Format ddsFormat, cudau::ArrayElementType* cudaType, 
     }
 };
 
-static bool loadTexture(
-    const std::filesystem::path &filePath,
-    CUcontext cuContext,
-    cudau::Array* texture,
-    bool* needsDegamma,
-    bool* isHDR = nullptr) {
-    if (filePath.extension() == ".dds" ||
-        filePath.extension() == ".DDS") {
-        int32_t width, height, mipCount;
-        dds::Format ddsFormat;
-        size_t* sizes;
-        uint8_t** imageData = dds::load(filePath.string().c_str(),
-                                        &width, &height, &mipCount, &sizes, &ddsFormat);
-        if (imageData) {
-            cudau::ArrayElementType elemType;
-            translate(ddsFormat, &elemType, needsDegamma);
-            if (isHDR)
-                *isHDR =
-                    elemType == cudau::ArrayElementType::BC6H_SF16 ||
-                    elemType == cudau::ArrayElementType::BC6H_UF16;
-            texture->initialize2D(
-                cuContext, elemType, 1,
-                cudau::ArraySurface::Disable, cudau::ArrayTextureGather::Disable,
-                width, height, 1);
-            texture->write<uint8_t>(imageData[0], sizes[0]);
-            dds::free(imageData, mipCount, sizes);
-        }
-        else {
-            return false;
-        }
-    }
-    else {
-        int32_t width, height, n;
-        uint8_t* linearImageData = stbi_load(filePath.string().c_str(),
-                                             &width, &height, &n, 4);
-        if (linearImageData) {
-            texture->initialize2D(
-                cuContext, cudau::ArrayElementType::UInt8, 4,
-                cudau::ArraySurface::Disable, cudau::ArrayTextureGather::Disable,
-                width, height, 1);
-            texture->write<uint8_t>(linearImageData, width * height * 4);
-            stbi_image_free(linearImageData);
-            *needsDegamma = true;
-        }
-        else {
-            return false;
-        }
-    }
-
-    return true;
-}
-
 enum class BumpMapTextureType {
     NormalMap = 0,
     NormalMap_BC,
@@ -437,11 +398,260 @@ enum class BumpMapTextureType {
     HeightMap_BC,
 };
 
-static bool loadNormalTexture(
-    const std::filesystem::path &filePath,
+struct TextureCacheKey {
+    std::filesystem::path filePath;
+    CUcontext cuContext;
+
+    bool operator<(const TextureCacheKey &rKey) const {
+        if (filePath < rKey.filePath)
+            return true;
+        else if (filePath > rKey.filePath)
+            return false;
+        if (cuContext < rKey.cuContext)
+            return true;
+        else if (cuContext > rKey.cuContext)
+            return false;
+        return false;
+    }
+};
+
+struct Fx1ImmTextureCacheKey {
+    float immValue;
+    CUcontext cuContext;
+
+    bool operator<(const Fx1ImmTextureCacheKey &rKey) const {
+        if (immValue < rKey.immValue)
+            return true;
+        else if (immValue > rKey.immValue)
+            return false;
+        if (cuContext < rKey.cuContext)
+            return true;
+        else if (cuContext > rKey.cuContext)
+            return false;
+        return false;
+    }
+};
+
+struct Fx3ImmTextureCacheKey {
+    float3 immValue;
+    CUcontext cuContext;
+
+    bool operator<(const Fx3ImmTextureCacheKey &rKey) const {
+        if (immValue.z < rKey.immValue.z)
+            return true;
+        else if (immValue.z > rKey.immValue.z)
+            return false;
+        if (immValue.y < rKey.immValue.y)
+            return true;
+        else if (immValue.y > rKey.immValue.y)
+            return false;
+        if (immValue.x < rKey.immValue.x)
+            return true;
+        else if (immValue.x > rKey.immValue.x)
+            return false;
+        if (cuContext < rKey.cuContext)
+            return true;
+        else if (cuContext > rKey.cuContext)
+            return false;
+        return false;
+    }
+};
+
+struct Fx4ImmTextureCacheKey {
+    float4 immValue;
+    CUcontext cuContext;
+
+    bool operator<(const Fx4ImmTextureCacheKey &rKey) const {
+        if (immValue.w < rKey.immValue.w)
+            return true;
+        else if (immValue.w > rKey.immValue.w)
+            return false;
+        if (immValue.z < rKey.immValue.z)
+            return true;
+        else if (immValue.z > rKey.immValue.z)
+            return false;
+        if (immValue.y < rKey.immValue.y)
+            return true;
+        else if (immValue.y > rKey.immValue.y)
+            return false;
+        if (immValue.x < rKey.immValue.x)
+            return true;
+        else if (immValue.x > rKey.immValue.x)
+            return false;
+        if (cuContext < rKey.cuContext)
+            return true;
+        else if (cuContext > rKey.cuContext)
+            return false;
+        return false;
+    }
+};
+
+struct TextureCacheValue {
+    cudau::Array texture;
+    bool needsDegamma;
+    bool isHDR;
+    BumpMapTextureType bumpMapType;
+};
+
+static std::map<TextureCacheKey, TextureCacheValue> s_textureCache;
+static std::map<Fx1ImmTextureCacheKey, TextureCacheValue> s_Fx1ImmTextureCache;
+static std::map<Fx3ImmTextureCacheKey, TextureCacheValue> s_Fx3ImmTextureCache;
+static std::map<Fx4ImmTextureCacheKey, TextureCacheValue> s_Fx4ImmTextureCache;
+
+static void finalizeTextureCaches() {
+    for (auto &it : s_textureCache)
+        it.second.texture.finalize();
+    for (auto &it : s_Fx1ImmTextureCache)
+        it.second.texture.finalize();
+    for (auto &it : s_Fx3ImmTextureCache)
+        it.second.texture.finalize();
+    for (auto &it : s_Fx4ImmTextureCache)
+        it.second.texture.finalize();
+}
+
+static void createFx1ImmTexture(
     CUcontext cuContext,
-    cudau::Array* texture,
-    BumpMapTextureType* bumpMapType) {
+    float immValue,
+    bool isNormalized,
+    const cudau::Array** texture) {
+    Fx1ImmTextureCacheKey cacheKey;
+    cacheKey.immValue = immValue;
+    cacheKey.cuContext = cuContext;
+    if (s_Fx1ImmTextureCache.count(cacheKey)) {
+        const TextureCacheValue &value = s_Fx1ImmTextureCache.at(cacheKey);
+        *texture = &value.texture;
+        return;
+    }
+
+    TextureCacheValue cacheValue;
+    cacheValue.isHDR = !isNormalized;
+    if (isNormalized) {
+        uint8_t data = std::min<uint32_t>(255 * immValue, 255);
+        cacheValue.texture.initialize2D(
+            cuContext, cudau::ArrayElementType::UInt8, 1,
+            cudau::ArraySurface::Disable, cudau::ArrayTextureGather::Disable,
+            1, 1, 1);
+        cacheValue.texture.write<uint8_t>(reinterpret_cast<uint8_t*>(&data), 1);
+    }
+    else {
+        cacheValue.texture.initialize2D(
+            cuContext, cudau::ArrayElementType::Float32, 1,
+            cudau::ArraySurface::Disable, cudau::ArrayTextureGather::Disable,
+            1, 1, 1);
+        cacheValue.texture.write(&immValue, 1);
+    }
+
+    s_Fx1ImmTextureCache[cacheKey] = std::move(cacheValue);
+
+    *texture = &s_Fx1ImmTextureCache.at(cacheKey).texture;
+}
+
+static void createFx3ImmTexture(
+    CUcontext cuContext,
+    const float3 &immValue,
+    bool isNormalized,
+    const cudau::Array** texture) {
+    Fx3ImmTextureCacheKey cacheKey;
+    cacheKey.immValue = immValue;
+    cacheKey.cuContext = cuContext;
+    if (s_Fx3ImmTextureCache.count(cacheKey)) {
+        const TextureCacheValue &value = s_Fx3ImmTextureCache.at(cacheKey);
+        *texture = &value.texture;
+        return;
+    }
+
+    TextureCacheValue cacheValue;
+    cacheValue.isHDR = !isNormalized;
+    if (isNormalized) {
+        uint32_t data = ((std::min<uint32_t>(255 * immValue.x, 255) << 0) |
+                         (std::min<uint32_t>(255 * immValue.y, 255) << 8) |
+                         (std::min<uint32_t>(255 * immValue.z, 255) << 16) |
+                         255 << 24);
+        cacheValue.texture.initialize2D(
+            cuContext, cudau::ArrayElementType::UInt8, 4,
+            cudau::ArraySurface::Disable, cudau::ArrayTextureGather::Disable,
+            1, 1, 1);
+        cacheValue.texture.write<uint8_t>(reinterpret_cast<uint8_t*>(&data), 4);
+    }
+    else {
+        float data[4] = {
+            immValue.x, immValue.y, immValue.z, 1.0f
+        };
+        cacheValue.texture.initialize2D(
+            cuContext, cudau::ArrayElementType::Float32, 4,
+            cudau::ArraySurface::Disable, cudau::ArrayTextureGather::Disable,
+            1, 1, 1);
+        cacheValue.texture.write(data, 4);
+    }
+
+    s_Fx3ImmTextureCache[cacheKey] = std::move(cacheValue);
+
+    *texture = &s_Fx3ImmTextureCache.at(cacheKey).texture;
+}
+
+static void createFx4ImmTexture(
+    CUcontext cuContext,
+    const float4 &immValue,
+    bool isNormalized,
+    const cudau::Array** texture) {
+    Fx4ImmTextureCacheKey cacheKey;
+    cacheKey.immValue = immValue;
+    cacheKey.cuContext = cuContext;
+    if (s_Fx4ImmTextureCache.count(cacheKey)) {
+        const TextureCacheValue &value = s_Fx4ImmTextureCache.at(cacheKey);
+        *texture = &value.texture;
+        return;
+    }
+
+    TextureCacheValue cacheValue;
+    cacheValue.isHDR = !isNormalized;
+    if (isNormalized) {
+        uint32_t data = ((std::min<uint32_t>(255 * immValue.x, 255) << 0) |
+                         (std::min<uint32_t>(255 * immValue.y, 255) << 8) |
+                         (std::min<uint32_t>(255 * immValue.z, 255) << 16) |
+                         (std::min<uint32_t>(255 * immValue.w, 255) << 24));
+        cacheValue.texture.initialize2D(
+            cuContext, cudau::ArrayElementType::UInt8, 4,
+            cudau::ArraySurface::Disable, cudau::ArrayTextureGather::Disable,
+            1, 1, 1);
+        cacheValue.texture.write<uint8_t>(reinterpret_cast<uint8_t*>(&data), 4);
+    }
+    else {
+        float data[4] = {
+            immValue.x, immValue.y, immValue.z, immValue.w
+        };
+        cacheValue.texture.initialize2D(
+            cuContext, cudau::ArrayElementType::Float32, 4,
+            cudau::ArraySurface::Disable, cudau::ArrayTextureGather::Disable,
+            1, 1, 1);
+        cacheValue.texture.write(data, 4);
+    }
+
+    s_Fx4ImmTextureCache[cacheKey] = std::move(cacheValue);
+
+    *texture = &s_Fx4ImmTextureCache.at(cacheKey).texture;
+}
+
+static bool loadTexture(
+    const std::filesystem::path &filePath, const float4 &fallbackValue,
+    CUcontext cuContext,
+    const cudau::Array** texture,
+    bool* needsDegamma,
+    bool* isHDR = nullptr) {
+    TextureCacheKey cacheKey;
+    cacheKey.filePath = filePath;
+    cacheKey.cuContext = cuContext;
+    if (s_textureCache.count(cacheKey)) {
+        const TextureCacheValue &value = s_textureCache.at(cacheKey);
+        *texture = &value.texture;
+        *needsDegamma = value.needsDegamma;
+        if (isHDR)
+            *isHDR = value.isHDR;
+        return true;
+    }
+
+    bool success = true;
+    TextureCacheValue cacheValue;
     if (filePath.extension() == ".dds" ||
         filePath.extension() == ".DDS") {
         int32_t width, height, mipCount;
@@ -451,33 +661,108 @@ static bool loadNormalTexture(
                                         &width, &height, &mipCount, &sizes, &ddsFormat);
         if (imageData) {
             cudau::ArrayElementType elemType;
-            bool needsDegamma;
-            translate(ddsFormat, &elemType, &needsDegamma);
+            translate(ddsFormat, &elemType, &cacheValue.needsDegamma);
+            cacheValue.isHDR =
+                elemType == cudau::ArrayElementType::BC6H_SF16 ||
+                elemType == cudau::ArrayElementType::BC6H_UF16;
+            cacheValue.texture.initialize2D(
+                cuContext, elemType, 1,
+                cudau::ArraySurface::Disable, cudau::ArrayTextureGather::Disable,
+                width, height, 1);
+            cacheValue.texture.write<uint8_t>(imageData[0], sizes[0]);
+            dds::free(imageData, mipCount, sizes);
+        }
+        else {
+            success = false;
+        }
+    }
+    else {
+        int32_t width, height, n;
+        uint8_t* linearImageData = stbi_load(filePath.string().c_str(),
+                                             &width, &height, &n, 4);
+        if (linearImageData) {
+            cacheValue.texture.initialize2D(
+                cuContext, cudau::ArrayElementType::UInt8, 4,
+                cudau::ArraySurface::Disable, cudau::ArrayTextureGather::Disable,
+                width, height, 1);
+            cacheValue.texture.write<uint8_t>(linearImageData, width * height * 4);
+            stbi_image_free(linearImageData);
+            cacheValue.needsDegamma = true;
+        }
+        else {
+            success = false;
+        }
+    }
+
+    if (success) {
+        s_textureCache[cacheKey] = std::move(cacheValue);
+
+        *texture = &s_textureCache.at(cacheKey).texture;
+        *needsDegamma = s_textureCache.at(cacheKey).needsDegamma;
+        if (isHDR)
+            *isHDR = s_textureCache.at(cacheKey).isHDR;
+    }
+    else {
+        createFx4ImmTexture(cuContext, fallbackValue, true, texture);
+        cacheValue.needsDegamma = true;
+        cacheValue.isHDR = false;
+    }
+
+    return success;
+}
+
+static bool loadNormalTexture(
+    const std::filesystem::path &filePath,
+    CUcontext cuContext,
+    const cudau::Array** texture,
+    BumpMapTextureType* bumpMapType) {
+    TextureCacheKey cacheKey;
+    cacheKey.filePath = filePath;
+    cacheKey.cuContext = cuContext;
+    if (s_textureCache.count(cacheKey)) {
+        const TextureCacheValue &value = s_textureCache.at(cacheKey);
+        *texture = &value.texture;
+        *bumpMapType = value.bumpMapType;
+        return true;
+    }
+
+    bool success = true;
+    TextureCacheValue cacheValue;
+    if (filePath.extension() == ".dds" ||
+        filePath.extension() == ".DDS") {
+        int32_t width, height, mipCount;
+        dds::Format ddsFormat;
+        size_t* sizes;
+        uint8_t** imageData = dds::load(filePath.string().c_str(),
+                                        &width, &height, &mipCount, &sizes, &ddsFormat);
+        if (imageData) {
+            cudau::ArrayElementType elemType;
+            translate(ddsFormat, &elemType, &cacheValue.needsDegamma);
             if (elemType == cudau::ArrayElementType::BC1_UNorm ||
                 elemType == cudau::ArrayElementType::BC2_UNorm ||
                 elemType == cudau::ArrayElementType::BC3_UNorm ||
                 elemType == cudau::ArrayElementType::BC7_UNorm)
-                *bumpMapType = BumpMapTextureType::NormalMap_BC;
+                cacheValue.bumpMapType = BumpMapTextureType::NormalMap_BC;
             else if (elemType == cudau::ArrayElementType::BC4_SNorm ||
                      elemType == cudau::ArrayElementType::BC4_UNorm)
-                *bumpMapType = BumpMapTextureType::HeightMap_BC;
+                cacheValue.bumpMapType = BumpMapTextureType::HeightMap_BC;
             else if (elemType == cudau::ArrayElementType::BC5_UNorm)
-                *bumpMapType = BumpMapTextureType::NormalMap_BC_2ch;
+                cacheValue.bumpMapType = BumpMapTextureType::NormalMap_BC_2ch;
             else
                 Assert_NotImplemented();
-            auto textureGather = *bumpMapType == BumpMapTextureType::HeightMap_BC ?
+            auto textureGather = cacheValue.bumpMapType == BumpMapTextureType::HeightMap_BC ?
                 cudau::ArrayTextureGather::Enable :
                 cudau::ArrayTextureGather::Disable;
-            texture->initialize2D(
+            cacheValue.texture.initialize2D(
                 cuContext, elemType, 1,
                 cudau::ArraySurface::Disable,
                 textureGather,
                 width, height, 1);
-            texture->write<uint8_t>(imageData[0], sizes[0]);
+            cacheValue.texture.write<uint8_t>(imageData[0], sizes[0]);
             dds::free(imageData, mipCount, sizes);
         }
         else {
-            return false;
+            success = false;
         }
     }
     else {
@@ -487,47 +772,52 @@ static bool loadNormalTexture(
         std::string filename = filePath.filename().string();
         if (n > 1 &&
             filename != "spnza_bricks_a_bump.png") // Dedicated fix for crytek sponza model.
-            *bumpMapType = BumpMapTextureType::NormalMap;
+            cacheValue.bumpMapType = BumpMapTextureType::NormalMap;
         else
-            *bumpMapType = BumpMapTextureType::HeightMap;
+            cacheValue.bumpMapType = BumpMapTextureType::HeightMap;
         if (linearImageData) {
-            auto textureGather = *bumpMapType == BumpMapTextureType::HeightMap ?
+            auto textureGather = cacheValue.bumpMapType == BumpMapTextureType::HeightMap ?
                 cudau::ArrayTextureGather::Enable :
                 cudau::ArrayTextureGather::Disable;
-            texture->initialize2D(
+            cacheValue.texture.initialize2D(
                 cuContext, cudau::ArrayElementType::UInt8, 4,
                 cudau::ArraySurface::Disable, textureGather,
                 width, height, 1);
-            texture->write<uint8_t>(linearImageData, width * height * 4);
+            cacheValue.texture.write<uint8_t>(linearImageData, width * height * 4);
             stbi_image_free(linearImageData);
         }
         else {
-            return false;
+            success = false;
         }
     }
 
-    return true;
+    if (success) {
+        s_textureCache[cacheKey] = std::move(cacheValue);
+        *texture = &s_textureCache.at(cacheKey).texture;
+        *bumpMapType = s_textureCache.at(cacheKey).bumpMapType;
+    }
+    else {
+        createFx3ImmTexture(cuContext, float3(0.5f, 0.5f, 1.0f), true, texture);
+        *bumpMapType = BumpMapTextureType::NormalMap;
+    }
+
+    return success;
 }
 
 static void createNormalTexture(
     GPUEnvironment &gpuEnv,
     const std::filesystem::path &normalPath,
     Material* mat, BumpMapTextureType* bumpMapType) {
-    if (!normalPath.empty()) {
+    if (normalPath.empty()) {
+        createFx3ImmTexture(gpuEnv.cuContext, float3(0.5f, 0.5f, 1.0f), true, &mat->normal);
+        *bumpMapType = BumpMapTextureType::NormalMap;
+    }
+    else {
         hpprintf("  Reading: %s ... ", normalPath.string().c_str());
         if (loadNormalTexture(normalPath, gpuEnv.cuContext, &mat->normal, bumpMapType))
             hpprintf("done.\n");
         else
             hpprintf("failed.\n");
-    }
-    if (!mat->normal.isInitialized()) {
-        uint32_t data = 0xFFFF7F7F;
-        mat->normal.initialize2D(
-            gpuEnv.cuContext, cudau::ArrayElementType::UInt8, 4,
-            cudau::ArraySurface::Disable, cudau::ArrayTextureGather::Disable,
-            1, 1, 1);
-        mat->normal.write<uint8_t>(reinterpret_cast<uint8_t*>(&data), 4);
-        *bumpMapType = BumpMapTextureType::NormalMap;
     }
 }
 
@@ -538,25 +828,18 @@ static void createEmittanceTexture(
     bool* needsDegamma, bool* isHDR) {
     *needsDegamma = false;
     *isHDR = false;
-    if (!emittancePath.empty()) {
+    if (emittancePath.empty()) {
+        mat->texEmittance = 0;
+        if (immEmittance != float3(0.0f, 0.0f, 0.0f))
+            createFx3ImmTexture(gpuEnv.cuContext, immEmittance, false, &mat->emittance);
+    }
+    else {
         hpprintf("  Reading: %s ... ", emittancePath.string().c_str());
-        if (loadTexture(emittancePath, gpuEnv.cuContext, &mat->emittance, needsDegamma, isHDR))
+        if (loadTexture(emittancePath, float4(immEmittance, 1.0f), gpuEnv.cuContext,
+                        &mat->emittance, needsDegamma, isHDR))
             hpprintf("done.\n");
         else
             hpprintf("failed.\n");
-    }
-    if (!mat->emittance.isInitialized()) {
-        mat->texEmittance = 0;
-        if (immEmittance != float3(0.0f, 0.0f, 0.0f)) {
-            float data[4] = {
-                immEmittance.x, immEmittance.y, immEmittance.z, 1.0f
-            };
-            mat->emittance.initialize2D(
-                gpuEnv.cuContext, cudau::ArrayElementType::Float32, 4,
-                cudau::ArraySurface::Disable, cudau::ArrayTextureGather::Disable,
-                1, 1, 1);
-            mat->emittance.write(data, 4);
-        }
     }
 }
 
@@ -595,31 +878,24 @@ static Material* createLambertMaterial(
     auto &body = std::get<Material::Lambert>(mat->body);
     if (!reflectancePath.empty()) {
         hpprintf("  Reading: %s ... ", reflectancePath.string().c_str());
-        if (loadTexture(reflectancePath, gpuEnv.cuContext, &body.reflectance, &needsDegamma))
+        if (loadTexture(reflectancePath, float4(immReflectance, 1.0f), gpuEnv.cuContext,
+                        &body.reflectance, &needsDegamma))
             hpprintf("done.\n");
         else
             hpprintf("failed.\n");
     }
-    if (!body.reflectance.isInitialized()) {
-        uint32_t data = ((std::min<uint32_t>(255 * immReflectance.x, 255) << 0) |
-                         (std::min<uint32_t>(255 * immReflectance.y, 255) << 8) |
-                         (std::min<uint32_t>(255 * immReflectance.z, 255) << 16) |
-                         255 << 24);
-        body.reflectance.initialize2D(
-            gpuEnv.cuContext, cudau::ArrayElementType::UInt8, 4,
-            cudau::ArraySurface::Disable, cudau::ArrayTextureGather::Disable,
-            1, 1, 1);
-        body.reflectance.write<uint8_t>(reinterpret_cast<uint8_t*>(&data), 4);
+    if (!body.reflectance) {
+        createFx3ImmTexture(gpuEnv.cuContext, immReflectance, true, &body.reflectance);
         needsDegamma = true;
     }
     if (needsDegamma)
-        body.texReflectance = sampler_sRGB.createTextureObject(body.reflectance);
+        body.texReflectance = sampler_sRGB.createTextureObject(*body.reflectance);
     else
-        body.texReflectance = sampler_normFloat.createTextureObject(body.reflectance);
+        body.texReflectance = sampler_normFloat.createTextureObject(*body.reflectance);
 
     BumpMapTextureType bumpMapType;
     createNormalTexture(gpuEnv, normalPath, mat, &bumpMapType);
-    mat->texNormal = sampler_normFloat.createTextureObject(mat->normal);
+    mat->texNormal = sampler_normFloat.createTextureObject(*mat->normal);
     CallableProgram dcReadModifiedNormal;
     if (bumpMapType == BumpMapTextureType::NormalMap ||
         bumpMapType == BumpMapTextureType::NormalMap_BC)
@@ -632,13 +908,13 @@ static Material* createLambertMaterial(
     bool isHDR;
     createEmittanceTexture(gpuEnv, emittancePath, immEmittance,
                            mat, &needsDegamma, &isHDR);
-    if (mat->emittance.isInitialized()) {
+    if (mat->emittance) {
         if (needsDegamma)
-            mat->texEmittance = sampler_sRGB.createTextureObject(mat->emittance);
+            mat->texEmittance = sampler_sRGB.createTextureObject(*mat->emittance);
         else if (isHDR)
-            mat->texEmittance = sampler_float.createTextureObject(mat->emittance);
+            mat->texEmittance = sampler_float.createTextureObject(*mat->emittance);
         else
-            mat->texEmittance = sampler_normFloat.createTextureObject(mat->emittance);
+            mat->texEmittance = sampler_normFloat.createTextureObject(*mat->emittance);
     }
 
     mat->materialSlot = gpuEnv.materialSlotFinder.getFirstAvailableSlot();
@@ -648,8 +924,8 @@ static Material* createLambertMaterial(
     matData.asLambert.reflectance = body.texReflectance;
     matData.normal = mat->texNormal;
     matData.emittance = mat->texEmittance;
-    matData.normalWidth = mat->normal.getWidth();
-    matData.normalHeight = mat->normal.getHeight();
+    matData.normalWidth = mat->normal->getWidth();
+    matData.normalHeight = mat->normal->getHeight();
     matData.readModifiedNormal = shared::ReadModifiedNormal(dcReadModifiedNormal);
     matData.setupBSDFBody = shared::SetupBSDFBody(CallableProgram_SetupLambertBRDF);
     matData.bsdfSampleThroughput = shared::BSDFSampleThroughput(CallableProgram_LambertBRDF_sampleThroughput);
@@ -692,72 +968,51 @@ static Material* createDiffuseAndSpecularMaterial(
     sampler_normFloat.setReadMode(cudau::TextureReadMode::NormalizedFloat);
 
     Material* mat = new Material();
-    bool needsDegamma;
+    bool needsDegamma = false;
 
     mat->body = Material::DiffuseAndSpecular();
     auto &body = std::get<Material::DiffuseAndSpecular>(mat->body);
 
     if (!diffuseColorPath.empty()) {
         hpprintf("  Reading: %s ... ", diffuseColorPath.string().c_str());
-        if (loadTexture(diffuseColorPath, gpuEnv.cuContext, &body.diffuse, &needsDegamma))
+        if (loadTexture(diffuseColorPath, float4(immDiffuseColor, 1.0f), gpuEnv.cuContext,
+                        &body.diffuse, &needsDegamma))
             hpprintf("done.\n");
         else
             hpprintf("failed.\n");
     }
-    if (!body.diffuse.isInitialized()) {
-        uint32_t data = ((std::min<uint32_t>(255 * immDiffuseColor.x, 255) << 0) |
-                         (std::min<uint32_t>(255 * immDiffuseColor.y, 255) << 8) |
-                         (std::min<uint32_t>(255 * immDiffuseColor.z, 255) << 16) |
-                         255 << 24);
-        body.diffuse.initialize2D(
-            gpuEnv.cuContext, cudau::ArrayElementType::UInt8, 4,
-            cudau::ArraySurface::Disable, cudau::ArrayTextureGather::Disable,
-            1, 1, 1);
-        body.diffuse.write<uint8_t>(reinterpret_cast<uint8_t*>(&data), 4);
+    if (!body.diffuse) {
+        createFx3ImmTexture(gpuEnv.cuContext, immDiffuseColor, true, &body.diffuse);
         needsDegamma = true;
     }
     if (needsDegamma)
-        body.texDiffuse = sampler_sRGB.createTextureObject(body.diffuse);
+        body.texDiffuse = sampler_sRGB.createTextureObject(*body.diffuse);
     else
-        body.texDiffuse = sampler_normFloat.createTextureObject(body.diffuse);
+        body.texDiffuse = sampler_normFloat.createTextureObject(*body.diffuse);
 
     if (!specularColorPath.empty()) {
         hpprintf("  Reading: %s ... ", specularColorPath.string().c_str());
-        if (loadTexture(specularColorPath, gpuEnv.cuContext, &body.specular, &needsDegamma))
+        if (loadTexture(specularColorPath, float4(immSpecularColor, 1.0f), gpuEnv.cuContext,
+                        &body.specular, &needsDegamma))
             hpprintf("done.\n");
         else
             hpprintf("failed.\n");
     }
-    if (!body.specular.isInitialized()) {
-        uint32_t data = ((std::min<uint32_t>(255 * immSpecularColor.x, 255) << 0) |
-                         (std::min<uint32_t>(255 * immSpecularColor.y, 255) << 8) |
-                         (std::min<uint32_t>(255 * immSpecularColor.z, 255) << 16) |
-                         255 << 24);
-        body.specular.initialize2D(
-            gpuEnv.cuContext, cudau::ArrayElementType::UInt8, 4,
-            cudau::ArraySurface::Disable, cudau::ArrayTextureGather::Disable,
-            1, 1, 1);
-        body.specular.write<uint8_t>(reinterpret_cast<uint8_t*>(&data), 4);
+    if (!body.specular) {
+        createFx3ImmTexture(gpuEnv.cuContext, immSpecularColor, true, &body.specular);
         needsDegamma = true;
     }
     if (needsDegamma)
-        body.texSpecular = sampler_sRGB.createTextureObject(body.specular);
+        body.texSpecular = sampler_sRGB.createTextureObject(*body.specular);
     else
-        body.texSpecular = sampler_normFloat.createTextureObject(body.specular);
+        body.texSpecular = sampler_normFloat.createTextureObject(*body.specular);
 
-    {
-        uint8_t data = std::min<uint32_t>(255 * immSmoothness, 255);
-        body.smoothness.initialize2D(
-            gpuEnv.cuContext, cudau::ArrayElementType::UInt8, 1,
-            cudau::ArraySurface::Disable, cudau::ArrayTextureGather::Disable,
-            1, 1, 1);
-        body.smoothness.write<uint8_t>(reinterpret_cast<uint8_t*>(&data), 1);
-    }
-    body.texSmoothness = sampler_normFloat.createTextureObject(body.smoothness);
+    createFx1ImmTexture(gpuEnv.cuContext, immSmoothness, true, &body.smoothness);
+    body.texSmoothness = sampler_normFloat.createTextureObject(*body.smoothness);
 
     BumpMapTextureType bumpMapType;
     createNormalTexture(gpuEnv, normalPath, mat, &bumpMapType);
-    mat->texNormal = sampler_normFloat.createTextureObject(mat->normal);
+    mat->texNormal = sampler_normFloat.createTextureObject(*mat->normal);
     CallableProgram dcReadModifiedNormal;
     if (bumpMapType == BumpMapTextureType::NormalMap ||
         bumpMapType == BumpMapTextureType::NormalMap_BC)
@@ -770,13 +1025,13 @@ static Material* createDiffuseAndSpecularMaterial(
     bool isHDR;
     createEmittanceTexture(gpuEnv, emittancePath, immEmittance,
                            mat, &needsDegamma, &isHDR);
-    if (mat->emittance.isInitialized()) {
+    if (mat->emittance) {
         if (needsDegamma)
-            mat->texEmittance = sampler_sRGB.createTextureObject(mat->emittance);
+            mat->texEmittance = sampler_sRGB.createTextureObject(*mat->emittance);
         else if (isHDR)
-            mat->texEmittance = sampler_float.createTextureObject(mat->emittance);
+            mat->texEmittance = sampler_float.createTextureObject(*mat->emittance);
         else
-            mat->texEmittance = sampler_normFloat.createTextureObject(mat->emittance);
+            mat->texEmittance = sampler_normFloat.createTextureObject(*mat->emittance);
     }
 
     mat->materialSlot = gpuEnv.materialSlotFinder.getFirstAvailableSlot();
@@ -788,8 +1043,8 @@ static Material* createDiffuseAndSpecularMaterial(
     matData.asDiffuseAndSpecular.smoothness = body.texSmoothness;
     matData.normal = mat->texNormal;
     matData.emittance = mat->texEmittance;
-    matData.normalWidth = mat->normal.getWidth();
-    matData.normalHeight = mat->normal.getHeight();
+    matData.normalWidth = mat->normal->getWidth();
+    matData.normalHeight = mat->normal->getHeight();
     matData.readModifiedNormal = shared::ReadModifiedNormal(dcReadModifiedNormal);
     matData.setupBSDFBody = shared::SetupBSDFBody(CallableProgram_SetupDiffuseAndSpecularBRDF);
     matData.bsdfSampleThroughput = shared::BSDFSampleThroughput(CallableProgram_DiffuseAndSpecularBRDF_sampleThroughput);
@@ -804,7 +1059,8 @@ static Material* createDiffuseAndSpecularMaterial(
 static Material* createSimplePBRMaterial(
     GPUEnvironment &gpuEnv,
     const std::filesystem::path &baseColor_opacityPath, const float4 &immBaseColor_opacity,
-    const std::filesystem::path &occlusion_roughness_metallicPath, const float3 &immOcclusion_roughness_metallic,
+    const std::filesystem::path &occlusion_roughness_metallicPath,
+    const float3 &immOcclusion_roughness_metallic,
     const std::filesystem::path &normalPath,
     const std::filesystem::path &emittancePath, const float3 &immEmittance) {
     shared::MaterialData* matDataOnHost = gpuEnv.materialDataBuffer.getMappedPointer();
@@ -838,52 +1094,41 @@ static Material* createSimplePBRMaterial(
 
     if (!baseColor_opacityPath.empty()) {
         hpprintf("  Reading: %s ... ", baseColor_opacityPath.string().c_str());
-        if (loadTexture(baseColor_opacityPath, gpuEnv.cuContext, &body.baseColor_opacity, &needsDegamma))
+        if (loadTexture(baseColor_opacityPath, immBaseColor_opacity, gpuEnv.cuContext,
+                        &body.baseColor_opacity, &needsDegamma))
             hpprintf("done.\n");
         else
             hpprintf("failed.\n");
     }
-    if (!body.baseColor_opacity.isInitialized()) {
-        uint32_t data = ((std::min<uint32_t>(255 * immBaseColor_opacity.x, 255) << 0) |
-                         (std::min<uint32_t>(255 * immBaseColor_opacity.y, 255) << 8) |
-                         (std::min<uint32_t>(255 * immBaseColor_opacity.z, 255) << 16) |
-                         (std::min<uint32_t>(255 * immBaseColor_opacity.w, 255) << 24));
-        body.baseColor_opacity.initialize2D(
-            gpuEnv.cuContext, cudau::ArrayElementType::UInt8, 4,
-            cudau::ArraySurface::Disable, cudau::ArrayTextureGather::Disable,
-            1, 1, 1);
-        body.baseColor_opacity.write<uint8_t>(reinterpret_cast<uint8_t*>(&data), 4);
+    if (!body.baseColor_opacity) {
+        createFx4ImmTexture(gpuEnv.cuContext, immBaseColor_opacity, true,
+                            &body.baseColor_opacity);
         needsDegamma = true;
     }
     if (needsDegamma)
-        body.texBaseColor_opacity = sampler_sRGB.createTextureObject(body.baseColor_opacity);
+        body.texBaseColor_opacity = sampler_sRGB.createTextureObject(*body.baseColor_opacity);
     else
-        body.texBaseColor_opacity = sampler_normFloat.createTextureObject(body.baseColor_opacity);
+        body.texBaseColor_opacity = sampler_normFloat.createTextureObject(*body.baseColor_opacity);
 
     if (!occlusion_roughness_metallicPath.empty()) {
         hpprintf("  Reading: %s ... ", occlusion_roughness_metallicPath.string().c_str());
-        if (loadTexture(occlusion_roughness_metallicPath, gpuEnv.cuContext,
+        if (loadTexture(occlusion_roughness_metallicPath, float4(immOcclusion_roughness_metallic, 0.0f),
+                        gpuEnv.cuContext,
                         &body.occlusion_roughness_metallic, &needsDegamma))
             hpprintf("done.\n");
         else
             hpprintf("failed.\n");
     }
-    if (!body.occlusion_roughness_metallic.isInitialized()) {
-        uint32_t data = ((std::min<uint32_t>(255 * immOcclusion_roughness_metallic.x, 255) << 0) |
-                         (std::min<uint32_t>(255 * immOcclusion_roughness_metallic.y, 255) << 8) |
-                         (std::min<uint32_t>(255 * immOcclusion_roughness_metallic.z, 255) << 16) |
-                         (0xFF << 24));
-        body.occlusion_roughness_metallic.initialize2D(
-            gpuEnv.cuContext, cudau::ArrayElementType::UInt8, 4,
-            cudau::ArraySurface::Disable, cudau::ArrayTextureGather::Disable,
-            1, 1, 1);
-        body.occlusion_roughness_metallic.write<uint8_t>(reinterpret_cast<uint8_t*>(&data), 4);
+    if (!body.occlusion_roughness_metallic) {
+        createFx3ImmTexture(gpuEnv.cuContext, immOcclusion_roughness_metallic, true,
+                            &body.occlusion_roughness_metallic);
     }
-    body.texOcclusion_roughness_metallic = sampler_normFloat.createTextureObject(body.occlusion_roughness_metallic);
+    body.texOcclusion_roughness_metallic =
+        sampler_normFloat.createTextureObject(*body.occlusion_roughness_metallic);
 
     BumpMapTextureType bumpMapType;
     createNormalTexture(gpuEnv, normalPath, mat, &bumpMapType);
-    mat->texNormal = sampler_normFloat.createTextureObject(mat->normal);
+    mat->texNormal = sampler_normFloat.createTextureObject(*mat->normal);
     CallableProgram dcReadModifiedNormal;
     if (bumpMapType == BumpMapTextureType::NormalMap ||
         bumpMapType == BumpMapTextureType::NormalMap_BC)
@@ -896,13 +1141,13 @@ static Material* createSimplePBRMaterial(
     bool isHDR;
     createEmittanceTexture(gpuEnv, emittancePath, immEmittance,
                            mat, &needsDegamma, &isHDR);
-    if (mat->emittance.isInitialized()) {
+    if (mat->emittance) {
         if (needsDegamma)
-            mat->texEmittance = sampler_sRGB.createTextureObject(mat->emittance);
+            mat->texEmittance = sampler_sRGB.createTextureObject(*mat->emittance);
         else if (isHDR)
-            mat->texEmittance = sampler_float.createTextureObject(mat->emittance);
+            mat->texEmittance = sampler_float.createTextureObject(*mat->emittance);
         else
-            mat->texEmittance = sampler_normFloat.createTextureObject(mat->emittance);
+            mat->texEmittance = sampler_normFloat.createTextureObject(*mat->emittance);
     }
 
     mat->materialSlot = gpuEnv.materialSlotFinder.getFirstAvailableSlot();
@@ -913,8 +1158,8 @@ static Material* createSimplePBRMaterial(
     matData.asSimplePBR.occlusion_roughness_metallic = body.texOcclusion_roughness_metallic;
     matData.normal = mat->texNormal;
     matData.emittance = mat->texEmittance;
-    matData.normalWidth = mat->normal.getWidth();
-    matData.normalHeight = mat->normal.getHeight();
+    matData.normalWidth = mat->normal->getWidth();
+    matData.normalHeight = mat->normal->getHeight();
     matData.readModifiedNormal = shared::ReadModifiedNormal(dcReadModifiedNormal);
     matData.setupBSDFBody = shared::SetupBSDFBody(CallableProgram_SetupSimplePBR_BRDF);
     matData.bsdfSampleThroughput = shared::BSDFSampleThroughput(CallableProgram_DiffuseAndSpecularBRDF_sampleThroughput);

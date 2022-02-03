@@ -1785,6 +1785,14 @@ int32_t main(int32_t argc, const char* argv[]) try {
         {
             ImGui::Begin("Stats", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
 
+#if !defined(USE_HARD_CODED_BSDF_FUNCTIONS)
+            ImGui::PushTextWrapPos(ImGui::GetCursorPos().x + 300);
+            ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f),
+                               "BSDF callables are enabled.\n"
+                               "USE_HARD_CODED_BSDF_FUNCTIONS is recommended for better performance.");
+            ImGui::PopTextWrapPos();
+#endif
+
             static MovingAverageTime cudaFrameTime;
             static MovingAverageTime updateTime;
             static MovingAverageTime setupGBuffersTime;
@@ -2264,6 +2272,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
     }
 
     CUDADRV_CHECK(cuStreamDestroy(cuStream));
+
+    finalizeTextureCaches();
     
     gpuEnv.finalize();
 
