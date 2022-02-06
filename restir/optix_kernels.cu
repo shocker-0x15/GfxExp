@@ -28,7 +28,7 @@ struct HitGroupSBTRecordData {
 
 CUDA_DEVICE_KERNEL void RT_AH_NAME(visibility)() {
     float visibility = 0.0f;
-    optixu::setPayloads<VisibilityRayPayloadSignature>(&visibility);
+    VisibilityRayPayloadSignature::set(&visibility);
 }
 
 
@@ -128,7 +128,7 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
 
     HitPointParams* hitPointParams;
     PickInfo* pickInfo;
-    optixu::getPayloads<PrimaryRayPayloadSignature>(&hitPointParams, &pickInfo);
+    PrimaryRayPayloadSignature::get(&hitPointParams, &pickInfo);
 
     auto hp = HitPointParameter::get();
     float3 positionInWorld;
@@ -218,7 +218,7 @@ CUDA_DEVICE_KERNEL void RT_MS_NAME(setupGBuffers)() {
 
     HitPointParams* hitPointParams;
     PickInfo* pickInfo;
-    optixu::getPayloads<PrimaryRayPayloadSignature>(&hitPointParams, &pickInfo);
+    PrimaryRayPayloadSignature::get(&hitPointParams, &pickInfo);
 
     hitPointParams->albedo = make_float3(0.0f, 0.0f, 0.0f);
     hitPointParams->positionInWorld = p;

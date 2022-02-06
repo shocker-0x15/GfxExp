@@ -50,6 +50,7 @@ namespace optixu {
 
 
 
+    // static
     Context Context::create(CUcontext cuContext, uint32_t logLevel, bool enableValidation) {
         return (new _Context(cuContext, logLevel, enableValidation))->getPublicType();
     }
@@ -1258,8 +1259,8 @@ namespace optixu {
         child.geomInst = _geomInst;
         child.preTransform = preTransform;
         auto idx = std::find(m->children.cbegin(), m->children.cend(), child);
-        m->throwRuntimeError(idx != m->children.cend(), "Geometry instance %s with transform %p has not been added.",
-                             _geomInst->getName().c_str(), preTransform);
+        if (idx == m->children.cend())
+            return 0xFFFFFFFF;
 
         return static_cast<uint32_t>(std::distance(m->children.cbegin(), idx));
     }
@@ -2065,8 +2066,8 @@ namespace optixu {
         m->throwRuntimeError(_inst->getScene() == m->scene, "Scene mismatch for the given instance %s.",
                              _inst->getName().c_str());
         auto idx = std::find(m->children.cbegin(), m->children.cend(), _inst);
-        m->throwRuntimeError(idx != m->children.cend(), "Instance %s has not been added.",
-                             _inst->getName().c_str());
+        if (idx == m->children.cend())
+            return 0xFFFFFFFF;
 
         return static_cast<uint32_t>(std::distance(m->children.cbegin(), idx));
     }
@@ -2218,7 +2219,7 @@ namespace optixu {
         m = nullptr;
     }
 
-    void Pipeline::setPipelineOptions(uint32_t numPayloadValues, uint32_t numAttributeValues,
+    void Pipeline::setPipelineOptions(uint32_t numPayloadValuesInDwords, uint32_t numAttributeValuesInDwords,
                                       const char* launchParamsVariableName, size_t sizeOfLaunchParams,
                                       bool useMotionBlur,
                                       OptixTraversableGraphFlags traversableGraphFlags,
@@ -2229,8 +2230,8 @@ namespace optixu {
         // JP: パイプライン中のモジュール、そしてパイプライン自体に共通なコンパイルオプションの設定。
         // EN: Set pipeline compile options common among modules in the pipeline and the pipeline itself.
         m->pipelineCompileOptions = {};
-        m->pipelineCompileOptions.numPayloadValues = numPayloadValues;
-        m->pipelineCompileOptions.numAttributeValues = numAttributeValues;
+        m->pipelineCompileOptions.numPayloadValues = numPayloadValuesInDwords;
+        m->pipelineCompileOptions.numAttributeValues = numAttributeValuesInDwords;
         m->pipelineCompileOptions.pipelineLaunchParamsVariableName = launchParamsVariableName;
         m->pipelineCompileOptions.usesMotionBlur = useMotionBlur;
         m->pipelineCompileOptions.traversableGraphFlags = traversableGraphFlags;
@@ -2242,13 +2243,20 @@ namespace optixu {
 
     Module Pipeline::createModuleFromPTXString(const std::string &ptxString, int32_t maxRegisterCount,
                                                OptixCompileOptimizationLevel optLevel, OptixCompileDebugLevel debugLevel,
-                                               OptixModuleCompileBoundValueEntry* boundValues, uint32_t numBoundValues) const {
+                                               OptixModuleCompileBoundValueEntry* boundValues, uint32_t numBoundValues,
+                                               const PayloadType* payloadTypes, uint32_t numPayloadTypes) const {
+        std::vector<OptixPayloadType> optixPayloadTypes(numPayloadTypes);
+        for (uint32_t i = 0; i < numPayloadTypes; ++i)
+            optixPayloadTypes[i] = payloadTypes[i].getRawType();
+
         OptixModuleCompileOptions moduleCompileOptions = {};
         moduleCompileOptions.maxRegisterCount = maxRegisterCount;
         moduleCompileOptions.optLevel = optLevel;
         moduleCompileOptions.debugLevel = debugLevel;
         moduleCompileOptions.boundValues = boundValues;
         moduleCompileOptions.numBoundValues = numBoundValues;
+        moduleCompileOptions.payloadTypes = numPayloadTypes ? optixPayloadTypes.data() : nullptr;
+        moduleCompileOptions.numPayloadTypes = numPayloadTypes;
 
         OptixModule rawModule;
 
@@ -2304,7 +2312,9 @@ namespace optixu {
         return (new _ProgramGroup(m, group))->getPublicType();
     }
 
-    ProgramGroup Pipeline::createMissProgram(Module module, const char* entryFunctionName) const {
+    ProgramGroup Pipeline::createMissProgram(
+        Module module, const char* entryFunctionName,
+        const PayloadType &payloadType) const {
         _Module* _module = extract(module);
         m->throwRuntimeError((_module != nullptr) == (entryFunctionName != nullptr),
                              "Either of Miss module or entry function name is not provided.");
@@ -2319,6 +2329,9 @@ namespace optixu {
         desc.miss.entryFunctionName = entryFunctionName;
 
         OptixProgramGroupOptions options = {};
+        OptixPayloadType optixPayloadType = payloadType.getRawType();
+        if (payloadType.numDwords > 0)
+            options.payloadType = &optixPayloadType;
 
         OptixProgramGroup group;
         m->createProgram(desc, options, &group);
@@ -2328,7 +2341,8 @@ namespace optixu {
 
     ProgramGroup Pipeline::createHitProgramGroupForTriangleIS(
         Module module_CH, const char* entryFunctionNameCH,
-        Module module_AH, const char* entryFunctionNameAH) const {
+        Module module_AH, const char* entryFunctionNameAH,
+        const PayloadType &payloadType) const {
         _Module* _module_CH = extract(module_CH);
         _Module* _module_AH = extract(module_AH);
         m->throwRuntimeError((_module_CH != nullptr) == (entryFunctionNameCH != nullptr),
@@ -2358,6 +2372,9 @@ namespace optixu {
         }
 
         OptixProgramGroupOptions options = {};
+        OptixPayloadType optixPayloadType = payloadType.getRawType();
+        if (payloadType.numDwords > 0)
+            options.payloadType = &optixPayloadType;
 
         OptixProgramGroup group;
         m->createProgram(desc, options, &group);
@@ -2369,7 +2386,8 @@ namespace optixu {
         OptixPrimitiveType curveType, OptixCurveEndcapFlags endcapFlags,
         Module module_CH, const char* entryFunctionNameCH,
         Module module_AH, const char* entryFunctionNameAH,
-        ASTradeoff tradeoff, bool allowUpdate, bool allowCompaction, bool allowRandomVertexAccess) const {
+        ASTradeoff tradeoff, bool allowUpdate, bool allowCompaction, bool allowRandomVertexAccess,
+        const PayloadType &payloadType) const {
         m->throwRuntimeError(curveType != OPTIX_PRIMITIVE_TYPE_TRIANGLE && curveType != OPTIX_PRIMITIVE_TYPE_CUSTOM,
                              "Use the createHitProgramGroupForTriangleIS() or createHitProgramGroupForCustomIS() for triangles or custom primitives respectively.");
         _Module* _module_CH = extract(module_CH);
@@ -2405,6 +2423,9 @@ namespace optixu {
         desc.hitgroup.entryFunctionNameIS = nullptr;
 
         OptixProgramGroupOptions options = {};
+        OptixPayloadType optixPayloadType = payloadType.getRawType();
+        if (payloadType.numDwords > 0)
+            options.payloadType = &optixPayloadType;
 
         OptixProgramGroup group;
         m->createProgram(desc, options, &group);
@@ -2412,9 +2433,11 @@ namespace optixu {
         return (new _ProgramGroup(m, group))->getPublicType();
     }
 
-    ProgramGroup Pipeline::createHitProgramGroupForCustomIS(Module module_CH, const char* entryFunctionNameCH,
-                                                            Module module_AH, const char* entryFunctionNameAH,
-                                                            Module module_IS, const char* entryFunctionNameIS) const {
+    ProgramGroup Pipeline::createHitProgramGroupForCustomIS(
+        Module module_CH, const char* entryFunctionNameCH,
+        Module module_AH, const char* entryFunctionNameAH,
+        Module module_IS, const char* entryFunctionNameIS,
+        const PayloadType &payloadType) const {
         _Module* _module_CH = extract(module_CH);
         _Module* _module_AH = extract(module_AH);
         _Module* _module_IS = extract(module_IS);
@@ -2452,6 +2475,9 @@ namespace optixu {
         desc.hitgroup.entryFunctionNameIS = entryFunctionNameIS;
 
         OptixProgramGroupOptions options = {};
+        OptixPayloadType optixPayloadType = payloadType.getRawType();
+        if (payloadType.numDwords > 0)
+            options.payloadType = &optixPayloadType;
 
         OptixProgramGroup group;
         m->createProgram(desc, options, &group);
@@ -2470,8 +2496,10 @@ namespace optixu {
         return (new _ProgramGroup(m, group))->getPublicType();
     }
 
-    ProgramGroup Pipeline::createCallableProgramGroup(Module module_DC, const char* entryFunctionNameDC,
-                                                      Module module_CC, const char* entryFunctionNameCC) const {
+    ProgramGroup Pipeline::createCallableProgramGroup(
+        Module module_DC, const char* entryFunctionNameDC,
+        Module module_CC, const char* entryFunctionNameCC,
+        const PayloadType &payloadType) const {
         _Module* _module_DC = extract(module_DC);
         _Module* _module_CC = extract(module_CC);
         m->throwRuntimeError((_module_DC != nullptr) == (entryFunctionNameDC != nullptr),
@@ -2501,6 +2529,9 @@ namespace optixu {
         }
 
         OptixProgramGroupOptions options = {};
+        OptixPayloadType optixPayloadType = payloadType.getRawType();
+        if (payloadType.numDwords > 0)
+            options.payloadType = &optixPayloadType;
 
         OptixProgramGroup group;
         m->createProgram(desc, options, &group);
@@ -2658,6 +2689,13 @@ namespace optixu {
 
         OPTIX_CHECK(optixLaunch(m->rawPipeline, stream, plpOnDevice, m->sizeOfPipelineLaunchParams,
                                 &m->sbtParams, dimX, dimY, dimZ));
+    }
+
+    Scene Pipeline::getScene() const {
+        if (m->scene)
+            return m->scene->getPublicType();
+        else
+            return Scene();
     }
 
 
@@ -2900,7 +2938,7 @@ namespace optixu {
     }
 
     void Denoiser::setupState(CUstream stream, const BufferView &stateBuffer, const BufferView &scratchBuffer) const {
-        m->throwRuntimeError(m->imageSizeSet, "Call setImageSizes() before this function.");
+        m->throwRuntimeError(m->imageSizeSet, "Call prepare() before this function.");
         m->throwRuntimeError(stateBuffer.sizeInBytes() >= m->stateSize,
                              "Size of the given state buffer is not enough.");
         m->throwRuntimeError(scratchBuffer.sizeInBytes() >= m->scratchSize,

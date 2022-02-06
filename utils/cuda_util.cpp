@@ -843,7 +843,7 @@ namespace cudau {
         // Bug reports:
         // https://forums.developer.nvidia.com/t/how-to-create-cudatextureobject-with-texture-raw-data-in-block-compressed-bc-format/119570
         // https://forums.developer.nvidia.com/t/mip-map-with-block-compressed-texture/72170
-        if (m_numMipmapLevels > 1)
+        if (m_numMipmapLevels > 1 && m_GLTexID == 0)
             CUDADRV_CHECK(cuMipmappedArrayGetLevel(&m_mappedArrays[mipmapLevel], m_mipmappedArray, mipmapLevel));
 
         uint32_t width = std::max<uint32_t>(1, m_width >> mipmapLevel);
@@ -860,7 +860,7 @@ namespace cudau {
         params.Depth = depth;
 
         params.srcMemoryType = CU_MEMORYTYPE_ARRAY;
-        params.srcArray = m_numMipmapLevels > 1 ? m_mappedArrays[mipmapLevel] : m_array;
+        params.srcArray = (m_numMipmapLevels > 1 || m_GLTexID != 0) ? m_mappedArrays[mipmapLevel] : m_array;
         params.srcXInBytes = 0;
         params.srcY = 0;
         params.srcZ = 0;
@@ -913,7 +913,7 @@ namespace cudau {
         // srcArray, srcDevice, srcLOD are not used in this case.
 
         params.dstMemoryType = CU_MEMORYTYPE_ARRAY;
-        params.dstArray = m_numMipmapLevels > 1 ? m_mappedArrays[mipmapLevel] : m_array;
+        params.dstArray = (m_numMipmapLevels > 1 || m_GLTexID != 0) ? m_mappedArrays[mipmapLevel] : m_array;
         params.dstXInBytes = 0;
         params.dstY = 0;
         params.dstZ = 0;

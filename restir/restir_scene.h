@@ -94,8 +94,8 @@ struct GPUEnvironment {
         // EN: This sample uses two-level AS (single-level instancing).
         pipeline.setPipelineOptions(
             std::max({
-                optixu::calcSumDwords<PrimaryRayPayloadSignature>(),
-                optixu::calcSumDwords<VisibilityRayPayloadSignature>()
+                shared::PrimaryRayPayloadSignature::numDwords,
+                shared::VisibilityRayPayloadSignature::numDwords
                      }),
             optixu::calcSumDwords<float2>(),
             "plp", sizeof(shared::PipelineLaunchParameters),

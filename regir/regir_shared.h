@@ -349,11 +349,16 @@ namespace shared {
         Flow,
         DenoisedBeauty,
     };
-}
 
-#define PrimaryRayPayloadSignature shared::HitPointParams*, shared::PickInfo*
-#define PathTraceRayPayloadSignature shared::PathTraceWriteOnlyPayload*, shared::PathTraceReadWritePayload*
-#define VisibilityRayPayloadSignature float
+
+
+    using PrimaryRayPayloadSignature =
+        optixu::PayloadSignature<shared::HitPointParams*, shared::PickInfo*>;
+    using PathTraceRayPayloadSignature =
+        optixu::PayloadSignature<shared::PathTraceWriteOnlyPayload*, shared::PathTraceReadWritePayload*>;
+    using VisibilityRayPayloadSignature =
+        optixu::PayloadSignature<float>;
+}
 
 
 

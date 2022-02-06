@@ -391,10 +391,14 @@ namespace shared {
         Flow,
         DenoisedBeauty,
     };
-}
 
-#define PrimaryRayPayloadSignature shared::HitPointParams*, shared::PickInfo*
-#define VisibilityRayPayloadSignature float
+
+
+    using PrimaryRayPayloadSignature =
+        optixu::PayloadSignature<shared::HitPointParams*, shared::PickInfo*>;
+    using VisibilityRayPayloadSignature =
+        optixu::PayloadSignature<float>;
+}
 
 
 
