@@ -1,11 +1,13 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Version 16
-VisualStudioVersion = 16.0.31515.178
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.32112.339
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "restir", "restir\restir.vcxproj", "{1EF1DE28-642D-4216-B2B3-CB456C99D435}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "regir", "regir\regir.vcxproj", "{C90B0FB0-CCDA-4EA4-8D67-31B750EFD3ED}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "path_tracing", "path_tracing\path_tracing.vcxproj", "{04902764-3826-4DCF-8969-29536353315F}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -21,6 +23,10 @@ Global
 		{C90B0FB0-CCDA-4EA4-8D67-31B750EFD3ED}.Debug|x64.Build.0 = Debug|x64
 		{C90B0FB0-CCDA-4EA4-8D67-31B750EFD3ED}.Release|x64.ActiveCfg = Release|x64
 		{C90B0FB0-CCDA-4EA4-8D67-31B750EFD3ED}.Release|x64.Build.0 = Release|x64
+		{04902764-3826-4DCF-8969-29536353315F}.Debug|x64.ActiveCfg = Debug|x64
+		{04902764-3826-4DCF-8969-29536353315F}.Debug|x64.Build.0 = Debug|x64
+		{04902764-3826-4DCF-8969-29536353315F}.Release|x64.ActiveCfg = Release|x64
+		{04902764-3826-4DCF-8969-29536353315F}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

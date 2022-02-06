@@ -1,4 +1,4 @@
-﻿#include "regir_shared.h"
+﻿#include "path_tracing_shared.h"
 
 using namespace shared;
 
@@ -29,21 +29,6 @@ struct HitGroupSBTRecordData {
 CUDA_DEVICE_KERNEL void RT_AH_NAME(visibility)() {
     float visibility = 0.0f;
     VisibilityRayPayloadSignature::set(&visibility);
-}
-
-
-
-CUDA_DEVICE_FUNCTION uint32_t calcCellLinearIndex(const float3 &positionInWorld) {
-    float3 relPos = positionInWorld - plp.s->gridOrigin;
-    uint32_t ix = min(max(static_cast<uint32_t>(relPos.x / plp.s->gridCellSize.x), 0u),
-                      plp.s->gridDimension.x - 1);
-    uint32_t iy = min(max(static_cast<uint32_t>(relPos.y / plp.s->gridCellSize.y), 0u),
-                      plp.s->gridDimension.y - 1);
-    uint32_t iz = min(max(static_cast<uint32_t>(relPos.z / plp.s->gridCellSize.z), 0u),
-                      plp.s->gridDimension.z - 1);
-    return iz * plp.s->gridDimension.x * plp.s->gridDimension.y
-        + iy * plp.s->gridDimension.x
-        + ix;
 }
 
 
@@ -213,7 +198,6 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
             emittance = make_float3(texValue);
         }
         pickInfo->emittance = emittance;
-        pickInfo->cellLinearIndex = calcCellLinearIndex(positionInWorld);
     }
 }
 
@@ -269,139 +253,59 @@ CUDA_DEVICE_KERNEL void RT_MS_NAME(setupGBuffers)() {
 
 static constexpr bool useSolidAngleSampling = false;
 static constexpr bool useImplicitLightSampling = true;
-static constexpr bool useExplicitLightSampling = true;
+static constexpr bool useExplicitLightSampling = false;
 static constexpr bool useMultipleImportanceSampling = useImplicitLightSampling && useExplicitLightSampling;
 static_assert(useImplicitLightSampling || useExplicitLightSampling, "Invalid configuration for light sampling.");
 
-CUDA_DEVICE_FUNCTION float3 sampleFromCell(
-    const float3 &shadingPoint, const float3 &vOutLocal, const ReferenceFrame &shadingFrame, const BSDF &bsdf,
-    uint32_t frameIndex, PCG32RNG &rng,
-    LightSample* lightSample, float* recProbDensityEstimate) {
-    float3 randomOffset;
-    if (plp.f->enableCellRandomization) {
-        randomOffset = plp.s->gridCellSize
-            * make_float3(-0.5f + rng.getFloat0cTo1o(),
-                          -0.5f + rng.getFloat0cTo1o(),
-                          -0.5f + rng.getFloat0cTo1o());
-    }
-    else {
-        randomOffset = make_float3(0.0f);
-    }
-    uint32_t cellLinearIndex = calcCellLinearIndex(shadingPoint + randomOffset);
-    uint32_t resStartIndex = kNumLightSlotsPerCell * cellLinearIndex;
-
-    // JP: セルに触れたフラグを建てておく。
-    // EN: Set the flag indicating the cell is touched.
-    atomicAdd(&plp.s->perCellNumAccesses[cellLinearIndex], 1u);
-
-    // JP: セルごとに保持している複数のReservoirからリサンプリングを行う。
-    // EN: Resample from multiple reservoirs held by each cell.
-    const uint32_t numResampling = 1 << plp.f->log2NumCandidatesPerCell;
-    Reservoir<LightSample> combinedReservoir;
-    combinedReservoir.initialize();
-    uint32_t combinedStreamLength = 0;
-    float3 selectedContribution = make_float3(0.0f);
-    float selectedTargetPDensity = 0.0f;
-    for (int i = 0; i < numResampling; ++i) {
-        uint32_t lightSlotIdx = resStartIndex + mapPrimarySampleToDiscrete(rng.getFloat0cTo1o(), kNumLightSlotsPerCell);
-        const Reservoir<LightSample> &r = plp.s->reservoirs[plp.f->bufferIndex][lightSlotIdx];
-        const ReservoirInfo &rInfo = plp.s->reservoirInfos[plp.f->bufferIndex][lightSlotIdx];
-        const LightSample &lightSample = r.getSample();
-        uint32_t streamLength = r.getStreamLength();
-        combinedStreamLength += streamLength;
-        if (rInfo.recPDFEstimate == 0.0f)
-            continue;
-
-        // JP: Unshadowed ContributionをターゲットPDFとする。
-        // EN: Use unshadowed constribution as the target PDF.
-        float3 cont = performDirectLighting<false>(shadingPoint, vOutLocal, shadingFrame, bsdf, lightSample);
-        float targetPDensity = convertToWeight(cont);
-
-        // JP: ソースのターゲットPDFとここでのターゲットPDFは異なるためサンプルにはウェイトがかかる。
-        // EN: The sample has a weight since the source PDF and the target PDF hre are different.
-        float weight = targetPDensity * rInfo.recPDFEstimate * streamLength;
-        if (combinedReservoir.update(lightSample, weight, rng.getFloat0cTo1o())) {
-            selectedContribution = cont;
-            selectedTargetPDensity = targetPDensity;
-        }
-    }
-    combinedReservoir.setStreamLength(combinedStreamLength);
-
-    *lightSample = combinedReservoir.getSample();
-
-    float weightForEstimate = 1.0f / combinedReservoir.getStreamLength();
-    *recProbDensityEstimate = weightForEstimate * combinedReservoir.getSumWeights() / selectedTargetPDensity;
-    if (!isfinite(*recProbDensityEstimate))
-        *recProbDensityEstimate = 0.0f;
-
-    return selectedContribution;
-}
-
-template <bool useReGIR>
 CUDA_DEVICE_FUNCTION float3 performNextEventEstimation(
     const float3 &shadingPoint, const float3 &vOutLocal, const ReferenceFrame &shadingFrame, const BSDF &bsdf,
     PCG32RNG &rng) {
     float3 ret = make_float3(0.0f);
-    if constexpr (useReGIR) {
+    if constexpr (useExplicitLightSampling) {
+        float uLight = rng.getFloat0cTo1o();
+        bool selectEnvLight = false;
+        float probToSampleCurLightType = 1.0f;
+        if (plp.s->envLightTexture && plp.f->enableEnvLight) {
+            if (uLight < probToSampleEnvLight) {
+                probToSampleCurLightType = probToSampleEnvLight;
+                uLight /= probToSampleCurLightType;
+                selectEnvLight = true;
+            }
+            else {
+                probToSampleCurLightType = 1.0f - probToSampleEnvLight;
+                uLight = (uLight - probToSampleEnvLight) / probToSampleCurLightType;
+            }
+        }
         LightSample lightSample;
-        float recProbDensityEstimate;
-        float3 unshadowedContribution = sampleFromCell(
-            shadingPoint, vOutLocal, shadingFrame, bsdf,
-            plp.f->frameIndex, rng,
-            &lightSample, &recProbDensityEstimate);
-        if (recProbDensityEstimate > 0.0f) {
-            float visibility = evaluateVisibility(shadingPoint, lightSample);
-            ret = unshadowedContribution * (visibility * recProbDensityEstimate);
+        float areaPDensity;
+        sampleLight<useSolidAngleSampling>(
+            shadingPoint,
+            uLight, selectEnvLight, rng.getFloat0cTo1o(), rng.getFloat0cTo1o(),
+            &lightSample, &areaPDensity);
+        areaPDensity *= probToSampleCurLightType;
+        float misWeight = 1.0f;
+        if constexpr (useMultipleImportanceSampling) {
+            float3 shadowRay = lightSample.atInfinity ?
+                lightSample.position :
+                (lightSample.position - shadingPoint);
+            float dist2 = sqLength(shadowRay);
+            shadowRay /= std::sqrt(dist2);
+            float3 vInLocal = shadingFrame.toLocal(shadowRay);
+            float lpCos = std::fabs(dot(shadowRay, lightSample.normal));
+            float bsdfPDensity = bsdf.evaluatePDF(vOutLocal, vInLocal) * lpCos / dist2;
+            if (!isfinite(bsdfPDensity))
+                bsdfPDensity = 0.0f;
+            float lightPDensity = areaPDensity;
+            misWeight = pow2(lightPDensity) / (pow2(bsdfPDensity) + pow2(lightPDensity));
         }
-    }
-    else {
-        if constexpr (useExplicitLightSampling) {
-            float uLight = rng.getFloat0cTo1o();
-            bool selectEnvLight = false;
-            float probToSampleCurLightType = 1.0f;
-            if (plp.s->envLightTexture && plp.f->enableEnvLight) {
-                if (uLight < probToSampleEnvLight) {
-                    probToSampleCurLightType = probToSampleEnvLight;
-                    uLight /= probToSampleCurLightType;
-                    selectEnvLight = true;
-                }
-                else {
-                    probToSampleCurLightType = 1.0f - probToSampleEnvLight;
-                    uLight = (uLight - probToSampleEnvLight) / probToSampleCurLightType;
-                }
-            }
-            LightSample lightSample;
-            float areaPDensity;
-            sampleLight<useSolidAngleSampling>(
-                shadingPoint,
-                uLight, selectEnvLight, rng.getFloat0cTo1o(), rng.getFloat0cTo1o(),
-                &lightSample, &areaPDensity);
-            areaPDensity *= probToSampleCurLightType;
-            float misWeight = 1.0f;
-            if constexpr (useMultipleImportanceSampling) {
-                float3 shadowRay = lightSample.atInfinity ?
-                    lightSample.position :
-                    (lightSample.position - shadingPoint);
-                float dist2 = sqLength(shadowRay);
-                shadowRay /= std::sqrt(dist2);
-                float3 vInLocal = shadingFrame.toLocal(shadowRay);
-                float lpCos = std::fabs(dot(shadowRay, lightSample.normal));
-                float bsdfPDensity = bsdf.evaluatePDF(vOutLocal, vInLocal) * lpCos / dist2;
-                if (!isfinite(bsdfPDensity))
-                    bsdfPDensity = 0.0f;
-                float lightPDensity = areaPDensity;
-                misWeight = pow2(lightPDensity) / (pow2(bsdfPDensity) + pow2(lightPDensity));
-            }
-            if (areaPDensity > 0.0f)
-                ret = performDirectLighting<true>(
-                    shadingPoint, vOutLocal, shadingFrame, bsdf, lightSample) * (misWeight / areaPDensity);
-        }
+        if (areaPDensity > 0.0f)
+            ret = performDirectLighting<true>(
+                shadingPoint, vOutLocal, shadingFrame, bsdf, lightSample) * (misWeight / areaPDensity);
     }
 
     return ret;
 }
 
-template <bool useReGIR>
 CUDA_DEVICE_FUNCTION void pathTrace_rayGen_generic() {
     uint2 launchIndex = make_uint2(optixGetLaunchIndex().x, optixGetLaunchIndex().y);
 
@@ -453,7 +357,7 @@ CUDA_DEVICE_FUNCTION void pathTrace_rayGen_generic() {
             bsdf.setup(mat, texCoord);
 
             // Next event estimation (explicit light sampling) on the first hit.
-            contribution += alpha * performNextEventEstimation<useReGIR>(
+            contribution += alpha * performNextEventEstimation(
                 positionInWorld, vOutLocal, shadingFrame, bsdf, rng);
 
             // generate a next ray.
@@ -490,7 +394,7 @@ CUDA_DEVICE_FUNCTION void pathTrace_rayGen_generic() {
             //     で行うことが無いので終了する。
             // EN: Nothing to do in the closest-hit program when reaching the path length limit
             //     in the case implicit light sampling is unused.
-            if constexpr (useReGIR || !useImplicitLightSampling) {
+            if constexpr (!useImplicitLightSampling) {
                 if (rwPayload.maxLengthTerminate)
                     break;
                 // Russian roulette
@@ -500,7 +404,7 @@ CUDA_DEVICE_FUNCTION void pathTrace_rayGen_generic() {
                 rwPayload.alpha /= continueProb;
             }
 
-            constexpr RayType pathTraceRayType = useReGIR ? RayType_PathTraceReGIR : RayType_PathTraceBaseline;
+            constexpr RayType pathTraceRayType = RayType_PathTrace;
             optixu::trace<PathTraceRayPayloadSignature>(
                 plp.f->travHandle, rayOrg, rayDir,
                 0.0f, FLT_MAX, 0.0f, 0xFF, OPTIX_RAY_FLAG_NONE,
@@ -534,7 +438,6 @@ CUDA_DEVICE_FUNCTION void pathTrace_rayGen_generic() {
     plp.s->beautyAccumBuffer.write(launchIndex, make_float4(colorResult, 1.0f));
 }
 
-template <bool useReGIR>
 CUDA_DEVICE_FUNCTION void pathTrace_closestHit_generic() {
     auto sbtr = HitGroupSBTRecordData::get();
     const InstanceData &inst = plp.f->instanceDataBuffer[optixGetInstanceId()];
@@ -554,12 +457,12 @@ CUDA_DEVICE_FUNCTION void pathTrace_closestHit_generic() {
     float3 geometricNormalInWorld;
     float2 texCoord;
     float hypAreaPDensity;
-    computeSurfacePoint<useMultipleImportanceSampling && !useReGIR, useSolidAngleSampling>(
+    computeSurfacePoint<useMultipleImportanceSampling, useSolidAngleSampling>(
         inst, geomInst, hp.primIndex, hp.b1, hp.b2,
         rayOrigin,
         &positionInWorld, &shadingNormalInWorld, &texCoord0DirInWorld,
         &geometricNormalInWorld, &texCoord, &hypAreaPDensity);
-    if constexpr (!useMultipleImportanceSampling || useReGIR)
+    if constexpr (!useMultipleImportanceSampling)
         (void)hypAreaPDensity;
 
     const MaterialData &mat = plp.s->materialDataBuffer[geomInst.materialSlot];
@@ -574,7 +477,7 @@ CUDA_DEVICE_FUNCTION void pathTrace_closestHit_generic() {
     positionInWorld = offsetRayOrigin(positionInWorld, frontHit * geometricNormalInWorld);
     float3 vOutLocal = shadingFrame.toLocal(vOut);
 
-    if constexpr (useImplicitLightSampling && !useReGIR) {
+    if constexpr (useImplicitLightSampling) {
         // Implicit Light Sampling
         if (vOutLocal.z > 0 && mat.emittance) {
             float4 texValue = tex2DLod<float4>(mat.emittance, texCoord.x, texCoord.y, 0.0f);
@@ -600,7 +503,7 @@ CUDA_DEVICE_FUNCTION void pathTrace_closestHit_generic() {
     bsdf.setup(mat, texCoord);
 
     // Next Event Estimation (Explicit Light Sampling)
-    rwPayload->contribution += rwPayload->alpha * performNextEventEstimation<useReGIR>(
+    rwPayload->contribution += rwPayload->alpha * performNextEventEstimation(
         positionInWorld, vOutLocal, shadingFrame, bsdf, rng);
 
     // generate a next ray.
@@ -618,11 +521,11 @@ CUDA_DEVICE_FUNCTION void pathTrace_closestHit_generic() {
 }
 
 CUDA_DEVICE_KERNEL void RT_RG_NAME(pathTraceBaseline)() {
-    pathTrace_rayGen_generic<false>();
+    pathTrace_rayGen_generic();
 }
 
 CUDA_DEVICE_KERNEL void RT_CH_NAME(pathTraceBaseline)() {
-    pathTrace_closestHit_generic<false>();
+    pathTrace_closestHit_generic();
 }
 
 CUDA_DEVICE_KERNEL void RT_MS_NAME(pathTraceBaseline)() {
@@ -654,12 +557,4 @@ CUDA_DEVICE_KERNEL void RT_MS_NAME(pathTraceBaseline)() {
         }
         rwPayload->contribution += rwPayload->alpha * luminance * misWeight;
     }
-}
-
-CUDA_DEVICE_KERNEL void RT_RG_NAME(pathTraceRegir)() {
-    pathTrace_rayGen_generic<true>();
-}
-
-CUDA_DEVICE_KERNEL void RT_CH_NAME(pathTraceRegir)() {
-    pathTrace_closestHit_generic<true>();
 }
