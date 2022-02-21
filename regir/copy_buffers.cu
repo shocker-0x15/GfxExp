@@ -92,7 +92,7 @@ CUDA_DEVICE_KERNEL void visualizeToOutputBuffer(
     switch (bufferTypeToDisplay) {
     case shared::BufferToDisplay::NoisyBeauty:
     case shared::BufferToDisplay::DenoisedBeauty: {
-        auto typedLinearBuffer = reinterpret_cast<float4*>(linearBuffer);
+        auto typedLinearBuffer = reinterpret_cast<const float4*>(linearBuffer);
         //value = brightness * typedLinearBuffer[linearIndex];
         //// simple tone-map
         //value.x = 1 - std::exp(-value.x);
@@ -101,9 +101,14 @@ CUDA_DEVICE_KERNEL void visualizeToOutputBuffer(
 
         value = typedLinearBuffer[linearIndex];
         float lum = sRGB_calcLuminance(make_float3(value));
-        float lumT = 1 - std::exp(-brightness * lum);
-        // simple tone-map
-        value = value * (lumT / lum);
+        if (lum > 0.0f) {
+            float lumT = 1 - std::exp(-brightness * lum);
+            // simple tone-map
+            value = value * (lumT / lum);
+        }
+        else {
+            value.x = value.y = value.z = 0.0f;
+        }
         if (visualizeCell) {
             shared::GBuffer0 gb0 = gBuffer0.read(launchIndex);
             float3 cellColor = calcCellColor(gridOrigin, gridCellSize, gridDimension, gb0.positionInWorld);
@@ -126,12 +131,12 @@ CUDA_DEVICE_KERNEL void visualizeToOutputBuffer(
         break;
     }
     case shared::BufferToDisplay::Albedo: {
-        auto typedLinearBuffer = reinterpret_cast<float4*>(linearBuffer);
+        auto typedLinearBuffer = reinterpret_cast<const float4*>(linearBuffer);
         value = typedLinearBuffer[linearIndex];
         break;
     }
     case shared::BufferToDisplay::Normal: {
-        auto typedLinearBuffer = reinterpret_cast<float4*>(linearBuffer);
+        auto typedLinearBuffer = reinterpret_cast<const float4*>(linearBuffer);
         value = typedLinearBuffer[linearIndex];
         value.x = 0.5f + 0.5f * value.x;
         value.y = 0.5f + 0.5f * value.y;
@@ -139,7 +144,7 @@ CUDA_DEVICE_KERNEL void visualizeToOutputBuffer(
         break;
     }
     case shared::BufferToDisplay::Flow: {
-        auto typedLinearBuffer = reinterpret_cast<float2*>(linearBuffer);
+        auto typedLinearBuffer = reinterpret_cast<const float2*>(linearBuffer);
         float2 f2Value = typedLinearBuffer[linearIndex];
         value = make_float4(fminf(fmaxf(motionVectorScale * f2Value.x + motionVectorOffset, 0.0f), 1.0f),
                             fminf(fmaxf(motionVectorScale * f2Value.y + motionVectorOffset, 0.0f), 1.0f),

@@ -382,7 +382,8 @@ protected:
 
 public:
     CUDA_DEVICE_FUNCTION DiffuseAndSpecularBRDF() {}
-    CUDA_DEVICE_FUNCTION DiffuseAndSpecularBRDF(const float3 &diffuseColor, const float3 &specularF0Color, float smoothness) {
+    CUDA_DEVICE_FUNCTION DiffuseAndSpecularBRDF(
+        const float3 &diffuseColor, const float3 &specularF0Color, float smoothness) {
         m_diffuseColor = diffuseColor;
         m_specularF0Color = specularF0Color;
         m_roughness = 1 - smoothness;
@@ -436,7 +437,7 @@ public:
             // JP: 同じ方向サンプルをスペキュラー層からサンプルする確率密度を求める。
             // EN: calculate PDF to generate the sampled direction from the specular layer.
             m = halfVector(dirL, dirV);
-            dotLH = dot(dirL, m);
+            dotLH = min(dot(dirL, m), 1.0f);
             float commonPDFTerm = 1.0f / (4 * dotLH);
             specularDirPDF = commonPDFTerm * ggx.evaluatePDF(dirV, m);
 
@@ -449,7 +450,7 @@ public:
             // EN: sample based on the specular microfacet distribution.
             float mPDF;
             D = ggx.sample(dirV, uDir0, uDir1, &m, &mPDF);
-            float dotVH = dot(dirV, m);
+            float dotVH = min(dot(dirV, m), 1.0f);
             dotLH = dotVH;
             dirL = 2 * dotVH * m - dirV;
             if (dirL.z * dirV.z <= 0) {
@@ -492,7 +493,7 @@ public:
         // PDF based on one-sample model MIS.
         *dirPDensity = (diffuseDirPDF * diffuseWeight + specularDirPDF * specularWeight) / sumWeights;
 
-        ret *= vSampled->z / *dirPDensity;
+        ret *= dirL.z / *dirPDensity;
 
         return ret;
     }

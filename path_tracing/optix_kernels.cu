@@ -253,7 +253,7 @@ CUDA_DEVICE_KERNEL void RT_MS_NAME(setupGBuffers)() {
 
 static constexpr bool useSolidAngleSampling = false;
 static constexpr bool useImplicitLightSampling = true;
-static constexpr bool useExplicitLightSampling = false;
+static constexpr bool useExplicitLightSampling = true;
 static constexpr bool useMultipleImportanceSampling = useImplicitLightSampling && useExplicitLightSampling;
 static_assert(useImplicitLightSampling || useExplicitLightSampling, "Invalid configuration for light sampling.");
 
