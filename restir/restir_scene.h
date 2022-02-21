@@ -198,16 +198,6 @@ struct GPUEnvironment {
         CUDADRV_CHECK(cuMemcpyHtoD(callableToPointerMapPtr, callablePointers.data(),
                                    callableToPointerMapSize));
 
-#if !defined(USE_HARD_CODED_BSDF_FUNCTIONS)
-        CUdeviceptr callableToPointerMapAliasPtr;
-        size_t callableToPointerMapAliasSize;
-        CUDADRV_CHECK(cuModuleGetGlobal(
-            &callableToPointerMapAliasPtr, &callableToPointerMapAliasSize, perPixelRISModule,
-            "c_callableToPointerMapAlias"));
-        CUDADRV_CHECK(cuMemcpyHtoD(callableToPointerMapAliasPtr, &callableToPointerMapPtr,
-                                   callableToPointerMapAliasSize));
-#endif
-
         pipeline.link(2, DEBUG_SELECT(OPTIX_COMPILE_DEBUG_LEVEL_FULL, OPTIX_COMPILE_DEBUG_LEVEL_NONE));
 
 
@@ -971,11 +961,11 @@ static Material* createLambertMaterial(
     CallableProgram dcReadModifiedNormal;
     if (bumpMapType == BumpMapTextureType::NormalMap ||
         bumpMapType == BumpMapTextureType::NormalMap_BC)
-        dcReadModifiedNormal = CallableProgram_ReadModifiedNormalFromNormalMap;
+        dcReadModifiedNormal = CallableProgram_readModifiedNormalFromNormalMap;
     else if (bumpMapType == BumpMapTextureType::NormalMap_BC)
-        dcReadModifiedNormal = CallableProgram_ReadModifiedNormalFromNormalMap2ch;
+        dcReadModifiedNormal = CallableProgram_readModifiedNormalFromNormalMap2ch;
     else
-        dcReadModifiedNormal = CallableProgram_ReadModifiedNormalFromHeightMap;
+        dcReadModifiedNormal = CallableProgram_readModifiedNormalFromHeightMap;
 
     bool isHDR;
     createEmittanceTexture(gpuEnv, emittancePath, immEmittance,
@@ -999,7 +989,7 @@ static Material* createLambertMaterial(
     matData.normalWidth = mat->normal->getWidth();
     matData.normalHeight = mat->normal->getHeight();
     matData.readModifiedNormal = shared::ReadModifiedNormal(dcReadModifiedNormal);
-    matData.setupBSDFBody = shared::SetupBSDFBody(CallableProgram_SetupLambertBRDF);
+    matData.setupBSDFBody = shared::SetupBSDFBody(CallableProgram_setupLambertBRDF);
     matData.bsdfSampleThroughput = shared::BSDFSampleThroughput(CallableProgram_LambertBRDF_sampleThroughput);
     matData.bsdfEvaluate = shared::BSDFEvaluate(CallableProgram_LambertBRDF_evaluate);
     matData.bsdfEvaluatePDF = shared::BSDFEvaluatePDF(CallableProgram_LambertBRDF_evaluatePDF);
@@ -1088,11 +1078,11 @@ static Material* createDiffuseAndSpecularMaterial(
     CallableProgram dcReadModifiedNormal;
     if (bumpMapType == BumpMapTextureType::NormalMap ||
         bumpMapType == BumpMapTextureType::NormalMap_BC)
-        dcReadModifiedNormal = CallableProgram_ReadModifiedNormalFromNormalMap;
+        dcReadModifiedNormal = CallableProgram_readModifiedNormalFromNormalMap;
     else if (bumpMapType == BumpMapTextureType::NormalMap_BC)
-        dcReadModifiedNormal = CallableProgram_ReadModifiedNormalFromNormalMap2ch;
+        dcReadModifiedNormal = CallableProgram_readModifiedNormalFromNormalMap2ch;
     else
-        dcReadModifiedNormal = CallableProgram_ReadModifiedNormalFromHeightMap;
+        dcReadModifiedNormal = CallableProgram_readModifiedNormalFromHeightMap;
 
     bool isHDR;
     createEmittanceTexture(gpuEnv, emittancePath, immEmittance,
@@ -1118,7 +1108,7 @@ static Material* createDiffuseAndSpecularMaterial(
     matData.normalWidth = mat->normal->getWidth();
     matData.normalHeight = mat->normal->getHeight();
     matData.readModifiedNormal = shared::ReadModifiedNormal(dcReadModifiedNormal);
-    matData.setupBSDFBody = shared::SetupBSDFBody(CallableProgram_SetupDiffuseAndSpecularBRDF);
+    matData.setupBSDFBody = shared::SetupBSDFBody(CallableProgram_setupDiffuseAndSpecularBRDF);
     matData.bsdfSampleThroughput = shared::BSDFSampleThroughput(CallableProgram_DiffuseAndSpecularBRDF_sampleThroughput);
     matData.bsdfEvaluate = shared::BSDFEvaluate(CallableProgram_DiffuseAndSpecularBRDF_evaluate);
     matData.bsdfEvaluatePDF = shared::BSDFEvaluatePDF(CallableProgram_DiffuseAndSpecularBRDF_evaluatePDF);
@@ -1204,11 +1194,11 @@ static Material* createSimplePBRMaterial(
     CallableProgram dcReadModifiedNormal;
     if (bumpMapType == BumpMapTextureType::NormalMap ||
         bumpMapType == BumpMapTextureType::NormalMap_BC)
-        dcReadModifiedNormal = CallableProgram_ReadModifiedNormalFromNormalMap;
+        dcReadModifiedNormal = CallableProgram_readModifiedNormalFromNormalMap;
     else if (bumpMapType == BumpMapTextureType::NormalMap_BC)
-        dcReadModifiedNormal = CallableProgram_ReadModifiedNormalFromNormalMap2ch;
+        dcReadModifiedNormal = CallableProgram_readModifiedNormalFromNormalMap2ch;
     else
-        dcReadModifiedNormal = CallableProgram_ReadModifiedNormalFromHeightMap;
+        dcReadModifiedNormal = CallableProgram_readModifiedNormalFromHeightMap;
 
     bool isHDR;
     createEmittanceTexture(gpuEnv, emittancePath, immEmittance,
@@ -1233,7 +1223,7 @@ static Material* createSimplePBRMaterial(
     matData.normalWidth = mat->normal->getWidth();
     matData.normalHeight = mat->normal->getHeight();
     matData.readModifiedNormal = shared::ReadModifiedNormal(dcReadModifiedNormal);
-    matData.setupBSDFBody = shared::SetupBSDFBody(CallableProgram_SetupSimplePBR_BRDF);
+    matData.setupBSDFBody = shared::SetupBSDFBody(CallableProgram_setupSimplePBR_BRDF);
     matData.bsdfSampleThroughput = shared::BSDFSampleThroughput(CallableProgram_DiffuseAndSpecularBRDF_sampleThroughput);
     matData.bsdfEvaluate = shared::BSDFEvaluate(CallableProgram_DiffuseAndSpecularBRDF_evaluate);
     matData.bsdfEvaluatePDF = shared::BSDFEvaluatePDF(CallableProgram_DiffuseAndSpecularBRDF_evaluatePDF);

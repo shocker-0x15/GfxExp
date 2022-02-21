@@ -1190,19 +1190,65 @@ struct AABB {
 
 
 
+// JP: Callable Programや関数ポインターによる動的な関数呼び出しを
+//     無くした場合の性能を見たい場合にこのマクロを有効化する。
+// EN: Enable this switch when you want to see performance
+//     without dynamic function calls by callable programs or function pointers.
+//#define USE_HARD_CODED_BSDF_FUNCTIONS
+#define HARD_CODED_BSDF DiffuseAndSpecularBRDF
+//#define HARD_CODED_BSDF SimplePBR_BRDF
+
 // Use Walker's alias method with initialization by Vose's algorithm
 #define USE_WALKER_ALIAS_METHOD
 
-namespace shared {
-    extern "C" CUDA_CONSTANT_MEM void** c_callableToPointerMapAlias;
+#define PROCESS_DYNAMIC_FUNCTIONS \
+    PROCESS_DYNAMIC_FUNCTION(readModifiedNormalFromNormalMap), \
+    PROCESS_DYNAMIC_FUNCTION(readModifiedNormalFromNormalMap2ch), \
+    PROCESS_DYNAMIC_FUNCTION(readModifiedNormalFromHeightMap), \
+    PROCESS_DYNAMIC_FUNCTION(setupLambertBRDF), \
+    PROCESS_DYNAMIC_FUNCTION(LambertBRDF_sampleThroughput), \
+    PROCESS_DYNAMIC_FUNCTION(LambertBRDF_evaluate), \
+    PROCESS_DYNAMIC_FUNCTION(LambertBRDF_evaluatePDF), \
+    PROCESS_DYNAMIC_FUNCTION(LambertBRDF_evaluateDHReflectanceEstimate), \
+    PROCESS_DYNAMIC_FUNCTION(setupDiffuseAndSpecularBRDF), \
+    PROCESS_DYNAMIC_FUNCTION(setupSimplePBR_BRDF), \
+    PROCESS_DYNAMIC_FUNCTION(DiffuseAndSpecularBRDF_sampleThroughput), \
+    PROCESS_DYNAMIC_FUNCTION(DiffuseAndSpecularBRDF_evaluate), \
+    PROCESS_DYNAMIC_FUNCTION(DiffuseAndSpecularBRDF_evaluatePDF), \
+    PROCESS_DYNAMIC_FUNCTION(DiffuseAndSpecularBRDF_evaluateDHReflectanceEstimate),
+
+enum CallableProgram {
+#define PROCESS_DYNAMIC_FUNCTION(Func) CallableProgram_ ## Func
+    PROCESS_DYNAMIC_FUNCTIONS
+#undef PROCESS_DYNAMIC_FUNCTION
+    NumCallablePrograms
+};
+
+constexpr const char* callableProgramEntryPoints[] = {
+#define PROCESS_DYNAMIC_FUNCTION(Func) RT_DC_NAME_STR(#Func)
+    PROCESS_DYNAMIC_FUNCTIONS
+#undef PROCESS_DYNAMIC_FUNCTION
+};
+
+#if (defined(__CUDA_ARCH__) && defined(PURE_CUDA)) || defined(OPTIXU_Platform_CodeCompletion)
+CUDA_CONSTANT_MEM void* c_callableToPointerMap[NumCallablePrograms];
+#endif
 
 #if defined(PURE_CUDA)
-#   define CUDA_DECLARE_CALLABLE_PROGRAM_POINTER(name) extern "C" CUDA_DEVICE_MEM auto ptr_ ## name = RT_DC_NAME(name)
+#   define CUDA_DECLARE_CALLABLE_PROGRAM_POINTER(name) \
+        extern "C" CUDA_DEVICE_MEM auto ptr_ ## name = RT_DC_NAME(name)
 #else
 #   define CUDA_DECLARE_CALLABLE_PROGRAM_POINTER(name)
 #endif
-#define CUDA_CALLABLE_PROGRAM_POINTER_NAME_STR(name) "ptr_" name
 
+#define CUDA_CALLABLE_PROGRAM_POINTER_NAME_STR(name) "ptr_" #name
+constexpr const char* callableProgramPointerNames[] = {
+#define PROCESS_DYNAMIC_FUNCTION(Func) CUDA_CALLABLE_PROGRAM_POINTER_NAME_STR(Func)
+    PROCESS_DYNAMIC_FUNCTIONS
+#undef PROCESS_DYNAMIC_FUNCTION
+};
+
+namespace shared {
     template <typename FuncType>
     class DynamicFunction;
 
@@ -1220,7 +1266,7 @@ namespace shared {
 #if defined(__CUDA_ARCH__) || defined(OPTIXU_Platform_CodeCompletion)
         CUDA_DEVICE_FUNCTION ReturnType operator()(const ArgTypes &... args) const {
 #   if defined(PURE_CUDA)
-            void* ptr = c_callableToPointerMapAlias[static_cast<uint32_t>(m_callableHandle)];
+            void* ptr = c_callableToPointerMap[static_cast<uint32_t>(m_callableHandle)];
             auto func = reinterpret_cast<Signature>(ptr);
             return func(args...);
 #   else
@@ -1258,7 +1304,8 @@ namespace shared {
 
 
 
-    CUDA_DEVICE_FUNCTION uint32_t mapPrimarySampleToDiscrete(float u01, uint32_t numValues, float* uRemapped = nullptr) {
+    CUDA_DEVICE_FUNCTION uint32_t mapPrimarySampleToDiscrete(
+        float u01, uint32_t numValues, float* uRemapped = nullptr) {
 #if defined(__CUDA_ARCH__)
         uint32_t idx = min(static_cast<uint32_t>(u01 * numValues), numValues - 1);
 #else
@@ -1702,4 +1749,74 @@ namespace shared {
         float(const uint32_t* data, const float3 &vGiven, const float3 &vSampled)>;
     using BSDFEvaluateDHReflectanceEstimate = DynamicFunction<
         float3(const uint32_t* data, const float3 &vGiven)>;
+
+
+
+    struct Vertex {
+        float3 position;
+        float3 normal;
+        float3 texCoord0Dir;
+        float2 texCoord;
+    };
+
+    struct Triangle {
+        uint32_t index0, index1, index2;
+    };
+
+    struct MaterialData;
+
+    using SetupBSDFBody = DynamicFunction<
+        void(const MaterialData &matData, const float2 &texCoord, uint32_t* bodyData)>;
+
+    struct MaterialData {
+        union {
+            struct {
+                CUtexObject reflectance;
+            } asLambert;
+            struct {
+                CUtexObject diffuse;
+                CUtexObject specular;
+                CUtexObject smoothness;
+            } asDiffuseAndSpecular;
+            struct {
+                CUtexObject baseColor_opacity;
+                CUtexObject occlusion_roughness_metallic;
+            } asSimplePBR;
+        };
+        CUtexObject normal;
+        CUtexObject emittance;
+        union {
+            struct {
+                unsigned int normalWidth : 16;
+                unsigned int normalHeight : 16;
+            };
+            uint32_t normalDimension;
+        };
+
+        ReadModifiedNormal readModifiedNormal;
+
+        SetupBSDFBody setupBSDFBody;
+        BSDFSampleThroughput bsdfSampleThroughput;
+        BSDFEvaluate bsdfEvaluate;
+        BSDFEvaluatePDF bsdfEvaluatePDF;
+        BSDFEvaluateDHReflectanceEstimate bsdfEvaluateDHReflectanceEstimate;
+    };
+
+    struct GeometryInstanceData {
+        const Vertex* vertexBuffer;
+        const Triangle* triangleBuffer;
+        DiscreteDistribution1D emitterPrimDist;
+        uint32_t materialSlot;
+        uint32_t geomInstSlot;
+    };
+
+    struct InstanceData {
+        Matrix4x4 transform;
+        Matrix4x4 prevTransform;
+        Matrix3x3 normalMatrix;
+
+        const uint32_t* geomInstSlots;
+        uint32_t numGeomInsts;
+        DiscreteDistribution1D lightGeomInstDist;
+    };
 }
