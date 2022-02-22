@@ -54,7 +54,6 @@
     <ClInclude Include="..\utils\optixu_on_cudau.h" />
     <ClInclude Include="..\utils\optix_util.h" />
     <ClInclude Include="..\utils\optix_util_private.h" />
-    <ClInclude Include="path_tracing_scene.h" />
     <ClInclude Include="path_tracing_shared.h" />
   </ItemGroup>
   <ItemGroup>

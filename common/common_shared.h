@@ -1230,6 +1230,16 @@ constexpr const char* callableProgramEntryPoints[] = {
 #undef PROCESS_DYNAMIC_FUNCTION
 };
 
+#define CUDA_CALLABLE_PROGRAM_POINTER_NAME_STR(name) "ptr_" #name
+constexpr const char* callableProgramPointerNames[] = {
+#define PROCESS_DYNAMIC_FUNCTION(Func) CUDA_CALLABLE_PROGRAM_POINTER_NAME_STR(Func)
+    PROCESS_DYNAMIC_FUNCTIONS
+#undef PROCESS_DYNAMIC_FUNCTION
+};
+#undef CUDA_CALLABLE_PROGRAM_POINTER_NAME_STR
+
+#undef PROCESS_DYNAMIC_FUNCTIONS
+
 #if (defined(__CUDA_ARCH__) && defined(PURE_CUDA)) || defined(OPTIXU_Platform_CodeCompletion)
 CUDA_CONSTANT_MEM void* c_callableToPointerMap[NumCallablePrograms];
 #endif
@@ -1241,12 +1251,7 @@ CUDA_CONSTANT_MEM void* c_callableToPointerMap[NumCallablePrograms];
 #   define CUDA_DECLARE_CALLABLE_PROGRAM_POINTER(name)
 #endif
 
-#define CUDA_CALLABLE_PROGRAM_POINTER_NAME_STR(name) "ptr_" #name
-constexpr const char* callableProgramPointerNames[] = {
-#define PROCESS_DYNAMIC_FUNCTION(Func) CUDA_CALLABLE_PROGRAM_POINTER_NAME_STR(Func)
-    PROCESS_DYNAMIC_FUNCTIONS
-#undef PROCESS_DYNAMIC_FUNCTION
-};
+
 
 namespace shared {
     template <typename FuncType>

@@ -152,7 +152,6 @@
       <Filter>non-essentials</Filter>
     </ClInclude>
     <ClInclude Include="..\common\common_device.cuh" />
-    <ClInclude Include="path_tracing_scene.h" />
   </ItemGroup>
   <ItemGroup>
     <CudaCompile Include="optix_kernels.cu" />

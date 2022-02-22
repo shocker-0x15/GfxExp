@@ -53,7 +53,8 @@ EN: This program is an example implementation of ReSTIR (Reservoir-based Spatio-
 
 */
 
-#include "restir_scene.h"
+#include "restir_shared.h"
+#include "../common/common_host.h"
 
 // Include glfw3.h after our OpenGL definitions
 #include "../utils/gl_util.h"
@@ -62,6 +63,241 @@ EN: This program is an example implementation of ReSTIR (Reservoir-based Spatio-
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
+
+
+
+struct GPUEnvironment {
+    CUcontext cuContext;
+    optixu::Context optixContext;
+
+    CUmodule perPixelRISModule;
+    cudau::Kernel kernelPerformLightPreSampling;
+    cudau::Kernel kernelPerformPerPixelRIS;
+    CUdeviceptr plpPtr;
+
+    optixu::Pipeline pipeline;
+    optixu::Module mainModule;
+    optixu::ProgramGroup emptyMissProgram;
+    optixu::ProgramGroup setupGBuffersRayGenProgram;
+    optixu::ProgramGroup setupGBuffersHitProgramGroup;
+    optixu::ProgramGroup setupGBuffersMissProgram;
+
+    optixu::ProgramGroup performInitialRISRayGenProgram;
+    optixu::ProgramGroup performInitialAndTemporalRISBiasedRayGenProgram;
+    optixu::ProgramGroup performInitialAndTemporalRISUnbiasedRayGenProgram;
+    optixu::ProgramGroup performSpatialRISBiasedRayGenProgram;
+    optixu::ProgramGroup performSpatialRISUnbiasedRayGenProgram;
+    optixu::ProgramGroup shadingRayGenProgram;
+
+    optixu::ProgramGroup traceShadowRaysRayGenProgram;
+    optixu::ProgramGroup traceShadowRaysWithTemporalReuseBiasedRayGenProgram;
+    optixu::ProgramGroup traceShadowRaysWithSpatialReuseBiasedRayGenProgram;
+    optixu::ProgramGroup traceShadowRaysWithSpatioTemporalReuseBiasedRayGenProgram;
+    optixu::ProgramGroup traceShadowRaysWithTemporalReuseUnbiasedRayGenProgram;
+    optixu::ProgramGroup traceShadowRaysWithSpatialReuseUnbiasedRayGenProgram;
+    optixu::ProgramGroup traceShadowRaysWithSpatioTemporalReuseUnbiasedRayGenProgram;
+    optixu::ProgramGroup shadeAndResampleRayGenProgram;
+    optixu::ProgramGroup shadeAndResampleWithTemporalReuseRayGenProgram;
+    optixu::ProgramGroup shadeAndResampleWithSpatialReuseRayGenProgram;
+    optixu::ProgramGroup shadeAndResampleWithSpatiotemporalReuseRayGenProgram;
+
+    optixu::ProgramGroup visibilityHitProgramGroup;
+    std::vector<optixu::ProgramGroup> callablePrograms;
+
+    optixu::Material optixDefaultMaterial;
+
+    cudau::Buffer shaderBindingTable;
+
+    void initialize() {
+        int32_t cuDeviceCount;
+        CUDADRV_CHECK(cuInit(0));
+        CUDADRV_CHECK(cuDeviceGetCount(&cuDeviceCount));
+        CUDADRV_CHECK(cuCtxCreate(&cuContext, 0, 0));
+        CUDADRV_CHECK(cuCtxSetCurrent(cuContext));
+
+        optixContext = optixu::Context::create(cuContext/*, 4, DEBUG_SELECT(true, false)*/);
+
+        CUDADRV_CHECK(cuModuleLoad(&perPixelRISModule, (getExecutableDirectory() / "restir/ptxes/per_pixel_ris.ptx").string().c_str()));
+        kernelPerformLightPreSampling =
+            cudau::Kernel(perPixelRISModule, "performLightPreSampling", cudau::dim3(32), 0);
+        kernelPerformPerPixelRIS =
+            cudau::Kernel(perPixelRISModule, "performPerPixelRIS",
+                          cudau::dim3(shared::tileSizeX, shared::tileSizeY), 0);
+
+        size_t plpSize;
+        CUDADRV_CHECK(cuModuleGetGlobal(&plpPtr, &plpSize, perPixelRISModule, "plp"));
+        Assert(sizeof(shared::PipelineLaunchParameters) == plpSize, "Unexpected plp size.");
+
+        pipeline = optixContext.createPipeline();
+
+        // JP: このサンプルでは2段階のAS(1段階のインスタンシング)を使用する。
+        // EN: This sample uses two-level AS (single-level instancing).
+        pipeline.setPipelineOptions(
+            std::max({
+                shared::PrimaryRayPayloadSignature::numDwords,
+                shared::VisibilityRayPayloadSignature::numDwords
+                     }),
+            optixu::calcSumDwords<float2>(),
+            "plp", sizeof(shared::PipelineLaunchParameters),
+            false, OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_LEVEL_INSTANCING,
+            OPTIX_EXCEPTION_FLAG_STACK_OVERFLOW | OPTIX_EXCEPTION_FLAG_TRACE_DEPTH |
+            DEBUG_SELECT(OPTIX_EXCEPTION_FLAG_DEBUG, OPTIX_EXCEPTION_FLAG_NONE),
+            OPTIX_PRIMITIVE_TYPE_FLAGS_TRIANGLE);
+
+        const std::string ptx = readTxtFile(getExecutableDirectory() / "restir/ptxes/optix_kernels.ptx");
+        mainModule = pipeline.createModuleFromPTXString(
+            ptx, OPTIX_COMPILE_DEFAULT_MAX_REGISTER_COUNT,
+            DEBUG_SELECT(OPTIX_COMPILE_OPTIMIZATION_LEVEL_0, OPTIX_COMPILE_OPTIMIZATION_DEFAULT),
+            DEBUG_SELECT(OPTIX_COMPILE_DEBUG_LEVEL_FULL, OPTIX_COMPILE_DEBUG_LEVEL_NONE));
+
+        optixu::Module emptyModule;
+
+        emptyMissProgram = pipeline.createMissProgram(emptyModule, nullptr);
+
+        setupGBuffersRayGenProgram = pipeline.createRayGenProgram(
+            mainModule, RT_RG_NAME_STR("setupGBuffers"));
+        setupGBuffersHitProgramGroup = pipeline.createHitProgramGroupForTriangleIS(
+            mainModule, RT_CH_NAME_STR("setupGBuffers"),
+            emptyModule, nullptr);
+        setupGBuffersMissProgram = pipeline.createMissProgram(
+            mainModule, RT_MS_NAME_STR("setupGBuffers"));
+
+        performInitialRISRayGenProgram = pipeline.createRayGenProgram(
+            mainModule, RT_RG_NAME_STR("performInitialRIS"));
+        performInitialAndTemporalRISBiasedRayGenProgram = pipeline.createRayGenProgram(
+            mainModule, RT_RG_NAME_STR("performInitialAndTemporalRISBiased"));
+        performInitialAndTemporalRISUnbiasedRayGenProgram = pipeline.createRayGenProgram(
+            mainModule, RT_RG_NAME_STR("performInitialAndTemporalRISUnbiased"));
+        performSpatialRISBiasedRayGenProgram = pipeline.createRayGenProgram(
+            mainModule, RT_RG_NAME_STR("performSpatialRISBiased"));
+        performSpatialRISUnbiasedRayGenProgram = pipeline.createRayGenProgram(
+            mainModule, RT_RG_NAME_STR("performSpatialRISUnbiased"));
+        shadingRayGenProgram = pipeline.createRayGenProgram(
+            mainModule, RT_RG_NAME_STR("shading"));
+
+        traceShadowRaysRayGenProgram = pipeline.createRayGenProgram(
+            mainModule, RT_RG_NAME_STR("traceShadowRays"));
+        traceShadowRaysWithTemporalReuseBiasedRayGenProgram = pipeline.createRayGenProgram(
+            mainModule, RT_RG_NAME_STR("traceShadowRaysWithTemporalReuseBiased"));
+        traceShadowRaysWithSpatialReuseBiasedRayGenProgram = pipeline.createRayGenProgram(
+            mainModule, RT_RG_NAME_STR("traceShadowRaysWithSpatialReuseBiased"));
+        traceShadowRaysWithSpatioTemporalReuseBiasedRayGenProgram = pipeline.createRayGenProgram(
+            mainModule, RT_RG_NAME_STR("traceShadowRaysWithSpatioTemporalReuseBiased"));
+        traceShadowRaysWithTemporalReuseUnbiasedRayGenProgram = pipeline.createRayGenProgram(
+            mainModule, RT_RG_NAME_STR("traceShadowRaysWithTemporalReuseUnbiased"));
+        traceShadowRaysWithSpatialReuseUnbiasedRayGenProgram = pipeline.createRayGenProgram(
+            mainModule, RT_RG_NAME_STR("traceShadowRaysWithSpatialReuseUnbiased"));
+        traceShadowRaysWithSpatioTemporalReuseUnbiasedRayGenProgram = pipeline.createRayGenProgram(
+            mainModule, RT_RG_NAME_STR("traceShadowRaysWithSpatioTemporalReuseUnbiased"));
+        shadeAndResampleRayGenProgram = pipeline.createRayGenProgram(
+            mainModule, RT_RG_NAME_STR("shadeAndResample"));
+        shadeAndResampleWithTemporalReuseRayGenProgram = pipeline.createRayGenProgram(
+            mainModule, RT_RG_NAME_STR("shadeAndResampleWithTemporalReuse"));
+        shadeAndResampleWithSpatialReuseRayGenProgram = pipeline.createRayGenProgram(
+            mainModule, RT_RG_NAME_STR("shadeAndResampleWithSpatialReuse"));
+        shadeAndResampleWithSpatiotemporalReuseRayGenProgram = pipeline.createRayGenProgram(
+            mainModule, RT_RG_NAME_STR("shadeAndResampleWithSpatioTemporalReuse"));
+
+        visibilityHitProgramGroup = pipeline.createHitProgramGroupForTriangleIS(
+            emptyModule, nullptr,
+            mainModule, RT_AH_NAME_STR("visibility"));
+
+        //optixu::ProgramGroup exceptionProgram = pipeline.createExceptionProgram(moduleOptiX, "__exception__print");
+
+        // If an exception program is not set but exception flags are set, the default exception program will by provided by OptiX.
+        //pipeline.setExceptionProgram(exceptionProgram);
+        pipeline.setNumMissRayTypes(shared::NumRayTypes);
+        pipeline.setMissProgram(shared::RayType_Primary, setupGBuffersMissProgram);
+        pipeline.setMissProgram(shared::RayType_Visibility, emptyMissProgram);
+
+        pipeline.setNumCallablePrograms(NumCallablePrograms);
+        callablePrograms.resize(NumCallablePrograms);
+        std::vector<void*> callablePointers(NumCallablePrograms);
+        for (int i = 0; i < NumCallablePrograms; ++i) {
+            optixu::ProgramGroup program = pipeline.createCallableProgramGroup(
+                mainModule, callableProgramEntryPoints[i],
+                emptyModule, nullptr);
+            callablePrograms[i] = program;
+            pipeline.setCallableProgram(i, program);
+
+            CUdeviceptr symbolPtr;
+            size_t symbolSize;
+            CUDADRV_CHECK(cuModuleGetGlobal(&symbolPtr, &symbolSize, perPixelRISModule,
+                                            callableProgramPointerNames[i]));
+            void* funcPtrOnDevice;
+            Assert(symbolSize == sizeof(funcPtrOnDevice), "Unexpected symbol size");
+            CUDADRV_CHECK(cuMemcpyDtoH(&funcPtrOnDevice, symbolPtr, sizeof(funcPtrOnDevice)));
+            callablePointers[i] = funcPtrOnDevice;
+        }
+
+        CUdeviceptr callableToPointerMapPtr;
+        size_t callableToPointerMapSize;
+        CUDADRV_CHECK(cuModuleGetGlobal(
+            &callableToPointerMapPtr, &callableToPointerMapSize, perPixelRISModule,
+            "c_callableToPointerMap"));
+        CUDADRV_CHECK(cuMemcpyHtoD(callableToPointerMapPtr, callablePointers.data(),
+                                   callableToPointerMapSize));
+
+        pipeline.link(2, DEBUG_SELECT(OPTIX_COMPILE_DEBUG_LEVEL_FULL, OPTIX_COMPILE_DEBUG_LEVEL_NONE));
+
+
+
+        optixDefaultMaterial = optixContext.createMaterial();
+        optixDefaultMaterial.setHitGroup(shared::RayType_Primary, setupGBuffersHitProgramGroup);
+        optixDefaultMaterial.setHitGroup(shared::RayType_Visibility, visibilityHitProgramGroup);
+
+
+
+        size_t sbtSize;
+        pipeline.generateShaderBindingTableLayout(&sbtSize);
+        shaderBindingTable.initialize(cuContext, Scene::bufferType, sbtSize, 1);
+        shaderBindingTable.setMappedMemoryPersistent(true);
+        pipeline.setShaderBindingTable(shaderBindingTable, shaderBindingTable.getMappedPointer());
+    }
+
+    void finalize() {
+        shaderBindingTable.finalize();
+
+        optixDefaultMaterial.destroy();
+
+        for (int i = 0; i < NumCallablePrograms; ++i)
+            callablePrograms[i].destroy();
+        visibilityHitProgramGroup.destroy();
+
+        shadeAndResampleWithSpatiotemporalReuseRayGenProgram.destroy();
+        shadeAndResampleWithSpatialReuseRayGenProgram.destroy();
+        shadeAndResampleWithTemporalReuseRayGenProgram.destroy();
+        shadeAndResampleRayGenProgram.destroy();
+        traceShadowRaysWithSpatioTemporalReuseUnbiasedRayGenProgram.destroy();
+        traceShadowRaysWithSpatialReuseUnbiasedRayGenProgram.destroy();
+        traceShadowRaysWithTemporalReuseUnbiasedRayGenProgram.destroy();
+        traceShadowRaysWithSpatioTemporalReuseBiasedRayGenProgram.destroy();
+        traceShadowRaysWithSpatialReuseBiasedRayGenProgram.destroy();
+        traceShadowRaysWithTemporalReuseBiasedRayGenProgram.destroy();
+        traceShadowRaysRayGenProgram.destroy();
+
+        shadingRayGenProgram.destroy();
+        performSpatialRISUnbiasedRayGenProgram.destroy();
+        performSpatialRISBiasedRayGenProgram.destroy();
+        performInitialAndTemporalRISUnbiasedRayGenProgram.destroy();
+        performInitialAndTemporalRISBiasedRayGenProgram.destroy();
+        performInitialRISRayGenProgram.destroy();
+
+        setupGBuffersMissProgram.destroy();
+        setupGBuffersHitProgramGroup.destroy();
+        setupGBuffersRayGenProgram.destroy();
+        emptyMissProgram.destroy();
+        mainModule.destroy();
+
+        pipeline.destroy();
+
+        CUDADRV_CHECK(cuModuleUnload(perPixelRISModule));
+
+        optixContext.destroy();
+
+        CUDADRV_CHECK(cuCtxDestroy(cuContext));
+    }
+};
 
 
 
@@ -661,8 +897,12 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
 
 
+
     GPUEnvironment gpuEnv;
     gpuEnv.initialize();
+
+    Scene scene;
+    scene.initialize(gpuEnv.cuContext, gpuEnv.optixContext, shared::NumRayTypes, gpuEnv.optixDefaultMaterial);
 
     CUstream cuStream;
     CUDADRV_CHECK(cuStreamCreate(&cuStream, 0));
@@ -671,122 +911,41 @@ int32_t main(int32_t argc, const char* argv[]) try {
     // JP: シーンのセットアップ。
     // EN: Setup a scene.
 
-    gpuEnv.materialDataBuffer.map();
-    gpuEnv.geomInstDataBuffer.map();
-    gpuEnv.instDataBuffer[0].map();
+    scene.map();
 
-    struct InstanceController {
-        Instance* inst;
-        Matrix4x4 defaultTransform;
-
-        float curScale;
-        Quaternion curOrientation;
-        float3 curPosition;
-        Matrix4x4 prevMatM2W;
-        Matrix4x4 matM2W;
-        Matrix3x3 nMatM2W;
-
-        float beginScale;
-        Quaternion beginOrientation;
-        float3 beginPosition;
-        float endScale;
-        Quaternion endOrientation;
-        float3 endPosition;
-        float time;
-        float frequency;
-
-        InstanceController(
-            Instance* _inst, const Matrix4x4 &_defaultTranform,
-            float _beginScale, const Quaternion &_beginOrienatation, const float3 &_beginPosition,
-            float _endScale, const Quaternion &_endOrienatation, const float3 &_endPosition,
-            float _frequency, float initTime) :
-            inst(_inst), defaultTransform(_defaultTranform),
-            beginScale(_beginScale), beginOrientation(_beginOrienatation), beginPosition(_beginPosition),
-            endScale(_endScale), endOrientation(_endOrienatation), endPosition(_endPosition),
-            time(initTime), frequency(_frequency) {
-        }
-
-        void updateBody(float dt) {
-            time = std::fmod(time + dt, frequency);
-            float t = 0.5f - 0.5f * std::cos(2 * M_PI * time / frequency);
-            curScale = (1 - t) * beginScale + t * endScale;
-            curOrientation = Slerp(t, beginOrientation, endOrientation);
-            curPosition = (1 - t) * beginPosition + t * endPosition;
-        }
-
-        void update(shared::InstanceData* instDataBuffer, float dt) {
-            prevMatM2W = matM2W;
-            updateBody(dt);
-            matM2W = Matrix4x4(curOrientation.toMatrix3x3() * scale3x3(curScale), curPosition) * defaultTransform;
-            nMatM2W = transpose(inverse(matM2W.getUpperLeftMatrix()));
-
-            Matrix4x4 tMatM2W = transpose(matM2W);
-            inst->optixInst.setTransform(reinterpret_cast<const float*>(&tMatM2W));
-
-            shared::InstanceData &instData = instDataBuffer[inst->instSlot];
-            instData.prevTransform = prevMatM2W;
-            instData.transform = matM2W;
-            instData.normalMatrix = nMatM2W;
-        }
-    };
-
-    std::vector<Material*> materials;
-    std::vector<GeometryInstance*> geomInsts;
-    std::vector<GeometryGroup*> geomGroups;
-
-    std::map<std::string, Mesh*> meshes;
     for (auto it = g_meshInfos.cbegin(); it != g_meshInfos.cend(); ++it) {
         const MeshInfo &info = it->second;
-
-        std::vector<Material*> tempMaterials;
-        std::vector<GeometryInstance*> tempGeomInsts;
-        std::vector<GeometryGroup*> tempGeomGroups;
-        Mesh* mesh = new Mesh();
 
         if (std::holds_alternative<MeshGeometryInfo>(info)) {
             const auto &meshInfo = std::get<MeshGeometryInfo>(info);
 
-            createTriangleMeshes(meshInfo.path, meshInfo.matConv,
+            createTriangleMeshes(it->first,
+                                 meshInfo.path, meshInfo.matConv,
                                  scale4x4(meshInfo.preScale),
-                                 gpuEnv,
-                                 tempMaterials,
-                                 tempGeomInsts,
-                                 tempGeomGroups,
-                                 mesh);
+                                 gpuEnv.cuContext, &scene);
         }
         else if (std::holds_alternative<RectangleGeometryInfo>(info)) {
             const auto &rectInfo = std::get<RectangleGeometryInfo>(info);
 
-            tempMaterials.push_back(new Material());
-            tempGeomInsts.push_back(new GeometryInstance());
-            tempGeomGroups.push_back(new GeometryGroup());
-            createRectangleLight(rectInfo.dimX, rectInfo.dimZ,
+            createRectangleLight(it->first,
+                                 rectInfo.dimX, rectInfo.dimZ,
                                  float3(0.01f),
                                  rectInfo.emitterTexPath, rectInfo.emittance, Matrix4x4(),
-                                 gpuEnv, &tempMaterials[0], &tempGeomInsts[0], &tempGeomGroups[0],
-                                 mesh);
+                                 gpuEnv.cuContext, &scene);
         }
-
-        materials.insert(materials.end(), tempMaterials.begin(), tempMaterials.end());
-        geomInsts.insert(geomInsts.end(), tempGeomInsts.begin(), tempGeomInsts.end());
-        geomGroups.insert(geomGroups.end(), tempGeomGroups.begin(), tempGeomGroups.end());
-        meshes[it->first] = mesh;
     }
 
-    std::vector<Instance*> insts;
-    std::vector<InstanceController*> instControllers;
-    AABB initialSceneAabb;
     for (int i = 0; i < g_meshInstInfos.size(); ++i) {
         const MeshInstanceInfo &info = g_meshInstInfos[i];
-        const Mesh* mesh = meshes.at(info.name);
+        const Mesh* mesh = scene.meshes.at(info.name);
         for (int j = 0; j < mesh->groups.size(); ++j) {
             const Mesh::Group &group = mesh->groups[j];
 
             Matrix4x4 instXfm = Matrix4x4(info.beginScale * info.beginOrientation.toMatrix3x3(), info.beginPosition) * group.transform;
-            Instance* inst = createInstance(gpuEnv, group.geomGroup, instXfm);
-            insts.push_back(inst);
+            Instance* inst = createInstance(gpuEnv.cuContext, &scene, group.geomGroup, instXfm);
+            scene.insts.push_back(inst);
 
-            initialSceneAabb.unify(instXfm * group.geomGroup->aabb);
+            scene.initialSceneAabb.unify(instXfm * group.geomGroup->aabb);
 
             if (info.beginPosition != info.endPosition ||
                 info.beginOrientation != info.endOrientation ||
@@ -797,98 +956,32 @@ int32_t main(int32_t argc, const char* argv[]) try {
                     info.beginScale, info.beginOrientation, info.beginPosition,
                     info.endScale, info.endOrientation, info.endPosition,
                     info.frequency, info.initTime);
-                instControllers.push_back(controller);
+                scene.instControllers.push_back(controller);
             }
         }
     }
 
-    float3 sceneDim = initialSceneAabb.maxP - initialSceneAabb.minP;
+    float3 sceneDim = scene.initialSceneAabb.maxP - scene.initialSceneAabb.minP;
     g_cameraPositionalMovingSpeed = 0.003f * std::max({ sceneDim.x, sceneDim.y, sceneDim.z });
     g_cameraDirectionalMovingSpeed = 0.0015f;
     g_cameraTiltSpeed = 0.025f;
 
-    gpuEnv.instDataBuffer[0].unmap();
-    gpuEnv.geomInstDataBuffer.unmap();
-    gpuEnv.materialDataBuffer.unmap();
+    scene.unmap();
 
-    CUDADRV_CHECK(cuMemcpyDtoD(gpuEnv.instDataBuffer[1].getCUdeviceptr(),
-                               gpuEnv.instDataBuffer[0].getCUdeviceptr(),
-                               gpuEnv.instDataBuffer[1].sizeInBytes()));
-
-
-
-    optixu::InstanceAccelerationStructure ias = gpuEnv.scene.createInstanceAccelerationStructure();
-    cudau::Buffer iasMem;
-    cudau::TypedBuffer<OptixInstance> iasInstanceBuffer;
-    for (int i = 0; i < insts.size(); ++i) {
-        const Instance* inst = insts[i];
-        ias.addChild(inst->optixInst);
-    }
-
-    OptixAccelBufferSizes asSizes;
-    size_t asScratchSize = 0;
-    for (int i = 0; i < geomGroups.size(); ++i) {
-        GeometryGroup* geomGroup = geomGroups[i];
-        geomGroup->optixGas.setConfiguration(
-            optixu::ASTradeoff::PreferFastTrace,
-            false, false, false);
-        geomGroup->optixGas.prepareForBuild(&asSizes);
-        geomGroup->optixGasMem.initialize(gpuEnv.cuContext, GPUEnvironment::bufferType, asSizes.outputSizeInBytes, 1);
-        asScratchSize = std::max(asSizes.tempSizeInBytes, asScratchSize);
-    }
-
-    ias.setConfiguration(optixu::ASTradeoff::PreferFastTrace, false, false, false);
-    ias.prepareForBuild(&asSizes);
-    iasMem.initialize(gpuEnv.cuContext, GPUEnvironment::bufferType, asSizes.outputSizeInBytes, 1);
-    asScratchSize = std::max(asSizes.tempSizeInBytes, asScratchSize);
-    iasInstanceBuffer.initialize(gpuEnv.cuContext, GPUEnvironment::bufferType, ias.getNumChildren());
-
-    cudau::Buffer asScratchMem;
-    asScratchMem.initialize(gpuEnv.cuContext, GPUEnvironment::bufferType, asScratchSize, 1);
-
-    for (int i = 0; i < geomGroups.size(); ++i) {
-        const GeometryGroup* geomGroup = geomGroups[i];
-        geomGroup->optixGas.rebuild(cuStream, geomGroup->optixGasMem, asScratchMem);
-    }
-
-    cudau::Buffer hitGroupSBT;
-    size_t hitGroupSbtSize;
-    gpuEnv.scene.generateShaderBindingTableLayout(&hitGroupSbtSize);
-    hitGroupSBT.initialize(gpuEnv.cuContext, GPUEnvironment::bufferType, hitGroupSbtSize, 1);
-    hitGroupSBT.setMappedMemoryPersistent(true);
-
-    {
-        for (int bufIdx = 0; bufIdx < 2; ++bufIdx) {
-            cudau::TypedBuffer<shared::InstanceData> &curInstDataBuffer = gpuEnv.instDataBuffer[bufIdx];
-            shared::InstanceData* instDataBufferOnHost = curInstDataBuffer.map();
-            for (int i = 0; i < instControllers.size(); ++i) {
-                InstanceController* controller = instControllers[i];
-                Instance* inst = controller->inst;
-                shared::InstanceData &instData = instDataBufferOnHost[inst->instSlot];
-                controller->update(instDataBufferOnHost, 0.0f);
-                // TODO: まとめて送る。
-                CUDADRV_CHECK(cuMemcpyHtoDAsync(curInstDataBuffer.getCUdeviceptrAt(inst->instSlot),
-                                                &instData, sizeof(instData), cuStream));
-            }
-            curInstDataBuffer.unmap();
-        }
-    }
-
-    OptixTraversableHandle travHandle = ias.rebuild(cuStream, iasInstanceBuffer, iasMem, asScratchMem);
-
-    CUDADRV_CHECK(cuStreamSynchronize(cuStream));
+    scene.setupASes(gpuEnv.cuContext);
+    CUDADRV_CHECK(cuStreamSynchronize(0));
 
     // JP: 各インスタンスの重要度から光源インスタンスをサンプルするための分布を計算する。
     // EN: Compute a distribution to sample a light source instance from the importance value of each instance.
     uint32_t totalNumEmitterPrimitives = 0;
-    std::vector<float> lightImportances(insts.size());
-    for (int i = 0; i < insts.size(); ++i) {
-        const Instance* inst = insts[i];
+    std::vector<float> lightImportances(scene.insts.size());
+    for (int i = 0; i < scene.insts.size(); ++i) {
+        const Instance* inst = scene.insts[i];
         lightImportances[i] = inst->lightGeomInstDist.getIntengral();
         totalNumEmitterPrimitives += inst->geomGroup->numEmitterPrimitives;
     }
     DiscreteDistribution1D lightInstDist;
-    lightInstDist.initialize(gpuEnv.cuContext, GPUEnvironment::bufferType,
+    lightInstDist.initialize(gpuEnv.cuContext, Scene::bufferType,
                              lightImportances.data(), lightImportances.size());
     Assert(lightInstDist.getIntengral() > 0, "No lights!");
     hpprintf("%u emitter primitives\n", totalNumEmitterPrimitives);
@@ -899,7 +992,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
     CUtexObject envLightTexture = 0;
     RegularConstantContinuousDistribution2D envLightImportanceMap;
     if (!g_envLightTexturePath.empty())
-        loadEnvironmentalTexture(g_envLightTexturePath, gpuEnv,
+        loadEnvironmentalTexture(g_envLightTexturePath, gpuEnv.cuContext,
                                  &envLightArray, &envLightTexture, &envLightImportanceMap);
 
     // END: Setup a scene.
@@ -914,7 +1007,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
     cudau::TypedBuffer<shared::PreSampledLight> preSampledLights;
 
     constexpr uint32_t numPreSampledLights = shared::numLightSubsets * shared::lightSubsetSize;
-    lightPreSamplingRngs.initialize(gpuEnv.cuContext, GPUEnvironment::bufferType, numPreSampledLights);
+    lightPreSamplingRngs.initialize(gpuEnv.cuContext, Scene::bufferType, numPreSampledLights);
     {
         shared::PCG32RNG* rngs = lightPreSamplingRngs.map();
         std::mt19937_64 rngSeed(894213312210);
@@ -922,7 +1015,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
             rngs[i].setState(rngSeed());
         lightPreSamplingRngs.unmap();
     }
-    preSampledLights.initialize(gpuEnv.cuContext, GPUEnvironment::bufferType, numPreSampledLights);
+    preSampledLights.initialize(gpuEnv.cuContext, Scene::bufferType, numPreSampledLights);
 
     // END: 
     // ----------------------------------------------------------------
@@ -968,7 +1061,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
                 cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable,
                 renderTargetSizeX, renderTargetSizeY, 1);
 
-            reservoirBuffer[i].initialize(gpuEnv.cuContext, GPUEnvironment::bufferType,
+            reservoirBuffer[i].initialize(gpuEnv.cuContext, Scene::bufferType,
                                           renderTargetSizeX, renderTargetSizeY);
             reservoirInfoBuffer[i].initialize2D(
                 gpuEnv.cuContext, cudau::ArrayElementType::UInt32, (sizeof(shared::ReservoirInfo) + 3) / 4,
@@ -991,15 +1084,15 @@ int32_t main(int32_t argc, const char* argv[]) try {
                                        cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable,
                                        renderTargetSizeX, renderTargetSizeY, 1);
 
-        linearBeautyBuffer.initialize(gpuEnv.cuContext, GPUEnvironment::bufferType,
+        linearBeautyBuffer.initialize(gpuEnv.cuContext, Scene::bufferType,
                                       renderTargetSizeX * renderTargetSizeY);
-        linearAlbedoBuffer.initialize(gpuEnv.cuContext, GPUEnvironment::bufferType,
+        linearAlbedoBuffer.initialize(gpuEnv.cuContext, Scene::bufferType,
                                       renderTargetSizeX * renderTargetSizeY);
-        linearNormalBuffer.initialize(gpuEnv.cuContext, GPUEnvironment::bufferType,
+        linearNormalBuffer.initialize(gpuEnv.cuContext, Scene::bufferType,
                                       renderTargetSizeX * renderTargetSizeY);
-        linearFlowBuffer.initialize(gpuEnv.cuContext, GPUEnvironment::bufferType,
+        linearFlowBuffer.initialize(gpuEnv.cuContext, Scene::bufferType,
                                     renderTargetSizeX * renderTargetSizeY);
-        linearDenoisedBeautyBuffer.initialize(gpuEnv.cuContext, GPUEnvironment::bufferType,
+        linearDenoisedBeautyBuffer.initialize(gpuEnv.cuContext, Scene::bufferType,
                                               renderTargetSizeX * renderTargetSizeY);
 
         rngBuffer.initialize2D(
@@ -1109,8 +1202,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
     hpprintf("Compute Intensity Scratch Buffer: %llu bytes\n", scratchSizeForComputeIntensity);
     cudau::Buffer denoiserStateBuffer;
     cudau::Buffer denoiserScratchBuffer;
-    denoiserStateBuffer.initialize(gpuEnv.cuContext, GPUEnvironment::bufferType, stateSize, 1);
-    denoiserScratchBuffer.initialize(gpuEnv.cuContext, GPUEnvironment::bufferType,
+    denoiserStateBuffer.initialize(gpuEnv.cuContext, Scene::bufferType, stateSize, 1);
+    denoiserScratchBuffer.initialize(gpuEnv.cuContext, Scene::bufferType,
                                      std::max(scratchSize, scratchSizeForComputeIntensity), 1);
 
     std::vector<optixu::DenoisingTask> denoisingTasks(numTasks);
@@ -1216,7 +1309,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         spatialNeighborDeltasOnHost[i] = delta;
         //printf("%g, %g\n", delta.x, delta.y);
     }
-    cudau::TypedBuffer<float2> spatialNeighborDeltas(gpuEnv.cuContext, GPUEnvironment::bufferType, spatialNeighborDeltasOnHost);
+    cudau::TypedBuffer<float2> spatialNeighborDeltas(gpuEnv.cuContext, Scene::bufferType, spatialNeighborDeltasOnHost);
 
 
 
@@ -1240,8 +1333,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
     staticPlp.sampleVisibilityBuffer[0] = sampleVisibilityBuffer[0].getSurfaceObject(0);
     staticPlp.sampleVisibilityBuffer[1] = sampleVisibilityBuffer[1].getSurfaceObject(0);
     staticPlp.spatialNeighborDeltas = spatialNeighborDeltas.getDevicePointer();
-    staticPlp.materialDataBuffer = gpuEnv.materialDataBuffer.getDevicePointer();
-    staticPlp.geometryInstanceDataBuffer = gpuEnv.geomInstDataBuffer.getDevicePointer();
+    staticPlp.materialDataBuffer = scene.materialDataBuffer.getDevicePointer();
+    staticPlp.geometryInstanceDataBuffer = scene.geomInstDataBuffer.getDevicePointer();
     lightInstDist.getDeviceType(&staticPlp.lightInstDist);
     envLightImportanceMap.getDeviceType(&staticPlp.envLightImportanceMap);
     staticPlp.envLightTexture = envLightTexture;
@@ -1254,7 +1347,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
     CUDADRV_CHECK(cuMemcpyHtoD(staticPlpOnDevice, &staticPlp, sizeof(staticPlp)));
 
     shared::PerFramePipelineLaunchParameters perFramePlp = {};
-    perFramePlp.travHandle = travHandle;
+    perFramePlp.travHandle = scene.ias.getHandle();
     perFramePlp.camera.fovY = 50 * M_PI / 180;
     perFramePlp.camera.aspect = static_cast<float>(renderTargetSizeX) / renderTargetSizeY;
     perFramePlp.camera.position = g_cameraPosition;
@@ -1272,8 +1365,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
     plp.f = reinterpret_cast<shared::PerFramePipelineLaunchParameters*>(perFramePlpOnDevice);
     plp.currentReservoirIndex = 0;
 
-    gpuEnv.pipeline.setScene(gpuEnv.scene);
-    gpuEnv.pipeline.setHitGroupShaderBindingTable(hitGroupSBT, hitGroupSBT.getMappedPointer());
+    gpuEnv.pipeline.setScene(scene.optixScene);
+    gpuEnv.pipeline.setHitGroupShaderBindingTable(scene.hitGroupSBT, scene.hitGroupSBT.getMappedPointer());
 
     shared::PickInfo initPickInfo = {};
     initPickInfo.hit = false;
@@ -1286,8 +1379,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
     initPickInfo.emittance = make_float3(0.0f);
     initPickInfo.normalInWorld = make_float3(0.0f);
     cudau::TypedBuffer<shared::PickInfo> pickInfos[2];
-    pickInfos[0].initialize(gpuEnv.cuContext, GPUEnvironment::bufferType, 1, initPickInfo);
-    pickInfos[1].initialize(gpuEnv.cuContext, GPUEnvironment::bufferType, 1, initPickInfo);
+    pickInfos[0].initialize(gpuEnv.cuContext, Scene::bufferType, 1, initPickInfo);
+    pickInfos[1].initialize(gpuEnv.cuContext, Scene::bufferType, 1, initPickInfo);
 
     CUdeviceptr plpOnDevice;
     CUDADRV_CHECK(cuMemAlloc(&plpOnDevice, sizeof(plp)));
@@ -1603,7 +1696,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         //    rearchRestirUnbiasedConfigs.enableSpatialReuse = false;
         //    tempInit = true;
         //}
-        static Renderer curRenderer = Renderer::RearchitectedReSTIRBiased;
+        static Renderer curRenderer = Renderer::RearchitectedReSTIRUnbiased;
         //static Renderer curRenderer = Renderer::OriginalReSTIRBiased;
         static ReSTIRConfigs* curRendererConfigs = &orgRestirBiasedConfigs;
         static uint32_t numFramesForCurRenderer = 0;
@@ -1861,10 +1954,10 @@ int32_t main(int32_t argc, const char* argv[]) try {
         // JP: 各インスタンスのトランスフォームを更新する。
         // EN: Update the transform of each instance.
         if (animate || lastFrameWasAnimated) {
-            cudau::TypedBuffer<shared::InstanceData> &curInstDataBuffer = gpuEnv.instDataBuffer[bufferIndex];
+            cudau::TypedBuffer<shared::InstanceData> &curInstDataBuffer = scene.instDataBuffer[bufferIndex];
             shared::InstanceData* instDataBufferOnHost = curInstDataBuffer.map();
-            for (int i = 0; i < instControllers.size(); ++i) {
-                InstanceController* controller = instControllers[i];
+            for (int i = 0; i < scene.instControllers.size(); ++i) {
+                InstanceController* controller = scene.instControllers[i];
                 Instance* inst = controller->inst;
                 shared::InstanceData &instData = instDataBufferOnHost[inst->instSlot];
                 controller->update(instDataBufferOnHost, animate ? 1.0f / 60.0f : 0.0f);
@@ -1884,7 +1977,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
         //     so neither of markDirty() nor prepareForBuild() is required.
         curGPUTimer.update.start(cuStream);
         if (animate)
-            perFramePlp.travHandle = ias.rebuild(cuStream, iasInstanceBuffer, iasMem, asScratchMem);
+            perFramePlp.travHandle = scene.ias.rebuild(
+                cuStream, scene.iasInstanceBuffer, scene.iasMem, scene.asScratchMem);
         curGPUTimer.update.stop(cuStream);
 
         bool newSequence = resized || frameIndex == 0 || resetAccumulation;
@@ -1899,7 +1993,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
         perFramePlp.numAccumFrames = numAccumFrames;
         perFramePlp.frameIndex = frameIndex;
-        perFramePlp.instanceDataBuffer = gpuEnv.instDataBuffer[bufferIndex].getDevicePointer();
+        perFramePlp.instanceDataBuffer = scene.instDataBuffer[bufferIndex].getDevicePointer();
         perFramePlp.envLightPowerCoeff = std::pow(10.0f, log10EnvLightPowerCoeff);
         perFramePlp.envLightRotation = envLightRotation;
         perFramePlp.spatialNeighborRadius = curRendererConfigs->spatialNeighborRadius;
@@ -2241,40 +2335,13 @@ int32_t main(int32_t argc, const char* argv[]) try {
         cuTexObjectDestroy(envLightTexture);
     envLightArray.finalize();
     lightInstDist.finalize();
-    hitGroupSBT.finalize();
-    asScratchMem.finalize();
-    iasInstanceBuffer.finalize();
-    iasMem.finalize();
-    for (int i = geomGroups.size() - 1; i >= 0; --i) {
-        GeometryGroup* geomGroup = geomGroups[i];
-        geomGroup->optixGasMem.finalize();
-    }
-    ias.destroy();
-
-    for (int i = insts.size() - 1; i >= 0; --i) {
-        Instance* inst = insts[i];
-        inst->optixInst.destroy();
-        inst->lightGeomInstDist.finalize();
-    }
-    for (int i = geomGroups.size() - 1; i >= 0; --i) {
-        GeometryGroup* geomGroup = geomGroups[i];
-        geomGroup->optixGas.destroy();
-    }
-    for (int i = geomInsts.size() - 1; i >= 0; --i) {
-        GeometryInstance* geomInst = geomInsts[i];
-        geomInst->optixGeomInst.destroy();
-        geomInst->emitterPrimDist.finalize();
-        geomInst->triangleBuffer.finalize();
-        geomInst->vertexBuffer.finalize();
-    }
-    for (int i = materials.size() - 1; i >= 0; --i) {
-        Material* material = materials[i];
-    }
-
-    CUDADRV_CHECK(cuStreamDestroy(cuStream));
 
     finalizeTextureCaches();
+
+    CUDADRV_CHECK(cuStreamDestroy(cuStream));
     
+    scene.finalize();
+
     gpuEnv.finalize();
 
     ImGui_ImplOpenGL3_Shutdown();
