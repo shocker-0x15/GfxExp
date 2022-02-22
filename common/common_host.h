@@ -487,6 +487,7 @@ struct InstanceController {
     }
 };
 
+// TODO: ƒV[ƒ““Ç‚İ‚İü‚è‚ğ‚à‚Á‚ÆãY—í‚É‚·‚éB
 struct Scene {
     static constexpr cudau::BufferType bufferType = cudau::BufferType::Device;
 
