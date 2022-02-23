@@ -54,8 +54,8 @@ EN: This program is an example implementation of ReGIR (Reservoir-based Grid? Im
 #include <GLFW/glfw3.h>
 
 #include "imgui.h"
-#include "imgui_impl_glfw.h"
-#include "imgui_impl_opengl3.h"
+#include "backends/imgui_impl_glfw.h"
+#include "backends/imgui_impl_opengl3.h"
 
 
 
@@ -729,7 +729,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
     ImGuiIO& io = ImGui::GetIO(); (void)io;
     //io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;  // Enable Keyboard Controls
     //io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;   // Enable Gamepad Controls
-    ImGui_ImplGlfw_InitForOpenGL(window, true);
+    ImGui_ImplGlfw_InitForOpenGL(window, false);
     ImGui_ImplOpenGL3_Init(glsl_version);
 
     // Setup style
@@ -1509,7 +1509,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
             rollPitchYaw[0] *= 180 / M_PI;
             rollPitchYaw[1] *= 180 / M_PI;
             rollPitchYaw[2] *= 180 / M_PI;
-            if (ImGui::InputFloat3("Roll/Pitch/Yaw", rollPitchYaw, 3))
+            if (ImGui::InputFloat3("Roll/Pitch/Yaw", rollPitchYaw))
                 g_cameraOrientation = qFromEulerAngles(rollPitchYaw[0] * M_PI / 180,
                                                        rollPitchYaw[1] * M_PI / 180,
                                                        rollPitchYaw[2] * M_PI / 180);

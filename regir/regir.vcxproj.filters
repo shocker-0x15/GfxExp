@@ -10,12 +10,6 @@
     <Filter Include="non-essentials\shaders">
       <UniqueIdentifier>{f33b0876-e7b2-4cb3-963d-6338f19ffb9d}</UniqueIdentifier>
     </Filter>
-    <Filter Include="non-essentials\ext\imgui">
-      <UniqueIdentifier>{caf0777e-8ae1-463f-b452-f906ba8db809}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="non-essentials\ext\imgui\core">
-      <UniqueIdentifier>{48c838fa-10b6-4ce8-b3c8-bd81ad33d31d}</UniqueIdentifier>
-    </Filter>
     <Filter Include="non-essentials\ext\glfw">
       <UniqueIdentifier>{ae362f0b-b9f2-4ab4-8b15-30db48768794}</UniqueIdentifier>
     </Filter>
@@ -28,6 +22,12 @@
     <Filter Include="non-essentials\ext\miniz">
       <UniqueIdentifier>{3e67c4a3-116d-4c60-bf4e-3ff7bdfdd409}</UniqueIdentifier>
     </Filter>
+    <Filter Include="non-essentials\ext\imgui">
+      <UniqueIdentifier>{12e3adaf-63a0-40b3-81d9-6f526e6a75d0}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="non-essentials\ext\imgui\core">
+      <UniqueIdentifier>{106b5914-5390-49e1-909f-554f69def34b}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="regir_main.cpp" />
@@ -36,24 +36,6 @@
     </ClCompile>
     <ClCompile Include="..\utils\gl_util.cpp">
       <Filter>non-essentials\utils</Filter>
-    </ClCompile>
-    <ClCompile Include="..\ext\imgui\imgui_demo.cpp">
-      <Filter>non-essentials\ext\imgui</Filter>
-    </ClCompile>
-    <ClCompile Include="..\ext\imgui\imgui_impl_glfw.cpp">
-      <Filter>non-essentials\ext\imgui</Filter>
-    </ClCompile>
-    <ClCompile Include="..\ext\imgui\imgui_impl_opengl3.cpp">
-      <Filter>non-essentials\ext\imgui</Filter>
-    </ClCompile>
-    <ClCompile Include="..\ext\imgui\imgui.cpp">
-      <Filter>non-essentials\ext\imgui\core</Filter>
-    </ClCompile>
-    <ClCompile Include="..\ext\imgui\imgui_draw.cpp">
-      <Filter>non-essentials\ext\imgui\core</Filter>
-    </ClCompile>
-    <ClCompile Include="..\ext\imgui\imgui_widgets.cpp">
-      <Filter>non-essentials\ext\imgui\core</Filter>
     </ClCompile>
     <ClCompile Include="..\ext\gl3w\gl3w.c">
       <Filter>non-essentials\ext\gl3w</Filter>
@@ -76,6 +58,24 @@
     <ClCompile Include="..\common\common_host.cpp">
       <Filter>non-essentials</Filter>
     </ClCompile>
+    <ClCompile Include="..\ext\imgui\backends\imgui_impl_opengl3.cpp">
+      <Filter>non-essentials\ext\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="..\ext\imgui\backends\imgui_impl_glfw.cpp">
+      <Filter>non-essentials\ext\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="..\ext\imgui\imgui.cpp">
+      <Filter>non-essentials\ext\imgui\core</Filter>
+    </ClCompile>
+    <ClCompile Include="..\ext\imgui\imgui_draw.cpp">
+      <Filter>non-essentials\ext\imgui\core</Filter>
+    </ClCompile>
+    <ClCompile Include="..\ext\imgui\imgui_tables.cpp">
+      <Filter>non-essentials\ext\imgui\core</Filter>
+    </ClCompile>
+    <ClCompile Include="..\ext\imgui\imgui_widgets.cpp">
+      <Filter>non-essentials\ext\imgui\core</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="regir_shared.h" />
@@ -90,30 +90,6 @@
     </ClInclude>
     <ClInclude Include="..\ext\stb_image_write.h">
       <Filter>non-essentials\ext</Filter>
-    </ClInclude>
-    <ClInclude Include="..\ext\imgui\imgui_impl_glfw.h">
-      <Filter>non-essentials\ext\imgui</Filter>
-    </ClInclude>
-    <ClInclude Include="..\ext\imgui\imgui_impl_opengl3.h">
-      <Filter>non-essentials\ext\imgui</Filter>
-    </ClInclude>
-    <ClInclude Include="..\ext\imgui\imconfig.h">
-      <Filter>non-essentials\ext\imgui\core</Filter>
-    </ClInclude>
-    <ClInclude Include="..\ext\imgui\imgui.h">
-      <Filter>non-essentials\ext\imgui\core</Filter>
-    </ClInclude>
-    <ClInclude Include="..\ext\imgui\imgui_internal.h">
-      <Filter>non-essentials\ext\imgui\core</Filter>
-    </ClInclude>
-    <ClInclude Include="..\ext\imgui\imstb_rectpack.h">
-      <Filter>non-essentials\ext\imgui\core</Filter>
-    </ClInclude>
-    <ClInclude Include="..\ext\imgui\imstb_textedit.h">
-      <Filter>non-essentials\ext\imgui\core</Filter>
-    </ClInclude>
-    <ClInclude Include="..\ext\imgui\imstb_truetype.h">
-      <Filter>non-essentials\ext\imgui\core</Filter>
     </ClInclude>
     <ClInclude Include="..\ext\glfw\include\GLFW\glfw3.h">
       <Filter>non-essentials\ext\glfw</Filter>
@@ -154,6 +130,33 @@
     <ClInclude Include="..\common\common_device.cuh">
       <Filter>non-essentials</Filter>
     </ClInclude>
+    <ClInclude Include="..\ext\imgui\backends\imgui_impl_glfw.h">
+      <Filter>non-essentials\ext\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="..\ext\imgui\backends\imgui_impl_opengl3.h">
+      <Filter>non-essentials\ext\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="..\ext\imgui\backends\imgui_impl_opengl3_loader.h">
+      <Filter>non-essentials\ext\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="..\ext\imgui\imgui.h">
+      <Filter>non-essentials\ext\imgui\core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\ext\imgui\imgui_internal.h">
+      <Filter>non-essentials\ext\imgui\core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\ext\imgui\imstb_rectpack.h">
+      <Filter>non-essentials\ext\imgui\core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\ext\imgui\imstb_textedit.h">
+      <Filter>non-essentials\ext\imgui\core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\ext\imgui\imstb_truetype.h">
+      <Filter>non-essentials\ext\imgui\core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\ext\imgui\imconfig.h">
+      <Filter>non-essentials\ext\imgui\core</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <CudaCompile Include="optix_kernels.cu" />
@@ -170,10 +173,5 @@
     <CopyFileToFolders Include="..\ext\assimp\assimp-vc142-mt.dll">
       <Filter>non-essentials</Filter>
     </CopyFileToFolders>
-  </ItemGroup>
-  <ItemGroup>
-    <Natvis Include="..\ext\imgui\natvis\imgui.natvis">
-      <Filter>non-essentials\ext\imgui</Filter>
-    </Natvis>
   </ItemGroup>
 </Project>
