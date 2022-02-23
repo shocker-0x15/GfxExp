@@ -1,0 +1,256 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="..\common\common_host.cpp" />
+    <ClCompile Include="..\common\dds_loader.cpp" />
+    <ClCompile Include="..\ext\gl3w\gl3w.c" />
+    <ClCompile Include="..\ext\imgui\backends\imgui_impl_glfw.cpp" />
+    <ClCompile Include="..\ext\imgui\backends\imgui_impl_opengl3.cpp" />
+    <ClCompile Include="..\ext\imgui\imgui.cpp" />
+    <ClCompile Include="..\ext\imgui\imgui_draw.cpp" />
+    <ClCompile Include="..\ext\imgui\imgui_tables.cpp" />
+    <ClCompile Include="..\ext\imgui\imgui_widgets.cpp" />
+    <ClCompile Include="..\ext\miniz\miniz.c" />
+    <ClCompile Include="..\ext\stb_image_write_compile.cpp" />
+    <ClCompile Include="..\ext\tinyexr.cc" />
+    <ClCompile Include="..\utils\cuda_util.cpp" />
+    <ClCompile Include="..\utils\gl_util.cpp" />
+    <ClCompile Include="..\utils\optix_util.cpp" />
+    <ClCompile Include="neural_radiance_caching_main.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\common\common_device.cuh" />
+    <ClInclude Include="..\common\common_shared.h" />
+    <ClInclude Include="..\common\common_host.h" />
+    <ClInclude Include="..\common\dds_loader.h" />
+    <ClInclude Include="..\ext\gl3w\include\GL\gl3w.h" />
+    <ClInclude Include="..\ext\gl3w\include\GL\glcorearb.h" />
+    <ClInclude Include="..\ext\gl3w\include\KHR\khrplatform.h" />
+    <ClInclude Include="..\ext\glfw\include\GLFW\glfw3.h" />
+    <ClInclude Include="..\ext\glfw\include\GLFW\glfw3native.h" />
+    <ClInclude Include="..\ext\imgui\backends\imgui_impl_glfw.h" />
+    <ClInclude Include="..\ext\imgui\backends\imgui_impl_opengl3.h" />
+    <ClInclude Include="..\ext\imgui\backends\imgui_impl_opengl3_loader.h" />
+    <ClInclude Include="..\ext\imgui\imconfig.h" />
+    <ClInclude Include="..\ext\imgui\imgui.h" />
+    <ClInclude Include="..\ext\imgui\imgui_internal.h" />
+    <ClInclude Include="..\ext\imgui\imstb_rectpack.h" />
+    <ClInclude Include="..\ext\imgui\imstb_textedit.h" />
+    <ClInclude Include="..\ext\imgui\imstb_truetype.h" />
+    <ClInclude Include="..\ext\miniz\miniz.h" />
+    <ClInclude Include="..\ext\stb_image_write.h" />
+    <ClInclude Include="..\ext\tiny-cuda-nn\include\tiny-cuda-nn\common.h" />
+    <ClInclude Include="..\ext\tiny-cuda-nn\include\tiny-cuda-nn\common_device.h" />
+    <ClInclude Include="..\ext\tiny-cuda-nn\include\tiny-cuda-nn\config.h" />
+    <ClInclude Include="..\ext\tiny-cuda-nn\include\tiny-cuda-nn\cpp_api.h" />
+    <ClInclude Include="..\ext\tiny-cuda-nn\include\tiny-cuda-nn\cuda_graph.h" />
+    <ClInclude Include="..\ext\tiny-cuda-nn\include\tiny-cuda-nn\cutlass_matmul.h" />
+    <ClInclude Include="..\ext\tiny-cuda-nn\include\tiny-cuda-nn\encoding.h" />
+    <ClInclude Include="..\ext\tiny-cuda-nn\include\tiny-cuda-nn\encodings\composite.h" />
+    <ClInclude Include="..\ext\tiny-cuda-nn\include\tiny-cuda-nn\encodings\frequency.h" />
+    <ClInclude Include="..\ext\tiny-cuda-nn\include\tiny-cuda-nn\encodings\grid.h" />
+    <ClInclude Include="..\ext\tiny-cuda-nn\include\tiny-cuda-nn\encodings\identity.h" />
+    <ClInclude Include="..\ext\tiny-cuda-nn\include\tiny-cuda-nn\encodings\nrc.h" />
+    <ClInclude Include="..\ext\tiny-cuda-nn\include\tiny-cuda-nn\encodings\oneblob.h" />
+    <ClInclude Include="..\ext\tiny-cuda-nn\include\tiny-cuda-nn\encodings\spherical_harmonics.h" />
+    <ClInclude Include="..\ext\tiny-cuda-nn\include\tiny-cuda-nn\encodings\triangle_wave.h" />
+    <ClInclude Include="..\ext\tiny-cuda-nn\include\tiny-cuda-nn\gpu_matrix.h" />
+    <ClInclude Include="..\ext\tiny-cuda-nn\include\tiny-cuda-nn\gpu_memory.h" />
+    <ClInclude Include="..\ext\tiny-cuda-nn\include\tiny-cuda-nn\gpu_memory_json.h" />
+    <ClInclude Include="..\ext\tiny-cuda-nn\include\tiny-cuda-nn\loss.h" />
+    <ClInclude Include="..\ext\tiny-cuda-nn\include\tiny-cuda-nn\losses\cross_entropy.h" />
+    <ClInclude Include="..\ext\tiny-cuda-nn\include\tiny-cuda-nn\losses\l1.h" />
+    <ClInclude Include="..\ext\tiny-cuda-nn\include\tiny-cuda-nn\losses\l2.h" />
+    <ClInclude Include="..\ext\tiny-cuda-nn\include\tiny-cuda-nn\losses\mape.h" />
+    <ClInclude Include="..\ext\tiny-cuda-nn\include\tiny-cuda-nn\losses\relative_l1.h" />
+    <ClInclude Include="..\ext\tiny-cuda-nn\include\tiny-cuda-nn\losses\relative_l2.h" />
+    <ClInclude Include="..\ext\tiny-cuda-nn\include\tiny-cuda-nn\losses\relative_l2_luminance.h" />
+    <ClInclude Include="..\ext\tiny-cuda-nn\include\tiny-cuda-nn\losses\smape.h" />
+    <ClInclude Include="..\ext\tiny-cuda-nn\include\tiny-cuda-nn\losses\variance_is.h" />
+    <ClInclude Include="..\ext\tiny-cuda-nn\include\tiny-cuda-nn\matrix_layout.h" />
+    <ClInclude Include="..\ext\tiny-cuda-nn\include\tiny-cuda-nn\multi_stream.h" />
+    <ClInclude Include="..\ext\tiny-cuda-nn\include\tiny-cuda-nn\network.h" />
+    <ClInclude Include="..\ext\tiny-cuda-nn\include\tiny-cuda-nn\networks\cutlass_mlp.h" />
+    <ClInclude Include="..\ext\tiny-cuda-nn\include\tiny-cuda-nn\networks\cutlass_resnet.h" />
+    <ClInclude Include="..\ext\tiny-cuda-nn\include\tiny-cuda-nn\networks\fully_fused_mlp.h" />
+    <ClInclude Include="..\ext\tiny-cuda-nn\include\tiny-cuda-nn\network_with_input_encoding.h" />
+    <ClInclude Include="..\ext\tiny-cuda-nn\include\tiny-cuda-nn\object.h" />
+    <ClInclude Include="..\ext\tiny-cuda-nn\include\tiny-cuda-nn\optimizer.h" />
+    <ClInclude Include="..\ext\tiny-cuda-nn\include\tiny-cuda-nn\optimizers\adam.h" />
+    <ClInclude Include="..\ext\tiny-cuda-nn\include\tiny-cuda-nn\optimizers\average.h" />
+    <ClInclude Include="..\ext\tiny-cuda-nn\include\tiny-cuda-nn\optimizers\batched.h" />
+    <ClInclude Include="..\ext\tiny-cuda-nn\include\tiny-cuda-nn\optimizers\ema.h" />
+    <ClInclude Include="..\ext\tiny-cuda-nn\include\tiny-cuda-nn\optimizers\exponential_decay.h" />
+    <ClInclude Include="..\ext\tiny-cuda-nn\include\tiny-cuda-nn\optimizers\lookahead.h" />
+    <ClInclude Include="..\ext\tiny-cuda-nn\include\tiny-cuda-nn\optimizers\novograd.h" />
+    <ClInclude Include="..\ext\tiny-cuda-nn\include\tiny-cuda-nn\optimizers\sgd.h" />
+    <ClInclude Include="..\ext\tiny-cuda-nn\include\tiny-cuda-nn\optimizers\shampoo.h" />
+    <ClInclude Include="..\ext\tiny-cuda-nn\include\tiny-cuda-nn\random.h" />
+    <ClInclude Include="..\ext\tiny-cuda-nn\include\tiny-cuda-nn\reduce_sum.h" />
+    <ClInclude Include="..\ext\tiny-cuda-nn\include\tiny-cuda-nn\trainer.h" />
+    <ClInclude Include="..\ext\tinyexr.h" />
+    <ClInclude Include="..\utils\cuda_util.h" />
+    <ClInclude Include="..\utils\gl_util.h" />
+    <ClInclude Include="..\utils\optixu_on_cudau.h" />
+    <ClInclude Include="..\utils\optix_util.h" />
+    <ClInclude Include="..\utils\optix_util_private.h" />
+    <ClInclude Include="neural_radiance_caching_shared.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <CudaCompile Include="copy_buffers.cu" />
+    <CudaCompile Include="optix_kernels.cu">
+      <GPUDebugInfo Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</GPUDebugInfo>
+    </CudaCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <CopyFileToFolders Include="shaders\drawOptiXResult.frag">
+      <FileType>Document</FileType>
+      <DestinationFolders Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(OutDir)$(TargetName)\shaders</DestinationFolders>
+      <DestinationFolders Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(OutDir)$(TargetName)\shaders</DestinationFolders>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="shaders\drawOptiXResult.vert">
+      <FileType>Document</FileType>
+      <DestinationFolders Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(OutDir)$(TargetName)\shaders</DestinationFolders>
+      <DestinationFolders Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(OutDir)$(TargetName)\shaders</DestinationFolders>
+    </CopyFileToFolders>
+  </ItemGroup>
+  <ItemGroup>
+    <CopyFileToFolders Include="..\ext\assimp\assimp-vc142-mt.dll">
+      <FileType>Document</FileType>
+    </CopyFileToFolders>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>16.0</VCProjectVersion>
+    <ProjectGuid>{E756F79E-B5CF-4EFB-8C50-FB6E5DF427D5}</ProjectGuid>
+    <RootNamespace>OptiX7GLFWImGui</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <ProjectName>neural_radiance_caching</ProjectName>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+    <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 11.6.props" />
+  </ImportGroup>
+  <ImportGroup Label="Shared">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <LibraryPath>C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v11.6\lib\x64;$(SolutionDir)ext\glfw\lib;$(LibraryPath)</LibraryPath>
+    <TargetName>neural_radiance_caching</TargetName>
+    <ExternalIncludePath>C:\Users\shocker_0x15\repos\GfxExp\ext\tiny-cuda-nn\dependencies;C:\Users\shocker_0x15\repos\GfxExp\ext\tiny-cuda-nn\include;$(SolutionDir)ext\miniz;$(SolutionDir)ext\assimp\include;$(SolutionDir)ext\gl3w\include;$(SolutionDir)ext\glfw\include;$(SolutionDir)ext\imgui;C:\ProgramData\NVIDIA Corporation\OptiX SDK 7.4.0\include;$(ExternalIncludePath)</ExternalIncludePath>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <LibraryPath>C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v11.6\lib\x64;$(SolutionDir)ext\glfw\lib;$(LibraryPath)</LibraryPath>
+    <TargetName>neural_radiance_caching</TargetName>
+    <ExternalIncludePath>C:\Users\shocker_0x15\repos\GfxExp\ext\tiny-cuda-nn\dependencies;C:\Users\shocker_0x15\repos\GfxExp\ext\tiny-cuda-nn\include;$(SolutionDir)ext\miniz;$(SolutionDir)ext\assimp\include;$(SolutionDir)ext\gl3w\include;$(SolutionDir)ext\glfw\include;$(SolutionDir)ext\imgui;C:\ProgramData\NVIDIA Corporation\OptiX SDK 7.4.0\include;$(ExternalIncludePath)</ExternalIncludePath>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>Disabled</Optimization>
+      <ConformanceMode>true</ConformanceMode>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;_MBCS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <SDLCheck>true</SDLCheck>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <AdditionalDependencies>$(SolutionDir)ext\tiny-cuda-nn\build\src\$(Configuration)\tiny-cuda-nn.lib;$(SolutionDir)ext\assimp\assimp-vc142-mt.lib;cuda.lib;cudart_static.lib;glfw3.lib;opengl32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <IgnoreSpecificDefaultLibraries>msvcrt.lib</IgnoreSpecificDefaultLibraries>
+    </Link>
+    <PostBuildEvent>
+      <Command>
+      </Command>
+    </PostBuildEvent>
+    <CudaCompile>
+      <GenerateRelocatableDeviceCode>true</GenerateRelocatableDeviceCode>
+    </CudaCompile>
+    <CudaCompile>
+      <NvccCompilation>ptx</NvccCompilation>
+    </CudaCompile>
+    <CudaCompile>
+      <TargetMachinePlatform>64</TargetMachinePlatform>
+      <CudaRuntime>Shared</CudaRuntime>
+      <CompileOut>$(SolutionDir)$(Platform)\$(Configuration)\$(TargetName)\ptxes\%(Filename).ptx</CompileOut>
+      <AdditionalOptions>-std=c++17 --use_fast_math -Xcompiler "/wd 4819" -D_DEBUG %(AdditionalOptions)</AdditionalOptions>
+      <FastMath>true</FastMath>
+      <GenerateLineInfo>true</GenerateLineInfo>
+    </CudaCompile>
+    <CudaLink>
+      <PerformDeviceLink>false</PerformDeviceLink>
+    </CudaLink>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <Optimization>MaxSpeed</Optimization>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <ConformanceMode>true</ConformanceMode>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;_MBCS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <SDLCheck>true</SDLCheck>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <AdditionalDependencies>$(SolutionDir)ext\tiny-cuda-nn\build\src\$(Configuration)\tiny-cuda-nn.lib;$(SolutionDir)ext\assimp\assimp-vc142-mt.lib;cuda.lib;cudart_static.lib;glfw3.lib;opengl32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+    <PostBuildEvent>
+      <Command>
+      </Command>
+    </PostBuildEvent>
+    <CudaCompile>
+      <GenerateRelocatableDeviceCode>true</GenerateRelocatableDeviceCode>
+    </CudaCompile>
+    <CudaCompile>
+      <NvccCompilation>ptx</NvccCompilation>
+    </CudaCompile>
+    <CudaCompile>
+      <TargetMachinePlatform>64</TargetMachinePlatform>
+      <CudaRuntime>Shared</CudaRuntime>
+      <CompileOut>$(SolutionDir)$(Platform)\$(Configuration)\$(TargetName)\ptxes\%(Filename).ptx</CompileOut>
+      <AdditionalOptions>-std=c++17 --use_fast_math -Xcompiler "/wd 4819" %(AdditionalOptions)</AdditionalOptions>
+      <FastMath>true</FastMath>
+    </CudaCompile>
+    <CudaLink>
+      <PerformDeviceLink>false</PerformDeviceLink>
+    </CudaLink>
+  </ItemDefinitionGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+    <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 11.6.targets" />
+  </ImportGroup>
+</Project>

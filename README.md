@@ -64,6 +64,7 @@ It requires the following libraries.
 - [gl3w](https://github.com/skaslev/gl3w)
 - [GLFW](https://github.com/glfw/glfw)
 - [stb](https://github.com/nothings/stb)
+- [Tiny CUDA Neural Networks](https://github.com/NVlabs/tiny-cuda-nn)
 - [Tiny OpenEXR image library (tinyexr)](https://github.com/syoyo/tinyexr)
   - [miniz](https://github.com/richgel999/miniz)
 
