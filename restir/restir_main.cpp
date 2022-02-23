@@ -117,7 +117,9 @@ struct GPUEnvironment {
 
         optixContext = optixu::Context::create(cuContext/*, 4, DEBUG_SELECT(true, false)*/);
 
-        CUDADRV_CHECK(cuModuleLoad(&perPixelRISModule, (getExecutableDirectory() / "restir/ptxes/per_pixel_ris.ptx").string().c_str()));
+        CUDADRV_CHECK(cuModuleLoad(
+            &perPixelRISModule,
+            (getExecutableDirectory() / "restir/ptxes/per_pixel_ris.ptx").string().c_str()));
         kernelPerformLightPreSampling =
             cudau::Kernel(perPixelRISModule, "performLightPreSampling", cudau::dim3(32), 0);
         kernelPerformPerPixelRIS =
@@ -204,7 +206,8 @@ struct GPUEnvironment {
 
         //optixu::ProgramGroup exceptionProgram = pipeline.createExceptionProgram(moduleOptiX, "__exception__print");
 
-        // If an exception program is not set but exception flags are set, the default exception program will by provided by OptiX.
+        // If an exception program is not set but exception flags are set,
+        // the default exception program will by provided by OptiX.
         //pipeline.setExceptionProgram(exceptionProgram);
         pipeline.setNumMissRayTypes(shared::NumRayTypes);
         pipeline.setMissProgram(shared::RayType_Primary, setupGBuffersMissProgram);
@@ -824,73 +827,79 @@ int32_t main(int32_t argc, const char* argv[]) try {
     // JP: 入力コールバックの設定。
     // EN: Set up input callbacks.
 
-    glfwSetMouseButtonCallback(window, [](GLFWwindow* window, int32_t button, int32_t action, int32_t mods) {
-        uint64_t &frameIndex = *(uint64_t*)glfwGetWindowUserPointer(window);
-        ImGui_ImplGlfw_MouseButtonCallback(window, button, action, mods);
+    glfwSetMouseButtonCallback(
+        window,
+        [](GLFWwindow* window, int32_t button, int32_t action, int32_t mods) {
+            uint64_t &frameIndex = *(uint64_t*)glfwGetWindowUserPointer(window);
+            ImGui_ImplGlfw_MouseButtonCallback(window, button, action, mods);
 
-        switch (button) {
-        case GLFW_MOUSE_BUTTON_MIDDLE: {
-            devPrintf("Mouse Middle\n");
-            g_buttonRotate.recordStateChange(action == GLFW_PRESS, frameIndex);
-            break;
-        }
-        default:
-            break;
-        }
-                               });
-    glfwSetCursorPosCallback(window, [](GLFWwindow* window, double x, double y) {
-        g_mouseX = x;
-        g_mouseY = y;
-                             });
-    glfwSetKeyCallback(window, [](GLFWwindow* window, int32_t key, int32_t scancode, int32_t action, int32_t mods) {
-        uint64_t &frameIndex = *(uint64_t*)glfwGetWindowUserPointer(window);
-        ImGui_ImplGlfw_KeyCallback(window, key, scancode, action, mods);
+            switch (button) {
+            case GLFW_MOUSE_BUTTON_MIDDLE: {
+                devPrintf("Mouse Middle\n");
+                g_buttonRotate.recordStateChange(action == GLFW_PRESS, frameIndex);
+                break;
+            }
+            default:
+                break;
+            }
+        });
+    glfwSetCursorPosCallback(
+        window,
+        [](GLFWwindow* window, double x, double y) {
+            g_mouseX = x;
+            g_mouseY = y;
+        });
+    glfwSetKeyCallback(
+        window,
+        [](GLFWwindow* window, int32_t key, int32_t scancode, int32_t action, int32_t mods) {
+            uint64_t &frameIndex = *(uint64_t*)glfwGetWindowUserPointer(window);
+            ImGui_ImplGlfw_KeyCallback(window, key, scancode, action, mods);
 
-        switch (key) {
-        case GLFW_KEY_W: {
-            g_keyForward.recordStateChange(action == GLFW_PRESS || action == GLFW_REPEAT, frameIndex);
-            break;
-        }
-        case GLFW_KEY_S: {
-            g_keyBackward.recordStateChange(action == GLFW_PRESS || action == GLFW_REPEAT, frameIndex);
-            break;
-        }
-        case GLFW_KEY_A: {
-            g_keyLeftward.recordStateChange(action == GLFW_PRESS || action == GLFW_REPEAT, frameIndex);
-            break;
-        }
-        case GLFW_KEY_D: {
-            g_keyRightward.recordStateChange(action == GLFW_PRESS || action == GLFW_REPEAT, frameIndex);
-            break;
-        }
-        case GLFW_KEY_R: {
-            g_keyUpward.recordStateChange(action == GLFW_PRESS || action == GLFW_REPEAT, frameIndex);
-            break;
-        }
-        case GLFW_KEY_F: {
-            g_keyDownward.recordStateChange(action == GLFW_PRESS || action == GLFW_REPEAT, frameIndex);
-            break;
-        }
-        case GLFW_KEY_Q: {
-            g_keyTiltLeft.recordStateChange(action == GLFW_PRESS || action == GLFW_REPEAT, frameIndex);
-            break;
-        }
-        case GLFW_KEY_E: {
-            g_keyTiltRight.recordStateChange(action == GLFW_PRESS || action == GLFW_REPEAT, frameIndex);
-            break;
-        }
-        case GLFW_KEY_T: {
-            g_keyFasterPosMovSpeed.recordStateChange(action == GLFW_PRESS || action == GLFW_REPEAT, frameIndex);
-            break;
-        }
-        case GLFW_KEY_G: {
-            g_keySlowerPosMovSpeed.recordStateChange(action == GLFW_PRESS || action == GLFW_REPEAT, frameIndex);
-            break;
-        }
-        default:
-            break;
-        }
-                       });
+            switch (key) {
+            case GLFW_KEY_W: {
+                g_keyForward.recordStateChange(action == GLFW_PRESS || action == GLFW_REPEAT, frameIndex);
+                break;
+            }
+            case GLFW_KEY_S: {
+                g_keyBackward.recordStateChange(action == GLFW_PRESS || action == GLFW_REPEAT, frameIndex);
+                break;
+            }
+            case GLFW_KEY_A: {
+                g_keyLeftward.recordStateChange(action == GLFW_PRESS || action == GLFW_REPEAT, frameIndex);
+                break;
+            }
+            case GLFW_KEY_D: {
+                g_keyRightward.recordStateChange(action == GLFW_PRESS || action == GLFW_REPEAT, frameIndex);
+                break;
+            }
+            case GLFW_KEY_R: {
+                g_keyUpward.recordStateChange(action == GLFW_PRESS || action == GLFW_REPEAT, frameIndex);
+                break;
+            }
+            case GLFW_KEY_F: {
+                g_keyDownward.recordStateChange(action == GLFW_PRESS || action == GLFW_REPEAT, frameIndex);
+                break;
+            }
+            case GLFW_KEY_Q: {
+                g_keyTiltLeft.recordStateChange(action == GLFW_PRESS || action == GLFW_REPEAT, frameIndex);
+                break;
+            }
+            case GLFW_KEY_E: {
+                g_keyTiltRight.recordStateChange(action == GLFW_PRESS || action == GLFW_REPEAT, frameIndex);
+                break;
+            }
+            case GLFW_KEY_T: {
+                g_keyFasterPosMovSpeed.recordStateChange(action == GLFW_PRESS || action == GLFW_REPEAT, frameIndex);
+                break;
+            }
+            case GLFW_KEY_G: {
+                g_keySlowerPosMovSpeed.recordStateChange(action == GLFW_PRESS || action == GLFW_REPEAT, frameIndex);
+                break;
+            }
+            default:
+                break;
+            }
+        });
 
     // END: Set up input callbacks.
     // ----------------------------------------------------------------
@@ -941,7 +950,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
         for (int j = 0; j < mesh->groups.size(); ++j) {
             const Mesh::Group &group = mesh->groups[j];
 
-            Matrix4x4 instXfm = Matrix4x4(info.beginScale * info.beginOrientation.toMatrix3x3(), info.beginPosition) * group.transform;
+            Matrix4x4 instXfm =
+                Matrix4x4(info.beginScale * info.beginOrientation.toMatrix3x3(), info.beginPosition) *
+                group.transform;
             Instance* inst = createInstance(gpuEnv.cuContext, &scene, group.geomGroup, instXfm);
             scene.insts.push_back(inst);
 
@@ -1189,7 +1200,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
     constexpr bool useTiledDenoising = false; // Change this to true to use tiled denoising.
     constexpr uint32_t tileWidth = useTiledDenoising ? 256 : 0;
     constexpr uint32_t tileHeight = useTiledDenoising ? 256 : 0;
-    optixu::Denoiser denoiser = gpuEnv.optixContext.createDenoiser(OPTIX_DENOISER_MODEL_KIND_TEMPORAL, true, true);
+    optixu::Denoiser denoiser = gpuEnv.optixContext.createDenoiser(
+        OPTIX_DENOISER_MODEL_KIND_TEMPORAL, true, true);
     size_t stateSize;
     size_t scratchSize;
     size_t scratchSizeForComputeIntensity;
@@ -1203,8 +1215,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
     cudau::Buffer denoiserStateBuffer;
     cudau::Buffer denoiserScratchBuffer;
     denoiserStateBuffer.initialize(gpuEnv.cuContext, Scene::bufferType, stateSize, 1);
-    denoiserScratchBuffer.initialize(gpuEnv.cuContext, Scene::bufferType,
-                                     std::max(scratchSize, scratchSizeForComputeIntensity), 1);
+    denoiserScratchBuffer.initialize(
+        gpuEnv.cuContext, Scene::bufferType,
+        std::max(scratchSize, scratchSizeForComputeIntensity), 1);
 
     std::vector<optixu::DenoisingTask> denoisingTasks(numTasks);
     denoiser.getTasks(denoisingTasks.data());
@@ -1214,9 +1227,12 @@ int32_t main(int32_t argc, const char* argv[]) try {
     // JP: デノイザーは入出力にリニアなバッファーを必要とするため結果をコピーする必要がある。
     // EN: Denoiser requires linear buffers as input/output, so we need to copy the results.
     CUmodule moduleCopyBuffers;
-    CUDADRV_CHECK(cuModuleLoad(&moduleCopyBuffers, (getExecutableDirectory() / "restir/ptxes/copy_buffers.ptx").string().c_str()));
-    cudau::Kernel kernelCopyToLinearBuffers(moduleCopyBuffers, "copyToLinearBuffers", cudau::dim3(8, 8), 0);
-    cudau::Kernel kernelVisualizeToOutputBuffer(moduleCopyBuffers, "visualizeToOutputBuffer", cudau::dim3(8, 8), 0);
+    CUDADRV_CHECK(cuModuleLoad(
+        &moduleCopyBuffers, (getExecutableDirectory() / "restir/ptxes/copy_buffers.ptx").string().c_str()));
+    cudau::Kernel kernelCopyToLinearBuffers(
+        moduleCopyBuffers, "copyToLinearBuffers", cudau::dim3(8, 8), 0);
+    cudau::Kernel kernelVisualizeToOutputBuffer(
+        moduleCopyBuffers, "visualizeToOutputBuffer", cudau::dim3(8, 8), 0);
 
     CUdeviceptr hdrIntensity;
     CUDADRV_CHECK(cuMemAlloc(&hdrIntensity, sizeof(float)));
@@ -1309,7 +1325,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
         spatialNeighborDeltasOnHost[i] = delta;
         //printf("%g, %g\n", delta.x, delta.y);
     }
-    cudau::TypedBuffer<float2> spatialNeighborDeltas(gpuEnv.cuContext, Scene::bufferType, spatialNeighborDeltasOnHost);
+    cudau::TypedBuffer<float2> spatialNeighborDeltas(
+        gpuEnv.cuContext, Scene::bufferType, spatialNeighborDeltasOnHost);
 
 
 
@@ -1495,8 +1512,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
             outputTexture.finalize();
             outputArray.finalize();
             outputTexture.initialize(GL_RGBA32F, renderTargetSizeX, renderTargetSizeY, 1);
-            outputArray.initializeFromGLTexture2D(gpuEnv.cuContext, outputTexture.getHandle(),
-                                                  cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable);
+            outputArray.initializeFromGLTexture2D(
+                gpuEnv.cuContext, outputTexture.getHandle(),
+                cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable);
 
             // EN: update the pipeline parameters.
             staticPlp.imageSize = int2(renderTargetSizeX, renderTargetSizeY);
@@ -1582,8 +1600,11 @@ int32_t main(int32_t argc, const char* argv[]) try {
                 axis = float3(1, 0, 0);
 
             g_cameraOrientation = g_cameraOrientation * qRotateZ(g_cameraTiltSpeed * tiltZ);
-            g_tempCameraOrientation = g_cameraOrientation * qRotate(g_cameraDirectionalMovingSpeed * deltaAngle, axis);
-            g_cameraPosition += g_tempCameraOrientation.toMatrix3x3() * (g_cameraPositionalMovingSpeed * float3(trackX, trackY, trackZ));
+            g_tempCameraOrientation =
+                g_cameraOrientation * qRotate(g_cameraDirectionalMovingSpeed * deltaAngle, axis);
+            g_cameraPosition +=
+                g_tempCameraOrientation.toMatrix3x3() *
+                (g_cameraPositionalMovingSpeed * float3(trackX, trackY, trackZ));
             if (g_buttonRotate.getState() == false && g_buttonRotate.getTime() == frameIndex) {
                 g_cameraOrientation = g_tempCameraOrientation;
                 deltaX = 0;
@@ -1696,8 +1717,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
         //    rearchRestirUnbiasedConfigs.enableSpatialReuse = false;
         //    tempInit = true;
         //}
-        static Renderer curRenderer = Renderer::RearchitectedReSTIRUnbiased;
-        //static Renderer curRenderer = Renderer::OriginalReSTIRBiased;
+        //static Renderer curRenderer = Renderer::RearchitectedReSTIRUnbiased;
+        static Renderer curRenderer = Renderer::OriginalReSTIRBiased;
         static ReSTIRConfigs* curRendererConfigs = &orgRestirBiasedConfigs;
         static uint32_t numFramesForCurRenderer = 0;
         static float spatialVisibilityReuseRatio = 50.0f;
@@ -1783,10 +1804,12 @@ int32_t main(int32_t argc, const char* argv[]) try {
                     ImGui::InputLog2Int("#Candidates", &curRendererConfigs->log2NumCandidateSamples, 8);
                     //ImGui::InputLog2Int("#Samples", &curRendererConfigs->log2NumSamples, 3);
 
-                    resetAccumulation |= ImGui::Checkbox("Temporal Reuse", &curRendererConfigs->enableTemporalReuse);
-                    resetAccumulation |= ImGui::Checkbox("Spatial Reuse", &curRendererConfigs->enableSpatialReuse);
-                    resetAccumulation |= ImGui::SliderFloat(
-                        "Radius", &curRendererConfigs->spatialNeighborRadius, 3.0f, 30.0f);
+                    resetAccumulation |=
+                        ImGui::Checkbox("Temporal Reuse", &curRendererConfigs->enableTemporalReuse);
+                    resetAccumulation |=
+                        ImGui::Checkbox("Spatial Reuse", &curRendererConfigs->enableSpatialReuse);
+                    resetAccumulation |=
+                        ImGui::SliderFloat("Radius", &curRendererConfigs->spatialNeighborRadius, 3.0f, 30.0f);
                     if (curRenderer == Renderer::OriginalReSTIRBiased ||
                         curRenderer == Renderer::OriginalReSTIRUnbiased) {
                         resetAccumulation |= ImGui::SliderInt(
@@ -1802,13 +1825,17 @@ int32_t main(int32_t argc, const char* argv[]) try {
                     resetAccumulation |= ImGui::Checkbox("Reuse Visibility",
                                                          &curRendererConfigs->reuseVisibility);
                     if (curRenderer == Renderer::RearchitectedReSTIRBiased) {
-                        resetAccumulation |= ImGui::Checkbox("Reuse Temporal Visibility",
-                                                             &curRendererConfigs->reuseVisibilityForTemporal);
-                        resetAccumulation |= ImGui::Checkbox("Reuse Spatial Visibility",
-                                                             &curRendererConfigs->reuseVisibilityForSpatiotemporal);
-                        resetAccumulation |= ImGui::InputFloat("Reuse Ratio (%)", &spatialVisibilityReuseRatio,
-                                                               25.0f, 25.0f, 1);
-                        spatialVisibilityReuseRatio = std::min(std::max(spatialVisibilityReuseRatio, 0.0f), 100.0f);
+                        resetAccumulation |=
+                            ImGui::Checkbox("Reuse Temporal Visibility",
+                                            &curRendererConfigs->reuseVisibilityForTemporal);
+                        resetAccumulation |=
+                            ImGui::Checkbox("Reuse Spatial Visibility",
+                                            &curRendererConfigs->reuseVisibilityForSpatiotemporal);
+                        resetAccumulation |=
+                            ImGui::InputFloat("Reuse Ratio (%)",
+                                              &spatialVisibilityReuseRatio, 25.0f, 25.0f, 1);
+                        spatialVisibilityReuseRatio =
+                            std::min(std::max(spatialVisibilityReuseRatio, 0.0f), 100.0f);
                         float reusableRadius = curRendererConfigs->spatialNeighborRadius *
                             std::sqrt(spatialVisibilityReuseRatio / 100.0f);
                         curRendererConfigs->radiusThresholdForSpatialVisReuse = reusableRadius;
@@ -1829,11 +1856,13 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
                 if (ImGui::BeginTabItem("Visualize")) {
                     ImGui::Text("Buffer to Display");
-                    ImGui::RadioButtonE("Noisy Beauty", &bufferTypeToDisplay, shared::BufferToDisplay::NoisyBeauty);
+                    ImGui::RadioButtonE(
+                        "Noisy Beauty", &bufferTypeToDisplay, shared::BufferToDisplay::NoisyBeauty);
                     ImGui::RadioButtonE("Albedo", &bufferTypeToDisplay, shared::BufferToDisplay::Albedo);
                     ImGui::RadioButtonE("Normal", &bufferTypeToDisplay, shared::BufferToDisplay::Normal);
                     ImGui::RadioButtonE("Motion Vector", &bufferTypeToDisplay, shared::BufferToDisplay::Flow);
-                    ImGui::RadioButtonE("Denoised Beauty", &bufferTypeToDisplay, shared::BufferToDisplay::DenoisedBeauty);
+                    ImGui::RadioButtonE(
+                        "Denoised Beauty", &bufferTypeToDisplay, shared::BufferToDisplay::DenoisedBeauty);
 
                     if (ImGui::Checkbox("Temporal Denoiser", &useTemporalDenosier)) {
                         CUDADRV_CHECK(cuStreamSynchronize(cuStream));
@@ -1853,7 +1882,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
                                          &numTasks);
                         hpprintf("Denoiser State Buffer: %llu bytes\n", stateSize);
                         hpprintf("Denoiser Scratch Buffer: %llu bytes\n", scratchSize);
-                        hpprintf("Compute Intensity Scratch Buffer: %llu bytes\n", scratchSizeForComputeIntensity);
+                        hpprintf("Compute Intensity Scratch Buffer: %llu bytes\n",
+                                 scratchSizeForComputeIntensity);
                         denoiserStateBuffer.resize(stateSize, 1);
                         denoiserScratchBuffer.resize(std::max(scratchSize, scratchSizeForComputeIntensity), 1);
 
@@ -1880,9 +1910,10 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
 #if !defined(USE_HARD_CODED_BSDF_FUNCTIONS)
             ImGui::PushTextWrapPos(ImGui::GetCursorPos().x + 300);
-            ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f),
-                               "BSDF callables are enabled.\n"
-                               "USE_HARD_CODED_BSDF_FUNCTIONS is recommended for better performance.");
+            ImGui::TextColored(
+                ImVec4(1.0f, 0.0f, 0.0f, 1.0f),
+                "BSDF callables are enabled.\n"
+                "USE_HARD_CODED_BSDF_FUNCTIONS is recommended for better performance.");
             ImGui::PopTextWrapPos();
 #endif
 
@@ -1929,7 +1960,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
             ImGui::Text("  Setup G-Buffers: %.3f [ms]", setupGBuffersTime.getAverage());
             if (curRenderer == Renderer::OriginalReSTIRBiased ||
                 curRenderer == Renderer::OriginalReSTIRUnbiased) {
-                ImGui::Text("  Initial RIS + Temporal RIS: %.3f [ms]", performInitialAndTemporalRISTime.getAverage());
+                ImGui::Text("  Initial RIS + Temporal RIS: %.3f [ms]",
+                            performInitialAndTemporalRISTime.getAverage());
                 ImGui::Text("  Spatial RIS: %.3f [ms]", performSpatialRISTime.getAverage());
                 ImGui::Text("  Shading: %.3f [ms]", shadingTime.getAverage());
             }
@@ -2075,7 +2107,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
                 numSpatialReusePasses = curRendererConfigs->numSpatialReusePasses;
 
                 for (int i = 0; i < numSpatialReusePasses; ++i) {
-                    uint32_t baseIndex = lastSpatialNeighborBaseIndex + curRendererConfigs->numSpatialNeighbors * i;
+                    uint32_t baseIndex =
+                        lastSpatialNeighborBaseIndex + curRendererConfigs->numSpatialNeighbors * i;
                     plp.spatialNeighborBaseIndex = baseIndex;
                     CUDADRV_CHECK(cuMemcpyHtoDAsync(plpOnDevice, &plp, sizeof(plp), cuStream));
                     gpuEnv.pipeline.launch(cuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);
@@ -2122,21 +2155,28 @@ int32_t main(int32_t argc, const char* argv[]) try {
             if (!newSequence) {
                 if (curRenderer == Renderer::RearchitectedReSTIRBiased) {
                     if (curRendererConfigs->enableTemporalReuse && curRendererConfigs->enableSpatialReuse)
-                        traceShadowRaysRayGenProgram = gpuEnv.traceShadowRaysWithSpatioTemporalReuseBiasedRayGenProgram;
+                        traceShadowRaysRayGenProgram =
+                            gpuEnv.traceShadowRaysWithSpatioTemporalReuseBiasedRayGenProgram;
                     else if (curRendererConfigs->enableTemporalReuse)
-                        traceShadowRaysRayGenProgram = gpuEnv.traceShadowRaysWithTemporalReuseBiasedRayGenProgram;
+                        traceShadowRaysRayGenProgram =
+                            gpuEnv.traceShadowRaysWithTemporalReuseBiasedRayGenProgram;
                     else if (curRendererConfigs->enableSpatialReuse)
-                        traceShadowRaysRayGenProgram = gpuEnv.traceShadowRaysWithSpatialReuseBiasedRayGenProgram;
+                        traceShadowRaysRayGenProgram =
+                            gpuEnv.traceShadowRaysWithSpatialReuseBiasedRayGenProgram;
                     else
-                        traceShadowRaysRayGenProgram = gpuEnv.traceShadowRaysRayGenProgram;
+                        traceShadowRaysRayGenProgram =
+                            gpuEnv.traceShadowRaysRayGenProgram;
                 }
                 else {
                     if (curRendererConfigs->enableTemporalReuse && curRendererConfigs->enableSpatialReuse)
-                        traceShadowRaysRayGenProgram = gpuEnv.traceShadowRaysWithSpatioTemporalReuseUnbiasedRayGenProgram;
+                        traceShadowRaysRayGenProgram =
+                            gpuEnv.traceShadowRaysWithSpatioTemporalReuseUnbiasedRayGenProgram;
                     else if (curRendererConfigs->enableTemporalReuse)
-                        traceShadowRaysRayGenProgram = gpuEnv.traceShadowRaysWithTemporalReuseUnbiasedRayGenProgram;
+                        traceShadowRaysRayGenProgram =
+                            gpuEnv.traceShadowRaysWithTemporalReuseUnbiasedRayGenProgram;
                     else if (curRendererConfigs->enableSpatialReuse)
-                        traceShadowRaysRayGenProgram = gpuEnv.traceShadowRaysWithSpatialReuseUnbiasedRayGenProgram;
+                        traceShadowRaysRayGenProgram =
+                            gpuEnv.traceShadowRaysWithSpatialReuseUnbiasedRayGenProgram;
                     else
                         traceShadowRaysRayGenProgram = gpuEnv.traceShadowRaysRayGenProgram;
                 }

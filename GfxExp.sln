@@ -9,6 +9,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "regir", "regir\regir.vcxpro
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "path_tracing", "path_tracing\path_tracing.vcxproj", "{04902764-3826-4DCF-8969-29536353315F}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "neural_radiance_caching", "neural_radiance_caching\neural_radiance_caching.vcxproj", "{E756F79E-B5CF-4EFB-8C50-FB6E5DF427D5}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -27,6 +29,10 @@ Global
 		{04902764-3826-4DCF-8969-29536353315F}.Debug|x64.Build.0 = Debug|x64
 		{04902764-3826-4DCF-8969-29536353315F}.Release|x64.ActiveCfg = Release|x64
 		{04902764-3826-4DCF-8969-29536353315F}.Release|x64.Build.0 = Release|x64
+		{E756F79E-B5CF-4EFB-8C50-FB6E5DF427D5}.Debug|x64.ActiveCfg = Debug|x64
+		{E756F79E-B5CF-4EFB-8C50-FB6E5DF427D5}.Debug|x64.Build.0 = Debug|x64
+		{E756F79E-B5CF-4EFB-8C50-FB6E5DF427D5}.Release|x64.ActiveCfg = Release|x64
+		{E756F79E-B5CF-4EFB-8C50-FB6E5DF427D5}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

@@ -1,0 +1,178 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="non-essentials">
+      <UniqueIdentifier>{6a7a6321-df38-4bc0-946b-5ffa0c754713}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="non-essentials\ext">
+      <UniqueIdentifier>{e8ab81e0-a20c-43cc-b39f-e8410987f66d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="non-essentials\shaders">
+      <UniqueIdentifier>{f33b0876-e7b2-4cb3-963d-6338f19ffb9d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="non-essentials\ext\imgui">
+      <UniqueIdentifier>{caf0777e-8ae1-463f-b452-f906ba8db809}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="non-essentials\ext\imgui\core">
+      <UniqueIdentifier>{48c838fa-10b6-4ce8-b3c8-bd81ad33d31d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="non-essentials\ext\glfw">
+      <UniqueIdentifier>{ae362f0b-b9f2-4ab4-8b15-30db48768794}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="non-essentials\ext\gl3w">
+      <UniqueIdentifier>{87947888-cd06-4038-a468-6d6fb7738394}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="non-essentials\utils">
+      <UniqueIdentifier>{6f26d21a-72b8-449a-b8dd-7ac1d7c4bfb2}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="non-essentials\ext\miniz">
+      <UniqueIdentifier>{3e67c4a3-116d-4c60-bf4e-3ff7bdfdd409}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="neural_radiance_caching_main.cpp" />
+    <ClCompile Include="..\common\dds_loader.cpp">
+      <Filter>non-essentials</Filter>
+    </ClCompile>
+    <ClCompile Include="..\utils\gl_util.cpp">
+      <Filter>non-essentials\utils</Filter>
+    </ClCompile>
+    <ClCompile Include="..\ext\imgui\imgui_demo.cpp">
+      <Filter>non-essentials\ext\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="..\ext\imgui\imgui_impl_glfw.cpp">
+      <Filter>non-essentials\ext\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="..\ext\imgui\imgui_impl_opengl3.cpp">
+      <Filter>non-essentials\ext\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="..\ext\imgui\imgui.cpp">
+      <Filter>non-essentials\ext\imgui\core</Filter>
+    </ClCompile>
+    <ClCompile Include="..\ext\imgui\imgui_draw.cpp">
+      <Filter>non-essentials\ext\imgui\core</Filter>
+    </ClCompile>
+    <ClCompile Include="..\ext\imgui\imgui_widgets.cpp">
+      <Filter>non-essentials\ext\imgui\core</Filter>
+    </ClCompile>
+    <ClCompile Include="..\ext\gl3w\gl3w.c">
+      <Filter>non-essentials\ext\gl3w</Filter>
+    </ClCompile>
+    <ClCompile Include="..\utils\cuda_util.cpp">
+      <Filter>non-essentials\utils</Filter>
+    </ClCompile>
+    <ClCompile Include="..\utils\optix_util.cpp">
+      <Filter>non-essentials\utils</Filter>
+    </ClCompile>
+    <ClCompile Include="..\ext\miniz\miniz.c">
+      <Filter>non-essentials\ext\miniz</Filter>
+    </ClCompile>
+    <ClCompile Include="..\ext\tinyexr.cc">
+      <Filter>non-essentials\ext</Filter>
+    </ClCompile>
+    <ClCompile Include="..\ext\stb_image_write_compile.cpp">
+      <Filter>non-essentials\ext</Filter>
+    </ClCompile>
+    <ClCompile Include="..\common\common_host.cpp">
+      <Filter>non-essentials</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="neural_radiance_caching_shared.h" />
+    <ClInclude Include="..\common\common_shared.h">
+      <Filter>non-essentials</Filter>
+    </ClInclude>
+    <ClInclude Include="..\common\dds_loader.h">
+      <Filter>non-essentials</Filter>
+    </ClInclude>
+    <ClInclude Include="..\utils\gl_util.h">
+      <Filter>non-essentials\utils</Filter>
+    </ClInclude>
+    <ClInclude Include="..\ext\stb_image_write.h">
+      <Filter>non-essentials\ext</Filter>
+    </ClInclude>
+    <ClInclude Include="..\ext\imgui\imgui_impl_glfw.h">
+      <Filter>non-essentials\ext\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="..\ext\imgui\imgui_impl_opengl3.h">
+      <Filter>non-essentials\ext\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="..\ext\imgui\imconfig.h">
+      <Filter>non-essentials\ext\imgui\core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\ext\imgui\imgui.h">
+      <Filter>non-essentials\ext\imgui\core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\ext\imgui\imgui_internal.h">
+      <Filter>non-essentials\ext\imgui\core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\ext\imgui\imstb_rectpack.h">
+      <Filter>non-essentials\ext\imgui\core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\ext\imgui\imstb_textedit.h">
+      <Filter>non-essentials\ext\imgui\core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\ext\imgui\imstb_truetype.h">
+      <Filter>non-essentials\ext\imgui\core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\ext\glfw\include\GLFW\glfw3.h">
+      <Filter>non-essentials\ext\glfw</Filter>
+    </ClInclude>
+    <ClInclude Include="..\ext\glfw\include\GLFW\glfw3native.h">
+      <Filter>non-essentials\ext\glfw</Filter>
+    </ClInclude>
+    <ClInclude Include="..\ext\gl3w\include\KHR\khrplatform.h">
+      <Filter>non-essentials\ext\gl3w</Filter>
+    </ClInclude>
+    <ClInclude Include="..\ext\gl3w\include\GL\gl3w.h">
+      <Filter>non-essentials\ext\gl3w</Filter>
+    </ClInclude>
+    <ClInclude Include="..\ext\gl3w\include\GL\glcorearb.h">
+      <Filter>non-essentials\ext\gl3w</Filter>
+    </ClInclude>
+    <ClInclude Include="..\utils\cuda_util.h">
+      <Filter>non-essentials\utils</Filter>
+    </ClInclude>
+    <ClInclude Include="..\utils\optix_util.h">
+      <Filter>non-essentials\utils</Filter>
+    </ClInclude>
+    <ClInclude Include="..\utils\optix_util_private.h">
+      <Filter>non-essentials\utils</Filter>
+    </ClInclude>
+    <ClInclude Include="..\utils\optixu_on_cudau.h">
+      <Filter>non-essentials\utils</Filter>
+    </ClInclude>
+    <ClInclude Include="..\ext\tinyexr.h">
+      <Filter>non-essentials\ext</Filter>
+    </ClInclude>
+    <ClInclude Include="..\ext\miniz\miniz.h">
+      <Filter>non-essentials\ext\miniz</Filter>
+    </ClInclude>
+    <ClInclude Include="..\common\common_host.h">
+      <Filter>non-essentials</Filter>
+    </ClInclude>
+    <ClInclude Include="..\common\common_device.cuh">
+      <Filter>non-essentials</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <CudaCompile Include="optix_kernels.cu" />
+    <CudaCompile Include="copy_buffers.cu" />
+  </ItemGroup>
+  <ItemGroup>
+    <CopyFileToFolders Include="shaders\drawOptiXResult.frag">
+      <Filter>non-essentials\shaders</Filter>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="shaders\drawOptiXResult.vert">
+      <Filter>non-essentials\shaders</Filter>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="..\ext\assimp\assimp-vc142-mt.dll">
+      <Filter>non-essentials</Filter>
+    </CopyFileToFolders>
+  </ItemGroup>
+  <ItemGroup>
+    <Natvis Include="..\ext\imgui\natvis\imgui.natvis">
+      <Filter>non-essentials\ext\imgui</Filter>
+    </Natvis>
+  </ItemGroup>
+</Project>

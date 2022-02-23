@@ -97,7 +97,9 @@ struct GPUEnvironment {
 
         optixContext = optixu::Context::create(cuContext/*, 4, DEBUG_SELECT(true, false)*/);
 
-        CUDADRV_CHECK(cuModuleLoad(&cellBuilderModule, (getExecutableDirectory() / "regir/ptxes/build_cell_reservoirs.ptx").string().c_str()));
+        CUDADRV_CHECK(cuModuleLoad(
+            &cellBuilderModule,
+            (getExecutableDirectory() / "regir/ptxes/build_cell_reservoirs.ptx").string().c_str()));
         kernelBuildCellReservoirs =
             cudau::Kernel(cellBuilderModule, "buildCellReservoirs", cudau::dim3(32), 0);
         kernelBuildCellReservoirsAndTemporalReuse =
@@ -164,7 +166,8 @@ struct GPUEnvironment {
 
         //optixu::ProgramGroup exceptionProgram = pipeline.createExceptionProgram(moduleOptiX, "__exception__print");
 
-        // If an exception program is not set but exception flags are set, the default exception program will by provided by OptiX.
+        // If an exception program is not set but exception flags are set,
+        // the default exception program will by provided by OptiX.
         //pipeline.setExceptionProgram(exceptionProgram);
         pipeline.setNumMissRayTypes(shared::NumRayTypes);
         pipeline.setMissProgram(shared::RayType_Primary, setupGBuffersMissProgram);
@@ -755,73 +758,79 @@ int32_t main(int32_t argc, const char* argv[]) try {
     // JP: 入力コールバックの設定。
     // EN: Set up input callbacks.
 
-    glfwSetMouseButtonCallback(window, [](GLFWwindow* window, int32_t button, int32_t action, int32_t mods) {
-        uint64_t &frameIndex = *(uint64_t*)glfwGetWindowUserPointer(window);
-        ImGui_ImplGlfw_MouseButtonCallback(window, button, action, mods);
+    glfwSetMouseButtonCallback(
+        window,
+        [](GLFWwindow* window, int32_t button, int32_t action, int32_t mods) {
+            uint64_t &frameIndex = *(uint64_t*)glfwGetWindowUserPointer(window);
+            ImGui_ImplGlfw_MouseButtonCallback(window, button, action, mods);
 
-        switch (button) {
-        case GLFW_MOUSE_BUTTON_MIDDLE: {
-            devPrintf("Mouse Middle\n");
-            g_buttonRotate.recordStateChange(action == GLFW_PRESS, frameIndex);
-            break;
-        }
-        default:
-            break;
-        }
-                               });
-    glfwSetCursorPosCallback(window, [](GLFWwindow* window, double x, double y) {
-        g_mouseX = x;
-        g_mouseY = y;
-                             });
-    glfwSetKeyCallback(window, [](GLFWwindow* window, int32_t key, int32_t scancode, int32_t action, int32_t mods) {
-        uint64_t &frameIndex = *(uint64_t*)glfwGetWindowUserPointer(window);
-        ImGui_ImplGlfw_KeyCallback(window, key, scancode, action, mods);
+            switch (button) {
+            case GLFW_MOUSE_BUTTON_MIDDLE: {
+                devPrintf("Mouse Middle\n");
+                g_buttonRotate.recordStateChange(action == GLFW_PRESS, frameIndex);
+                break;
+            }
+            default:
+                break;
+            }
+        });
+    glfwSetCursorPosCallback(
+        window,
+        [](GLFWwindow* window, double x, double y) {
+            g_mouseX = x;
+            g_mouseY = y;
+        });
+    glfwSetKeyCallback(
+        window,
+        [](GLFWwindow* window, int32_t key, int32_t scancode, int32_t action, int32_t mods) {
+            uint64_t &frameIndex = *(uint64_t*)glfwGetWindowUserPointer(window);
+            ImGui_ImplGlfw_KeyCallback(window, key, scancode, action, mods);
 
-        switch (key) {
-        case GLFW_KEY_W: {
-            g_keyForward.recordStateChange(action == GLFW_PRESS || action == GLFW_REPEAT, frameIndex);
-            break;
-        }
-        case GLFW_KEY_S: {
-            g_keyBackward.recordStateChange(action == GLFW_PRESS || action == GLFW_REPEAT, frameIndex);
-            break;
-        }
-        case GLFW_KEY_A: {
-            g_keyLeftward.recordStateChange(action == GLFW_PRESS || action == GLFW_REPEAT, frameIndex);
-            break;
-        }
-        case GLFW_KEY_D: {
-            g_keyRightward.recordStateChange(action == GLFW_PRESS || action == GLFW_REPEAT, frameIndex);
-            break;
-        }
-        case GLFW_KEY_R: {
-            g_keyUpward.recordStateChange(action == GLFW_PRESS || action == GLFW_REPEAT, frameIndex);
-            break;
-        }
-        case GLFW_KEY_F: {
-            g_keyDownward.recordStateChange(action == GLFW_PRESS || action == GLFW_REPEAT, frameIndex);
-            break;
-        }
-        case GLFW_KEY_Q: {
-            g_keyTiltLeft.recordStateChange(action == GLFW_PRESS || action == GLFW_REPEAT, frameIndex);
-            break;
-        }
-        case GLFW_KEY_E: {
-            g_keyTiltRight.recordStateChange(action == GLFW_PRESS || action == GLFW_REPEAT, frameIndex);
-            break;
-        }
-        case GLFW_KEY_T: {
-            g_keyFasterPosMovSpeed.recordStateChange(action == GLFW_PRESS || action == GLFW_REPEAT, frameIndex);
-            break;
-        }
-        case GLFW_KEY_G: {
-            g_keySlowerPosMovSpeed.recordStateChange(action == GLFW_PRESS || action == GLFW_REPEAT, frameIndex);
-            break;
-        }
-        default:
-            break;
-        }
-                       });
+            switch (key) {
+            case GLFW_KEY_W: {
+                g_keyForward.recordStateChange(action == GLFW_PRESS || action == GLFW_REPEAT, frameIndex);
+                break;
+            }
+            case GLFW_KEY_S: {
+                g_keyBackward.recordStateChange(action == GLFW_PRESS || action == GLFW_REPEAT, frameIndex);
+                break;
+            }
+            case GLFW_KEY_A: {
+                g_keyLeftward.recordStateChange(action == GLFW_PRESS || action == GLFW_REPEAT, frameIndex);
+                break;
+            }
+            case GLFW_KEY_D: {
+                g_keyRightward.recordStateChange(action == GLFW_PRESS || action == GLFW_REPEAT, frameIndex);
+                break;
+            }
+            case GLFW_KEY_R: {
+                g_keyUpward.recordStateChange(action == GLFW_PRESS || action == GLFW_REPEAT, frameIndex);
+                break;
+            }
+            case GLFW_KEY_F: {
+                g_keyDownward.recordStateChange(action == GLFW_PRESS || action == GLFW_REPEAT, frameIndex);
+                break;
+            }
+            case GLFW_KEY_Q: {
+                g_keyTiltLeft.recordStateChange(action == GLFW_PRESS || action == GLFW_REPEAT, frameIndex);
+                break;
+            }
+            case GLFW_KEY_E: {
+                g_keyTiltRight.recordStateChange(action == GLFW_PRESS || action == GLFW_REPEAT, frameIndex);
+                break;
+            }
+            case GLFW_KEY_T: {
+                g_keyFasterPosMovSpeed.recordStateChange(action == GLFW_PRESS || action == GLFW_REPEAT, frameIndex);
+                break;
+            }
+            case GLFW_KEY_G: {
+                g_keySlowerPosMovSpeed.recordStateChange(action == GLFW_PRESS || action == GLFW_REPEAT, frameIndex);
+                break;
+            }
+            default:
+                break;
+            }
+        });
 
     // END: Set up input callbacks.
     // ----------------------------------------------------------------
@@ -871,7 +880,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
         for (int j = 0; j < mesh->groups.size(); ++j) {
             const Mesh::Group &group = mesh->groups[j];
 
-            Matrix4x4 instXfm = Matrix4x4(info.beginScale * info.beginOrientation.toMatrix3x3(), info.beginPosition) * group.transform;
+            Matrix4x4 instXfm =
+                Matrix4x4(info.beginScale * info.beginOrientation.toMatrix3x3(), info.beginPosition) *
+                group.transform;
             Instance* inst = createInstance(gpuEnv.cuContext, &scene, group.geomGroup, instXfm);
             scene.insts.push_back(inst);
 
@@ -1132,7 +1143,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
     constexpr bool useTiledDenoising = false; // Change this to true to use tiled denoising.
     constexpr uint32_t tileWidth = useTiledDenoising ? 256 : 0;
     constexpr uint32_t tileHeight = useTiledDenoising ? 256 : 0;
-    optixu::Denoiser denoiser = gpuEnv.optixContext.createDenoiser(OPTIX_DENOISER_MODEL_KIND_TEMPORAL, true, true);
+    optixu::Denoiser denoiser = gpuEnv.optixContext.createDenoiser(
+        OPTIX_DENOISER_MODEL_KIND_TEMPORAL, true, true);
     size_t stateSize;
     size_t scratchSize;
     size_t scratchSizeForComputeIntensity;
@@ -1157,9 +1169,12 @@ int32_t main(int32_t argc, const char* argv[]) try {
     // JP: デノイザーは入出力にリニアなバッファーを必要とするため結果をコピーする必要がある。
     // EN: Denoiser requires linear buffers as input/output, so we need to copy the results.
     CUmodule moduleCopyBuffers;
-    CUDADRV_CHECK(cuModuleLoad(&moduleCopyBuffers, (getExecutableDirectory() / "regir/ptxes/copy_buffers.ptx").string().c_str()));
-    cudau::Kernel kernelCopyToLinearBuffers(moduleCopyBuffers, "copyToLinearBuffers", cudau::dim3(8, 8), 0);
-    cudau::Kernel kernelVisualizeToOutputBuffer(moduleCopyBuffers, "visualizeToOutputBuffer", cudau::dim3(8, 8), 0);
+    CUDADRV_CHECK(cuModuleLoad(
+        &moduleCopyBuffers, (getExecutableDirectory() / "regir/ptxes/copy_buffers.ptx").string().c_str()));
+    cudau::Kernel kernelCopyToLinearBuffers(
+        moduleCopyBuffers, "copyToLinearBuffers", cudau::dim3(8, 8), 0);
+    cudau::Kernel kernelVisualizeToOutputBuffer(
+        moduleCopyBuffers, "visualizeToOutputBuffer", cudau::dim3(8, 8), 0);
 
     CUdeviceptr hdrIntensity;
     CUDADRV_CHECK(cuMemAlloc(&hdrIntensity, sizeof(float)));
@@ -1193,8 +1208,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
     // JP: OptiXの結果をフレームバッファーにコピーするシェーダー。
     // EN: Shader to copy OptiX result to a frame buffer.
     glu::GraphicsProgram drawOptiXResultShader;
-    drawOptiXResultShader.initializeVSPS(readTxtFile(exeDir / "regir/shaders/drawOptiXResult.vert"),
-                                         readTxtFile(exeDir / "regir/shaders/drawOptiXResult.frag"));
+    drawOptiXResultShader.initializeVSPS(
+        readTxtFile(exeDir / "regir/shaders/drawOptiXResult.vert"),
+        readTxtFile(exeDir / "regir/shaders/drawOptiXResult.frag"));
 
 
 
@@ -1364,8 +1380,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
             outputTexture.finalize();
             outputArray.finalize();
             outputTexture.initialize(GL_RGBA32F, renderTargetSizeX, renderTargetSizeY, 1);
-            outputArray.initializeFromGLTexture2D(gpuEnv.cuContext, outputTexture.getHandle(),
-                                                  cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable);
+            outputArray.initializeFromGLTexture2D(
+                gpuEnv.cuContext, outputTexture.getHandle(),
+                cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable);
 
             // EN: update the pipeline parameters.
             staticPlp.imageSize = int2(renderTargetSizeX, renderTargetSizeY);
@@ -1443,8 +1460,12 @@ int32_t main(int32_t argc, const char* argv[]) try {
                 axis = float3(1, 0, 0);
 
             g_cameraOrientation = g_cameraOrientation * qRotateZ(g_cameraTiltSpeed * tiltZ);
-            g_tempCameraOrientation = g_cameraOrientation * qRotate(g_cameraDirectionalMovingSpeed * deltaAngle, axis);
-            g_cameraPosition += g_tempCameraOrientation.toMatrix3x3() * (g_cameraPositionalMovingSpeed * float3(trackX, trackY, trackZ));
+            g_tempCameraOrientation =
+                g_cameraOrientation *
+                qRotate(g_cameraDirectionalMovingSpeed * deltaAngle, axis);
+            g_cameraPosition +=
+                g_tempCameraOrientation.toMatrix3x3() *
+                (g_cameraPositionalMovingSpeed * float3(trackX, trackY, trackZ));
             if (g_buttonRotate.getState() == false && g_buttonRotate.getTime() == frameIndex) {
                 g_cameraOrientation = g_tempCameraOrientation;
                 deltaX = 0;
@@ -1621,11 +1642,13 @@ int32_t main(int32_t argc, const char* argv[]) try {
                 if (ImGui::BeginTabItem("Visualize")) {
                     ImGui::Checkbox("Visualize Cells", &visualizeCells);
                     ImGui::Text("Buffer to Display");
-                    ImGui::RadioButtonE("Noisy Beauty", &bufferTypeToDisplay, shared::BufferToDisplay::NoisyBeauty);
+                    ImGui::RadioButtonE(
+                        "Noisy Beauty", &bufferTypeToDisplay, shared::BufferToDisplay::NoisyBeauty);
                     ImGui::RadioButtonE("Albedo", &bufferTypeToDisplay, shared::BufferToDisplay::Albedo);
                     ImGui::RadioButtonE("Normal", &bufferTypeToDisplay, shared::BufferToDisplay::Normal);
                     ImGui::RadioButtonE("Motion Vector", &bufferTypeToDisplay, shared::BufferToDisplay::Flow);
-                    ImGui::RadioButtonE("Denoised Beauty", &bufferTypeToDisplay, shared::BufferToDisplay::DenoisedBeauty);
+                    ImGui::RadioButtonE(
+                        "Denoised Beauty", &bufferTypeToDisplay, shared::BufferToDisplay::DenoisedBeauty);
 
                     if (ImGui::Checkbox("Temporal Denoiser", &useTemporalDenosier)) {
                         CUDADRV_CHECK(cuStreamSynchronize(cuStream));
@@ -1645,7 +1668,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
                                          &numTasks);
                         hpprintf("Denoiser State Buffer: %llu bytes\n", stateSize);
                         hpprintf("Denoiser Scratch Buffer: %llu bytes\n", scratchSize);
-                        hpprintf("Compute Intensity Scratch Buffer: %llu bytes\n", scratchSizeForComputeIntensity);
+                        hpprintf("Compute Intensity Scratch Buffer: %llu bytes\n",
+                                 scratchSizeForComputeIntensity);
                         denoiserStateBuffer.resize(stateSize, 1);
                         denoiserScratchBuffer.resize(std::max(scratchSize, scratchSizeForComputeIntensity), 1);
 

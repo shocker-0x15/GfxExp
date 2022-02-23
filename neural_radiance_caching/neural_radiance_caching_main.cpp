@@ -2,7 +2,7 @@
 
 */
 
-#include "path_tracing_shared.h"
+#include "neural_radiance_caching_shared.h"
 #include "../common/common_host.h"
 
 // Include glfw3.h after our OpenGL definitions
@@ -62,7 +62,8 @@ struct GPUEnvironment {
             DEBUG_SELECT(OPTIX_EXCEPTION_FLAG_DEBUG, OPTIX_EXCEPTION_FLAG_NONE),
             OPTIX_PRIMITIVE_TYPE_FLAGS_TRIANGLE);
 
-        const std::string ptx = readTxtFile(getExecutableDirectory() / "path_tracing/ptxes/optix_kernels.ptx");
+        const std::string ptx = readTxtFile(
+            getExecutableDirectory() / "neural_radiance_caching/ptxes/optix_kernels.ptx");
         mainModule = pipeline.createModuleFromPTXString(
             ptx, OPTIX_COMPILE_DEFAULT_MAX_REGISTER_COUNT,
             DEBUG_SELECT(OPTIX_COMPILE_OPTIMIZATION_LEVEL_0, OPTIX_COMPILE_OPTIMIZATION_DEFAULT),
@@ -606,7 +607,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
     float UIScaling = contentScaleX;
     GLFWwindow* window = glfwCreateWindow(static_cast<int32_t>(renderTargetSizeX * UIScaling),
                                           static_cast<int32_t>(renderTargetSizeY * UIScaling),
-                                          "Path Tracing", NULL, NULL);
+                                          "Neural Radiance Caching", NULL, NULL);
     glfwSetWindowUserPointer(window, nullptr);
     if (!window) {
         hpprintf("Failed to create a GLFW window.\n");
@@ -802,9 +803,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         for (int j = 0; j < mesh->groups.size(); ++j) {
             const Mesh::Group &group = mesh->groups[j];
 
-            Matrix4x4 instXfm =
-                Matrix4x4(info.beginScale * info.beginOrientation.toMatrix3x3(), info.beginPosition) *
-                group.transform;
+            Matrix4x4 instXfm = Matrix4x4(info.beginScale * info.beginOrientation.toMatrix3x3(), info.beginPosition) * group.transform;
             Instance* inst = createInstance(gpuEnv.cuContext, &scene, group.geomGroup, instXfm);
             scene.insts.push_back(inst);
 
@@ -1004,8 +1003,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
     constexpr bool useTiledDenoising = false; // Change this to true to use tiled denoising.
     constexpr uint32_t tileWidth = useTiledDenoising ? 256 : 0;
     constexpr uint32_t tileHeight = useTiledDenoising ? 256 : 0;
-    optixu::Denoiser denoiser = gpuEnv.optixContext.createDenoiser(
-        OPTIX_DENOISER_MODEL_KIND_TEMPORAL, true, true);
+    optixu::Denoiser denoiser = gpuEnv.optixContext.createDenoiser(OPTIX_DENOISER_MODEL_KIND_TEMPORAL, true, true);
     size_t stateSize;
     size_t scratchSize;
     size_t scratchSizeForComputeIntensity;
@@ -1019,9 +1017,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
     cudau::Buffer denoiserStateBuffer;
     cudau::Buffer denoiserScratchBuffer;
     denoiserStateBuffer.initialize(gpuEnv.cuContext, Scene::bufferType, stateSize, 1);
-    denoiserScratchBuffer.initialize(
-        gpuEnv.cuContext, Scene::bufferType,
-        std::max(scratchSize, scratchSizeForComputeIntensity), 1);
+    denoiserScratchBuffer.initialize(gpuEnv.cuContext, Scene::bufferType,
+                                     std::max(scratchSize, scratchSizeForComputeIntensity), 1);
 
     std::vector<optixu::DenoisingTask> denoisingTasks(numTasks);
     denoiser.getTasks(denoisingTasks.data());
@@ -1033,7 +1030,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
     CUmodule moduleCopyBuffers;
     CUDADRV_CHECK(cuModuleLoad(
         &moduleCopyBuffers,
-        (getExecutableDirectory() / "path_tracing/ptxes/copy_buffers.ptx").string().c_str()));
+        (getExecutableDirectory() / "neural_radiance_caching/ptxes/copy_buffers.ptx").string().c_str()));
     cudau::Kernel kernelCopyToLinearBuffers(
         moduleCopyBuffers, "copyToLinearBuffers", cudau::dim3(8, 8), 0);
     cudau::Kernel kernelVisualizeToOutputBuffer(
@@ -1072,8 +1069,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
     // EN: Shader to copy OptiX result to a frame buffer.
     glu::GraphicsProgram drawOptiXResultShader;
     drawOptiXResultShader.initializeVSPS(
-        readTxtFile(exeDir / "path_tracing/shaders/drawOptiXResult.vert"),
-        readTxtFile(exeDir / "path_tracing/shaders/drawOptiXResult.frag"));
+        readTxtFile(exeDir / "neural_radiance_caching/shaders/drawOptiXResult.vert"),
+        readTxtFile(exeDir / "neural_radiance_caching/shaders/drawOptiXResult.frag"));
 
 
 
@@ -1225,9 +1222,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
             outputTexture.finalize();
             outputArray.finalize();
             outputTexture.initialize(GL_RGBA32F, renderTargetSizeX, renderTargetSizeY, 1);
-            outputArray.initializeFromGLTexture2D(
-                gpuEnv.cuContext, outputTexture.getHandle(),
-                cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable);
+            outputArray.initializeFromGLTexture2D(gpuEnv.cuContext, outputTexture.getHandle(),
+                                                  cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable);
 
             // EN: update the pipeline parameters.
             staticPlp.imageSize = int2(renderTargetSizeX, renderTargetSizeY);
@@ -1486,8 +1482,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
                                          &numTasks);
                         hpprintf("Denoiser State Buffer: %llu bytes\n", stateSize);
                         hpprintf("Denoiser Scratch Buffer: %llu bytes\n", scratchSize);
-                        hpprintf("Compute Intensity Scratch Buffer: %llu bytes\n", 
-                                 scratchSizeForComputeIntensity);
+                        hpprintf("Compute Intensity Scratch Buffer: %llu bytes\n", scratchSizeForComputeIntensity);
                         denoiserStateBuffer.resize(stateSize, 1);
                         denoiserScratchBuffer.resize(std::max(scratchSize, scratchSizeForComputeIntensity), 1);
 
