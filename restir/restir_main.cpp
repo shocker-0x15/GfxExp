@@ -791,39 +791,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
 
     // ----------------------------------------------------------------
-    // JP: ImGuiの初期化。
-    // EN: Initialize ImGui.
-
-    ImGui::CreateContext();
-    ImGuiIO& io = ImGui::GetIO(); (void)io;
-    //io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;  // Enable Keyboard Controls
-    //io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;   // Enable Gamepad Controls
-    ImGui_ImplGlfw_InitForOpenGL(window, false);
-    ImGui_ImplOpenGL3_Init(glsl_version);
-
-    // Setup style
-    // JP: ガンマ補正が有効なレンダーターゲットで、同じUIの見た目を得るためにデガンマされたスタイルも用意する。
-    // EN: Prepare a degamma-ed style to have the identical UI appearance on gamma-corrected render target.
-    ImGuiStyle guiStyle, guiStyleWithGamma;
-    ImGui::StyleColorsDark(&guiStyle);
-    guiStyleWithGamma = guiStyle;
-    const auto degamma = [](const ImVec4 &color) {
-        return ImVec4(sRGB_degamma_s(color.x),
-                      sRGB_degamma_s(color.y),
-                      sRGB_degamma_s(color.z),
-                      color.w);
-    };
-    for (int i = 0; i < ImGuiCol_COUNT; ++i) {
-        guiStyleWithGamma.Colors[i] = degamma(guiStyleWithGamma.Colors[i]);
-    }
-    ImGui::GetStyle() = guiStyleWithGamma;
-
-    // END: Initialize ImGui.
-    // ----------------------------------------------------------------
-
-
-
-    // ----------------------------------------------------------------
     // JP: 入力コールバックの設定。
     // EN: Set up input callbacks.
 
@@ -831,7 +798,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
         window,
         [](GLFWwindow* window, int32_t button, int32_t action, int32_t mods) {
             uint64_t &frameIndex = *(uint64_t*)glfwGetWindowUserPointer(window);
-            ImGui_ImplGlfw_MouseButtonCallback(window, button, action, mods);
 
             switch (button) {
             case GLFW_MOUSE_BUTTON_MIDDLE: {
@@ -853,7 +819,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
         window,
         [](GLFWwindow* window, int32_t key, int32_t scancode, int32_t action, int32_t mods) {
             uint64_t &frameIndex = *(uint64_t*)glfwGetWindowUserPointer(window);
-            ImGui_ImplGlfw_KeyCallback(window, key, scancode, action, mods);
 
             switch (key) {
             case GLFW_KEY_W: {
@@ -904,6 +869,38 @@ int32_t main(int32_t argc, const char* argv[]) try {
     // END: Set up input callbacks.
     // ----------------------------------------------------------------
 
+
+
+    // ----------------------------------------------------------------
+    // JP: ImGuiの初期化。
+    // EN: Initialize ImGui.
+
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO(); (void)io;
+    //io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;  // Enable Keyboard Controls
+    //io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;   // Enable Gamepad Controls
+    ImGui_ImplGlfw_InitForOpenGL(window, true);
+    ImGui_ImplOpenGL3_Init(glsl_version);
+
+    // Setup style
+    // JP: ガンマ補正が有効なレンダーターゲットで、同じUIの見た目を得るためにデガンマされたスタイルも用意する。
+    // EN: Prepare a degamma-ed style to have the identical UI appearance on gamma-corrected render target.
+    ImGuiStyle guiStyle, guiStyleWithGamma;
+    ImGui::StyleColorsDark(&guiStyle);
+    guiStyleWithGamma = guiStyle;
+    const auto degamma = [](const ImVec4 &color) {
+        return ImVec4(sRGB_degamma_s(color.x),
+                      sRGB_degamma_s(color.y),
+                      sRGB_degamma_s(color.z),
+                      color.w);
+    };
+    for (int i = 0; i < ImGuiCol_COUNT; ++i) {
+        guiStyleWithGamma.Colors[i] = degamma(guiStyleWithGamma.Colors[i]);
+    }
+    ImGui::GetStyle() = guiStyleWithGamma;
+
+    // END: Initialize ImGui.
+    // ----------------------------------------------------------------
 
 
 
