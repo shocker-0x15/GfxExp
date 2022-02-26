@@ -294,6 +294,9 @@ CUDA_DEVICE_FUNCTION bool operator==(const int2 &v0, const int2 &v1) {
 CUDA_DEVICE_FUNCTION bool operator!=(const int2 &v0, const int2 &v1) {
     return v0.x != v1.x || v0.y != v1.y;
 }
+CUDA_DEVICE_FUNCTION uint2 operator+(const int2 &v0, const uint2 &v1) {
+    return make_uint2(v0.x + v1.x, v0.y + v1.y);
+}
 CUDA_DEVICE_FUNCTION int2 operator*(const int2 &v0, const int2 &v1) {
     return make_int2(v0.x * v1.x, v0.y * v1.y);
 }
@@ -310,6 +313,9 @@ CUDA_DEVICE_FUNCTION bool operator==(const uint2 &v0, const uint2 &v1) {
 CUDA_DEVICE_FUNCTION bool operator!=(const uint2 &v0, const uint2 &v1) {
     return v0.x != v1.x || v0.y != v1.y;
 }
+CUDA_DEVICE_FUNCTION uint2 operator-(const uint2 &v, uint32_t s) {
+    return make_uint2(v.x - s, v.y - s);
+}
 CUDA_DEVICE_FUNCTION uint2 operator*(const uint2 &v0, const uint2 &v1) {
     return make_uint2(v0.x * v1.x, v0.y * v1.y);
 }
@@ -318,6 +324,19 @@ CUDA_DEVICE_FUNCTION uint2 operator/(const uint2 &v0, const uint2 &v1) {
 }
 CUDA_DEVICE_FUNCTION uint2 operator/(const uint2 &v0, const int2 &v1) {
     return make_uint2(v0.x / v1.x, v0.y / v1.y);
+}
+CUDA_DEVICE_FUNCTION uint2 operator%(const uint2 &v0, const uint2 &v1) {
+    return make_uint2(v0.x % v1.x, v0.y % v1.y);
+}
+CUDA_DEVICE_FUNCTION uint2 &operator+=(uint2 &v, uint32_t s) {
+    v.x += s;
+    v.x += s;
+    return v;
+}
+CUDA_DEVICE_FUNCTION uint2 &operator-=(uint2 &v, uint32_t s) {
+    v.x -= s;
+    v.x -= s;
+    return v;
 }
 
 CUDA_DEVICE_FUNCTION float2 make_float2(float v) {
@@ -1206,12 +1225,14 @@ struct AABB {
     PROCESS_DYNAMIC_FUNCTION(readModifiedNormalFromNormalMap2ch), \
     PROCESS_DYNAMIC_FUNCTION(readModifiedNormalFromHeightMap), \
     PROCESS_DYNAMIC_FUNCTION(setupLambertBRDF), \
+    PROCESS_DYNAMIC_FUNCTION(LambertBRDF_getSurfaceParameters), \
     PROCESS_DYNAMIC_FUNCTION(LambertBRDF_sampleThroughput), \
     PROCESS_DYNAMIC_FUNCTION(LambertBRDF_evaluate), \
     PROCESS_DYNAMIC_FUNCTION(LambertBRDF_evaluatePDF), \
     PROCESS_DYNAMIC_FUNCTION(LambertBRDF_evaluateDHReflectanceEstimate), \
     PROCESS_DYNAMIC_FUNCTION(setupDiffuseAndSpecularBRDF), \
     PROCESS_DYNAMIC_FUNCTION(setupSimplePBR_BRDF), \
+    PROCESS_DYNAMIC_FUNCTION(DiffuseAndSpecularBRDF_getSurfaceParameters), \
     PROCESS_DYNAMIC_FUNCTION(DiffuseAndSpecularBRDF_sampleThroughput), \
     PROCESS_DYNAMIC_FUNCTION(DiffuseAndSpecularBRDF_evaluate), \
     PROCESS_DYNAMIC_FUNCTION(DiffuseAndSpecularBRDF_evaluatePDF), \
@@ -1745,6 +1766,8 @@ namespace shared {
     using ReadModifiedNormal = DynamicFunction<
         float3(CUtexObject texture, const float2 &texCoord, uint32_t texDim)>;
 
+    using BSDFGetSurfaceParameters = DynamicFunction<
+        void(const uint32_t* data, float3* diffuseReflectance, float3* specularReflectance, float* roughness)>;
     using BSDFSampleThroughput = DynamicFunction<
         float3(const uint32_t* data, const float3 &vGiven, float uDir0, float uDir1,
                float3* vSampled, float* dirPDensity)>;
@@ -1801,6 +1824,7 @@ namespace shared {
         ReadModifiedNormal readModifiedNormal;
 
         SetupBSDFBody setupBSDFBody;
+        BSDFGetSurfaceParameters bsdfGetSurfaceParameters;
         BSDFSampleThroughput bsdfSampleThroughput;
         BSDFEvaluate bsdfEvaluate;
         BSDFEvaluatePDF bsdfEvaluatePDF;

@@ -2,7 +2,11 @@
 
 #include "common_shared.h"
 
-#define pixelprintf(idx, px, py, fmt, ...) do { if (idx.x == px && idx.y == py) printf(fmt, ##__VA_ARGS__); } while (0)
+#define pixelprintf(idx, px, py, fmt, ...) \
+    do { if (idx.x == px && idx.y == py) printf(fmt, ##__VA_ARGS__); } while (0)
+#define vector2Arg(v) v.x, v.y
+#define vector3Arg(v) v.x, v.y, v.z
+#define vector4Arg(v) v.x, v.y, v.z, v.w
 
 
 
@@ -239,8 +243,15 @@ public:
     CUDA_DEVICE_FUNCTION LambertBRDF(const float3 &reflectance) :
         m_reflectance(reflectance) {}
 
-    CUDA_DEVICE_FUNCTION float3 sampleThroughput(const float3 &vGiven, float uDir0, float uDir1,
-                                                 float3* vSampled, float* dirPDensity) const {
+    CUDA_DEVICE_FUNCTION void getSurfaceParameters(
+        const uint32_t* data, float3* diffuseReflectance, float3* specularReflectance, float* roughness) const {
+        *diffuseReflectance = m_reflectance;
+        *specularReflectance = make_float3(0.0f, 0.0f, 0.0f);
+        *roughness = 1.0f;
+    }
+    CUDA_DEVICE_FUNCTION float3 sampleThroughput(
+        const float3 &vGiven, float uDir0, float uDir1,
+        float3* vSampled, float* dirPDensity) const {
         *vSampled = cosineSampleHemisphere(uDir0, uDir1);
         *dirPDensity = vSampled->z / Pi;
         if (vGiven.z <= 0.0f)
@@ -403,8 +414,15 @@ public:
         m_roughness = 1 - smoothness;
     }
 
-    CUDA_DEVICE_FUNCTION float3 sampleThroughput(const float3 &vGiven, float uDir0, float uDir1,
-                                                 float3* vSampled, float* dirPDensity) const {
+    CUDA_DEVICE_FUNCTION void getSurfaceParameters(
+        const uint32_t* data, float3* diffuseReflectance, float3* specularReflectance, float* roughness) const {
+        *diffuseReflectance = m_diffuseColor;
+        *specularReflectance = m_specularF0Color;
+        *roughness = m_roughness;
+    }
+    CUDA_DEVICE_FUNCTION float3 sampleThroughput(
+        const float3 &vGiven, float uDir0, float uDir1,
+        float3* vSampled, float* dirPDensity) const {
         GGXMicrofacetDistribution ggx;
         ggx.alpha_g = m_roughness * m_roughness;
 
@@ -637,8 +655,10 @@ public:
 template<>
 CUDA_DEVICE_FUNCTION void setupBSDFBody<DiffuseAndSpecularBRDF>(
     const shared::MaterialData &matData, const float2 &texCoord, uint32_t* bodyData) {
-    float4 diffuseColor = tex2DLod<float4>(matData.asDiffuseAndSpecular.diffuse, texCoord.x, texCoord.y, 0.0f);
-    float4 specularF0Color = tex2DLod<float4>(matData.asDiffuseAndSpecular.specular, texCoord.x, texCoord.y, 0.0f);
+    float4 diffuseColor =
+        tex2DLod<float4>(matData.asDiffuseAndSpecular.diffuse, texCoord.x, texCoord.y, 0.0f);
+    float4 specularF0Color =
+        tex2DLod<float4>(matData.asDiffuseAndSpecular.specular, texCoord.x, texCoord.y, 0.0f);
     float smoothness = tex2DLod<float>(matData.asDiffuseAndSpecular.smoothness, texCoord.x, texCoord.y, 0.0f);
     auto &bsdfBody = *reinterpret_cast<DiffuseAndSpecularBRDF*>(bodyData);
     bsdfBody = DiffuseAndSpecularBRDF(make_float3(diffuseColor),
@@ -649,8 +669,10 @@ CUDA_DEVICE_FUNCTION void setupBSDFBody<DiffuseAndSpecularBRDF>(
 template<>
 CUDA_DEVICE_FUNCTION void setupBSDFBody<SimplePBR_BRDF>(
     const shared::MaterialData &matData, const float2 &texCoord, uint32_t* bodyData) {
-    float4 baseColor_opacity = tex2DLod<float4>(matData.asSimplePBR.baseColor_opacity, texCoord.x, texCoord.y, 0.0f);
-    float4 occlusion_roughness_metallic = tex2DLod<float4>(matData.asSimplePBR.occlusion_roughness_metallic, texCoord.x, texCoord.y, 0.0f);
+    float4 baseColor_opacity =
+        tex2DLod<float4>(matData.asSimplePBR.baseColor_opacity, texCoord.x, texCoord.y, 0.0f);
+    float4 occlusion_roughness_metallic =
+        tex2DLod<float4>(matData.asSimplePBR.occlusion_roughness_metallic, texCoord.x, texCoord.y, 0.0f);
     float3 baseColor = make_float3(baseColor_opacity);
     float smoothness = min(1.0f - occlusion_roughness_metallic.y, 0.999f);
     float metallic = occlusion_roughness_metallic.z;
@@ -661,6 +683,12 @@ CUDA_DEVICE_FUNCTION void setupBSDFBody<SimplePBR_BRDF>(
 
 
 #define DEFINE_BSDF_CALLABLES(BSDFType) \
+    RT_CALLABLE_PROGRAM void RT_DC_NAME(BSDFType ## _getSurfaceParameters)(\
+        const uint32_t* data, float3* diffuseReflectance, float3* specularReflectance, float* roughness) {\
+        auto &bsdf = *reinterpret_cast<const BSDFType*>(data);\
+        return bsdf.getSurfaceParameters(data, diffuseReflectance, specularReflectance, roughness);\
+    }\
+    CUDA_DECLARE_CALLABLE_PROGRAM_POINTER(BSDFType ## _getSurfaceParameters);\
     RT_CALLABLE_PROGRAM float3 RT_DC_NAME(BSDFType ## _sampleThroughput)(\
         const uint32_t* data, const float3 &vGiven, float uDir0, float uDir1,\
         float3* vSampled, float* dirPDensity) {\
@@ -712,6 +740,7 @@ struct BSDF {
     uint32_t m_data[sizeof(HARD_CODED_BSDF) / 4];
 #else
     static constexpr uint32_t NumDwords = 16;
+    shared::BSDFGetSurfaceParameters m_getSurfaceParameters;
     shared::BSDFSampleThroughput m_sampleThroughput;
     shared::BSDFEvaluate m_evaluate;
     shared::BSDFEvaluatePDF m_evaluatePDF;
@@ -723,11 +752,21 @@ struct BSDF {
 #if defined(USE_HARD_CODED_BSDF_FUNCTIONS)
         setupBSDFBody<HARD_CODED_BSDF>(matData, texCoord, m_data);
 #else
+        m_getSurfaceParameters = matData.bsdfGetSurfaceParameters;
         m_sampleThroughput = matData.bsdfSampleThroughput;
         m_evaluate = matData.bsdfEvaluate;
         m_evaluatePDF = matData.bsdfEvaluatePDF;
         m_evaluateDHReflectanceEstimate = matData.bsdfEvaluateDHReflectanceEstimate;
         matData.setupBSDFBody(matData, texCoord, m_data);
+#endif
+    }
+    CUDA_DEVICE_FUNCTION void getSurfaceParameters(
+        float3* diffuseReflectance, float3* specularReflectance, float* roughness) const {
+#if defined(USE_HARD_CODED_BSDF_FUNCTIONS)
+        auto &bsdf = *reinterpret_cast<const HARD_CODED_BSDF*>(m_data);
+        return bsdf.getSurfaceParameters(diffuseReflectance, specularReflectance, roughness);
+#else
+        return m_getSurfaceParameters(m_data, diffuseReflectance, specularReflectance, roughness);
 #endif
     }
     CUDA_DEVICE_FUNCTION float3 sampleThroughput(

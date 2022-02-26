@@ -19,6 +19,12 @@ struct GPUEnvironment {
     CUcontext cuContext;
     optixu::Context optixContext;
 
+    CUmodule cudaModule;
+    cudau::Kernel kernelResetNRCBuffers;
+    cudau::Kernel kernelAccumulateInferredRadianceValues;
+    cudau::Kernel kernelPropagateRadianceValues;
+    CUdeviceptr plpPtr;
+
     optixu::Pipeline pipeline;
     optixu::Module mainModule;
     optixu::ProgramGroup emptyMissProgram;
@@ -26,9 +32,9 @@ struct GPUEnvironment {
     optixu::ProgramGroup setupGBuffersHitProgramGroup;
     optixu::ProgramGroup setupGBuffersMissProgram;
 
-    optixu::ProgramGroup pathTraceBaselineRayGenProgram;
-    optixu::ProgramGroup pathTraceBaselineMissProgram;
-    optixu::ProgramGroup pathTraceBaselineHitProgramGroup;
+    optixu::ProgramGroup pathTraceRayGenProgram;
+    optixu::ProgramGroup pathTraceMissProgram;
+    optixu::ProgramGroup pathTraceHitProgramGroup;
     optixu::ProgramGroup visibilityHitProgramGroup;
     std::vector<optixu::ProgramGroup> callablePrograms;
 
@@ -44,6 +50,20 @@ struct GPUEnvironment {
         CUDADRV_CHECK(cuCtxSetCurrent(cuContext));
 
         optixContext = optixu::Context::create(cuContext/*, 4, DEBUG_SELECT(true, false)*/);
+
+        CUDADRV_CHECK(cuModuleLoad(
+            &cudaModule,
+            (getExecutableDirectory() / "neural_radiance_caching/ptxes/kernels.ptx").string().c_str()));
+        kernelResetNRCBuffers =
+            cudau::Kernel(cudaModule, "resetNRCBuffers", cudau::dim3(32), 0);
+        kernelAccumulateInferredRadianceValues =
+            cudau::Kernel(cudaModule, "accumulateInferredRadianceValues", cudau::dim3(32), 0);
+        kernelPropagateRadianceValues =
+            cudau::Kernel(cudaModule, "propagateRadianceValues", cudau::dim3(32), 0);
+
+        size_t plpSize;
+        CUDADRV_CHECK(cuModuleGetGlobal(&plpPtr, &plpSize, cudaModule, "plp"));
+        Assert(sizeof(shared::PipelineLaunchParameters) == plpSize, "Unexpected plp size.");
 
         pipeline = optixContext.createPipeline();
 
@@ -81,12 +101,12 @@ struct GPUEnvironment {
         setupGBuffersMissProgram = pipeline.createMissProgram(
             mainModule, RT_MS_NAME_STR("setupGBuffers"));
 
-        pathTraceBaselineRayGenProgram = pipeline.createRayGenProgram(
-            mainModule, RT_RG_NAME_STR("pathTraceBaseline"));
-        pathTraceBaselineMissProgram = pipeline.createMissProgram(
-            mainModule, RT_MS_NAME_STR("pathTraceBaseline"));
-        pathTraceBaselineHitProgramGroup = pipeline.createHitProgramGroupForTriangleIS(
-            mainModule, RT_CH_NAME_STR("pathTraceBaseline"),
+        pathTraceRayGenProgram = pipeline.createRayGenProgram(
+            mainModule, RT_RG_NAME_STR("pathTrace"));
+        pathTraceMissProgram = pipeline.createMissProgram(
+            mainModule, RT_MS_NAME_STR("pathTrace"));
+        pathTraceHitProgramGroup = pipeline.createHitProgramGroupForTriangleIS(
+            mainModule, RT_CH_NAME_STR("pathTrace"),
             emptyModule, nullptr);
 
         visibilityHitProgramGroup = pipeline.createHitProgramGroupForTriangleIS(
@@ -100,7 +120,7 @@ struct GPUEnvironment {
         //pipeline.setExceptionProgram(exceptionProgram);
         pipeline.setNumMissRayTypes(shared::NumRayTypes);
         pipeline.setMissProgram(shared::RayType_Primary, setupGBuffersMissProgram);
-        pipeline.setMissProgram(shared::RayType_PathTrace, pathTraceBaselineMissProgram);
+        pipeline.setMissProgram(shared::RayType_PathTrace, pathTraceMissProgram);
         pipeline.setMissProgram(shared::RayType_Visibility, emptyMissProgram);
 
         pipeline.setNumCallablePrograms(NumCallablePrograms);
@@ -119,7 +139,7 @@ struct GPUEnvironment {
 
         optixDefaultMaterial = optixContext.createMaterial();
         optixDefaultMaterial.setHitGroup(shared::RayType_Primary, setupGBuffersHitProgramGroup);
-        optixDefaultMaterial.setHitGroup(shared::RayType_PathTrace, pathTraceBaselineHitProgramGroup);
+        optixDefaultMaterial.setHitGroup(shared::RayType_PathTrace, pathTraceHitProgramGroup);
         optixDefaultMaterial.setHitGroup(shared::RayType_Visibility, visibilityHitProgramGroup);
 
 
@@ -139,9 +159,9 @@ struct GPUEnvironment {
         for (int i = 0; i < NumCallablePrograms; ++i)
             callablePrograms[i].destroy();
         visibilityHitProgramGroup.destroy();
-        pathTraceBaselineHitProgramGroup.destroy();
-        pathTraceBaselineMissProgram.destroy();
-        pathTraceBaselineRayGenProgram.destroy();
+        pathTraceHitProgramGroup.destroy();
+        pathTraceMissProgram.destroy();
+        pathTraceRayGenProgram.destroy();
         setupGBuffersMissProgram.destroy();
         setupGBuffersHitProgramGroup.destroy();
         setupGBuffersRayGenProgram.destroy();
@@ -149,6 +169,8 @@ struct GPUEnvironment {
         mainModule.destroy();
 
         pipeline.destroy();
+
+        CUDADRV_CHECK(cuModuleUnload(cudaModule));
 
         optixContext.destroy();
 
@@ -645,39 +667,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
 
     // ----------------------------------------------------------------
-    // JP: ImGuiの初期化。
-    // EN: Initialize ImGui.
-
-    ImGui::CreateContext();
-    ImGuiIO& io = ImGui::GetIO(); (void)io;
-    //io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;  // Enable Keyboard Controls
-    //io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;   // Enable Gamepad Controls
-    ImGui_ImplGlfw_InitForOpenGL(window, false);
-    ImGui_ImplOpenGL3_Init(glsl_version);
-
-    // Setup style
-    // JP: ガンマ補正が有効なレンダーターゲットで、同じUIの見た目を得るためにデガンマされたスタイルも用意する。
-    // EN: Prepare a degamma-ed style to have the identical UI appearance on gamma-corrected render target.
-    ImGuiStyle guiStyle, guiStyleWithGamma;
-    ImGui::StyleColorsDark(&guiStyle);
-    guiStyleWithGamma = guiStyle;
-    const auto degamma = [](const ImVec4 &color) {
-        return ImVec4(sRGB_degamma_s(color.x),
-                      sRGB_degamma_s(color.y),
-                      sRGB_degamma_s(color.z),
-                      color.w);
-    };
-    for (int i = 0; i < ImGuiCol_COUNT; ++i) {
-        guiStyleWithGamma.Colors[i] = degamma(guiStyleWithGamma.Colors[i]);
-    }
-    ImGui::GetStyle() = guiStyleWithGamma;
-
-    // END: Initialize ImGui.
-    // ----------------------------------------------------------------
-
-
-
-    // ----------------------------------------------------------------
     // JP: 入力コールバックの設定。
     // EN: Set up input callbacks.
 
@@ -685,7 +674,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
         window,
         [](GLFWwindow* window, int32_t button, int32_t action, int32_t mods) {
             uint64_t &frameIndex = *(uint64_t*)glfwGetWindowUserPointer(window);
-            ImGui_ImplGlfw_MouseButtonCallback(window, button, action, mods);
 
             switch (button) {
             case GLFW_MOUSE_BUTTON_MIDDLE: {
@@ -707,7 +695,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
         window,
         [](GLFWwindow* window, int32_t key, int32_t scancode, int32_t action, int32_t mods) {
             uint64_t &frameIndex = *(uint64_t*)glfwGetWindowUserPointer(window);
-            ImGui_ImplGlfw_KeyCallback(window, key, scancode, action, mods);
 
             switch (key) {
             case GLFW_KEY_W: {
@@ -756,6 +743,39 @@ int32_t main(int32_t argc, const char* argv[]) try {
         });
 
     // END: Set up input callbacks.
+    // ----------------------------------------------------------------
+
+
+
+    // ----------------------------------------------------------------
+    // JP: ImGuiの初期化。
+    // EN: Initialize ImGui.
+
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO(); (void)io;
+    //io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;  // Enable Keyboard Controls
+    //io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;   // Enable Gamepad Controls
+    ImGui_ImplGlfw_InitForOpenGL(window, true);
+    ImGui_ImplOpenGL3_Init(glsl_version);
+
+    // Setup style
+    // JP: ガンマ補正が有効なレンダーターゲットで、同じUIの見た目を得るためにデガンマされたスタイルも用意する。
+    // EN: Prepare a degamma-ed style to have the identical UI appearance on gamma-corrected render target.
+    ImGuiStyle guiStyle, guiStyleWithGamma;
+    ImGui::StyleColorsDark(&guiStyle);
+    guiStyleWithGamma = guiStyle;
+    const auto degamma = [](const ImVec4 &color) {
+        return ImVec4(sRGB_degamma_s(color.x),
+                      sRGB_degamma_s(color.y),
+                      sRGB_degamma_s(color.z),
+                      color.w);
+    };
+    for (int i = 0; i < ImGuiCol_COUNT; ++i) {
+        guiStyleWithGamma.Colors[i] = degamma(guiStyleWithGamma.Colors[i]);
+    }
+    ImGui::GetStyle() = guiStyleWithGamma;
+
+    // END: Initialize ImGui.
     // ----------------------------------------------------------------
 
 
@@ -863,6 +883,39 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
 
     // ----------------------------------------------------------------
+    // JP:
+    // EN:
+
+    const uint32_t maxNumTrainingSuffixes = renderTargetSizeX * renderTargetSizeY / 16;
+    
+    uintptr_t numTrainingDataOnDevice;
+    CUDADRV_CHECK(cuMemAlloc(&numTrainingDataOnDevice, sizeof(uint32_t)));
+
+    uintptr_t tileSizeOnDevice;
+    CUDADRV_CHECK(cuMemAlloc(&tileSizeOnDevice, sizeof(uint2)));
+
+    uintptr_t offsetToSelectTrainingPathOnDevice;
+    CUDADRV_CHECK(cuMemAlloc(&offsetToSelectTrainingPathOnDevice, sizeof(uint32_t)));
+
+    cudau::TypedBuffer<shared::RadianceQuery> trainRadianceQueryBuffer;
+    cudau::TypedBuffer<shared::TrainingVertexInfo> trainVertexInfoBuffer;
+    cudau::TypedBuffer<float3> trainTargetBuffer;
+    cudau::TypedBuffer<shared::TrainingSuffixTerminalInfo> trainSuffixTerminalInfoBuffer;
+    trainRadianceQueryBuffer.initialize(
+        gpuEnv.cuContext, Scene::bufferType, shared::maxNumTrainingDataPerFrame);
+    trainVertexInfoBuffer.initialize(
+        gpuEnv.cuContext, Scene::bufferType, shared::maxNumTrainingDataPerFrame);
+    trainTargetBuffer.initialize(
+        gpuEnv.cuContext, Scene::bufferType, shared::maxNumTrainingDataPerFrame);
+    trainSuffixTerminalInfoBuffer.initialize(
+        gpuEnv.cuContext, Scene::bufferType, maxNumTrainingSuffixes);
+
+    // END:
+    // ----------------------------------------------------------------
+
+
+
+    // ----------------------------------------------------------------
     // JP: スクリーン関連のバッファーを初期化。
     // EN: Initialize screen-related buffers.
 
@@ -882,7 +935,14 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
     cudau::Array rngBuffer;
 
+    cudau::TypedBuffer<shared::RadianceQuery> inferenceRadianceQueryBuffer;
+    cudau::TypedBuffer<shared::TerminalInfo> inferenceTerminalInfoBuffer;
+    cudau::TypedBuffer<float3> inferredRadianceBuffer;
+    cudau::TypedBuffer<float3> perFrameContributionBuffer;
+
     const auto initializeScreenRelatedBuffers = [&]() {
+        uint32_t numPixels = renderTargetSizeX * renderTargetSizeY;
+
         for (int i = 0; i < 2; ++i) {
             gBuffer0[i].initialize2D(
                 gpuEnv.cuContext, cudau::ArrayElementType::UInt32, (sizeof(shared::GBuffer0) + 3) / 4,
@@ -908,16 +968,11 @@ int32_t main(int32_t argc, const char* argv[]) try {
                                        cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable,
                                        renderTargetSizeX, renderTargetSizeY, 1);
 
-        linearBeautyBuffer.initialize(gpuEnv.cuContext, Scene::bufferType,
-                                      renderTargetSizeX * renderTargetSizeY);
-        linearAlbedoBuffer.initialize(gpuEnv.cuContext, Scene::bufferType,
-                                      renderTargetSizeX * renderTargetSizeY);
-        linearNormalBuffer.initialize(gpuEnv.cuContext, Scene::bufferType,
-                                      renderTargetSizeX * renderTargetSizeY);
-        linearFlowBuffer.initialize(gpuEnv.cuContext, Scene::bufferType,
-                                    renderTargetSizeX * renderTargetSizeY);
-        linearDenoisedBeautyBuffer.initialize(gpuEnv.cuContext, Scene::bufferType,
-                                              renderTargetSizeX * renderTargetSizeY);
+        linearBeautyBuffer.initialize(gpuEnv.cuContext, Scene::bufferType, numPixels);
+        linearAlbedoBuffer.initialize(gpuEnv.cuContext, Scene::bufferType, numPixels);
+        linearNormalBuffer.initialize(gpuEnv.cuContext, Scene::bufferType, numPixels);
+        linearFlowBuffer.initialize(gpuEnv.cuContext, Scene::bufferType, numPixels);
+        linearDenoisedBeautyBuffer.initialize(gpuEnv.cuContext, Scene::bufferType, numPixels);
 
         rngBuffer.initialize2D(
             gpuEnv.cuContext, cudau::ArrayElementType::UInt32, (sizeof(shared::PCG32RNG) + 3) / 4,
@@ -934,9 +989,23 @@ int32_t main(int32_t argc, const char* argv[]) try {
             }
             rngBuffer.unmap();
         }
+
+
+
+        inferenceRadianceQueryBuffer.initialize(
+            gpuEnv.cuContext, Scene::bufferType, numPixels + maxNumTrainingSuffixes);
+        inferenceTerminalInfoBuffer.initialize(gpuEnv.cuContext, Scene::bufferType, numPixels);
+        inferredRadianceBuffer.initialize(
+            gpuEnv.cuContext, Scene::bufferType, numPixels + maxNumTrainingSuffixes);
+        perFrameContributionBuffer.initialize(gpuEnv.cuContext, Scene::bufferType, numPixels);
     };
 
     const auto finalizeScreenRelatedBuffers = [&]() {
+        perFrameContributionBuffer.finalize();
+        inferredRadianceBuffer.finalize();
+        inferenceTerminalInfoBuffer.finalize();
+        inferenceRadianceQueryBuffer.finalize();
+
         rngBuffer.finalize();
 
         linearDenoisedBeautyBuffer.finalize();
@@ -957,6 +1026,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
     };
 
     const auto resizeScreenRelatedBuffers = [&](uint32_t width, uint32_t height) {
+        uint32_t numPixels = width * height;
+
         for (int i = 0; i < 2; ++i) {
             gBuffer0[i].resize(width, height);
             gBuffer1[i].resize(width, height);
@@ -967,11 +1038,11 @@ int32_t main(int32_t argc, const char* argv[]) try {
         albedoAccumBuffer.resize(width, height);
         normalAccumBuffer.resize(width, height);
 
-        linearBeautyBuffer.resize(width * height);
-        linearAlbedoBuffer.resize(width * height);
-        linearNormalBuffer.resize(width * height);
-        linearFlowBuffer.resize(width * height);
-        linearDenoisedBeautyBuffer.resize(width * height);
+        linearBeautyBuffer.resize(numPixels);
+        linearAlbedoBuffer.resize(numPixels);
+        linearNormalBuffer.resize(numPixels);
+        linearFlowBuffer.resize(numPixels);
+        linearDenoisedBeautyBuffer.resize(numPixels);
 
         rngBuffer.resize(width, height);
         {
@@ -985,6 +1056,13 @@ int32_t main(int32_t argc, const char* argv[]) try {
             }
             rngBuffer.unmap();
         }
+
+
+
+        inferenceRadianceQueryBuffer.resize(numPixels + maxNumTrainingSuffixes);
+        inferenceTerminalInfoBuffer.resize(numPixels);
+        inferredRadianceBuffer.resize(numPixels + maxNumTrainingSuffixes);
+        perFrameContributionBuffer.resize(numPixels);
     };
 
     initializeScreenRelatedBuffers();
@@ -1092,6 +1170,19 @@ int32_t main(int32_t argc, const char* argv[]) try {
         envLightImportanceMap.getDeviceType(&staticPlp.envLightImportanceMap);
         staticPlp.envLightTexture = envLightTexture;
 
+        staticPlp.maxNumTrainingSuffixes = maxNumTrainingSuffixes;
+        staticPlp.numTrainingData = reinterpret_cast<uint32_t*>(numTrainingDataOnDevice);
+        staticPlp.tileSize = reinterpret_cast<uint2*>(tileSizeOnDevice);
+        staticPlp.offsetToSelectTrainingPath = reinterpret_cast<uint32_t*>(offsetToSelectTrainingPathOnDevice);
+        staticPlp.inferenceRadianceQueryBuffer = inferenceRadianceQueryBuffer.getDevicePointer();
+        staticPlp.inferenceTerminalInfoBuffer = inferenceTerminalInfoBuffer.getDevicePointer();
+        staticPlp.inferredRadianceBuffer = inferredRadianceBuffer.getDevicePointer();
+        staticPlp.perFrameContributionBuffer = perFrameContributionBuffer.getDevicePointer();
+        staticPlp.trainRadianceQueryBuffer = trainRadianceQueryBuffer.getDevicePointer();
+        staticPlp.trainVertexInfoBuffer = trainVertexInfoBuffer.getDevicePointer();
+        staticPlp.trainTargetBuffer = trainTargetBuffer.getDevicePointer();
+        staticPlp.trainSuffixTerminalInfoBuffer = trainSuffixTerminalInfoBuffer.getDevicePointer();
+
         staticPlp.beautyAccumBuffer = beautyAccumBuffer.getSurfaceObject(0);
         staticPlp.albedoAccumBuffer = albedoAccumBuffer.getSurfaceObject(0);
         staticPlp.normalAccumBuffer = normalAccumBuffer.getSurfaceObject(0);
@@ -1162,6 +1253,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
             frame.finalize();
         }
     };
+
+    std::mt19937 perFrameRng(72139121);
 
     GPUTimer gpuTimers[2];
     gpuTimers[0].initialize(gpuEnv.cuContext);
@@ -1234,6 +1327,10 @@ int32_t main(int32_t argc, const char* argv[]) try {
             staticPlp.GBuffer1[1] = gBuffer1[1].getSurfaceObject(0);
             staticPlp.GBuffer2[0] = gBuffer2[0].getSurfaceObject(0);
             staticPlp.GBuffer2[1] = gBuffer2[1].getSurfaceObject(0);
+            staticPlp.inferenceRadianceQueryBuffer = inferenceRadianceQueryBuffer.getDevicePointer();
+            staticPlp.inferenceTerminalInfoBuffer = inferenceTerminalInfoBuffer.getDevicePointer();
+            staticPlp.inferredRadianceBuffer = inferredRadianceBuffer.getDevicePointer();
+            staticPlp.perFrameContributionBuffer = perFrameContributionBuffer.getDevicePointer();
             staticPlp.beautyAccumBuffer = beautyAccumBuffer.getSurfaceObject(0);
             staticPlp.albedoAccumBuffer = albedoAccumBuffer.getSurfaceObject(0);
             staticPlp.normalAccumBuffer = normalAccumBuffer.getSurfaceObject(0);
@@ -1608,6 +1705,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         CUDADRV_CHECK(cuMemcpyHtoDAsync(perFramePlpOnDevice, &perFramePlp, sizeof(perFramePlp), cuStream));
 
         CUDADRV_CHECK(cuMemcpyHtoDAsync(plpOnDevice, &plp, sizeof(plp), cuStream));
+        CUDADRV_CHECK(cuMemcpyHtoDAsync(gpuEnv.plpPtr, &plp, sizeof(plp), cuStream));
 
         // JP: Gバッファーのセットアップ。
         //     ここではレイトレースを使ってGバッファーを生成しているがもちろんラスタライザーで生成可能。
@@ -1618,13 +1716,78 @@ int32_t main(int32_t argc, const char* argv[]) try {
         gpuEnv.pipeline.launch(cuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);
         curGPUTimer.setupGBuffers.stop(cuStream);
 
-        // JP: パストレーシングによるシェーディングを実行。
-        // EN: Perform shading by path tracing.
+        gpuEnv.kernelResetNRCBuffers(
+            cuStream, gpuEnv.kernelResetNRCBuffers.calcGridDim(maxNumTrainingSuffixes),
+            perFrameRng(), static_cast<uint32_t>(frameIndex));
+        {
+            CUDADRV_CHECK(cuStreamSynchronize(cuStream));
+            std::vector<shared::TrainingSuffixTerminalInfo> terminalInfo = trainSuffixTerminalInfoBuffer;
+
+            uint2 tileSize;
+            CUDADRV_CHECK(cuMemcpyDtoH(
+                &tileSize, tileSizeOnDevice, sizeof(tileSize)));
+            uint32_t numTrainingData;
+            CUDADRV_CHECK(cuMemcpyDtoH(
+                &numTrainingData, numTrainingDataOnDevice, sizeof(numTrainingData)));
+            uint32_t offsetToSelectTrainingPath;
+            CUDADRV_CHECK(cuMemcpyDtoH(
+                &offsetToSelectTrainingPath, offsetToSelectTrainingPathOnDevice,
+                sizeof(offsetToSelectTrainingPath)));
+
+            printf("");
+        }
+
+        // JP: 
+        // EN: 
         curGPUTimer.pathTrace.start(cuStream);
         CUDADRV_CHECK(cuMemcpyHtoDAsync(plpOnDevice, &plp, sizeof(plp), cuStream));
-        gpuEnv.pipeline.setRayGenerationProgram(gpuEnv.pathTraceBaselineRayGenProgram);
+        gpuEnv.pipeline.setRayGenerationProgram(gpuEnv.pathTraceRayGenProgram);
         gpuEnv.pipeline.launch(cuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);
         curGPUTimer.pathTrace.stop(cuStream);
+        {
+            CUDADRV_CHECK(cuStreamSynchronize(cuStream));
+
+            uint32_t numTrainingData;
+            CUDADRV_CHECK(cuMemcpyDtoH(
+                &numTrainingData, numTrainingDataOnDevice, sizeof(numTrainingData)));
+            std::vector<shared::RadianceQuery> inferenceRadianceQueries = inferenceRadianceQueryBuffer;
+            std::vector<shared::TerminalInfo> inferenceTerminalInfos = inferenceTerminalInfoBuffer;
+            std::vector<float3> perFrameContributions = perFrameContributionBuffer;
+
+            std::vector<shared::RadianceQuery> trainRadianceQueries = trainRadianceQueryBuffer;
+            std::vector<shared::TrainingVertexInfo> trainVertexInfos = trainVertexInfoBuffer;
+            std::vector<float3> trainTargets = trainTargetBuffer;
+            std::vector<shared::TrainingSuffixTerminalInfo> trainSuffixTerminalInfos = trainSuffixTerminalInfoBuffer;
+
+            for (auto it : trainSuffixTerminalInfos)
+                if (it.prevVertexDataIndex != shared::invalidVertexDataIndex &&
+                    it.prevVertexDataIndex >= shared::maxNumTrainingDataPerFrame)
+                    printf("");
+
+            printf("");
+        }
+
+        // JP:
+        // EN:
+        // Inference Radiance
+
+        // JP:
+        // EN:
+        gpuEnv.kernelPropagateRadianceValues(
+            cuStream, gpuEnv.kernelPropagateRadianceValues.calcGridDim(maxNumTrainingSuffixes));
+        {
+            CUDADRV_CHECK(cuStreamSynchronize(cuStream));
+
+            printf("");
+        }
+
+        // JP:
+        // EN:
+        // Permute Training Data
+
+        // JP:
+        // EN:
+        // Train Neural Network
 
         // JP: 結果をリニアバッファーにコピーする。(法線の正規化も行う。)
         // EN: Copy the results to the linear buffers (and normalize normals).

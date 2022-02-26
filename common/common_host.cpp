@@ -1283,6 +1283,7 @@ static Material* createLambertMaterial(
     matData.normalHeight = mat->normal->getHeight();
     matData.readModifiedNormal = shared::ReadModifiedNormal(dcReadModifiedNormal);
     matData.setupBSDFBody = shared::SetupBSDFBody(CallableProgram_setupLambertBRDF);
+    matData.bsdfGetSurfaceParameters = shared::BSDFGetSurfaceParameters(CallableProgram_LambertBRDF_getSurfaceParameters);
     matData.bsdfSampleThroughput = shared::BSDFSampleThroughput(CallableProgram_LambertBRDF_sampleThroughput);
     matData.bsdfEvaluate = shared::BSDFEvaluate(CallableProgram_LambertBRDF_evaluate);
     matData.bsdfEvaluatePDF = shared::BSDFEvaluatePDF(CallableProgram_LambertBRDF_evaluatePDF);
@@ -1402,10 +1403,14 @@ static Material* createDiffuseAndSpecularMaterial(
     matData.normalHeight = mat->normal->getHeight();
     matData.readModifiedNormal = shared::ReadModifiedNormal(dcReadModifiedNormal);
     matData.setupBSDFBody = shared::SetupBSDFBody(CallableProgram_setupDiffuseAndSpecularBRDF);
-    matData.bsdfSampleThroughput = shared::BSDFSampleThroughput(CallableProgram_DiffuseAndSpecularBRDF_sampleThroughput);
+    matData.bsdfGetSurfaceParameters =
+        shared::BSDFGetSurfaceParameters(CallableProgram_DiffuseAndSpecularBRDF_getSurfaceParameters);
+    matData.bsdfSampleThroughput =
+        shared::BSDFSampleThroughput(CallableProgram_DiffuseAndSpecularBRDF_sampleThroughput);
     matData.bsdfEvaluate = shared::BSDFEvaluate(CallableProgram_DiffuseAndSpecularBRDF_evaluate);
     matData.bsdfEvaluatePDF = shared::BSDFEvaluatePDF(CallableProgram_DiffuseAndSpecularBRDF_evaluatePDF);
-    matData.bsdfEvaluateDHReflectanceEstimate = shared::BSDFEvaluateDHReflectanceEstimate(CallableProgram_DiffuseAndSpecularBRDF_evaluateDHReflectanceEstimate);
+    matData.bsdfEvaluateDHReflectanceEstimate =
+        shared::BSDFEvaluateDHReflectanceEstimate(CallableProgram_DiffuseAndSpecularBRDF_evaluateDHReflectanceEstimate);
     matDataOnHost[mat->materialSlot] = matData;
 
     return mat;
@@ -1517,10 +1522,14 @@ static Material* createSimplePBRMaterial(
     matData.normalHeight = mat->normal->getHeight();
     matData.readModifiedNormal = shared::ReadModifiedNormal(dcReadModifiedNormal);
     matData.setupBSDFBody = shared::SetupBSDFBody(CallableProgram_setupSimplePBR_BRDF);
-    matData.bsdfSampleThroughput = shared::BSDFSampleThroughput(CallableProgram_DiffuseAndSpecularBRDF_sampleThroughput);
+    matData.bsdfGetSurfaceParameters =
+        shared::BSDFGetSurfaceParameters(CallableProgram_DiffuseAndSpecularBRDF_getSurfaceParameters);
+    matData.bsdfSampleThroughput =
+        shared::BSDFSampleThroughput(CallableProgram_DiffuseAndSpecularBRDF_sampleThroughput);
     matData.bsdfEvaluate = shared::BSDFEvaluate(CallableProgram_DiffuseAndSpecularBRDF_evaluate);
     matData.bsdfEvaluatePDF = shared::BSDFEvaluatePDF(CallableProgram_DiffuseAndSpecularBRDF_evaluatePDF);
-    matData.bsdfEvaluateDHReflectanceEstimate = shared::BSDFEvaluateDHReflectanceEstimate(CallableProgram_DiffuseAndSpecularBRDF_evaluateDHReflectanceEstimate);
+    matData.bsdfEvaluateDHReflectanceEstimate =
+        shared::BSDFEvaluateDHReflectanceEstimate(CallableProgram_DiffuseAndSpecularBRDF_evaluateDHReflectanceEstimate);
     matDataOnHost[mat->materialSlot] = matData;
 
     return mat;

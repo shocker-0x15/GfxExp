@@ -321,9 +321,27 @@ CUDA_DEVICE_FUNCTION void pathTrace_rayGen_generic() {
 
     const PerspectiveCamera &camera = plp.f->camera;
 
+    uint32_t linearTileIndex;
+    const uint2 tileSize = *plp.s->tileSize;
+    const uint32_t numPixelsInTile = tileSize.x * tileSize.y;
+    {
+        uint2 numTiles = (plp.s->imageSize + tileSize - 1) / tileSize;
+        uint2 tileIndex = launchIndex / tileSize;
+        linearTileIndex = tileIndex.y * numTiles.x + tileIndex.x;
+    }
+
     bool useEnvLight = plp.s->envLightTexture && plp.f->enableEnvLight;
     float3 contribution = make_float3(0.001f, 0.001f, 0.001f);
+    bool renderingPathEndsWithCache = false;
+    uint32_t pathLength = 1;
     if (materialSlot != 0xFFFFFFFF) {
+        bool isTrainingPath;
+        {
+            uint2 localIndex = launchIndex % tileSize;
+            uint32_t localLinearIndex = localIndex.y * tileSize.x + localIndex.x;
+            isTrainingPath = (localLinearIndex + *plp.s->offsetToSelectTrainingPath) % numPixelsInTile == 0;
+        }
+
         float3 alpha = make_float3(1.0f);
         float initImportance = sRGB_calcLuminance(alpha);
         PCG32RNG rng = plp.s->rngBuffer.read(launchIndex);
@@ -332,13 +350,21 @@ CUDA_DEVICE_FUNCTION void pathTrace_rayGen_generic() {
         // EN: Shading on the first hit.
         float3 vIn;
         float dirPDensity;
+        float primaryPathSpread;
+        float3 localThroughput;
+        uint32_t trainDataIndex;
         {
             const MaterialData &mat = plp.s->materialDataBuffer[materialSlot];
 
             // TODO?: Use true geometric normal.
             float3 geometricNormalInWorld = shadingNormalInWorld;
-            float3 vOut = normalize(camera.position - positionInWorld);
-            float frontHit = dot(vOut, geometricNormalInWorld) >= 0.0f ? 1.0f : -1.0f;
+            float3 vOut = camera.position - positionInWorld;
+            float primaryDist2 = sqLength(vOut);
+            vOut /= std::sqrt(primaryDist2);
+            float primaryDotVN = dot(vOut, geometricNormalInWorld);
+            float frontHit = primaryDotVN >= 0.0f ? 1.0f : -1.0f;
+
+            primaryPathSpread = primaryDist2 / (4 * Pi * std::fabs(primaryDotVN));
 
             ReferenceFrame shadingFrame(shadingNormalInWorld);
             positionInWorld = offsetRayOriginNaive(positionInWorld, frontHit * geometricNormalInWorld);
@@ -357,15 +383,45 @@ CUDA_DEVICE_FUNCTION void pathTrace_rayGen_generic() {
             bsdf.setup(mat, texCoord);
 
             // Next event estimation (explicit light sampling) on the first hit.
-            contribution += alpha * performNextEventEstimation(
+            float3 directContNEE = performNextEventEstimation(
                 positionInWorld, vOutLocal, shadingFrame, bsdf, rng);
+            contribution += alpha * directContNEE;
 
             // generate a next ray.
             float3 vInLocal;
-            alpha *= bsdf.sampleThroughput(
+            localThroughput = bsdf.sampleThroughput(
                 vOutLocal, rng.getFloat0cTo1o(), rng.getFloat0cTo1o(),
                 &vInLocal, &dirPDensity);
+            alpha *= localThroughput;
             vIn = shadingFrame.fromLocal(vInLocal);
+
+            // JP: 訓練データエントリーの確保。
+            // EN: 
+            if (isTrainingPath) {
+                trainDataIndex = atomicAdd(plp.s->numTrainingData, 1u);
+
+                if (trainDataIndex < maxNumTrainingDataPerFrame) {
+                    RadianceQuery radQuery;
+                    radQuery.position = positionInWorld;
+                    radQuery.vOut = vOut;
+                    radQuery.normal = geometricNormalInWorld;
+                    bsdf.getSurfaceParameters(
+                        &radQuery.diffuseReflectance, &radQuery.specularReflectance, &radQuery.roughness);
+                    plp.s->trainRadianceQueryBuffer[trainDataIndex] = radQuery;
+
+                    TrainingVertexInfo vertInfo;
+                    vertInfo.localThroughput = localThroughput;
+                    vertInfo.prevVertexDataIndex = invalidVertexDataIndex;
+                    plp.s->trainVertexInfoBuffer[trainDataIndex] = vertInfo;
+
+                    // JP: 現在の頂点に対する直接照明(NEE)によるScattered Radianceでターゲット値を初期化。
+                    // EN:
+                    plp.s->trainTargetBuffer[trainDataIndex] = directContNEE;
+                }
+                else {
+                    trainDataIndex = invalidVertexDataIndex;
+                }
+            }
         }
 
         // Path extension loop
@@ -376,8 +432,16 @@ CUDA_DEVICE_FUNCTION void pathTrace_rayGen_generic() {
         rwPayload.rng = rng;
         rwPayload.initImportance = initImportance;
         rwPayload.alpha = alpha;
-        rwPayload.prevDirPDensity = dirPDensity;
         rwPayload.contribution = contribution;
+        rwPayload.prevDirPDensity = dirPDensity;
+        rwPayload.linearTileIndex = linearTileIndex;
+        rwPayload.primaryPathSpread = primaryPathSpread;
+        rwPayload.curSqrtPathSpread = 0.0f;
+        rwPayload.prevLocalThroughput = localThroughput;
+        rwPayload.prevTrainDataIndex = trainDataIndex;
+        rwPayload.renderingPathEndsWithCache = false;
+        rwPayload.isTrainingPath = isTrainingPath;
+        rwPayload.trainingSuffixEndsWithCache = false;
         rwPayload.pathLength = 1;
         float3 rayOrg = positionInWorld;
         float3 rayDir = vIn;
@@ -418,6 +482,15 @@ CUDA_DEVICE_FUNCTION void pathTrace_rayGen_generic() {
         contribution = rwPayload.contribution;
 
         plp.s->rngBuffer.write(launchIndex, rwPayload.rng);
+
+        renderingPathEndsWithCache = rwPayload.renderingPathEndsWithCache;
+        pathLength = rwPayload.pathLength;
+        if (rwPayload.isTrainingPath && !rwPayload.trainingSuffixEndsWithCache) {
+            TrainingSuffixTerminalInfo terminalInfo;
+            terminalInfo.prevVertexDataIndex = rwPayload.prevTrainDataIndex;
+            terminalInfo.hasQuery = false;
+            plp.s->trainSuffixTerminalInfoBuffer[rwPayload.linearTileIndex] = terminalInfo;
+        }
     }
     else {
         // JP: 環境光源を直接見ている場合の寄与を蓄積。
@@ -430,15 +503,35 @@ CUDA_DEVICE_FUNCTION void pathTrace_rayGen_generic() {
         }
     }
 
-    float3 prevColorResult = make_float3(0.0f, 0.0f, 0.0f);
-    if (plp.f->numAccumFrames > 0)
-        prevColorResult = getXYZ(plp.s->beautyAccumBuffer.read(launchIndex));
-    float curWeight = 1.0f / (1 + plp.f->numAccumFrames);
-    float3 colorResult = (1 - curWeight) * prevColorResult + curWeight * contribution;
-    plp.s->beautyAccumBuffer.write(launchIndex, make_float4(colorResult, 1.0f));
+    uint32_t linearIndex = launchIndex.y * plp.s->imageSize.x + launchIndex.x;
+
+    //// JP: 
+    //// EN: 
+    //RadianceQuery radQuery;
+    //radQuery.position = make_float3(0.0f, 0.0f, 0.0f);
+    //radQuery.vOut = make_float3(0.0f, 0.0f, 0.0f);
+    //radQuery.normal = make_float3(0.0f, 0.0f, 0.0f);
+    //radQuery.diffuseReflectance = make_float3(0.0f, 0.0f, 0.0f);
+    //radQuery.specularReflectance = make_float3(0.0f, 0.0f, 0.0f);
+    //radQuery.roughness = 0.0f;
+    //plp.s->inferenceRadianceQueryBuffer[linearIndex] = radQuery;
+
+    // JP: 無限遠にレイが飛んだか、ロシアンルーレットによってパストレースが完了したケース。
+    // EN: 
+    if (!renderingPathEndsWithCache) {
+        TerminalInfo terminalInfo;
+        terminalInfo.alpha = make_float3(0.0f, 0.0f, 0.0f);
+        terminalInfo.pathLength = pathLength;
+        terminalInfo.hasQuery = false;
+        plp.s->inferenceTerminalInfoBuffer[linearIndex] = terminalInfo;
+    }
+
+    plp.s->perFrameContributionBuffer[linearIndex] = contribution;
 }
 
 CUDA_DEVICE_FUNCTION void pathTrace_closestHit_generic() {
+    uint2 launchIndex = make_uint2(optixGetLaunchIndex().x, optixGetLaunchIndex().y);
+
     auto sbtr = HitGroupSBTRecordData::get();
     const InstanceData &inst = plp.f->instanceDataBuffer[optixGetInstanceId()];
     const GeometryInstanceData &geomInst = sbtr.geomInstData;
@@ -477,6 +570,9 @@ CUDA_DEVICE_FUNCTION void pathTrace_closestHit_generic() {
     positionInWorld = offsetRayOrigin(positionInWorld, frontHit * geometricNormalInWorld);
     float3 vOutLocal = shadingFrame.toLocal(vOut);
 
+    float dist2 = squaredDistance(rayOrigin, positionInWorld);
+    rwPayload->curSqrtPathSpread += std::sqrt(dist2 / (rwPayload->prevDirPDensity * std::fabs(vOutLocal.z)));
+
     if constexpr (useImplicitLightSampling) {
         // Implicit Light Sampling
         if (vOutLocal.z > 0 && mat.emittance) {
@@ -484,12 +580,19 @@ CUDA_DEVICE_FUNCTION void pathTrace_closestHit_generic() {
             float3 emittance = make_float3(texValue);
             float misWeight = 1.0f;
             if constexpr (useMultipleImportanceSampling) {
-                float dist2 = squaredDistance(rayOrigin, positionInWorld);
                 float lightPDensity = hypAreaPDensity * dist2 / vOutLocal.z;
                 float bsdfPDensity = rwPayload->prevDirPDensity;
                 misWeight = pow2(bsdfPDensity) / (pow2(bsdfPDensity) + pow2(lightPDensity));
             }
-            rwPayload->contribution += rwPayload->alpha * emittance * (misWeight / Pi);
+            float3 directContImplicit = emittance * (misWeight / Pi);
+            rwPayload->contribution += rwPayload->alpha * directContImplicit;
+
+            // JP: 1つ前の頂点に対する直接照明(Implicit)によるScattered Radianceをターゲット値に加算。
+            // EN: 
+            if (rwPayload->isTrainingPath && rwPayload->prevTrainDataIndex != invalidVertexDataIndex) {
+                plp.s->trainTargetBuffer[rwPayload->prevTrainDataIndex] +=
+                    rwPayload->prevLocalThroughput * directContImplicit;
+            }
         }
 
         // Russian roulette
@@ -502,33 +605,126 @@ CUDA_DEVICE_FUNCTION void pathTrace_closestHit_generic() {
     BSDF bsdf;
     bsdf.setup(mat, texCoord);
 
+    // Path termination into the neural radiance cache.
+    bool pathIsSpreadEnough =
+        pow2(rwPayload->curSqrtPathSpread) > pathTerminationFactor * rwPayload->primaryPathSpread;
+    if (pathIsSpreadEnough) {
+        uint32_t linearIndex = launchIndex.y * plp.s->imageSize.x + launchIndex.x;
+
+        // JP: Radianceクエリーのための情報を記録する。
+        // EN: 
+        RadianceQuery radQuery;
+        radQuery.position = positionInWorld;
+        radQuery.vOut = vOut;
+        radQuery.normal = geometricNormalInWorld;
+        bsdf.getSurfaceParameters(
+            &radQuery.diffuseReflectance, &radQuery.specularReflectance, &radQuery.roughness);
+
+        if (!rwPayload->renderingPathEndsWithCache) {
+            plp.s->inferenceRadianceQueryBuffer[linearIndex] = radQuery;
+
+            TerminalInfo terminalInfo;
+            terminalInfo.alpha = rwPayload->alpha;
+            terminalInfo.pathLength = rwPayload->pathLength;
+            terminalInfo.hasQuery = true;
+            plp.s->inferenceTerminalInfoBuffer[linearIndex] = terminalInfo;
+
+            rwPayload->renderingPathEndsWithCache = true;
+            if (rwPayload->isTrainingPath)
+                rwPayload->curSqrtPathSpread = 0;
+            else
+                return;
+        }
+        else {
+            // JP: 訓練データを既に十分生成している場合は既に強制的にTraining Suffixは終了したことになっている。
+            if (!rwPayload->trainingSuffixEndsWithCache) {
+                // JP: 
+                // EN: 
+                uint32_t offset = plp.s->imageSize.x * plp.s->imageSize.y;
+                plp.s->inferenceRadianceQueryBuffer[offset + rwPayload->linearTileIndex] = radQuery;
+
+                TrainingSuffixTerminalInfo terminalInfo;
+                terminalInfo.prevVertexDataIndex = rwPayload->prevTrainDataIndex;
+                terminalInfo.hasQuery = true;
+                plp.s->trainSuffixTerminalInfoBuffer[rwPayload->linearTileIndex] = terminalInfo;
+
+                rwPayload->trainingSuffixEndsWithCache = true;
+            }
+            return;
+        }
+    }
+
     // Next Event Estimation (Explicit Light Sampling)
-    rwPayload->contribution += rwPayload->alpha * performNextEventEstimation(
+    float3 directContNEE = performNextEventEstimation(
         positionInWorld, vOutLocal, shadingFrame, bsdf, rng);
+    rwPayload->contribution += rwPayload->alpha * directContNEE;
 
     // generate a next ray.
     float3 vInLocal;
     float dirPDensity;
-    rwPayload->alpha *= bsdf.sampleThroughput(
+    float3 localThroughput = bsdf.sampleThroughput(
         vOutLocal, rng.getFloat0cTo1o(), rng.getFloat0cTo1o(),
         &vInLocal, &dirPDensity);
+    rwPayload->alpha *= localThroughput;
     float3 vIn = shadingFrame.fromLocal(vInLocal);
 
     woPayload->nextOrigin = positionInWorld;
     woPayload->nextDirection = vIn;
     rwPayload->prevDirPDensity = dirPDensity;
+    rwPayload->prevLocalThroughput = localThroughput;
     rwPayload->terminate = false;
+
+    // JP: 訓練データエントリーの確保。
+    // EN: 
+    if (rwPayload->isTrainingPath && !rwPayload->trainingSuffixEndsWithCache) {
+        uint32_t trainDataIndex = atomicAdd(plp.s->numTrainingData, 1u);
+
+        RadianceQuery radQuery;
+        radQuery.position = positionInWorld;
+        radQuery.vOut = vOut;
+        radQuery.normal = geometricNormalInWorld;
+        bsdf.getSurfaceParameters(
+            &radQuery.diffuseReflectance, &radQuery.specularReflectance, &radQuery.roughness);
+
+        if (trainDataIndex < maxNumTrainingDataPerFrame) {
+            plp.s->trainRadianceQueryBuffer[trainDataIndex] = radQuery;
+
+            TrainingVertexInfo vertInfo;
+            vertInfo.localThroughput = localThroughput;
+            vertInfo.prevVertexDataIndex = rwPayload->prevTrainDataIndex;
+            plp.s->trainVertexInfoBuffer[trainDataIndex] = vertInfo;
+
+            // JP: 現在の頂点に対する直接照明(NEE)によるScattered Radianceでターゲット値を初期化。
+            // EN:
+            plp.s->trainTargetBuffer[trainDataIndex] = directContNEE;
+
+            rwPayload->prevTrainDataIndex = trainDataIndex;
+        }
+        else {
+            // JP: 
+            // EN: 
+            uint32_t offset = plp.s->imageSize.x * plp.s->imageSize.y;
+            plp.s->inferenceRadianceQueryBuffer[offset + rwPayload->linearTileIndex] = radQuery;
+
+            TrainingSuffixTerminalInfo terminalInfo;
+            terminalInfo.prevVertexDataIndex = rwPayload->prevTrainDataIndex;
+            terminalInfo.hasQuery = true;
+            plp.s->trainSuffixTerminalInfoBuffer[rwPayload->linearTileIndex] = terminalInfo;
+
+            rwPayload->trainingSuffixEndsWithCache = true;
+        }
+    }
 }
 
-CUDA_DEVICE_KERNEL void RT_RG_NAME(pathTraceBaseline)() {
+CUDA_DEVICE_KERNEL void RT_RG_NAME(pathTrace)() {
     pathTrace_rayGen_generic();
 }
 
-CUDA_DEVICE_KERNEL void RT_CH_NAME(pathTraceBaseline)() {
+CUDA_DEVICE_KERNEL void RT_CH_NAME(pathTrace)() {
     pathTrace_closestHit_generic();
 }
 
-CUDA_DEVICE_KERNEL void RT_MS_NAME(pathTraceBaseline)() {
+CUDA_DEVICE_KERNEL void RT_MS_NAME(pathTrace)() {
     if constexpr (useImplicitLightSampling) {
         if (!plp.s->envLightTexture || !plp.f->enableEnvLight)
             return;
@@ -555,6 +751,14 @@ CUDA_DEVICE_KERNEL void RT_MS_NAME(pathTraceBaseline)() {
             float bsdfPDensity = rwPayload->prevDirPDensity;
             misWeight = pow2(bsdfPDensity) / (pow2(bsdfPDensity) + pow2(lightPDensity));
         }
-        rwPayload->contribution += rwPayload->alpha * luminance * misWeight;
+        float3 directContImplicit = misWeight * luminance;
+        rwPayload->contribution += rwPayload->alpha * directContImplicit;
+
+        // JP: 1つ前の頂点に対する直接照明(Implicit)によるScattered Radianceをターゲット値に加算。
+        // EN: 
+        if (rwPayload->isTrainingPath) {
+            plp.s->trainTargetBuffer[rwPayload->prevTrainDataIndex] +=
+                rwPayload->prevLocalThroughput * directContImplicit;
+        }
     }
 }

@@ -4,6 +4,8 @@
 
 namespace shared {
     static constexpr float probToSampleEnvLight = 0.25f;
+    static constexpr float pathTerminationFactor = 0.01f; // c in the paper.
+    static constexpr uint32_t maxNumTrainingDataPerFrame = 1 << 16;
 
 
 
@@ -95,6 +97,35 @@ namespace shared {
 
 
 
+    struct RadianceQuery {
+        float3 position;
+        float3 normal;
+        float3 vOut;
+        float roughness;
+        float3 diffuseReflectance;
+        float3 specularReflectance;
+    };
+    
+    struct TerminalInfo {
+        float3 alpha;
+        unsigned int pathLength : 31;
+        unsigned int hasQuery : 1;
+    };
+
+    static constexpr uint32_t invalidVertexDataIndex = 0x7FFFFFFF;
+
+    struct TrainingVertexInfo {
+        float3 localThroughput;
+        unsigned int prevVertexDataIndex : 31;
+    };
+
+    struct TrainingSuffixTerminalInfo {
+        unsigned int prevVertexDataIndex : 31;
+        unsigned int hasQuery : 1;
+    };
+
+
+
     struct PathTraceWriteOnlyPayload {
         float3 nextOrigin;
         float3 nextDirection;
@@ -106,6 +137,16 @@ namespace shared {
         float3 alpha;
         float3 contribution;
         float prevDirPDensity;
+
+        uint32_t linearTileIndex;
+        float primaryPathSpread;
+        float curSqrtPathSpread;
+        float3 prevLocalThroughput;
+        uint32_t prevTrainDataIndex;
+        unsigned int renderingPathEndsWithCache : 1;
+        unsigned int isTrainingPath : 1;
+        unsigned int trainingSuffixEndsWithCache : 1;
+
         unsigned int maxLengthTerminate : 1;
         unsigned int terminate : 1;
         unsigned int pathLength : 6;
@@ -126,6 +167,19 @@ namespace shared {
         DiscreteDistribution1D lightInstDist;
         RegularConstantContinuousDistribution2D envLightImportanceMap;
         CUtexObject envLightTexture;
+
+        uint32_t maxNumTrainingSuffixes;
+        uint32_t* numTrainingData;
+        uint2* tileSize;
+        uint32_t* offsetToSelectTrainingPath;
+        RadianceQuery* inferenceRadianceQueryBuffer; // image size + #(training suffix)
+        TerminalInfo* inferenceTerminalInfoBuffer; // image size
+        float3* inferredRadianceBuffer; // image size + #(training suffix)
+        float3* perFrameContributionBuffer; // image size
+        RadianceQuery* trainRadianceQueryBuffer; // #(training vertex)
+        TrainingVertexInfo* trainVertexInfoBuffer; // #(training vertex)
+        float3* trainTargetBuffer; // #(training vertex)
+        TrainingSuffixTerminalInfo* trainSuffixTerminalInfoBuffer; // #(training suffix)
 
         optixu::NativeBlockBuffer2D<float4> beautyAccumBuffer;
         optixu::NativeBlockBuffer2D<float4> albedoAccumBuffer;
@@ -207,6 +261,7 @@ CUDA_DEVICE_FUNCTION void sampleLight(
     const float3 &shadingPoint,
     float ul, bool sampleEnvLight, float u0, float u1,
     shared::LightSample* lightSample, float* areaPDensity) {
+    using namespace shared;
     CUtexObject texEmittance = 0;
     float3 emittance = make_float3(0.0f, 0.0f, 0.0f);
     float2 texCoord;
@@ -388,6 +443,7 @@ template <bool withVisibility>
 CUDA_DEVICE_FUNCTION float3 performDirectLighting(
     const float3 &shadingPoint, const float3 &vOutLocal, const ReferenceFrame &shadingFrame, const BSDF &bsdf,
     const shared::LightSample &lightSample) {
+    using namespace shared;
     float3 shadowRayDir = lightSample.atInfinity ?
         lightSample.position :
         (lightSample.position - shadingPoint);
@@ -425,6 +481,7 @@ CUDA_DEVICE_FUNCTION float3 performDirectLighting(
 
 CUDA_DEVICE_FUNCTION bool evaluateVisibility(
     const float3 &shadingPoint, const shared::LightSample &lightSample) {
+    using namespace shared;
     float3 shadowRayDir = lightSample.atInfinity ?
         lightSample.position :
         (lightSample.position - shadingPoint);
@@ -454,6 +511,7 @@ CUDA_DEVICE_FUNCTION void computeSurfacePoint(
     float3* positionInWorld, float3* shadingNormalInWorld, float3* texCoord0DirInWorld,
     float3* geometricNormalInWorld, float2* texCoord,
     float* hypAreaPDensity) {
+    using namespace shared;
     const Triangle &tri = geomInst.triangleBuffer[primIndex];
     const Vertex &v0 = geomInst.vertexBuffer[tri.index0];
     const Vertex &v1 = geomInst.vertexBuffer[tri.index1];
