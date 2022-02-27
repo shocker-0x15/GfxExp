@@ -82,7 +82,7 @@ CUDA_DEVICE_KERNEL void propagateRadianceValues() {
         float3 &targetValue = plp.s->trainTargetBuffer[lastTrainDataIndex];
         float3 indirectCont = vertexInfo.localThroughput * contribution;
         contribution = targetValue + indirectCont;
-        targetValue += contribution;
+        targetValue = contribution;
         
         lastTrainDataIndex = vertexInfo.prevVertexDataIndex;
     }

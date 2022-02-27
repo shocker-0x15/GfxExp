@@ -4,6 +4,7 @@
 
 #include "neural_radiance_caching_shared.h"
 #include "../common/common_host.h"
+#include "network_interface.h"
 
 // Include glfw3.h after our OpenGL definitions
 #include "../utils/gl_util.h"
@@ -910,6 +911,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
     trainSuffixTerminalInfoBuffer.initialize(
         gpuEnv.cuContext, Scene::bufferType, maxNumTrainingSuffixes);
 
+    NeuralRadianceCache neuralRadianceCache;
+    neuralRadianceCache.initialize();
+
     // END:
     // ----------------------------------------------------------------
 
@@ -992,11 +996,13 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
 
 
+        uint32_t inferenceBatchSize =
+            ((numPixels + maxNumTrainingSuffixes) + 255) / 256 * 256;
         inferenceRadianceQueryBuffer.initialize(
-            gpuEnv.cuContext, Scene::bufferType, numPixels + maxNumTrainingSuffixes);
+            gpuEnv.cuContext, Scene::bufferType, inferenceBatchSize);
         inferenceTerminalInfoBuffer.initialize(gpuEnv.cuContext, Scene::bufferType, numPixels);
         inferredRadianceBuffer.initialize(
-            gpuEnv.cuContext, Scene::bufferType, numPixels + maxNumTrainingSuffixes);
+            gpuEnv.cuContext, Scene::bufferType, inferenceBatchSize);
         perFrameContributionBuffer.initialize(gpuEnv.cuContext, Scene::bufferType, numPixels);
     };
 
@@ -1059,9 +1065,11 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
 
 
-        inferenceRadianceQueryBuffer.resize(numPixels + maxNumTrainingSuffixes);
+        uint32_t inferenceBatchSize =
+            ((numPixels + maxNumTrainingSuffixes) + 255) / 256 * 256;
+        inferenceRadianceQueryBuffer.resize(inferenceBatchSize);
         inferenceTerminalInfoBuffer.resize(numPixels);
-        inferredRadianceBuffer.resize(numPixels + maxNumTrainingSuffixes);
+        inferredRadianceBuffer.resize(inferenceBatchSize);
         perFrameContributionBuffer.resize(numPixels);
     };
 
@@ -1716,6 +1724,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
         gpuEnv.pipeline.launch(cuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);
         curGPUTimer.setupGBuffers.stop(cuStream);
 
+        // JP:
+        // EN:
         gpuEnv.kernelResetNRCBuffers(
             cuStream, gpuEnv.kernelResetNRCBuffers.calcGridDim(maxNumTrainingSuffixes),
             perFrameRng(), static_cast<uint32_t>(frameIndex));
@@ -1769,7 +1779,23 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
         // JP:
         // EN:
-        // Inference Radiance
+        neuralRadianceCache.infer(
+            cuStream,
+            reinterpret_cast<float*>(inferenceRadianceQueryBuffer.getDevicePointer()),
+            inferenceRadianceQueryBuffer.numElements(),
+            reinterpret_cast<float*>(inferredRadianceBuffer.getDevicePointer()));
+        {
+            CUDADRV_CHECK(cuStreamSynchronize(cuStream));
+            std::vector<float3> inferredRadianceValues = inferredRadianceBuffer;
+
+            printf("");
+        }
+
+        // JP:
+        // EN:
+        gpuEnv.kernelAccumulateInferredRadianceValues(
+            cuStream,
+            gpuEnv.kernelAccumulateInferredRadianceValues.calcGridDim(renderTargetSizeX * renderTargetSizeY));
 
         // JP:
         // EN:
@@ -1777,6 +1803,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
             cuStream, gpuEnv.kernelPropagateRadianceValues.calcGridDim(maxNumTrainingSuffixes));
         {
             CUDADRV_CHECK(cuStreamSynchronize(cuStream));
+            std::vector<float3> trainTargets = trainTargetBuffer;
 
             printf("");
         }

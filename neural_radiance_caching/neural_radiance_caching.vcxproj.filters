@@ -319,11 +319,13 @@
     <ClInclude Include="..\ext\tiny-cuda-nn\include\tiny-cuda-nn\trainer.h">
       <Filter>ext/tiny-cuda-nn</Filter>
     </ClInclude>
+    <ClInclude Include="network_interface.h" />
   </ItemGroup>
   <ItemGroup>
     <CudaCompile Include="optix_kernels.cu" />
     <CudaCompile Include="copy_buffers.cu" />
     <CudaCompile Include="kernels.cu" />
+    <CudaCompile Include="network_interface.cu" />
   </ItemGroup>
   <ItemGroup>
     <CopyFileToFolders Include="shaders\drawOptiXResult.frag">

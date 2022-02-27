@@ -251,6 +251,29 @@ CUDA_DEVICE_KERNEL void RT_MS_NAME(setupGBuffers)() {
 
 
 
+CUDA_DEVICE_FUNCTION void convertToPolar(const float3 &dir, float* phi, float* theta) {
+    float z = std::fmin(std::fmax(dir.z, -1.0f), 1.0f);
+    *theta = std::acos(z);
+    *phi = std::atan2(dir.y, dir.x);
+}
+
+CUDA_DEVICE_FUNCTION void createRadianceQuery(
+    const float3 &positionInWorld, const float3 &normalInWorld, const float3 &scatteredDirInWorld,
+    float roughness, const float3 &diffuseReflectance, const float3 &specularReflectance,
+    RadianceQuery* query) {
+    float phi, theta;
+    query->position = positionInWorld;
+    convertToPolar(normalInWorld, &phi, &theta);
+    query->normal_phi = phi;
+    query->normal_theta = theta;
+    convertToPolar(scatteredDirInWorld, &phi, &theta);
+    query->vOut_phi = phi;
+    query->vOut_theta = theta;
+    query->roughness = roughness;
+    query->diffuseReflectance = diffuseReflectance;
+    query->specularReflectance = specularReflectance;
+}
+
 static constexpr bool useSolidAngleSampling = false;
 static constexpr bool useImplicitLightSampling = true;
 static constexpr bool useExplicitLightSampling = true;
@@ -401,12 +424,16 @@ CUDA_DEVICE_FUNCTION void pathTrace_rayGen_generic() {
                 trainDataIndex = atomicAdd(plp.s->numTrainingData, 1u);
 
                 if (trainDataIndex < maxNumTrainingDataPerFrame) {
-                    RadianceQuery radQuery;
-                    radQuery.position = positionInWorld;
-                    radQuery.vOut = vOut;
-                    radQuery.normal = geometricNormalInWorld;
+                    float roughness;
+                    float3 diffuseReflectance, specularReflectance;
                     bsdf.getSurfaceParameters(
-                        &radQuery.diffuseReflectance, &radQuery.specularReflectance, &radQuery.roughness);
+                        &diffuseReflectance, &specularReflectance, &roughness);
+
+                    RadianceQuery radQuery;
+                    createRadianceQuery(
+                        positionInWorld, shadingFrame.normal, vOut,
+                        roughness, diffuseReflectance, specularReflectance,
+                        &radQuery);
                     plp.s->trainRadianceQueryBuffer[trainDataIndex] = radQuery;
 
                     TrainingVertexInfo vertInfo;
@@ -611,14 +638,18 @@ CUDA_DEVICE_FUNCTION void pathTrace_closestHit_generic() {
     if (pathIsSpreadEnough) {
         uint32_t linearIndex = launchIndex.y * plp.s->imageSize.x + launchIndex.x;
 
+        float roughness;
+        float3 diffuseReflectance, specularReflectance;
+        bsdf.getSurfaceParameters(
+            &diffuseReflectance, &specularReflectance, &roughness);
+
         // JP: Radianceクエリーのための情報を記録する。
         // EN: 
         RadianceQuery radQuery;
-        radQuery.position = positionInWorld;
-        radQuery.vOut = vOut;
-        radQuery.normal = geometricNormalInWorld;
-        bsdf.getSurfaceParameters(
-            &radQuery.diffuseReflectance, &radQuery.specularReflectance, &radQuery.roughness);
+        createRadianceQuery(
+            positionInWorld, shadingFrame.normal, vOut,
+            roughness, diffuseReflectance, specularReflectance,
+            &radQuery);
 
         if (!rwPayload->renderingPathEndsWithCache) {
             plp.s->inferenceRadianceQueryBuffer[linearIndex] = radQuery;
@@ -679,12 +710,16 @@ CUDA_DEVICE_FUNCTION void pathTrace_closestHit_generic() {
     if (rwPayload->isTrainingPath && !rwPayload->trainingSuffixEndsWithCache) {
         uint32_t trainDataIndex = atomicAdd(plp.s->numTrainingData, 1u);
 
-        RadianceQuery radQuery;
-        radQuery.position = positionInWorld;
-        radQuery.vOut = vOut;
-        radQuery.normal = geometricNormalInWorld;
+        float roughness;
+        float3 diffuseReflectance, specularReflectance;
         bsdf.getSurfaceParameters(
-            &radQuery.diffuseReflectance, &radQuery.specularReflectance, &radQuery.roughness);
+            &diffuseReflectance, &specularReflectance, &roughness);
+
+        RadianceQuery radQuery;
+        createRadianceQuery(
+            positionInWorld, shadingFrame.normal, vOut,
+            roughness, diffuseReflectance, specularReflectance,
+            &radQuery);
 
         if (trainDataIndex < maxNumTrainingDataPerFrame) {
             plp.s->trainRadianceQueryBuffer[trainDataIndex] = radQuery;

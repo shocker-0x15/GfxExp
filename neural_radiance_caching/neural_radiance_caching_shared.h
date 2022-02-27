@@ -99,8 +99,10 @@ namespace shared {
 
     struct RadianceQuery {
         float3 position;
-        float3 normal;
-        float3 vOut;
+        float normal_phi;
+        float normal_theta;
+        float vOut_phi;
+        float vOut_theta;
         float roughness;
         float3 diffuseReflectance;
         float3 specularReflectance;

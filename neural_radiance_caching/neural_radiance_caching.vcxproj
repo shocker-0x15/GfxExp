@@ -26,6 +26,18 @@
     <ClCompile Include="..\utils\cuda_util.cpp" />
     <ClCompile Include="..\utils\gl_util.cpp" />
     <ClCompile Include="..\utils\optix_util.cpp" />
+    <CudaCompile Include="network_interface.cu">
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">--extended-lambda %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions Condition="'$(Configuration)|$(Platform)'=='Release|x64'">--extended-lambda %(AdditionalOptions)</AdditionalOptions>
+      <CodeGeneration Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">compute_86,sm_86</CodeGeneration>
+      <CodeGeneration Condition="'$(Configuration)|$(Platform)'=='Release|x64'">compute_86,sm_86</CodeGeneration>
+      <NvccCompilation Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">compile</NvccCompilation>
+      <NvccCompilation Condition="'$(Configuration)|$(Platform)'=='Release|x64'">compile</NvccCompilation>
+      <CompileOut Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(IntDir)%(Filename)%(Extension).obj</CompileOut>
+      <CompileOut Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(IntDir)%(Filename)%(Extension).obj</CompileOut>
+      <GenerateRelocatableDeviceCode Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</GenerateRelocatableDeviceCode>
+      <GenerateRelocatableDeviceCode Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</GenerateRelocatableDeviceCode>
+    </CudaCompile>
     <ClCompile Include="neural_radiance_caching_main.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -104,12 +116,14 @@
     <ClInclude Include="..\utils\optixu_on_cudau.h" />
     <ClInclude Include="..\utils\optix_util.h" />
     <ClInclude Include="..\utils\optix_util_private.h" />
+    <ClInclude Include="network_interface.h" />
     <ClInclude Include="neural_radiance_caching_shared.h" />
   </ItemGroup>
   <ItemGroup>
     <CudaCompile Include="copy_buffers.cu" />
     <CudaCompile Include="optix_kernels.cu">
       <GPUDebugInfo Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</GPUDebugInfo>
+      <GenerateLineInfo Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</GenerateLineInfo>
     </CudaCompile>
     <CudaCompile Include="kernels.cu" />
   </ItemGroup>
@@ -186,7 +200,7 @@
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
-      <AdditionalDependencies>$(SolutionDir)ext\tiny-cuda-nn\build\src\$(Configuration)\tiny-cuda-nn.lib;$(SolutionDir)ext\assimp\assimp-vc142-mt.lib;cuda.lib;cudart_static.lib;glfw3.lib;opengl32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(SolutionDir)ext\tiny-cuda-nn\build\src\$(Configuration)\tiny-cuda-nn.lib;$(SolutionDir)ext\assimp\assimp-vc142-mt.lib;cublas.lib;cuda.lib;cudart_static.lib;glfw3.lib;opengl32.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <IgnoreSpecificDefaultLibraries>msvcrt.lib</IgnoreSpecificDefaultLibraries>
     </Link>
     <PostBuildEvent>
@@ -205,8 +219,9 @@
       <CompileOut>$(SolutionDir)$(Platform)\$(Configuration)\$(TargetName)\ptxes\%(Filename).ptx</CompileOut>
       <AdditionalOptions>-std=c++17 --use_fast_math -Xcompiler "/wd 4819" -D_DEBUG %(AdditionalOptions)</AdditionalOptions>
       <FastMath>true</FastMath>
-      <GenerateLineInfo>true</GenerateLineInfo>
     </CudaCompile>
+    <CudaLink />
+    <CudaLink />
     <CudaLink>
       <PerformDeviceLink>false</PerformDeviceLink>
     </CudaLink>
@@ -227,7 +242,7 @@
       <SubSystem>Console</SubSystem>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
-      <AdditionalDependencies>$(SolutionDir)ext\tiny-cuda-nn\build\src\$(Configuration)\tiny-cuda-nn.lib;$(SolutionDir)ext\assimp\assimp-vc142-mt.lib;cuda.lib;cudart_static.lib;glfw3.lib;opengl32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(SolutionDir)ext\tiny-cuda-nn\build\src\$(Configuration)\tiny-cuda-nn.lib;$(SolutionDir)ext\assimp\assimp-vc142-mt.lib;cublas.lib;cuda.lib;cudart_static.lib;glfw3.lib;opengl32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PostBuildEvent>
       <Command>
@@ -246,6 +261,8 @@
       <AdditionalOptions>-std=c++17 --use_fast_math -Xcompiler "/wd 4819" %(AdditionalOptions)</AdditionalOptions>
       <FastMath>true</FastMath>
     </CudaCompile>
+    <CudaLink />
+    <CudaLink />
     <CudaLink>
       <PerformDeviceLink>false</PerformDeviceLink>
     </CudaLink>

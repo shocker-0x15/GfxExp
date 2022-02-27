@@ -23,6 +23,7 @@ https://research.nvidia.com/publication/2020-07_Spatiotemporal-reservoir-resampl
         https://research.nvidia.com/publication/2021-07_Rearchitecting-Spatiotemporal-Resampling
 
 ![example](restir/comparison.jpg)
+Amazon Lumberyard Bistro (Exterior) from Morgan McGuire's [Computer Graphics Archive](https://casual-effects.com/data)
 
 ### ReGIR
 Chapter 23. "Rendering Many Lights with Grid-based Reservoirs", Ray Tracing Gems II\
@@ -36,8 +37,17 @@ https://www.realtimerendering.com/raytracinggems/rtg2/index.html
   - [ ] ReGIR + Multiple Importance Sampling (Impossible?)
 
 ![example](regir/comparison.jpg)
+Amazon Lumberyard Bistro (Interior) from Morgan McGuire's [Computer Graphics Archive](https://casual-effects.com/data)
 
-Models downloaded from Morgan McGuire's [Computer Graphics Archive](https://casual-effects.com/data)
+### Neural Radiance Caching
+Real-time Neural Radiance Caching for Path Tracing\
+https://research.nvidia.com/publication/2021-06_Real-time-Neural-Radiance
+
+- [x] Basic Implementation (based on simple path tracing, frequency/one-blob input encoding)
+- [ ] Advanced Items
+  - [ ] Combine with many-light sampling techniques like ReSTIR/ReGIR
+  - [ ] Use hash grid input encoding\
+        https://nvlabs.github.io/instant-ngp/
 
 ## その他 / Miscellaneous
 OptiX/CUDAのラッパーとして[OptiX Utility](https://github.com/shocker-0x15/OptiX_Utility)を使用しています。

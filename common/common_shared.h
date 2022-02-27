@@ -1406,7 +1406,7 @@ namespace shared {
                     idx += d;
             }
 #endif
-            Assert(idx >= 0 && idx < m_numValues, "Invalid Index!: %d", idx);
+            Assert(idx < m_numValues, "Invalid Index!: %d", idx);
             *prob = m_PMF[idx];
             return idx;
         }
