@@ -1,4 +1,7 @@
+#define PURE_CUDA
 #include "neural_radiance_caching_shared.h"
+
+using namespace shared;
 
 CUDA_DEVICE_KERNEL void copyToLinearBuffers(
     optixu::NativeBlockBuffer2D<float4> colorAccumBuffer,
@@ -30,24 +33,23 @@ CUDA_DEVICE_KERNEL void copyToLinearBuffers(
 
 
 CUDA_DEVICE_KERNEL void visualizeToOutputBuffer(
-    optixu::NativeBlockBuffer2D<shared::GBuffer0> gBuffer0,
-    void* linearBuffer,
-    shared::BufferToDisplay bufferTypeToDisplay,
+    bool visualizeTrainingPath,
+    void* linearBuffer, BufferToDisplay bufferTypeToDisplay,
     float brightness,
     float motionVectorOffset, float motionVectorScale,
-    optixu::NativeBlockBuffer2D<float4> outputBuffer,
-    uint2 imageSize) {
+    optixu::NativeBlockBuffer2D<float4> outputBuffer) {
     uint2 launchIndex = make_uint2(blockDim.x * blockIdx.x + threadIdx.x,
                                    blockDim.y * blockIdx.y + threadIdx.y);
-    if (launchIndex.x >= imageSize.x ||
-        launchIndex.y >= imageSize.y)
+    if (launchIndex.x >= plp.s->imageSize.x ||
+        launchIndex.y >= plp.s->imageSize.y)
         return;
 
-    uint32_t linearIndex = launchIndex.y * imageSize.x + launchIndex.x;
+    uint32_t linearIndex = launchIndex.y * plp.s->imageSize.x + launchIndex.x;
     float4 value = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
     switch (bufferTypeToDisplay) {
-    case shared::BufferToDisplay::NoisyBeauty:
-    case shared::BufferToDisplay::DenoisedBeauty: {
+    case BufferToDisplay::NoisyBeauty:
+    case BufferToDisplay::DirectlyVisualizedPrediction:
+    case BufferToDisplay::DenoisedBeauty: {
         auto typedLinearBuffer = reinterpret_cast<const float4*>(linearBuffer);
         //value = brightness * typedLinearBuffer[linearIndex];
         //// simple tone-map
@@ -76,12 +78,12 @@ CUDA_DEVICE_KERNEL void visualizeToOutputBuffer(
         //value.z = reinhard(value.z, 1.0f);
         break;
     }
-    case shared::BufferToDisplay::Albedo: {
+    case BufferToDisplay::Albedo: {
         auto typedLinearBuffer = reinterpret_cast<const float4*>(linearBuffer);
         value = typedLinearBuffer[linearIndex];
         break;
     }
-    case shared::BufferToDisplay::Normal: {
+    case BufferToDisplay::Normal: {
         auto typedLinearBuffer = reinterpret_cast<const float4*>(linearBuffer);
         value = typedLinearBuffer[linearIndex];
         value.x = 0.5f + 0.5f * value.x;
@@ -89,7 +91,7 @@ CUDA_DEVICE_KERNEL void visualizeToOutputBuffer(
         value.z = 0.5f + 0.5f * value.z;
         break;
     }
-    case shared::BufferToDisplay::Flow: {
+    case BufferToDisplay::Flow: {
         auto typedLinearBuffer = reinterpret_cast<const float2*>(linearBuffer);
         float2 f2Value = typedLinearBuffer[linearIndex];
         value = make_float4(fminf(fmaxf(motionVectorScale * f2Value.x + motionVectorOffset, 0.0f), 1.0f),
@@ -97,8 +99,38 @@ CUDA_DEVICE_KERNEL void visualizeToOutputBuffer(
                             motionVectorOffset, 1.0f);
         break;
     }
+    case BufferToDisplay::RenderingPathLength: {
+        const TerminalInfo &terminalInfo = plp.s->inferenceTerminalInfoBuffer[linearIndex];
+        float t = fminf(terminalInfo.pathLength / 5.0f, 1.0f);
+        const float3 R = make_float3(1.0f, 0.0f, 0.0f);
+        const float3 G = make_float3(0.0f, 1.0f, 0.0f);
+        const float3 B = make_float3(0.0f, 0.0f, 1.0f);
+        float3 v = make_float3(0.0f);
+        if (t < 0.5f) {
+            float tt = 2 * t;
+            v = B * (1.0f - tt) + G * tt;
+        }
+        else {
+            float tt = 2 * (t - 0.5f);
+            v = G * (1.0f - tt) + R * tt;
+        }
+        value = make_float4(v, 1.0f);
+        break;
+    }
     default:
         break;
     }
+
+    if (visualizeTrainingPath) {
+        const TerminalInfo &terminalInfo = plp.s->inferenceTerminalInfoBuffer[linearIndex];
+        if (terminalInfo.isTrainingPixel) {
+            value *= make_float4(1.0f, 0.25f, 1.0f, 1.0f);
+        }
+        else {
+            if (terminalInfo.isUnbiasedTile)
+                value *= make_float4(0.25f, 1.0f, 0.25f, 1.0f);
+        }
+    }
+
     outputBuffer.write(launchIndex, value);
 }

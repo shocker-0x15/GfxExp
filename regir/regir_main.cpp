@@ -1709,12 +1709,12 @@ int32_t main(int32_t argc, const char* argv[]) try {
             static MovingAverageTime pathTraceTime;
             static MovingAverageTime denoiseTime;
 
-            cudaFrameTime.append(frameIndex >= 2 ? curGPUTimer.frame.report() : 0.0f);
-            updateTime.append(frameIndex >= 2 ? curGPUTimer.update.report() : 0.0f);
-            setupGBuffersTime.append(frameIndex >= 2 ? curGPUTimer.setupGBuffers.report() : 0.0f);
-            buildCellReservoirsTime.append(frameIndex >= 2 ? curGPUTimer.buildCellReservoirs.report() : 0.0f);
-            pathTraceTime.append(frameIndex >= 2 ? curGPUTimer.pathTrace.report() : 0.0f);
-            denoiseTime.append(frameIndex >= 2 ? curGPUTimer.denoise.report() : 0.0f);
+            cudaFrameTime.append(curGPUTimer.frame.report());
+            updateTime.append(curGPUTimer.update.report());
+            setupGBuffersTime.append(curGPUTimer.setupGBuffers.report());
+            buildCellReservoirsTime.append(curGPUTimer.buildCellReservoirs.report());
+            pathTraceTime.append(curGPUTimer.pathTrace.report());
+            denoiseTime.append(curGPUTimer.denoise.report());
 
             //ImGui::SetNextItemWidth(100.0f);
             ImGui::Text("CUDA/OptiX GPU %.3f [ms]:", cudaFrameTime.getAverage());

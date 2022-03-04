@@ -294,6 +294,12 @@ CUDA_DEVICE_FUNCTION bool operator==(const int2 &v0, const int2 &v1) {
 CUDA_DEVICE_FUNCTION bool operator!=(const int2 &v0, const int2 &v1) {
     return v0.x != v1.x || v0.y != v1.y;
 }
+CUDA_DEVICE_FUNCTION bool operator==(const int2 &v0, const uint2 &v1) {
+    return v0.x == v1.x && v0.y == v1.y;
+}
+CUDA_DEVICE_FUNCTION bool operator!=(const int2 &v0, const uint2 &v1) {
+    return v0.x != v1.x || v0.y != v1.y;
+}
 CUDA_DEVICE_FUNCTION uint2 operator+(const int2 &v0, const uint2 &v1) {
     return make_uint2(v0.x + v1.x, v0.y + v1.y);
 }
@@ -312,6 +318,15 @@ CUDA_DEVICE_FUNCTION bool operator==(const uint2 &v0, const uint2 &v1) {
 }
 CUDA_DEVICE_FUNCTION bool operator!=(const uint2 &v0, const uint2 &v1) {
     return v0.x != v1.x || v0.y != v1.y;
+}
+CUDA_DEVICE_FUNCTION bool operator==(const uint2 &v0, const int2 &v1) {
+    return v0.x == v1.x && v0.y == v1.y;
+}
+CUDA_DEVICE_FUNCTION bool operator!=(const uint2 &v0, const int2 &v1) {
+    return v0.x != v1.x || v0.y != v1.y;
+}
+CUDA_DEVICE_FUNCTION uint2 operator+(const uint2 &v0, const uint2 &v1) {
+    return make_uint2(v0.x + v1.x, v0.y + v1.y);
 }
 CUDA_DEVICE_FUNCTION uint2 operator-(const uint2 &v, uint32_t s) {
     return make_uint2(v.x - s, v.y - s);
@@ -489,6 +504,13 @@ CUDA_DEVICE_FUNCTION float4 operator*(float s, const float4 &v) {
 }
 CUDA_DEVICE_FUNCTION float4 operator*(const float4 &v, float s) {
     return make_float4(s * v.x, s * v.y, s * v.z, s * v.w);
+}
+CUDA_DEVICE_FUNCTION float4 &operator*=(float4 &v0, const float4 &v1) {
+    v0.x *= v1.x;
+    v0.y *= v1.y;
+    v0.z *= v1.z;
+    v0.w *= v1.w;
+    return v0;
 }
 CUDA_DEVICE_FUNCTION float4 &operator*=(float4 &v, float s) {
     v.x *= s;

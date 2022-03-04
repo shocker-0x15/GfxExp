@@ -5,7 +5,8 @@
 namespace shared {
     static constexpr float probToSampleEnvLight = 0.25f;
     static constexpr float pathTerminationFactor = 0.01f; // c in the paper.
-    static constexpr uint32_t maxNumTrainingDataPerFrame = 1 << 16;
+    static constexpr uint32_t numTrainingDataPerFrame = 1 << 16;
+    static constexpr uint32_t trainBufferSize = 4 * numTrainingDataPerFrame; // 4x size for safety
 
 
 
@@ -110,8 +111,11 @@ namespace shared {
     
     struct TerminalInfo {
         float3 alpha;
-        unsigned int pathLength : 31;
         unsigned int hasQuery : 1;
+        // for stats/debug
+        unsigned int pathLength : 29;
+        unsigned int isTrainingPixel : 1;
+        unsigned int isUnbiasedTile : 1;
     };
 
     static constexpr uint32_t invalidVertexDataIndex = 0x7FFFFFFF;
@@ -124,6 +128,25 @@ namespace shared {
     struct TrainingSuffixTerminalInfo {
         unsigned int prevVertexDataIndex : 31;
         unsigned int hasQuery : 1;
+    };
+
+    class LinearCongruentialGenerator {
+        static constexpr uint32_t a = 1103515245;
+        static constexpr uint32_t c = 12345;
+        static constexpr uint32_t m = 1 << 31;
+        uint32_t m_state;
+
+    public:
+        LinearCongruentialGenerator() : m_state(0) {}
+
+        CUDA_DEVICE_FUNCTION void setState(uint32_t seed) {
+            m_state = seed;
+        }
+
+        CUDA_DEVICE_FUNCTION uint32_t next() {
+            m_state = ((m_state * a) + c) % m;
+            return m_state;
+        }
     };
 
 
@@ -147,6 +170,7 @@ namespace shared {
         uint32_t prevTrainDataIndex;
         unsigned int renderingPathEndsWithCache : 1;
         unsigned int isTrainingPath : 1;
+        unsigned int isUnbiasedTrainingTile : 1;
         unsigned int trainingSuffixEndsWithCache : 1;
 
         unsigned int maxLengthTerminate : 1;
@@ -173,15 +197,17 @@ namespace shared {
         uint32_t maxNumTrainingSuffixes;
         uint32_t* numTrainingData;
         uint2* tileSize;
+        uint32_t* offsetToSelectUnbiasedTile;
         uint32_t* offsetToSelectTrainingPath;
         RadianceQuery* inferenceRadianceQueryBuffer; // image size + #(training suffix)
         TerminalInfo* inferenceTerminalInfoBuffer; // image size
         float3* inferredRadianceBuffer; // image size + #(training suffix)
         float3* perFrameContributionBuffer; // image size
-        RadianceQuery* trainRadianceQueryBuffer; // #(training vertex)
+        RadianceQuery* trainRadianceQueryBuffer[2]; // #(training vertex)
+        float3* trainTargetBuffer[2]; // #(training vertex)
         TrainingVertexInfo* trainVertexInfoBuffer; // #(training vertex)
-        float3* trainTargetBuffer; // #(training vertex)
         TrainingSuffixTerminalInfo* trainSuffixTerminalInfoBuffer; // #(training suffix)
+        LinearCongruentialGenerator* dataShufflerBuffer; // numTrainingDataPerFrame
 
         optixu::NativeBlockBuffer2D<float4> beautyAccumBuffer;
         optixu::NativeBlockBuffer2D<float4> albedoAccumBuffer;
@@ -233,6 +259,8 @@ namespace shared {
         Albedo,
         Normal,
         Flow,
+        RenderingPathLength,
+        DirectlyVisualizedPrediction,
         DenoisedBeauty,
     };
 

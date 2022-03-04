@@ -1717,7 +1717,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
         //static Renderer curRenderer = Renderer::RearchitectedReSTIRUnbiased;
         static Renderer curRenderer = Renderer::OriginalReSTIRBiased;
         static ReSTIRConfigs* curRendererConfigs = &orgRestirBiasedConfigs;
-        static uint32_t numFramesForCurRenderer = 0;
         static float spatialVisibilityReuseRatio = 50.0f;
         static bool useTemporalDenosier = true;
         static shared::BufferToDisplay bufferTypeToDisplay = shared::BufferToDisplay::NoisyBeauty;
@@ -1785,9 +1784,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
                     ImGui::RadioButtonE("Rearchitected ReSTIR (Unbiased)", &curRenderer,
                                         Renderer::RearchitectedReSTIRUnbiased);
                     if (curRenderer != prevRenderer) {
-                        numFramesForCurRenderer = 0;
                         resetAccumulation = true;
-                    }
 
                     if (curRenderer == Renderer::OriginalReSTIRBiased)
                         curRendererConfigs = &orgRestirBiasedConfigs;
@@ -1929,26 +1926,22 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
             static MovingAverageTime denoiseTime;
 
-            if (frameIndex >= 2) {
-                cudaFrameTime.append(curGPUTimer.frame.report());
-                updateTime.append(curGPUTimer.update.report());
-                setupGBuffersTime.append(curGPUTimer.setupGBuffers.report());
-                denoiseTime.append(curGPUTimer.denoise.report());
-            }
+            cudaFrameTime.append(curGPUTimer.frame.report());
+            updateTime.append(curGPUTimer.update.report());
+            setupGBuffersTime.append(curGPUTimer.setupGBuffers.report());
+            denoiseTime.append(curGPUTimer.denoise.report());
 
-            if (numFramesForCurRenderer >= 2) {
-                if (curRenderer == Renderer::OriginalReSTIRBiased ||
-                    curRenderer == Renderer::OriginalReSTIRUnbiased) {
-                    performInitialAndTemporalRISTime.append(curGPUTimer.performInitialAndTemporalRIS.report());
-                    performSpatialRISTime.append(curGPUTimer.performSpatialRIS.report());
-                    shadingTime.append(curGPUTimer.shading.report());
-                }
-                else {
-                    performPreSamplingLightsTime.append(curGPUTimer.performPreSamplingLights.report());
-                    performPerPixelRISTime.append(curGPUTimer.performPerPixelRIS.report());
-                    traceShadowRaysTime.append(curGPUTimer.traceShadowRays.report());
-                    shadeAndResampleTime.append(curGPUTimer.shadeAndResample.report());
-                }
+            if (curRenderer == Renderer::OriginalReSTIRBiased ||
+                curRenderer == Renderer::OriginalReSTIRUnbiased) {
+                performInitialAndTemporalRISTime.append(curGPUTimer.performInitialAndTemporalRIS.report());
+                performSpatialRISTime.append(curGPUTimer.performSpatialRIS.report());
+                shadingTime.append(curGPUTimer.shading.report());
+            }
+            else {
+                performPreSamplingLightsTime.append(curGPUTimer.performPreSamplingLights.report());
+                performPerPixelRISTime.append(curGPUTimer.performPerPixelRIS.report());
+                traceShadowRaysTime.append(curGPUTimer.traceShadowRays.report());
+                shadeAndResampleTime.append(curGPUTimer.shadeAndResample.report());
             }
 
             //ImGui::SetNextItemWidth(100.0f);
@@ -2325,7 +2318,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
         glfwSwapBuffers(window);
 
         ++frameIndex;
-        ++numFramesForCurRenderer;
     }
 
     CUDADRV_CHECK(cuStreamSynchronize(cuStream));

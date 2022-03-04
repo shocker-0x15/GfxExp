@@ -236,6 +236,8 @@ namespace cudau {
         CUcontext m_context;
         CUevent m_startEvent;
         CUevent m_endEvent;
+        bool m_startIsValid;
+        bool m_endIsValid;
 
     public:
         void initialize(CUcontext context) {
@@ -243,25 +245,35 @@ namespace cudau {
             CUDADRV_CHECK(cuCtxSetCurrent(m_context));
             CUDADRV_CHECK(cuEventCreate(&m_startEvent, CU_EVENT_BLOCKING_SYNC));
             CUDADRV_CHECK(cuEventCreate(&m_endEvent, CU_EVENT_BLOCKING_SYNC));
+            m_startIsValid = false;
+            m_endIsValid = false;
         }
         void finalize() {
+            m_startIsValid = false;
+            m_endIsValid = false;
             CUDADRV_CHECK(cuCtxSetCurrent(m_context));
             CUDADRV_CHECK(cuEventDestroy(m_endEvent));
             CUDADRV_CHECK(cuEventDestroy(m_startEvent));
             m_context = nullptr;
         }
 
-        void start(CUstream stream) const {
+        void start(CUstream stream) {
             CUDADRV_CHECK(cuEventRecord(m_startEvent, stream));
+            m_startIsValid = true;
         }
-        void stop(CUstream stream) const {
+        void stop(CUstream stream) {
             CUDADRV_CHECK(cuEventRecord(m_endEvent, stream));
+            m_endIsValid = true;
         }
 
-        float report() const {
+        float report() {
             float ret = 0.0f;
-            CUDADRV_CHECK(cuEventSynchronize(m_endEvent));
-            CUDADRV_CHECK(cuEventElapsedTime(&ret, m_startEvent, m_endEvent));
+            if (m_startIsValid && m_endIsValid) {
+                CUDADRV_CHECK(cuEventSynchronize(m_endEvent));
+                CUDADRV_CHECK(cuEventElapsedTime(&ret, m_startEvent, m_endEvent));
+                m_startIsValid = false;
+                m_endIsValid = false;
+            }
             return ret;
         }
     };

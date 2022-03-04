@@ -21,9 +21,11 @@ struct GPUEnvironment {
     optixu::Context optixContext;
 
     CUmodule cudaModule;
-    cudau::Kernel kernelResetNRCBuffers;
+    cudau::Kernel kernelPreprocessNRC;
     cudau::Kernel kernelAccumulateInferredRadianceValues;
     cudau::Kernel kernelPropagateRadianceValues;
+    cudau::Kernel kernelShuffleTrainingData;
+    cudau::Kernel kernelVisualizeInferredRadianceValues;
     CUdeviceptr plpPtr;
 
     optixu::Pipeline pipeline;
@@ -37,6 +39,7 @@ struct GPUEnvironment {
     optixu::ProgramGroup pathTraceMissProgram;
     optixu::ProgramGroup pathTraceHitProgramGroup;
     optixu::ProgramGroup visibilityHitProgramGroup;
+    optixu::ProgramGroup visualizePredictionRayGenProgram;
     std::vector<optixu::ProgramGroup> callablePrograms;
 
     optixu::Material optixDefaultMaterial;
@@ -55,12 +58,16 @@ struct GPUEnvironment {
         CUDADRV_CHECK(cuModuleLoad(
             &cudaModule,
             (getExecutableDirectory() / "neural_radiance_caching/ptxes/kernels.ptx").string().c_str()));
-        kernelResetNRCBuffers =
-            cudau::Kernel(cudaModule, "resetNRCBuffers", cudau::dim3(32), 0);
+        kernelPreprocessNRC =
+            cudau::Kernel(cudaModule, "preprocessNRC", cudau::dim3(32), 0);
         kernelAccumulateInferredRadianceValues =
             cudau::Kernel(cudaModule, "accumulateInferredRadianceValues", cudau::dim3(32), 0);
         kernelPropagateRadianceValues =
             cudau::Kernel(cudaModule, "propagateRadianceValues", cudau::dim3(32), 0);
+        kernelShuffleTrainingData =
+            cudau::Kernel(cudaModule, "shuffleTrainingData", cudau::dim3(32), 0);
+        kernelVisualizeInferredRadianceValues =
+            cudau::Kernel(cudaModule, "visualizeInferredRadianceValues", cudau::dim3(32), 0);
 
         size_t plpSize;
         CUDADRV_CHECK(cuModuleGetGlobal(&plpPtr, &plpSize, cudaModule, "plp"));
@@ -113,6 +120,9 @@ struct GPUEnvironment {
         visibilityHitProgramGroup = pipeline.createHitProgramGroupForTriangleIS(
             emptyModule, nullptr,
             mainModule, RT_AH_NAME_STR("visibility"));
+
+        visualizePredictionRayGenProgram = pipeline.createRayGenProgram(
+            mainModule, RT_RG_NAME_STR("visualizePrediction"));
 
         //optixu::ProgramGroup exceptionProgram = pipeline.createExceptionProgram(moduleOptiX, "__exception__print");
 
@@ -895,21 +905,39 @@ int32_t main(int32_t argc, const char* argv[]) try {
     uintptr_t tileSizeOnDevice;
     CUDADRV_CHECK(cuMemAlloc(&tileSizeOnDevice, sizeof(uint2)));
 
+    uintptr_t offsetToSelectUnbiasedTileOnDevice;
+    CUDADRV_CHECK(cuMemAlloc(&offsetToSelectUnbiasedTileOnDevice, sizeof(uint32_t)));
+
     uintptr_t offsetToSelectTrainingPathOnDevice;
     CUDADRV_CHECK(cuMemAlloc(&offsetToSelectTrainingPathOnDevice, sizeof(uint32_t)));
 
-    cudau::TypedBuffer<shared::RadianceQuery> trainRadianceQueryBuffer;
+    cudau::TypedBuffer<shared::RadianceQuery> trainRadianceQueryBuffer[2];
+    cudau::TypedBuffer<float3> trainTargetBuffer[2];
     cudau::TypedBuffer<shared::TrainingVertexInfo> trainVertexInfoBuffer;
-    cudau::TypedBuffer<float3> trainTargetBuffer;
     cudau::TypedBuffer<shared::TrainingSuffixTerminalInfo> trainSuffixTerminalInfoBuffer;
-    trainRadianceQueryBuffer.initialize(
-        gpuEnv.cuContext, Scene::bufferType, shared::maxNumTrainingDataPerFrame);
+    cudau::TypedBuffer<shared::LinearCongruentialGenerator> dataShufflerBuffer;
+    for (int i = 0; i < 2; ++i) {
+        trainRadianceQueryBuffer[i].initialize(
+            gpuEnv.cuContext, Scene::bufferType, shared::trainBufferSize);
+        trainTargetBuffer[i].initialize(
+            gpuEnv.cuContext, Scene::bufferType, shared::trainBufferSize);
+    }
     trainVertexInfoBuffer.initialize(
-        gpuEnv.cuContext, Scene::bufferType, shared::maxNumTrainingDataPerFrame);
-    trainTargetBuffer.initialize(
-        gpuEnv.cuContext, Scene::bufferType, shared::maxNumTrainingDataPerFrame);
+        gpuEnv.cuContext, Scene::bufferType, shared::trainBufferSize);
     trainSuffixTerminalInfoBuffer.initialize(
         gpuEnv.cuContext, Scene::bufferType, maxNumTrainingSuffixes);
+    dataShufflerBuffer.initialize(
+        gpuEnv.cuContext, Scene::bufferType, shared::trainBufferSize);
+    {
+        shared::LinearCongruentialGenerator lcg;
+        lcg.setState(471313181);
+        shared::LinearCongruentialGenerator* dataShufflers = dataShufflerBuffer.map();
+        for (int i = 0; i < shared::numTrainingDataPerFrame; ++i) {
+            lcg.next();
+            dataShufflers[i] = lcg;
+        }
+        dataShufflerBuffer.unmap();
+    }
 
     NeuralRadianceCache neuralRadianceCache;
     neuralRadianceCache.initialize();
@@ -1122,6 +1150,14 @@ int32_t main(int32_t argc, const char* argv[]) try {
     cudau::Kernel kernelVisualizeToOutputBuffer(
         moduleCopyBuffers, "visualizeToOutputBuffer", cudau::dim3(8, 8), 0);
 
+    uintptr_t plpPtrOnDeviceForCopyBuffers;
+    {
+        size_t plpSizeForCopyBuffers;
+        CUDADRV_CHECK(cuModuleGetGlobal(
+            &plpPtrOnDeviceForCopyBuffers, &plpSizeForCopyBuffers, moduleCopyBuffers, "plp"));
+        Assert(sizeof(shared::PipelineLaunchParameters) == plpSizeForCopyBuffers, "Unexpected plp size.");
+    }
+
     CUdeviceptr hdrIntensity;
     CUDADRV_CHECK(cuMemAlloc(&hdrIntensity, sizeof(float)));
 
@@ -1181,15 +1217,19 @@ int32_t main(int32_t argc, const char* argv[]) try {
         staticPlp.maxNumTrainingSuffixes = maxNumTrainingSuffixes;
         staticPlp.numTrainingData = reinterpret_cast<uint32_t*>(numTrainingDataOnDevice);
         staticPlp.tileSize = reinterpret_cast<uint2*>(tileSizeOnDevice);
+        staticPlp.offsetToSelectUnbiasedTile = reinterpret_cast<uint32_t*>(offsetToSelectUnbiasedTileOnDevice);
         staticPlp.offsetToSelectTrainingPath = reinterpret_cast<uint32_t*>(offsetToSelectTrainingPathOnDevice);
         staticPlp.inferenceRadianceQueryBuffer = inferenceRadianceQueryBuffer.getDevicePointer();
         staticPlp.inferenceTerminalInfoBuffer = inferenceTerminalInfoBuffer.getDevicePointer();
         staticPlp.inferredRadianceBuffer = inferredRadianceBuffer.getDevicePointer();
         staticPlp.perFrameContributionBuffer = perFrameContributionBuffer.getDevicePointer();
-        staticPlp.trainRadianceQueryBuffer = trainRadianceQueryBuffer.getDevicePointer();
+        for (int i = 0; i < 2; ++i) {
+            staticPlp.trainRadianceQueryBuffer[i] = trainRadianceQueryBuffer[i].getDevicePointer();
+            staticPlp.trainTargetBuffer[i] = trainTargetBuffer[i].getDevicePointer();
+        }
         staticPlp.trainVertexInfoBuffer = trainVertexInfoBuffer.getDevicePointer();
-        staticPlp.trainTargetBuffer = trainTargetBuffer.getDevicePointer();
         staticPlp.trainSuffixTerminalInfoBuffer = trainSuffixTerminalInfoBuffer.getDevicePointer();
+        staticPlp.dataShufflerBuffer = dataShufflerBuffer.getDevicePointer();
 
         staticPlp.beautyAccumBuffer = beautyAccumBuffer.getSurfaceObject(0);
         staticPlp.albedoAccumBuffer = albedoAccumBuffer.getSurfaceObject(0);
@@ -1243,19 +1283,37 @@ int32_t main(int32_t argc, const char* argv[]) try {
         cudau::Timer frame;
         cudau::Timer update;
         cudau::Timer setupGBuffers;
+        cudau::Timer preprocessNRC;
         cudau::Timer pathTrace;
+        cudau::Timer infer;
+        cudau::Timer accumulateInferredRadiances;
+        cudau::Timer propagateRadiances;
+        cudau::Timer shuffleTrainingData;
+        cudau::Timer train;
         cudau::Timer denoise;
 
         void initialize(CUcontext context) {
             frame.initialize(context);
             update.initialize(context);
             setupGBuffers.initialize(context);
+            preprocessNRC.initialize(context);
             pathTrace.initialize(context);
+            infer.initialize(context);
+            accumulateInferredRadiances.initialize(context);
+            propagateRadiances.initialize(context);
+            shuffleTrainingData.initialize(context);
+            train.initialize(context);
             denoise.initialize(context);
         }
         void finalize() {
             denoise.finalize();
+            train.finalize();
+            shuffleTrainingData.finalize();
+            propagateRadiances.finalize();
+            accumulateInferredRadiances.finalize();
+            infer.finalize();
             pathTrace.finalize();
+            preprocessNRC.finalize();
             setupGBuffers.finalize();
             update.finalize();
             frame.finalize();
@@ -1495,6 +1553,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
         static bool enableBumpMapping = false;
         bool lastFrameWasAnimated = false;
         static int32_t maxPathLength = 5;
+        static bool visualizeTrainingPath = false;
+        static bool train = true;
+        bool stepTrain = false;
         static bool debugSwitches[] = {
             false, false, false, false, false, false, false, false
         };
@@ -1546,6 +1607,14 @@ int32_t main(int32_t argc, const char* argv[]) try {
                 if (ImGui::BeginTabItem("Renderer")) {
                     resetAccumulation |= ImGui::SliderInt("Max Path Length", &maxPathLength, 2, 15);
 
+                    if (ImGui::Button(train ? "Stop Training" : "Start Training"))
+                        train = !train;
+                    ImGui::SameLine();
+                    if (ImGui::Button("Step")) {
+                        train = false;
+                        stepTrain = true;
+                    }
+
                     ImGui::PushID("Debug Switches");
                     for (int i = lengthof(debugSwitches) - 1; i >= 0; --i) {
                         ImGui::PushID(i);
@@ -1560,12 +1629,15 @@ int32_t main(int32_t argc, const char* argv[]) try {
                 }
 
                 if (ImGui::BeginTabItem("Visualize")) {
+                    ImGui::Checkbox("Visualize Training Paths", &visualizeTrainingPath);
                     ImGui::Text("Buffer to Display");
                     ImGui::RadioButtonE(
                         "Noisy Beauty", &bufferTypeToDisplay, shared::BufferToDisplay::NoisyBeauty);
                     ImGui::RadioButtonE("Albedo", &bufferTypeToDisplay, shared::BufferToDisplay::Albedo);
                     ImGui::RadioButtonE("Normal", &bufferTypeToDisplay, shared::BufferToDisplay::Normal);
                     ImGui::RadioButtonE("Motion Vector", &bufferTypeToDisplay, shared::BufferToDisplay::Flow);
+                    ImGui::RadioButtonE("Rendering Path Length", &bufferTypeToDisplay, shared::BufferToDisplay::RenderingPathLength);
+                    ImGui::RadioButtonE("Directly Visualized Prediction", &bufferTypeToDisplay, shared::BufferToDisplay::DirectlyVisualizedPrediction);
                     ImGui::RadioButtonE(
                         "Denoised Beauty", &bufferTypeToDisplay, shared::BufferToDisplay::DenoisedBeauty);
 
@@ -1626,22 +1698,40 @@ int32_t main(int32_t argc, const char* argv[]) try {
             static MovingAverageTime cudaFrameTime;
             static MovingAverageTime updateTime;
             static MovingAverageTime setupGBuffersTime;
+            static MovingAverageTime preprocessNRCTime;
             static MovingAverageTime pathTraceTime;
+            static MovingAverageTime inferTime;
+            static MovingAverageTime accumulateInferredRadiancesTime;
+            static MovingAverageTime propagateRadiancesTime;
+            static MovingAverageTime shuffleTrainingDataTime;
+            static MovingAverageTime trainTime;
             static MovingAverageTime denoiseTime;
 
-            cudaFrameTime.append(frameIndex >= 2 ? curGPUTimer.frame.report() : 0.0f);
-            updateTime.append(frameIndex >= 2 ? curGPUTimer.update.report() : 0.0f);
-            setupGBuffersTime.append(frameIndex >= 2 ? curGPUTimer.setupGBuffers.report() : 0.0f);
-            pathTraceTime.append(frameIndex >= 2 ? curGPUTimer.pathTrace.report() : 0.0f);
-            denoiseTime.append(frameIndex >= 2 ? curGPUTimer.denoise.report() : 0.0f);
+            cudaFrameTime.append(curGPUTimer.frame.report());
+            updateTime.append(curGPUTimer.update.report());
+            setupGBuffersTime.append(curGPUTimer.setupGBuffers.report());
+            preprocessNRCTime.append(curGPUTimer.preprocessNRC.report());
+            pathTraceTime.append(curGPUTimer.pathTrace.report());
+            inferTime.append(curGPUTimer.infer.report());
+            accumulateInferredRadiancesTime.append(curGPUTimer.accumulateInferredRadiances.report());
+            propagateRadiancesTime.append(curGPUTimer.propagateRadiances.report());
+            shuffleTrainingDataTime.append(curGPUTimer.shuffleTrainingData.report());
+            trainTime.append(curGPUTimer.train.report());
+            denoiseTime.append(curGPUTimer.denoise.report());
 
             //ImGui::SetNextItemWidth(100.0f);
             ImGui::Text("CUDA/OptiX GPU %.3f [ms]:", cudaFrameTime.getAverage());
-            ImGui::Text("  Update: %.3f [ms]", updateTime.getAverage());
-            ImGui::Text("  setupGBuffers: %.3f [ms]", setupGBuffersTime.getAverage());
+            ImGui::Text("  update: %.3f [ms]", updateTime.getAverage());
+            ImGui::Text("  setup G-buffers: %.3f [ms]", setupGBuffersTime.getAverage());
+            ImGui::Text("  pre-process NRC: %.3f [ms]", preprocessNRCTime.getAverage());
             ImGui::Text("  pathTrace: %.3f [ms]", pathTraceTime.getAverage());
+            ImGui::Text("  inference: %.3f [ms]", inferTime.getAverage());
+            ImGui::Text("  accum radiance: %.3f [ms]", accumulateInferredRadiancesTime.getAverage());
+            ImGui::Text("  prop radiance: %.3f [ms]", propagateRadiancesTime.getAverage());
+            ImGui::Text("  shuffle train data: %.3f [ms]", shuffleTrainingDataTime.getAverage());
+            ImGui::Text("  training: %.3f [ms]", trainTime.getAverage());
             if (bufferTypeToDisplay == shared::BufferToDisplay::DenoisedBeauty)
-                ImGui::Text("  Denoise: %.3f [ms]", denoiseTime.getAverage());
+                ImGui::Text("  denoise: %.3f [ms]", denoiseTime.getAverage());
 
             ImGui::Text("%u [spp]", std::min(numAccumFrames + 1, (1u << log2MaxNumAccums)));
 
@@ -1714,6 +1804,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
         CUDADRV_CHECK(cuMemcpyHtoDAsync(plpOnDevice, &plp, sizeof(plp), cuStream));
         CUDADRV_CHECK(cuMemcpyHtoDAsync(gpuEnv.plpPtr, &plp, sizeof(plp), cuStream));
+        CUDADRV_CHECK(cuMemcpyHtoDAsync(plpPtrOnDeviceForCopyBuffers, &plp, sizeof(plp), cuStream));
 
         // JP: Gバッファーのセットアップ。
         //     ここではレイトレースを使ってGバッファーを生成しているがもちろんラスタライザーで生成可能。
@@ -1724,12 +1815,16 @@ int32_t main(int32_t argc, const char* argv[]) try {
         gpuEnv.pipeline.launch(cuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);
         curGPUTimer.setupGBuffers.stop(cuStream);
 
+        static bool enableDebug = DEBUG_SELECT(true, false);
+
         // JP:
         // EN:
-        gpuEnv.kernelResetNRCBuffers(
-            cuStream, gpuEnv.kernelResetNRCBuffers.calcGridDim(maxNumTrainingSuffixes),
-            perFrameRng(), static_cast<uint32_t>(frameIndex));
-        {
+        curGPUTimer.preprocessNRC.start(cuStream);
+        gpuEnv.kernelPreprocessNRC(
+            cuStream, gpuEnv.kernelPreprocessNRC.calcGridDim(maxNumTrainingSuffixes),
+            perFrameRng(), perFrameRng(), newSequence);
+        curGPUTimer.preprocessNRC.stop(cuStream);
+        if (enableDebug) {
             CUDADRV_CHECK(cuStreamSynchronize(cuStream));
             std::vector<shared::TrainingSuffixTerminalInfo> terminalInfo = trainSuffixTerminalInfoBuffer;
 
@@ -1739,6 +1834,10 @@ int32_t main(int32_t argc, const char* argv[]) try {
             uint32_t numTrainingData;
             CUDADRV_CHECK(cuMemcpyDtoH(
                 &numTrainingData, numTrainingDataOnDevice, sizeof(numTrainingData)));
+            uint32_t offsetToSelectUnbiasedTile;
+            CUDADRV_CHECK(cuMemcpyDtoH(
+                &offsetToSelectUnbiasedTile, offsetToSelectUnbiasedTileOnDevice,
+                sizeof(offsetToSelectUnbiasedTile)));
             uint32_t offsetToSelectTrainingPath;
             CUDADRV_CHECK(cuMemcpyDtoH(
                 &offsetToSelectTrainingPath, offsetToSelectTrainingPathOnDevice,
@@ -1754,7 +1853,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         gpuEnv.pipeline.setRayGenerationProgram(gpuEnv.pathTraceRayGenProgram);
         gpuEnv.pipeline.launch(cuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);
         curGPUTimer.pathTrace.stop(cuStream);
-        {
+        if (enableDebug) {
             CUDADRV_CHECK(cuStreamSynchronize(cuStream));
 
             uint32_t numTrainingData;
@@ -1764,27 +1863,54 @@ int32_t main(int32_t argc, const char* argv[]) try {
             std::vector<shared::TerminalInfo> inferenceTerminalInfos = inferenceTerminalInfoBuffer;
             std::vector<float3> perFrameContributions = perFrameContributionBuffer;
 
-            std::vector<shared::RadianceQuery> trainRadianceQueries = trainRadianceQueryBuffer;
+            std::vector<shared::RadianceQuery> trainRadianceQueries = trainRadianceQueryBuffer[0];
+            std::vector<float3> trainTargets = trainTargetBuffer[0];
             std::vector<shared::TrainingVertexInfo> trainVertexInfos = trainVertexInfoBuffer;
-            std::vector<float3> trainTargets = trainTargetBuffer;
             std::vector<shared::TrainingSuffixTerminalInfo> trainSuffixTerminalInfos = trainSuffixTerminalInfoBuffer;
 
             for (auto it : trainSuffixTerminalInfos)
                 if (it.prevVertexDataIndex != shared::invalidVertexDataIndex &&
-                    it.prevVertexDataIndex >= shared::maxNumTrainingDataPerFrame)
+                    it.prevVertexDataIndex >= shared::trainBufferSize)
                     printf("");
+
+            uint32_t numPixelsOfUnbiasedTile = 0;
+            uint32_t numTrainingPaths = 0;
+            for (int y = 0; y < renderTargetSizeY; ++y) {
+                for (int x = 0; x < renderTargetSizeX; ++x) {
+                    const shared::TerminalInfo &terminalInfo = inferenceTerminalInfos[y * renderTargetSizeX + x];
+                    if (terminalInfo.isUnbiasedTile)
+                        ++numPixelsOfUnbiasedTile;
+                    if (terminalInfo.isTrainingPixel)
+                        ++numTrainingPaths;
+                }
+            }
 
             printf("");
         }
 
+        // JP: CUDAではdispatchIndirectのような動的なディスパッチサイズの指定が
+        //     サポートされていないので仕方なくGPUと同期して訓練データ数などを取得する。
+        //     実際のリアルタイムレンダリング実装の場合は動的なディスパッチサイズ指定を行う必要がある。
+        // EN:
+        uint32_t numTrainingData;
+        CUDADRV_CHECK(cuMemcpyDtoH(&numTrainingData, numTrainingDataOnDevice, sizeof(numTrainingData)));
+        uint2 tileSize;
+        CUDADRV_CHECK(cuMemcpyDtoH(&tileSize, tileSizeOnDevice, sizeof(tileSize)));
+        uint2 numTiles = (uint2(renderTargetSizeX, renderTargetSizeY) + tileSize - 1) / tileSize;
+        uint32_t numInferenceQueries = renderTargetSizeX * renderTargetSizeY + numTiles.x * numTiles.y;
+        //printf("numTrainingData: %u, TileSize: %u x %u\n",
+        //       numTrainingData, tileSize.x, tileSize.y);
+
         // JP:
         // EN:
+        curGPUTimer.infer.start(cuStream);
         neuralRadianceCache.infer(
             cuStream,
             reinterpret_cast<float*>(inferenceRadianceQueryBuffer.getDevicePointer()),
-            inferenceRadianceQueryBuffer.numElements(),
+            numInferenceQueries,
             reinterpret_cast<float*>(inferredRadianceBuffer.getDevicePointer()));
-        {
+        curGPUTimer.infer.stop(cuStream);
+        if (enableDebug) {
             CUDADRV_CHECK(cuStreamSynchronize(cuStream));
             std::vector<float3> inferredRadianceValues = inferredRadianceBuffer;
 
@@ -1793,28 +1919,90 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
         // JP:
         // EN:
+        curGPUTimer.accumulateInferredRadiances.start(cuStream);
         gpuEnv.kernelAccumulateInferredRadianceValues(
             cuStream,
             gpuEnv.kernelAccumulateInferredRadianceValues.calcGridDim(renderTargetSizeX * renderTargetSizeY));
+        curGPUTimer.accumulateInferredRadiances.stop(cuStream);
 
-        // JP:
-        // EN:
-        gpuEnv.kernelPropagateRadianceValues(
-            cuStream, gpuEnv.kernelPropagateRadianceValues.calcGridDim(maxNumTrainingSuffixes));
-        {
-            CUDADRV_CHECK(cuStreamSynchronize(cuStream));
-            std::vector<float3> trainTargets = trainTargetBuffer;
+        if (train || stepTrain) {
+            // JP:
+            // EN:
+            curGPUTimer.propagateRadiances.start(cuStream);
+            gpuEnv.kernelPropagateRadianceValues(
+                cuStream, gpuEnv.kernelPropagateRadianceValues.calcGridDim(maxNumTrainingSuffixes));
+            curGPUTimer.propagateRadiances.stop(cuStream);
+            if (enableDebug) {
+                CUDADRV_CHECK(cuStreamSynchronize(cuStream));
+                std::vector<float3> trainTargets = trainTargetBuffer[0];
 
-            printf("");
+                printf("");
+            }
+
+            // JP:
+            // EN:
+            curGPUTimer.shuffleTrainingData.start(cuStream);
+            gpuEnv.kernelShuffleTrainingData(
+                cuStream, gpuEnv.kernelShuffleTrainingData.calcGridDim(shared::numTrainingDataPerFrame));
+            curGPUTimer.shuffleTrainingData.stop(cuStream);
+            if (enableDebug) {
+                CUDADRV_CHECK(cuStreamSynchronize(cuStream));
+                std::vector<shared::RadianceQuery> trainRadianceQueries[2] = {
+                    trainRadianceQueryBuffer[0], trainRadianceQueryBuffer[1]
+                };
+                std::vector<float3> trainTargetValues[2] = {
+                    trainTargetBuffer[0], trainTargetBuffer[1]
+                };
+
+                uint32_t numValidQueries[2] = { 0, 0 };
+                for (int i = 0; i < shared::numTrainingDataPerFrame; ++i) {
+                    if (trainRadianceQueries[0][i].position != float3(0.0f))
+                        ++numValidQueries[0];
+                    if (trainRadianceQueries[1][i].position != float3(0.0f))
+                        ++numValidQueries[1];
+                }
+
+                printf("");
+            }
+
+            // JP:
+            // EN:
+            curGPUTimer.train.start(cuStream);
+            {
+                //const uint32_t targetBatchSize =
+                //    (std::min(numTrainingData, shared::numTrainingDataPerFrame) / 4 + 255) / 256 * 256;
+                uint32_t dataStartIndex = 0;
+                for (int step = 0; step < 4; ++step) {
+                    //uint32_t batchSize = std::min(numTrainingData - dataStartIndex, targetBatchSize);
+                    //batchSize = batchSize / 256 * 256;
+                    uint32_t batchSize = shared::numTrainingDataPerFrame / 4;
+                    neuralRadianceCache.train(
+                        cuStream,
+                        reinterpret_cast<float*>(trainRadianceQueryBuffer[1].getDevicePointerAt(dataStartIndex)),
+                        reinterpret_cast<float*>(trainTargetBuffer[1].getDevicePointerAt(dataStartIndex)),
+                        batchSize);
+                    dataStartIndex += batchSize;
+                }
+            }
+            curGPUTimer.train.stop(cuStream);
         }
 
         // JP:
         // EN:
-        // Permute Training Data
+        if (bufferTypeToDisplay == shared::BufferToDisplay::DirectlyVisualizedPrediction) {
+            gpuEnv.pipeline.setRayGenerationProgram(gpuEnv.visualizePredictionRayGenProgram);
+            gpuEnv.pipeline.launch(cuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);
 
-        // JP:
-        // EN:
-        // Train Neural Network
+            neuralRadianceCache.infer(
+                cuStream,
+                reinterpret_cast<float*>(inferenceRadianceQueryBuffer.getDevicePointer()),
+                renderTargetSizeX * renderTargetSizeY,
+                reinterpret_cast<float*>(inferredRadianceBuffer.getDevicePointer()));
+
+            gpuEnv.kernelVisualizeInferredRadianceValues(
+                cuStream,
+                gpuEnv.kernelVisualizeInferredRadianceValues.calcGridDim(renderTargetSizeX * renderTargetSizeY));
+        }
 
         // JP: 結果をリニアバッファーにコピーする。(法線の正規化も行う。)
         // EN: Copy the results to the linear buffers (and normalize normals).
@@ -1858,6 +2046,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         void* bufferToDisplay = nullptr;
         switch (bufferTypeToDisplay) {
         case shared::BufferToDisplay::NoisyBeauty:
+        case shared::BufferToDisplay::DirectlyVisualizedPrediction:
             bufferToDisplay = linearBeautyBuffer.getDevicePointer();
             break;
         case shared::BufferToDisplay::Albedo:
@@ -1878,13 +2067,11 @@ int32_t main(int32_t argc, const char* argv[]) try {
         }
         kernelVisualizeToOutputBuffer(
             cuStream, kernelVisualizeToOutputBuffer.calcGridDim(renderTargetSizeX, renderTargetSizeY),
-            staticPlp.GBuffer0[bufferIndex],
-            bufferToDisplay,
-            bufferTypeToDisplay,
+            visualizeTrainingPath,
+            bufferToDisplay, bufferTypeToDisplay,
             std::pow(10.0f, brightness),
             0.5f, std::pow(10.0f, motionVectorScale),
-            outputBufferSurfaceHolder.getNext(),
-            uint2(renderTargetSizeX, renderTargetSizeY));
+            outputBufferSurfaceHolder.getNext());
 
         outputBufferSurfaceHolder.endCUDAAccess(cuStream);
 
@@ -1897,6 +2084,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         // EN: Copy the OptiX rendering results to the display render target.
 
         if (bufferTypeToDisplay == shared::BufferToDisplay::NoisyBeauty ||
+            bufferTypeToDisplay == shared::BufferToDisplay::DirectlyVisualizedPrediction ||
             bufferTypeToDisplay == shared::BufferToDisplay::DenoisedBeauty) {
             glEnable(GL_FRAMEBUFFER_SRGB);
             ImGui::GetStyle() = guiStyleWithGamma;

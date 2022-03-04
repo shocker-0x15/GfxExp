@@ -9,6 +9,6 @@ out vec4 color;
 
 void main(void) {
     vec2 srcPixel = gl_FragCoord.xy;
-    srcPixel.y = imageSize.y - 1 - srcPixel.y;
+    srcPixel.y = imageSize.y - srcPixel.y;
     color = vec4(texelFetch(srcTexture, ivec2(srcPixel), 0).xyz, 1.0f);
 }
