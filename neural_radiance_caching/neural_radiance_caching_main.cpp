@@ -1,5 +1,59 @@
 ﻿/*
 
+コマンドラインオプション例 / Command line option example:
+You can load a 3D model for example by downloading from the internet.
+(e.g. https://casual-effects.com/data/)
+
+(1) -cam-pos 7.534, -0.067, -1.612 -cam-yaw -61
+    -name scene -obj ZeroDay_v1/MEASURE_SEVEN/MEASURE_SEVEN_COLORED_LIGHTS.fbx 1.0 simple_pbr -brightness 2.0
+    -inst scene
+
+    * Zero-Day from Open Research Content Archive (ORCA)
+      https://developer.nvidia.com/orca/beeple-zero-day
+
+(2) -cam-pos -9.5 5 0 -cam-yaw 90
+    -name sponza -obj crytek_sponza/sponza.obj 0.01 trad
+    -name rectlight -emittance 600 600 600 -rectangle 1 1 -begin-pos 0 15 0 -inst rectlight
+    -name rectlight0 -emittance 600 0 0 -rectangle 1 1
+    -name rectlight1 -emittance 0 600 0 -rectangle 1 1
+    -name rectlight2 -emittance 0 0 600 -rectangle 1 1
+    -name rectlight3 -emittance 100 100 100 -rectangle 1 1
+    -begin-pos 0 0 0.36125 -inst sponza
+    -begin-pos -5 13.1 0 -end-pos 5 13.1 0 -freq 5 -time 0.0 -inst rectlight0
+    -begin-pos -5 13 0 -end-pos 5 13 0 -freq 10 -time 2.5 -inst rectlight1
+    -begin-pos -5 12.9 0 -end-pos 5 12.9 0 -freq 15 -time 7.5 -inst rectlight2
+    -begin-pos -5 7 -4.8 -begin-pitch -30 -end-pos 5 7 -4.8 -end-pitch -30 -freq 5 -inst rectlight3
+    -begin-pos 5 7 4.8 -begin-pitch 30 -end-pos -5 7 4.8 -end-pitch 30 -freq 5 -inst rectlight3
+
+JP: このプログラムはNeural Radiance Caching (NRC) [1]の実装例です。
+    NRCでは位置や出射方向、物体表面のパラメターを入力、輝度を出力とするニューラルネットワークによる
+    Radiance Cacheをトレーニングします。レンダリング時にはパストレーシングによって経路を構築しますが、
+    ある経路長より先から得られる寄与をキャッシュからのクエリーによって置き換えることで
+    少しのバイアスと引き換えに低い分散の推定値を得ることができます。
+    また、パスの広がりに基づいて早期にパストレーシングの経路を終了、
+    キャッシュからのクエリーによって補完とすることでシーンによっては1フレームの時間も短くなります。
+    ニューラルネットワーク部分にはtiny-cuda-nn [2]というライブラリーを使用しています。
+    ※デフォルトではBRDFにOptiXのCallable ProgramやCUDAの関数ポインターを使用した汎用的な実装になっており、
+      性能上のオーバーヘッドが著しいため、純粋な性能を見る上では restir_shared.h の USE_HARD_CODED_BSDF_FUNCTIONS
+      を有効化したほうがよいかもしれません。
+
+EN: This program is an example implementation of Neural Radiance Caching (NRC) [1].
+    NRC trains a neural network where inputs are a position and a outgoing direction, surface parameters,
+    and the output is radiance. It constructs paths based on path tracing when rendering, but
+    replaces contributions given from beyond a certain path length by a query to the cache.
+    This achieves low variance estimates at the cost of a little bias.
+    Additionally, one frame time can even be reduced depending on a scene by early exiting a path of path tracing
+    based on spread of the path and complementing by a query to the cache.
+    This program uses tiny-cuda-nn [2] for the neural network part.
+    * The program is generic implementation with OptiX's callable program and CUDA's function pointer,
+      and has significant performance overhead, therefore it may be recommended to enable USE_HARD_CODED_BSDF_FUNCTIONS
+      in restir_shared.h to see pure performance.
+
+[1] Real-time Neural Radiance Caching for Path Tracing
+    https://research.nvidia.com/publication/2021-06_Real-time-Neural-Radiance
+[2] Tiny CUDA Neural Networks
+    https://github.com/NVlabs/tiny-cuda-nn
+
 */
 
 #include "neural_radiance_caching_shared.h"
