@@ -185,7 +185,7 @@ struct GPUEnvironment {
 
         optixContext.destroy();
 
-        CUDADRV_CHECK(cuCtxDestroy(cuContext));
+        //CUDADRV_CHECK(cuCtxDestroy(cuContext));
     }
 };
 
@@ -894,8 +894,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
 
     // ----------------------------------------------------------------
-    // JP:
-    // EN:
+    // JP: NRCの訓練データなどに関わるバッファーを初期化する。
+    // EN: Initialize NRC training-related buffers.
 
     const uint32_t maxNumTrainingSuffixes = renderTargetSizeX * renderTargetSizeY / 16;
     
@@ -942,7 +942,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
     NeuralRadianceCache neuralRadianceCache;
     neuralRadianceCache.initialize();
 
-    // END:
+    // END: Initialize NRC training-related buffers.
     // ----------------------------------------------------------------
 
 
@@ -1497,6 +1497,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
         bool resetAccumulation = false;
         
         // Camera Window
+        static shared::BufferToDisplay bufferTypeToDisplay = shared::BufferToDisplay::NoisyBeauty;
+        static bool applyGammaCorrection = true;
         static float brightness = g_initBrightness;
         static bool enableEnvLight = true;
         static float log10EnvLightPowerCoeff = 0.0f;
@@ -1528,7 +1530,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
                     0, 0, 0, renderTargetSizeX, renderTargetSizeY, 1,
                     GL_RGBA, GL_FLOAT, sizeof(float4) * renderTargetSizeX * renderTargetSizeY, rawImage);
                 saveImage("output.png", renderTargetSizeX, renderTargetSizeY, rawImage,
-                          false, true);
+                          false, applyGammaCorrection);
                 delete[] rawImage;
             }
 
@@ -1544,7 +1546,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
         }
 
         static bool useTemporalDenosier = true;
-        static shared::BufferToDisplay bufferTypeToDisplay = shared::BufferToDisplay::NoisyBeauty;
         static float motionVectorScale = -1.0f;
         static bool animate = /*true*/false;
         static bool enableAccumulation = /*true*/false;
@@ -1614,6 +1615,13 @@ int32_t main(int32_t argc, const char* argv[]) try {
                         train = false;
                         stepTrain = true;
                     }
+                    ImGui::SameLine();
+                    if (ImGui::Button("Reset")) {
+                        neuralRadianceCache.finalize();
+                        neuralRadianceCache.initialize();
+                        train = false;
+                        stepTrain = true;
+                    }
 
                     ImGui::PushID("Debug Switches");
                     for (int i = lengthof(debugSwitches) - 1; i >= 0; --i) {
@@ -1640,6 +1648,11 @@ int32_t main(int32_t argc, const char* argv[]) try {
                     ImGui::RadioButtonE("Directly Visualized Prediction", &bufferTypeToDisplay, shared::BufferToDisplay::DirectlyVisualizedPrediction);
                     ImGui::RadioButtonE(
                         "Denoised Beauty", &bufferTypeToDisplay, shared::BufferToDisplay::DenoisedBeauty);
+
+                    applyGammaCorrection =
+                        bufferTypeToDisplay == shared::BufferToDisplay::NoisyBeauty ||
+                        bufferTypeToDisplay == shared::BufferToDisplay::DirectlyVisualizedPrediction ||
+                        bufferTypeToDisplay == shared::BufferToDisplay::DenoisedBeauty;
 
                     if (ImGui::Checkbox("Temporal Denoiser", &useTemporalDenosier)) {
                         CUDADRV_CHECK(cuStreamSynchronize(cuStream));
@@ -1815,83 +1828,28 @@ int32_t main(int32_t argc, const char* argv[]) try {
         gpuEnv.pipeline.launch(cuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);
         curGPUTimer.setupGBuffers.stop(cuStream);
 
-        static bool enableDebug = DEBUG_SELECT(true, false);
-
-        // JP:
-        // EN:
+        // JP: タイルサイズのアップデートやTraining Suffixの終端情報初期化などを行う。
+        // EN: Perform update of the tile size and initialization of training suffixes and so on.
         curGPUTimer.preprocessNRC.start(cuStream);
         gpuEnv.kernelPreprocessNRC(
             cuStream, gpuEnv.kernelPreprocessNRC.calcGridDim(maxNumTrainingSuffixes),
             perFrameRng(), perFrameRng(), newSequence);
         curGPUTimer.preprocessNRC.stop(cuStream);
-        if (enableDebug) {
-            CUDADRV_CHECK(cuStreamSynchronize(cuStream));
-            std::vector<shared::TrainingSuffixTerminalInfo> terminalInfo = trainSuffixTerminalInfoBuffer;
 
-            uint2 tileSize;
-            CUDADRV_CHECK(cuMemcpyDtoH(
-                &tileSize, tileSizeOnDevice, sizeof(tileSize)));
-            uint32_t numTrainingData;
-            CUDADRV_CHECK(cuMemcpyDtoH(
-                &numTrainingData, numTrainingDataOnDevice, sizeof(numTrainingData)));
-            uint32_t offsetToSelectUnbiasedTile;
-            CUDADRV_CHECK(cuMemcpyDtoH(
-                &offsetToSelectUnbiasedTile, offsetToSelectUnbiasedTileOnDevice,
-                sizeof(offsetToSelectUnbiasedTile)));
-            uint32_t offsetToSelectTrainingPath;
-            CUDADRV_CHECK(cuMemcpyDtoH(
-                &offsetToSelectTrainingPath, offsetToSelectTrainingPathOnDevice,
-                sizeof(offsetToSelectTrainingPath)));
-
-            printf("");
-        }
-
-        // JP: 
-        // EN: 
+        // JP: パストレースを行い、Rendering Pathと訓練データの生成を行う。
+        // EN: Path trace to generate rendering paths and training data.
         curGPUTimer.pathTrace.start(cuStream);
         CUDADRV_CHECK(cuMemcpyHtoDAsync(plpOnDevice, &plp, sizeof(plp), cuStream));
         gpuEnv.pipeline.setRayGenerationProgram(gpuEnv.pathTraceRayGenProgram);
         gpuEnv.pipeline.launch(cuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);
         curGPUTimer.pathTrace.stop(cuStream);
-        if (enableDebug) {
-            CUDADRV_CHECK(cuStreamSynchronize(cuStream));
-
-            uint32_t numTrainingData;
-            CUDADRV_CHECK(cuMemcpyDtoH(
-                &numTrainingData, numTrainingDataOnDevice, sizeof(numTrainingData)));
-            std::vector<shared::RadianceQuery> inferenceRadianceQueries = inferenceRadianceQueryBuffer;
-            std::vector<shared::TerminalInfo> inferenceTerminalInfos = inferenceTerminalInfoBuffer;
-            std::vector<float3> perFrameContributions = perFrameContributionBuffer;
-
-            std::vector<shared::RadianceQuery> trainRadianceQueries = trainRadianceQueryBuffer[0];
-            std::vector<float3> trainTargets = trainTargetBuffer[0];
-            std::vector<shared::TrainingVertexInfo> trainVertexInfos = trainVertexInfoBuffer;
-            std::vector<shared::TrainingSuffixTerminalInfo> trainSuffixTerminalInfos = trainSuffixTerminalInfoBuffer;
-
-            for (auto it : trainSuffixTerminalInfos)
-                if (it.prevVertexDataIndex != shared::invalidVertexDataIndex &&
-                    it.prevVertexDataIndex >= shared::trainBufferSize)
-                    printf("");
-
-            uint32_t numPixelsOfUnbiasedTile = 0;
-            uint32_t numTrainingPaths = 0;
-            for (int y = 0; y < renderTargetSizeY; ++y) {
-                for (int x = 0; x < renderTargetSizeX; ++x) {
-                    const shared::TerminalInfo &terminalInfo = inferenceTerminalInfos[y * renderTargetSizeX + x];
-                    if (terminalInfo.isUnbiasedTile)
-                        ++numPixelsOfUnbiasedTile;
-                    if (terminalInfo.isTrainingPixel)
-                        ++numTrainingPaths;
-                }
-            }
-
-            printf("");
-        }
 
         // JP: CUDAではdispatchIndirectのような動的なディスパッチサイズの指定が
         //     サポートされていないので仕方なくGPUと同期して訓練データ数などを取得する。
         //     実際のリアルタイムレンダリング実装の場合は動的なディスパッチサイズ指定を行う必要がある。
-        // EN:
+        // EN: CUDA does not support dynamic dispatch size like dispatchIndirect,
+        //     so it has no choice but to synchronize with the GPU to obtain the number of training data and so on.
+        //     Practical real-time rendering implementation requires dynamic dispatch size specification.
         uint32_t numTrainingData;
         CUDADRV_CHECK(cuMemcpyDtoH(&numTrainingData, numTrainingDataOnDevice, sizeof(numTrainingData)));
         uint2 tileSize;
@@ -1901,8 +1859,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
         //printf("numTrainingData: %u, TileSize: %u x %u\n",
         //       numTrainingData, tileSize.x, tileSize.y);
 
-        // JP:
-        // EN:
+        // JP: Rendering PathとTraining Suffixの終端の輝度を推定する。
+        // EN: Predict radiance values at the terminals of rendering paths and training suffixes.
         curGPUTimer.infer.start(cuStream);
         neuralRadianceCache.infer(
             cuStream,
@@ -1910,15 +1868,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
             numInferenceQueries,
             reinterpret_cast<float*>(inferredRadianceBuffer.getDevicePointer()));
         curGPUTimer.infer.stop(cuStream);
-        if (enableDebug) {
-            CUDADRV_CHECK(cuStreamSynchronize(cuStream));
-            std::vector<float3> inferredRadianceValues = inferredRadianceBuffer;
 
-            printf("");
-        }
-
-        // JP:
-        // EN:
+        // JP: 各ピクセルに推定した輝度を加算する。
+        // EN: Accumulate the predicted radiance values to the pixels.
         curGPUTimer.accumulateInferredRadiances.start(cuStream);
         gpuEnv.kernelAccumulateInferredRadianceValues(
             cuStream,
@@ -1926,56 +1878,33 @@ int32_t main(int32_t argc, const char* argv[]) try {
         curGPUTimer.accumulateInferredRadiances.stop(cuStream);
 
         if (train || stepTrain) {
-            // JP:
-            // EN:
+            // JP: Training Suffixの終端から輝度を伝播させてTraining Vertexのデータを完成させる。
+            // EN: Propagate the radiance values from the terminals of training suffixes to
+            //     complete training vertex data.
             curGPUTimer.propagateRadiances.start(cuStream);
             gpuEnv.kernelPropagateRadianceValues(
                 cuStream, gpuEnv.kernelPropagateRadianceValues.calcGridDim(maxNumTrainingSuffixes));
             curGPUTimer.propagateRadiances.stop(cuStream);
-            if (enableDebug) {
-                CUDADRV_CHECK(cuStreamSynchronize(cuStream));
-                std::vector<float3> trainTargets = trainTargetBuffer[0];
 
-                printf("");
-            }
-
-            // JP:
-            // EN:
+            // JP: 訓練データの空間的な相関を取り除くためにデータをシャッフルする。
+            // EN: Shuffle the training data to get rid of spatial correlations of the training data.
             curGPUTimer.shuffleTrainingData.start(cuStream);
             gpuEnv.kernelShuffleTrainingData(
                 cuStream, gpuEnv.kernelShuffleTrainingData.calcGridDim(shared::numTrainingDataPerFrame));
             curGPUTimer.shuffleTrainingData.stop(cuStream);
-            if (enableDebug) {
-                CUDADRV_CHECK(cuStreamSynchronize(cuStream));
-                std::vector<shared::RadianceQuery> trainRadianceQueries[2] = {
-                    trainRadianceQueryBuffer[0], trainRadianceQueryBuffer[1]
-                };
-                std::vector<float3> trainTargetValues[2] = {
-                    trainTargetBuffer[0], trainTargetBuffer[1]
-                };
 
-                uint32_t numValidQueries[2] = { 0, 0 };
-                for (int i = 0; i < shared::numTrainingDataPerFrame; ++i) {
-                    if (trainRadianceQueries[0][i].position != float3(0.0f))
-                        ++numValidQueries[0];
-                    if (trainRadianceQueries[1][i].position != float3(0.0f))
-                        ++numValidQueries[1];
-                }
-
-                printf("");
-            }
-
-            // JP:
-            // EN:
+            // JP: トレーニングの実行。
+            // EN: Perform training.
             curGPUTimer.train.start(cuStream);
             {
+                constexpr uint32_t batchSize = shared::numTrainingDataPerFrame / 4;
+                static_assert((batchSize & 0xFF) == 0, "Batch size has to be a multiple of 256.");
                 //const uint32_t targetBatchSize =
                 //    (std::min(numTrainingData, shared::numTrainingDataPerFrame) / 4 + 255) / 256 * 256;
                 uint32_t dataStartIndex = 0;
                 for (int step = 0; step < 4; ++step) {
                     //uint32_t batchSize = std::min(numTrainingData - dataStartIndex, targetBatchSize);
                     //batchSize = batchSize / 256 * 256;
-                    uint32_t batchSize = shared::numTrainingDataPerFrame / 4;
                     neuralRadianceCache.train(
                         cuStream,
                         reinterpret_cast<float*>(trainRadianceQueryBuffer[1].getDevicePointerAt(dataStartIndex)),
@@ -1987,8 +1916,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
             curGPUTimer.train.stop(cuStream);
         }
 
-        // JP:
-        // EN:
+        // JP: ニューラルネットワークの推定値を直接可視化する。
+        // EN: Directly visualize the predictions of the neural network.
         if (bufferTypeToDisplay == shared::BufferToDisplay::DirectlyVisualizedPrediction) {
             gpuEnv.pipeline.setRayGenerationProgram(gpuEnv.visualizePredictionRayGenProgram);
             gpuEnv.pipeline.launch(cuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);
@@ -2058,6 +1987,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
         case shared::BufferToDisplay::Flow:
             bufferToDisplay = linearFlowBuffer.getDevicePointer();
             break;
+        case shared::BufferToDisplay::RenderingPathLength:
+            break;
         case shared::BufferToDisplay::DenoisedBeauty:
             bufferToDisplay = linearDenoisedBeautyBuffer.getDevicePointer();
             break;
@@ -2083,9 +2014,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         // JP: OptiXによる描画結果を表示用レンダーターゲットにコピーする。
         // EN: Copy the OptiX rendering results to the display render target.
 
-        if (bufferTypeToDisplay == shared::BufferToDisplay::NoisyBeauty ||
-            bufferTypeToDisplay == shared::BufferToDisplay::DirectlyVisualizedPrediction ||
-            bufferTypeToDisplay == shared::BufferToDisplay::DenoisedBeauty) {
+        if (applyGammaCorrection) {
             glEnable(GL_FRAMEBUFFER_SRGB);
             ImGui::GetStyle() = guiStyleWithGamma;
         }
@@ -2150,6 +2079,19 @@ int32_t main(int32_t argc, const char* argv[]) try {
     denoiser.destroy();
     
     finalizeScreenRelatedBuffers();
+
+    neuralRadianceCache.finalize();
+    dataShufflerBuffer.finalize();
+    trainSuffixTerminalInfoBuffer.finalize();
+    trainVertexInfoBuffer.finalize();
+    for (int i = 1; i >= 0; --i) {
+        trainTargetBuffer[i].finalize();
+        trainRadianceQueryBuffer[i].finalize();
+    }
+    CUDADRV_CHECK(cuMemFree(offsetToSelectTrainingPathOnDevice));
+    CUDADRV_CHECK(cuMemFree(offsetToSelectUnbiasedTileOnDevice));
+    CUDADRV_CHECK(cuMemFree(tileSizeOnDevice));
+    CUDADRV_CHECK(cuMemFree(numTrainingDataOnDevice));
 
 
 

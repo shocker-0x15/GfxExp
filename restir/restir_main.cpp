@@ -1783,7 +1783,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
                                         Renderer::RearchitectedReSTIRBiased);
                     ImGui::RadioButtonE("Rearchitected ReSTIR (Unbiased)", &curRenderer,
                                         Renderer::RearchitectedReSTIRUnbiased);
-                    if (curRenderer != prevRenderer) {
+                    if (curRenderer != prevRenderer)
                         resetAccumulation = true;
 
                     if (curRenderer == Renderer::OriginalReSTIRBiased)

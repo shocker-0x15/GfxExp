@@ -49,6 +49,9 @@ https://research.nvidia.com/publication/2021-06_Real-time-Neural-Radiance
   - [ ] Use hash grid input encoding\
         https://nvlabs.github.io/instant-ngp/
 
+![example](neural_radiance_caching/comparison.jpg)
+Zero-Day from [Open Research Content Archive (ORCA)](https://developer.nvidia.com/orca/beeple-zero-day)
+
 ## その他 / Miscellaneous
 OptiX/CUDAのラッパーとして[OptiX Utility](https://github.com/shocker-0x15/OptiX_Utility)を使用しています。
 

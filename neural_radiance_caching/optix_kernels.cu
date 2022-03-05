@@ -275,56 +275,48 @@ CUDA_DEVICE_FUNCTION void createRadianceQuery(
 }
 
 static constexpr bool useSolidAngleSampling = false;
-static constexpr bool useImplicitLightSampling = true;
-static constexpr bool useExplicitLightSampling = true;
-static constexpr bool useMultipleImportanceSampling = useImplicitLightSampling && useExplicitLightSampling;
-static_assert(useImplicitLightSampling || useExplicitLightSampling, "Invalid configuration for light sampling.");
 
 CUDA_DEVICE_FUNCTION float3 performNextEventEstimation(
     const float3 &shadingPoint, const float3 &vOutLocal, const ReferenceFrame &shadingFrame, const BSDF &bsdf,
     PCG32RNG &rng) {
-    float3 ret = make_float3(0.0f);
-    if constexpr (useExplicitLightSampling) {
-        float uLight = rng.getFloat0cTo1o();
-        bool selectEnvLight = false;
-        float probToSampleCurLightType = 1.0f;
-        if (plp.s->envLightTexture && plp.f->enableEnvLight) {
-            if (uLight < probToSampleEnvLight) {
-                probToSampleCurLightType = probToSampleEnvLight;
-                uLight /= probToSampleCurLightType;
-                selectEnvLight = true;
-            }
-            else {
-                probToSampleCurLightType = 1.0f - probToSampleEnvLight;
-                uLight = (uLight - probToSampleEnvLight) / probToSampleCurLightType;
-            }
+    float uLight = rng.getFloat0cTo1o();
+    bool selectEnvLight = false;
+    float probToSampleCurLightType = 1.0f;
+    if (plp.s->envLightTexture && plp.f->enableEnvLight) {
+        if (uLight < probToSampleEnvLight) {
+            probToSampleCurLightType = probToSampleEnvLight;
+            uLight /= probToSampleCurLightType;
+            selectEnvLight = true;
         }
-        LightSample lightSample;
-        float areaPDensity;
-        sampleLight<useSolidAngleSampling>(
-            shadingPoint,
-            uLight, selectEnvLight, rng.getFloat0cTo1o(), rng.getFloat0cTo1o(),
-            &lightSample, &areaPDensity);
-        areaPDensity *= probToSampleCurLightType;
-        float misWeight = 1.0f;
-        if constexpr (useMultipleImportanceSampling) {
-            float3 shadowRay = lightSample.atInfinity ?
-                lightSample.position :
-                (lightSample.position - shadingPoint);
-            float dist2 = sqLength(shadowRay);
-            shadowRay /= std::sqrt(dist2);
-            float3 vInLocal = shadingFrame.toLocal(shadowRay);
-            float lpCos = std::fabs(dot(shadowRay, lightSample.normal));
-            float bsdfPDensity = bsdf.evaluatePDF(vOutLocal, vInLocal) * lpCos / dist2;
-            if (!isfinite(bsdfPDensity))
-                bsdfPDensity = 0.0f;
-            float lightPDensity = areaPDensity;
-            misWeight = pow2(lightPDensity) / (pow2(bsdfPDensity) + pow2(lightPDensity));
+        else {
+            probToSampleCurLightType = 1.0f - probToSampleEnvLight;
+            uLight = (uLight - probToSampleEnvLight) / probToSampleCurLightType;
         }
-        if (areaPDensity > 0.0f)
-            ret = performDirectLighting<true>(
-                shadingPoint, vOutLocal, shadingFrame, bsdf, lightSample) * (misWeight / areaPDensity);
     }
+    LightSample lightSample;
+    float areaPDensity;
+    sampleLight<useSolidAngleSampling>(
+        shadingPoint,
+        uLight, selectEnvLight, rng.getFloat0cTo1o(), rng.getFloat0cTo1o(),
+        &lightSample, &areaPDensity);
+    areaPDensity *= probToSampleCurLightType;
+
+    float3 shadowRay = lightSample.atInfinity ?
+        lightSample.position :
+        (lightSample.position - shadingPoint);
+    float dist2 = sqLength(shadowRay);
+    shadowRay /= std::sqrt(dist2);
+    float3 vInLocal = shadingFrame.toLocal(shadowRay);
+    float lpCos = std::fabs(dot(shadowRay, lightSample.normal));
+    float bsdfPDensity = bsdf.evaluatePDF(vOutLocal, vInLocal) * lpCos / dist2;
+    if (!isfinite(bsdfPDensity))
+        bsdfPDensity = 0.0f;
+    float lightPDensity = areaPDensity;
+    float misWeight = pow2(lightPDensity) / (pow2(bsdfPDensity) + pow2(lightPDensity));
+    float3 ret = make_float3(0.0f);
+    if (areaPDensity > 0.0f)
+        ret = performDirectLighting<true>(
+            shadingPoint, vOutLocal, shadingFrame, bsdf, lightSample) * (misWeight / areaPDensity);
 
     return ret;
 }
@@ -424,7 +416,7 @@ CUDA_DEVICE_FUNCTION void pathTrace_rayGen_generic() {
             vIn = shadingFrame.fromLocal(vInLocal);
 
             // JP: 訓練データエントリーの確保。
-            // EN: 
+            // EN: Allocate a training data entry.
             if (isTrainingPath) {
                 trainDataIndex = atomicAdd(plp.s->numTrainingData, 1u);
 
@@ -447,8 +439,12 @@ CUDA_DEVICE_FUNCTION void pathTrace_rayGen_generic() {
                     plp.s->trainVertexInfoBuffer[trainDataIndex] = vertInfo;
 
                     // JP: 現在の頂点に対する直接照明(NEE)によるScattered Radianceでターゲット値を初期化。
-                    // EN:
+                    // EN: Initialize a target value by scattered radiance at the current vertex
+                    //     by direct lighting (NEE).
                     plp.s->trainTargetBuffer[0][trainDataIndex] = directContNEE;
+                    //if (!allFinite(directContNEE))
+                    //    printf("NEE: (%g, %g, %g)\n",
+                    //           directContNEE.x, directContNEE.y, directContNEE.z);
                 }
                 else {
                     trainDataIndex = invalidVertexDataIndex;
@@ -487,19 +483,6 @@ CUDA_DEVICE_FUNCTION void pathTrace_rayGen_generic() {
             if (rwPayload.pathLength >= plp.f->maxPathLength)
                 rwPayload.maxLengthTerminate = true;
             rwPayload.terminate = true;
-            // JP: 経路長制限に到達したときに、implicit light samplingを使わない場合はClosest-hit program内
-            //     で行うことが無いので終了する。
-            // EN: Nothing to do in the closest-hit program when reaching the path length limit
-            //     in the case implicit light sampling is unused.
-            if constexpr (!useImplicitLightSampling) {
-                if (rwPayload.maxLengthTerminate)
-                    break;
-                // Russian roulette
-                float continueProb = std::fmin(sRGB_calcLuminance(rwPayload.alpha) / rwPayload.initImportance, 1.0f);
-                if (rwPayload.rng.getFloat0cTo1o() >= continueProb)
-                    break;
-                rwPayload.alpha /= continueProb;
-            }
 
             constexpr RayType pathTraceRayType = RayType_PathTrace;
             optixu::trace<PathTraceRayPayloadSignature>(
@@ -550,7 +533,7 @@ CUDA_DEVICE_FUNCTION void pathTrace_rayGen_generic() {
     //plp.s->inferenceRadianceQueryBuffer[linearIndex] = radQuery;
 
     // JP: 無限遠にレイが飛んだか、ロシアンルーレットによってパストレースが完了したケース。
-    // EN: 
+    // EN: When a ray goes infinity or the path ends with Russain roulette.
     if (!renderingPathEndsWithCache) {
         TerminalInfo terminalInfo;
         terminalInfo.alpha = make_float3(0.0f, 0.0f, 0.0f);
@@ -585,13 +568,11 @@ CUDA_DEVICE_FUNCTION void pathTrace_closestHit_generic() {
     float3 geometricNormalInWorld;
     float2 texCoord;
     float hypAreaPDensity;
-    computeSurfacePoint<useMultipleImportanceSampling, useSolidAngleSampling>(
+    computeSurfacePoint<true, useSolidAngleSampling>(
         inst, geomInst, hp.primIndex, hp.b1, hp.b2,
         rayOrigin,
         &positionInWorld, &shadingNormalInWorld, &texCoord0DirInWorld,
         &geometricNormalInWorld, &texCoord, &hypAreaPDensity);
-    if constexpr (!useMultipleImportanceSampling)
-        (void)hypAreaPDensity;
 
     const MaterialData &mat = plp.s->materialDataBuffer[geomInst.materialSlot];
 
@@ -608,48 +589,53 @@ CUDA_DEVICE_FUNCTION void pathTrace_closestHit_generic() {
     float dist2 = squaredDistance(rayOrigin, positionInWorld);
     rwPayload->curSqrtPathSpread += std::sqrt(dist2 / (rwPayload->prevDirPDensity * std::fabs(vOutLocal.z)));
 
-    if constexpr (useImplicitLightSampling) {
-        // Implicit Light Sampling
-        if (vOutLocal.z > 0 && mat.emittance) {
-            float4 texValue = tex2DLod<float4>(mat.emittance, texCoord.x, texCoord.y, 0.0f);
-            float3 emittance = make_float3(texValue);
-            float misWeight = 1.0f;
-            if constexpr (useMultipleImportanceSampling) {
-                float lightPDensity = hypAreaPDensity * dist2 / vOutLocal.z;
-                float bsdfPDensity = rwPayload->prevDirPDensity;
-                misWeight = pow2(bsdfPDensity) / (pow2(bsdfPDensity) + pow2(lightPDensity));
-            }
-            float3 directContImplicit = emittance * (misWeight / Pi);
-            rwPayload->contribution += rwPayload->alpha * directContImplicit;
+    // Implicit Light Sampling
+    if (vOutLocal.z > 0 && mat.emittance) {
+        float4 texValue = tex2DLod<float4>(mat.emittance, texCoord.x, texCoord.y, 0.0f);
+        float3 emittance = make_float3(texValue);
+        float lightPDensity = hypAreaPDensity * dist2 / vOutLocal.z;
+        float bsdfPDensity = rwPayload->prevDirPDensity;
+        float misWeight = pow2(bsdfPDensity) / (pow2(bsdfPDensity) + pow2(lightPDensity));
+        float3 directContImplicit = emittance * (misWeight / Pi);
+        rwPayload->contribution += rwPayload->alpha * directContImplicit;
 
-            // JP: 1つ前の頂点に対する直接照明(Implicit)によるScattered Radianceをターゲット値に加算。
-            // EN: 
-            if (rwPayload->isTrainingPath && rwPayload->prevTrainDataIndex != invalidVertexDataIndex) {
-                plp.s->trainTargetBuffer[0][rwPayload->prevTrainDataIndex] +=
-                    rwPayload->prevLocalThroughput * directContImplicit;
-            }
+        // JP: 1つ前の頂点に対する直接照明(Implicit)によるScattered Radianceをターゲット値に加算。
+        // EN: Accumulate scattered radiance at the previous vertex by direct lighting (implicit)
+        //     to the target value.
+        if (rwPayload->isTrainingPath && rwPayload->prevTrainDataIndex != invalidVertexDataIndex) {
+            plp.s->trainTargetBuffer[0][rwPayload->prevTrainDataIndex] +=
+                rwPayload->prevLocalThroughput * directContImplicit;
+            //if (!allFinite(rwPayload->prevLocalThroughput) ||
+            //    !allFinite(directContImplicit))
+            //    printf("Implicit: (%g, %g, %g), (%g, %g, %g)\n",
+            //           rwPayload->prevLocalThroughput.x,
+            //           rwPayload->prevLocalThroughput.y,
+            //           rwPayload->prevLocalThroughput.z,
+            //           directContImplicit.x,
+            //           directContImplicit.y,
+            //           directContImplicit.z);
         }
+    }
 
-        // Russian roulette
-        if (rwPayload->pathLength > 2) {
-            float continueProb = std::fmin(sRGB_calcLuminance(rwPayload->alpha) / rwPayload->initImportance, 1.0f);
-            if (rng.getFloat0cTo1o() >= continueProb || rwPayload->maxLengthTerminate)
-                return;
-            float recContinueProb = 1.0f / continueProb;
-            rwPayload->alpha *= recContinueProb;
-            if (rwPayload->isTrainingPath && rwPayload->prevTrainDataIndex != invalidVertexDataIndex)
-                plp.s->trainVertexInfoBuffer[rwPayload->prevTrainDataIndex].localThroughput *= recContinueProb;
-        }
+    // Russian roulette
+    if (!rwPayload->isTrainingPath || rwPayload->pathLength > 2) {
+        float continueProb = std::fmin(sRGB_calcLuminance(rwPayload->alpha) / rwPayload->initImportance, 1.0f);
+        if (rng.getFloat0cTo1o() >= continueProb || rwPayload->maxLengthTerminate)
+            return;
+        float recContinueProb = 1.0f / continueProb;
+        rwPayload->alpha *= recContinueProb;
+        if (rwPayload->isTrainingPath && rwPayload->prevTrainDataIndex != invalidVertexDataIndex)
+            plp.s->trainVertexInfoBuffer[rwPayload->prevTrainDataIndex].localThroughput *= recContinueProb;
     }
 
     BSDF bsdf;
     bsdf.setup(mat, texCoord);
 
-    // JP: 
+    // JP: Neural Radiance Cacheによる推定でパスを終了させる。
     // EN: Path termination into the neural radiance cache.
+    //     Always generate the training data for a secondary vertex to make the accuracy better.
     bool pathIsSpreadEnough =
         pow2(rwPayload->curSqrtPathSpread) > pathTerminationFactor * rwPayload->primaryPathSpread;
-    pathIsSpreadEnough &= rwPayload->pathLength > 2;
     bool isUnbiasedTrainingPath = rwPayload->isTrainingPath && rwPayload->isUnbiasedTrainingTile;
     if (pathIsSpreadEnough &&
         !(rwPayload->renderingPathEndsWithCache && isUnbiasedTrainingPath)) {
@@ -661,7 +647,7 @@ CUDA_DEVICE_FUNCTION void pathTrace_closestHit_generic() {
             &diffuseReflectance, &specularReflectance, &roughness);
 
         // JP: Radianceクエリーのための情報を記録する。
-        // EN: 
+        // EN: Store information for radiance query.
         RadianceQuery radQuery;
         createRadianceQuery(
             positionInWorld, shadingFrame.normal, vOut,
@@ -686,13 +672,14 @@ CUDA_DEVICE_FUNCTION void pathTrace_closestHit_generic() {
                 return;
         }
         else {
-            // JP: 訓練データを既に十分生成している場合は既に強制的にTraining Suffixは終了したことになっている。
+            // JP: 訓練データバッファーがフルの場合は既にTraining Suffixは終了したことになっている。
+            // EN: The training suffix should have been ended if the training data buffer is full.
             if (!rwPayload->trainingSuffixEndsWithCache) {
-                // JP: 
-                // EN: 
                 uint32_t offset = plp.s->imageSize.x * plp.s->imageSize.y;
                 plp.s->inferenceRadianceQueryBuffer[offset + rwPayload->linearTileIndex] = radQuery;
 
+                // JP: 直前のTraining VertexへのリンクとともにTraining Suffixを終了させる。
+                // EN: Finish the training suffix with the link to the previous training vertex.
                 TrainingSuffixTerminalInfo terminalInfo;
                 terminalInfo.prevVertexDataIndex = rwPayload->prevTrainDataIndex;
                 terminalInfo.hasQuery = true;
@@ -725,7 +712,7 @@ CUDA_DEVICE_FUNCTION void pathTrace_closestHit_generic() {
     rwPayload->terminate = false;
 
     // JP: 訓練データエントリーの確保。
-    // EN: 
+    // EN: Allocate a training data entry.
     if (rwPayload->isTrainingPath && !rwPayload->trainingSuffixEndsWithCache) {
         uint32_t trainDataIndex = atomicAdd(plp.s->numTrainingData, 1u);
 
@@ -745,20 +732,25 @@ CUDA_DEVICE_FUNCTION void pathTrace_closestHit_generic() {
         if (trainDataIndex < trainBufferSize) {
             plp.s->trainRadianceQueryBuffer[0][trainDataIndex] = radQuery;
 
+            // JP: ローカルスループットと前のTraining Vertexへのリンクを記録。
+            // EN: Record the local throughput and the link to the previous training vertex.
             TrainingVertexInfo vertInfo;
             vertInfo.localThroughput = localThroughput;
             vertInfo.prevVertexDataIndex = rwPayload->prevTrainDataIndex;
             plp.s->trainVertexInfoBuffer[trainDataIndex] = vertInfo;
 
             // JP: 現在の頂点に対する直接照明(NEE)によるScattered Radianceでターゲット値を初期化。
-            // EN:
+            // EN: Initialize a target value by scattered radiance at the current vertex by direct lighting (NEE).
             plp.s->trainTargetBuffer[0][trainDataIndex] = directContNEE;
+            //if (!allFinite(directContNEE))
+            //    printf("NEE: (%g, %g, %g)\n",
+            //           directContNEE.x, directContNEE.y, directContNEE.z);
 
             rwPayload->prevTrainDataIndex = trainDataIndex;
         }
+        // JP: 訓練データがバッファーを溢れた場合は強制的にTraining Suffixを終了させる。
+        // EN: Forcefully end the training suffix if the training data buffer become full.
         else {
-            // JP: 
-            // EN: 
             uint32_t offset = plp.s->imageSize.x * plp.s->imageSize.y;
             plp.s->inferenceRadianceQueryBuffer[offset + rwPayload->linearTileIndex] = radQuery;
 
@@ -781,41 +773,37 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(pathTrace)() {
 }
 
 CUDA_DEVICE_KERNEL void RT_MS_NAME(pathTrace)() {
-    if constexpr (useImplicitLightSampling) {
-        if (!plp.s->envLightTexture || !plp.f->enableEnvLight)
-            return;
+    if (!plp.s->envLightTexture || !plp.f->enableEnvLight)
+        return;
 
-        PathTraceReadWritePayload* rwPayload;
-        PathTraceRayPayloadSignature::get(nullptr, &rwPayload);
+    PathTraceReadWritePayload* rwPayload;
+    PathTraceRayPayloadSignature::get(nullptr, &rwPayload);
 
-        float3 rayDir = normalize(optixGetWorldRayDirection());
-        float posPhi, theta;
-        toPolarYUp(rayDir, &posPhi, &theta);
+    float3 rayDir = normalize(optixGetWorldRayDirection());
+    float posPhi, theta;
+    toPolarYUp(rayDir, &posPhi, &theta);
 
-        float phi = posPhi + plp.f->envLightRotation;
-        phi = phi - floorf(phi / (2 * Pi)) * 2 * Pi;
-        float2 texCoord = make_float2(phi / (2 * Pi), theta / Pi);
+    float phi = posPhi + plp.f->envLightRotation;
+    phi = phi - floorf(phi / (2 * Pi)) * 2 * Pi;
+    float2 texCoord = make_float2(phi / (2 * Pi), theta / Pi);
 
-        // Implicit Light Sampling
-        float4 texValue = tex2DLod<float4>(plp.s->envLightTexture, texCoord.x, texCoord.y, 0.0f);
-        float3 luminance = plp.f->envLightPowerCoeff * make_float3(texValue);
-        float misWeight = 1.0f;
-        if constexpr (useMultipleImportanceSampling) {
-            float uvPDF = plp.s->envLightImportanceMap.evaluatePDF(texCoord.x, texCoord.y);
-            float hypAreaPDensity = uvPDF / (2 * Pi * Pi * std::sin(theta));
-            float lightPDensity = probToSampleEnvLight * hypAreaPDensity;
-            float bsdfPDensity = rwPayload->prevDirPDensity;
-            misWeight = pow2(bsdfPDensity) / (pow2(bsdfPDensity) + pow2(lightPDensity));
-        }
-        float3 directContImplicit = misWeight * luminance;
-        rwPayload->contribution += rwPayload->alpha * directContImplicit;
+    // Implicit Light Sampling
+    float4 texValue = tex2DLod<float4>(plp.s->envLightTexture, texCoord.x, texCoord.y, 0.0f);
+    float3 luminance = plp.f->envLightPowerCoeff * make_float3(texValue);
+    float uvPDF = plp.s->envLightImportanceMap.evaluatePDF(texCoord.x, texCoord.y);
+    float hypAreaPDensity = uvPDF / (2 * Pi * Pi * std::sin(theta));
+    float lightPDensity = probToSampleEnvLight * hypAreaPDensity;
+    float bsdfPDensity = rwPayload->prevDirPDensity;
+    float misWeight = pow2(bsdfPDensity) / (pow2(bsdfPDensity) + pow2(lightPDensity));
+    float3 directContImplicit = misWeight * luminance;
+    rwPayload->contribution += rwPayload->alpha * directContImplicit;
 
-        // JP: 1つ前の頂点に対する直接照明(Implicit)によるScattered Radianceをターゲット値に加算。
-        // EN: 
-        if (rwPayload->isTrainingPath) {
-            plp.s->trainTargetBuffer[0][rwPayload->prevTrainDataIndex] +=
-                rwPayload->prevLocalThroughput * directContImplicit;
-        }
+    // JP: 1つ前の頂点に対する直接照明(Implicit)によるScattered Radianceをターゲット値に加算。
+    // EN: Accumulate scattered radiance at the previous vertex by direct lighting (implicit)
+    //     to the target value.
+    if (rwPayload->isTrainingPath) {
+        plp.s->trainTargetBuffer[0][rwPayload->prevTrainDataIndex] +=
+            rwPayload->prevLocalThroughput * directContImplicit;
     }
 }
 

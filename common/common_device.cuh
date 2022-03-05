@@ -244,7 +244,7 @@ public:
         m_reflectance(reflectance) {}
 
     CUDA_DEVICE_FUNCTION void getSurfaceParameters(
-        const uint32_t* data, float3* diffuseReflectance, float3* specularReflectance, float* roughness) const {
+        float3* diffuseReflectance, float3* specularReflectance, float* roughness) const {
         *diffuseReflectance = m_reflectance;
         *specularReflectance = make_float3(0.0f, 0.0f, 0.0f);
         *roughness = 1.0f;
@@ -415,7 +415,7 @@ public:
     }
 
     CUDA_DEVICE_FUNCTION void getSurfaceParameters(
-        const uint32_t* data, float3* diffuseReflectance, float3* specularReflectance, float* roughness) const {
+        float3* diffuseReflectance, float3* specularReflectance, float* roughness) const {
         *diffuseReflectance = m_diffuseColor;
         *specularReflectance = m_specularF0Color;
         *roughness = m_roughness;
@@ -451,6 +451,10 @@ public:
         float specularWeight = lerp(iSpecularF0, 1.0f, expectedOneMinusDotVH5);
 #endif
         float sumWeights = diffuseWeight + specularWeight;
+        if (sumWeights == 0.0f) {
+            *dirPDensity = 0.0f;
+            return make_float3(0.0f);
+        }
 
         float uComponent = uDir1;
 
@@ -604,6 +608,8 @@ public:
 #endif
 
         float sumWeights = diffuseWeight + specularWeight;
+        if (sumWeights == 0.0f)
+            return 0.0f;
 
         float diffuseDirPDF = dirL.z / Pi;
         float specularDirPDF = commonPDFTerm * ggx.evaluatePDF(dirV, m);
@@ -686,7 +692,7 @@ CUDA_DEVICE_FUNCTION void setupBSDFBody<SimplePBR_BRDF>(
     RT_CALLABLE_PROGRAM void RT_DC_NAME(BSDFType ## _getSurfaceParameters)(\
         const uint32_t* data, float3* diffuseReflectance, float3* specularReflectance, float* roughness) {\
         auto &bsdf = *reinterpret_cast<const BSDFType*>(data);\
-        return bsdf.getSurfaceParameters(data, diffuseReflectance, specularReflectance, roughness);\
+        return bsdf.getSurfaceParameters(diffuseReflectance, specularReflectance, roughness);\
     }\
     CUDA_DECLARE_CALLABLE_PROGRAM_POINTER(BSDFType ## _getSurfaceParameters);\
     RT_CALLABLE_PROGRAM float3 RT_DC_NAME(BSDFType ## _sampleThroughput)(\
