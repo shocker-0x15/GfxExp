@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 // Platform defines
 #if defined(_WIN32) || defined(_WIN64)
@@ -201,7 +201,7 @@ CUDA_DEVICE_FUNCTION uint32_t nthSetBit(uint32_t value, int32_t n) {
 
 #if !defined(__CUDA_ARCH__)
 // ----------------------------------------------------------------
-// JP: CUDA�r���g�C���ɑΉ�����^�E�֐����z�X�g���Œ�`���Ă����B
+// JP: CUDAビルトインに対応する型・関数をホスト側で定義しておく。
 // EN: Define types and functions on the host corresponding to CUDA built-ins.
 
 struct alignas(8) int2 {
@@ -955,7 +955,7 @@ struct Matrix4x4 {
     CUDA_DEVICE_FUNCTION void decompose(float3* retScale, float3* rotation, float3* translation) const {
         Matrix4x4 mat = *this;
 
-        // JP: �ړ�����
+        // JP: 移動成分
         // EN: Translation component
         if (translation)
             *translation = make_float3(mat.c3);
@@ -965,7 +965,7 @@ struct Matrix4x4 {
             length(make_float3(mat.c1)),
             length(make_float3(mat.c2)));
 
-        // JP: �g��k������
+        // JP: 拡大縮小成分
         // EN: Scale component
         if (retScale)
             *retScale = scale;
@@ -973,7 +973,7 @@ struct Matrix4x4 {
         if (!rotation)
             return;
 
-        // JP: ��L������r��
+        // JP: 上記成分を排除
         // EN: Remove the above components
         mat.c3 = make_float4(0, 0, 0, 1);
         if (std::fabs(scale.x) > 0)
@@ -983,18 +983,18 @@ struct Matrix4x4 {
         if (std::fabs(scale.z) > 0)
             mat.c2 /= scale.z;
 
-        // JP: ��]������XYZ�̏��ō���Ă���A�܂�ZYXp(p�͉��炩�̃x�N�g��)�Ɖ��肷��ƁA�s��͈ȉ��̌`�����Ƃ��Ă���ƍl������B
-        //     A, B, G�͂��ꂼ��X, Y, Z���ɑ΂����]�p�x�Bc��s��cos��sin�B
+        // JP: 回転成分がXYZの順で作られている、つまりZYXp(pは何らかのベクトル)と仮定すると、行列は以下の形式をとっていると考えられる。
+        //     A, B, GはそれぞれX, Y, Z軸に対する回転角度。cとsはcosとsin。
         //     cG * cB   -sG * cA + cG * sB * sA    sG * sA + cG * sB * cA
         //     sG * cB    cG * cA + sG * sB * sA   -cG * sA + sG * sB * cA
         //       -sB             cB * sA                   cB * cA
-        //     ���������āA3�s1�񐬕�����܂�Y���ɑ΂����]B�����܂�B
-        //     ���ɋ��߂�B���g���ĉ�]A, G�����܂�B���l���x���l������ƁAcB��0�̏ꍇ�͕ʂ̏������K�v�B
-        //     cB��0�̏ꍇ��sB��+-1(B��90�x�Ȃ��+�A-90�x�Ȃ��-)�Ȃ̂ŁA��̍s��͈ȉ��̂悤�ɂȂ�B
+        //     したがって、3行1列成分からまずY軸に対する回転Bが求まる。
+        //     次に求めたBを使って回転A, Gが求まる。数値精度を考慮すると、cBが0の場合は別の処理が必要。
+        //     cBが0の場合はsBは+-1(Bが90度ならば+、-90度ならば-)なので、上の行列は以下のようになる。
         //      0   -sG * cA +- cG * sA    sG * sA +- cG * cA
         //      0    cG * cA +- sG * sA   -cG * sA +- sG * cA
         //     -+1           0                     0
-        //     ���߂�B���g���Ă���ɋ��܂鐬�����Ȃ����߁AA��0�Ɖ��肷��B
+        //     求めたBを使ってさらに求まる成分がないため、Aを0と仮定する。
         // EN: 
         rotation->y = std::asin(-mat.c0.z);
         float cosBeta = std::cos(rotation->y);
@@ -1231,8 +1231,8 @@ struct AABB {
 
 
 
-// JP: Callable Program��֐��|�C���^�[�ɂ�铮�I�Ȋ֐��Ăяo����
-//     ���������ꍇ�̐��\���������ꍇ�ɂ��̃}�N����L��������B
+// JP: Callable Programや関数ポインターによる動的な関数呼び出しを
+//     無くした場合の性能を見たい場合にこのマクロを有効化する。
 // EN: Enable this switch when you want to see performance
 //     without dynamic function calls by callable programs or function pointers.
 //#define USE_HARD_CODED_BSDF_FUNCTIONS
