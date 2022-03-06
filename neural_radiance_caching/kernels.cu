@@ -112,26 +112,36 @@ CUDA_DEVICE_KERNEL void shuffleTrainingData() {
     static_assert((numTrainingDataPerFrame & (numTrainingDataPerFrame - 1)) == 0,
                    "The number of traing data is assumed to be the power of 2 here.");
     uint32_t dstIdx = shuffler.next() % numTrainingDataPerFrame;
-    const RadianceQuery &query = plp.s->trainRadianceQueryBuffer[0][linearIndex];
-    const float3 &targetValue = plp.s->trainTargetBuffer[0][linearIndex];
-    //if (linearIndex < *plp.s->numTrainingData) {
-    //    if (!allFinite(query.position) ||
-    //        !isfinite(query.normal_phi) || !isfinite(query.normal_theta) ||
-    //        !isfinite(query.vOut_phi) || !isfinite(query.vOut_theta) ||
-    //        !isfinite(query.roughness) ||
-    //        !allFinite(query.diffuseReflectance) ||
-    //        !allFinite(query.specularReflectance))
-    //        printf("p: (%g, %g, %g), n: (%g, %g), v: (%g, %g), "
-    //               "r: %g, d: (%g, %g, %g), s: (%g, %g, %g)\n",
-    //               query.position.x, query.position.y, query.position.z,
-    //               query.normal_phi, query.normal_theta,
-    //               query.vOut_phi, query.vOut_theta,
-    //               query.roughness,
-    //               query.diffuseReflectance.x, query.diffuseReflectance.y, query.diffuseReflectance.z,
-    //               query.specularReflectance.x, query.specularReflectance.y, query.specularReflectance.z);
-    //    if (!allFinite(targetValue))
-    //        printf("tgt: (%g, %g, %g)\n", targetValue.x, targetValue.y, targetValue.z);
-    //}
+    RadianceQuery query = plp.s->trainRadianceQueryBuffer[0][linearIndex];
+    float3 targetValue = plp.s->trainTargetBuffer[0][linearIndex];
+    if (linearIndex < *plp.s->numTrainingData) {
+        if (!allFinite(query.position) ||
+            !isfinite(query.normal_phi) || !isfinite(query.normal_theta) ||
+            !isfinite(query.vOut_phi) || !isfinite(query.vOut_theta) ||
+            !isfinite(query.roughness) ||
+            !allFinite(query.diffuseReflectance) ||
+            !allFinite(query.specularReflectance)) {
+            printf("p: (%g, %g, %g), n: (%g, %g), v: (%g, %g), "
+                   "r: %g, d: (%g, %g, %g), s: (%g, %g, %g)\n",
+                   query.position.x, query.position.y, query.position.z,
+                   query.normal_phi, query.normal_theta,
+                   query.vOut_phi, query.vOut_theta,
+                   query.roughness,
+                   query.diffuseReflectance.x, query.diffuseReflectance.y, query.diffuseReflectance.z,
+                   query.specularReflectance.x, query.specularReflectance.y, query.specularReflectance.z);
+            query.position = make_float3(0.0f);
+            query.normal_phi = 0.0f;
+            query.normal_theta = 0.0f;
+            query.vOut_phi = 0.0f;
+            query.vOut_theta = 0.0f;
+            query.roughness = 0.0f;
+            query.diffuseReflectance = query.specularReflectance = make_float3(0.0f);
+        }
+        if (!allFinite(targetValue)) {
+            printf("tgt: (%g, %g, %g)\n", targetValue.x, targetValue.y, targetValue.z);
+            targetValue = make_float3(0.0f);
+        }
+    }
     plp.s->trainRadianceQueryBuffer[1][dstIdx] = query;
     plp.s->trainTargetBuffer[1][dstIdx] = targetValue;
 }

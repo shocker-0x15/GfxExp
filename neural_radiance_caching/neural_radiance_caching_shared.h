@@ -12,7 +12,8 @@ namespace shared {
 
     enum RayType {
         RayType_Primary = 0,
-        RayType_PathTrace,
+        RayType_PathTraceBaseline,
+        RayType_PathTraceNRC,
         RayType_Visibility,
         NumRayTypes
     };
@@ -156,7 +157,23 @@ namespace shared {
         float3 nextDirection;
     };
 
-    struct PathTraceReadWritePayload {
+    template <bool useNRC>
+    struct PathTraceReadWritePayload;
+
+    template <>
+    struct PathTraceReadWritePayload<false> {
+        PCG32RNG rng;
+        float initImportance;
+        float3 alpha;
+        float3 contribution;
+        float prevDirPDensity;
+        unsigned int maxLengthTerminate : 1;
+        unsigned int terminate : 1;
+        unsigned int pathLength : 6;
+    };
+
+    template <>
+    struct PathTraceReadWritePayload<true> {
         PCG32RNG rng;
         float initImportance;
         float3 alpha;
@@ -268,8 +285,9 @@ namespace shared {
 
     using PrimaryRayPayloadSignature =
         optixu::PayloadSignature<shared::HitPointParams*, shared::PickInfo*>;
+    template <bool useNRC>
     using PathTraceRayPayloadSignature =
-        optixu::PayloadSignature<shared::PathTraceWriteOnlyPayload*, shared::PathTraceReadWritePayload*>;
+        optixu::PayloadSignature<shared::PathTraceWriteOnlyPayload*, shared::PathTraceReadWritePayload<useNRC>*>;
     using VisibilityRayPayloadSignature =
         optixu::PayloadSignature<float>;
 }

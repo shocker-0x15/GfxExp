@@ -10,6 +10,8 @@ You can load a 3D model for example by downloading from the internet.
 
     * Zero-Day from Open Research Content Archive (ORCA)
       https://developer.nvidia.com/orca/beeple-zero-day
+    * JP: ネットワークが安定するまでに少し待つ必要があるかもしれません(要改善)。
+      EN: You may need to wait a bit for the network to become stable (needs improvement).
 
 (2) -cam-pos -9.5 5 0 -cam-yaw 90
     -name sponza -obj crytek_sponza/sponza.obj 0.01 trad
@@ -33,6 +35,7 @@ JP: このプログラムはNeural Radiance Caching (NRC) [1]の実装例です�
     また、パスの広がりに基づいて早期にパストレーシングの経路を終了、
     キャッシュからのクエリーによって補完とすることでシーンによっては1フレームの時間も短くなります。
     ニューラルネットワーク部分にはtiny-cuda-nn [2]というライブラリーを使用しています。
+    ※このサンプルをビルドするにはtiny-cuda-nnを予めビルドしておく必要があります。
     ※デフォルトではBRDFにOptiXのCallable ProgramやCUDAの関数ポインターを使用した汎用的な実装になっており、
       性能上のオーバーヘッドが著しいため、純粋な性能を見る上では restir_shared.h の USE_HARD_CODED_BSDF_FUNCTIONS
       を有効化したほうがよいかもしれません。
@@ -45,6 +48,7 @@ EN: This program is an example implementation of Neural Radiance Caching (NRC) [
     Additionally, one frame time can even be reduced depending on a scene by early exiting a path of path tracing
     based on spread of the path and complementing by a query to the cache.
     This program uses tiny-cuda-nn [2] for the neural network part.
+    * Build tiny-cuda-nn first before building this sample.
     * The program is generic implementation with OptiX's callable program and CUDA's function pointer,
       and has significant performance overhead, therefore it may be recommended to enable USE_HARD_CODED_BSDF_FUNCTIONS
       in restir_shared.h to see pure performance.
@@ -89,9 +93,12 @@ struct GPUEnvironment {
     optixu::ProgramGroup setupGBuffersHitProgramGroup;
     optixu::ProgramGroup setupGBuffersMissProgram;
 
-    optixu::ProgramGroup pathTraceRayGenProgram;
-    optixu::ProgramGroup pathTraceMissProgram;
-    optixu::ProgramGroup pathTraceHitProgramGroup;
+    optixu::ProgramGroup pathTraceBaselineRayGenProgram;
+    optixu::ProgramGroup pathTraceBaselineMissProgram;
+    optixu::ProgramGroup pathTraceBaselineHitProgramGroup;
+    optixu::ProgramGroup pathTraceNRCRayGenProgram;
+    optixu::ProgramGroup pathTraceNRCMissProgram;
+    optixu::ProgramGroup pathTraceNRCHitProgramGroup;
     optixu::ProgramGroup visibilityHitProgramGroup;
     optixu::ProgramGroup visualizePredictionRayGenProgram;
     std::vector<optixu::ProgramGroup> callablePrograms;
@@ -135,7 +142,8 @@ struct GPUEnvironment {
             std::max({
                 shared::PrimaryRayPayloadSignature::numDwords,
                 shared::VisibilityRayPayloadSignature::numDwords,
-                shared::PathTraceRayPayloadSignature::numDwords
+                shared::PathTraceRayPayloadSignature<false>::numDwords,
+                shared::PathTraceRayPayloadSignature<true>::numDwords
                      }),
             optixu::calcSumDwords<float2>(),
             "plp", sizeof(shared::PipelineLaunchParameters),
@@ -163,12 +171,20 @@ struct GPUEnvironment {
         setupGBuffersMissProgram = pipeline.createMissProgram(
             mainModule, RT_MS_NAME_STR("setupGBuffers"));
 
-        pathTraceRayGenProgram = pipeline.createRayGenProgram(
-            mainModule, RT_RG_NAME_STR("pathTrace"));
-        pathTraceMissProgram = pipeline.createMissProgram(
-            mainModule, RT_MS_NAME_STR("pathTrace"));
-        pathTraceHitProgramGroup = pipeline.createHitProgramGroupForTriangleIS(
-            mainModule, RT_CH_NAME_STR("pathTrace"),
+        pathTraceBaselineRayGenProgram = pipeline.createRayGenProgram(
+            mainModule, RT_RG_NAME_STR("pathTraceBaseline"));
+        pathTraceBaselineMissProgram = pipeline.createMissProgram(
+            mainModule, RT_MS_NAME_STR("pathTraceBaseline"));
+        pathTraceBaselineHitProgramGroup = pipeline.createHitProgramGroupForTriangleIS(
+            mainModule, RT_CH_NAME_STR("pathTraceBaseline"),
+            emptyModule, nullptr);
+
+        pathTraceNRCRayGenProgram = pipeline.createRayGenProgram(
+            mainModule, RT_RG_NAME_STR("pathTraceNRC"));
+        pathTraceNRCMissProgram = pipeline.createMissProgram(
+            mainModule, RT_MS_NAME_STR("pathTraceNRC"));
+        pathTraceNRCHitProgramGroup = pipeline.createHitProgramGroupForTriangleIS(
+            mainModule, RT_CH_NAME_STR("pathTraceNRC"),
             emptyModule, nullptr);
 
         visibilityHitProgramGroup = pipeline.createHitProgramGroupForTriangleIS(
@@ -185,7 +201,8 @@ struct GPUEnvironment {
         //pipeline.setExceptionProgram(exceptionProgram);
         pipeline.setNumMissRayTypes(shared::NumRayTypes);
         pipeline.setMissProgram(shared::RayType_Primary, setupGBuffersMissProgram);
-        pipeline.setMissProgram(shared::RayType_PathTrace, pathTraceMissProgram);
+        pipeline.setMissProgram(shared::RayType_PathTraceBaseline, pathTraceBaselineMissProgram);
+        pipeline.setMissProgram(shared::RayType_PathTraceNRC, pathTraceNRCMissProgram);
         pipeline.setMissProgram(shared::RayType_Visibility, emptyMissProgram);
 
         pipeline.setNumCallablePrograms(NumCallablePrograms);
@@ -204,7 +221,8 @@ struct GPUEnvironment {
 
         optixDefaultMaterial = optixContext.createMaterial();
         optixDefaultMaterial.setHitGroup(shared::RayType_Primary, setupGBuffersHitProgramGroup);
-        optixDefaultMaterial.setHitGroup(shared::RayType_PathTrace, pathTraceHitProgramGroup);
+        optixDefaultMaterial.setHitGroup(shared::RayType_PathTraceBaseline, pathTraceBaselineHitProgramGroup);
+        optixDefaultMaterial.setHitGroup(shared::RayType_PathTraceNRC, pathTraceNRCHitProgramGroup);
         optixDefaultMaterial.setHitGroup(shared::RayType_Visibility, visibilityHitProgramGroup);
 
 
@@ -224,9 +242,12 @@ struct GPUEnvironment {
         for (int i = 0; i < NumCallablePrograms; ++i)
             callablePrograms[i].destroy();
         visibilityHitProgramGroup.destroy();
-        pathTraceHitProgramGroup.destroy();
-        pathTraceMissProgram.destroy();
-        pathTraceRayGenProgram.destroy();
+        pathTraceNRCHitProgramGroup.destroy();
+        pathTraceNRCMissProgram.destroy();
+        pathTraceNRCRayGenProgram.destroy();
+        pathTraceBaselineHitProgramGroup.destroy();
+        pathTraceBaselineMissProgram.destroy();
+        pathTraceBaselineRayGenProgram.destroy();
         setupGBuffersMissProgram.destroy();
         setupGBuffersHitProgramGroup.destroy();
         setupGBuffersRayGenProgram.destroy();
@@ -1608,6 +1629,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         static bool enableBumpMapping = false;
         bool lastFrameWasAnimated = false;
         static int32_t maxPathLength = 5;
+        static bool useNRC = true;
         static bool visualizeTrainingPath = false;
         static bool train = true;
         bool stepTrain = false;
@@ -1662,19 +1684,28 @@ int32_t main(int32_t argc, const char* argv[]) try {
                 if (ImGui::BeginTabItem("Renderer")) {
                     resetAccumulation |= ImGui::SliderInt("Max Path Length", &maxPathLength, 2, 15);
 
-                    if (ImGui::Button(train ? "Stop Training" : "Start Training"))
-                        train = !train;
-                    ImGui::SameLine();
-                    if (ImGui::Button("Step")) {
-                        train = false;
-                        stepTrain = true;
-                    }
-                    ImGui::SameLine();
-                    if (ImGui::Button("Reset")) {
-                        neuralRadianceCache.finalize();
-                        neuralRadianceCache.initialize();
-                        train = false;
-                        stepTrain = true;
+                    bool tempUseNRC = useNRC;
+                    if (ImGui::RadioButton("Baseline Path Tracing", !useNRC))
+                        useNRC = false;
+                    if (ImGui::RadioButton("Path Tracing + NRC", useNRC))
+                        useNRC = true;
+                    resetAccumulation |= useNRC != tempUseNRC;
+
+                    if (useNRC) {
+                        if (ImGui::Button(train ? "Stop Training" : "Start Training"))
+                            train = !train;
+                        ImGui::SameLine();
+                        if (ImGui::Button("Step")) {
+                            train = false;
+                            stepTrain = true;
+                        }
+                        ImGui::SameLine();
+                        if (ImGui::Button("Reset")) {
+                            neuralRadianceCache.finalize();
+                            neuralRadianceCache.initialize();
+                            train = false;
+                            stepTrain = true;
+                        }
                     }
 
                     ImGui::PushID("Debug Switches");
@@ -1884,90 +1915,97 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
         // JP: タイルサイズのアップデートやTraining Suffixの終端情報初期化などを行う。
         // EN: Perform update of the tile size and initialization of training suffixes and so on.
-        curGPUTimer.preprocessNRC.start(cuStream);
-        gpuEnv.kernelPreprocessNRC(
-            cuStream, gpuEnv.kernelPreprocessNRC.calcGridDim(maxNumTrainingSuffixes),
-            perFrameRng(), perFrameRng(), newSequence);
-        curGPUTimer.preprocessNRC.stop(cuStream);
+        if (useNRC) {
+            curGPUTimer.preprocessNRC.start(cuStream);
+            gpuEnv.kernelPreprocessNRC(
+                cuStream, gpuEnv.kernelPreprocessNRC.calcGridDim(maxNumTrainingSuffixes),
+                perFrameRng(), perFrameRng(), newSequence);
+            curGPUTimer.preprocessNRC.stop(cuStream);
+        }
 
         // JP: パストレースを行い、Rendering Pathと訓練データの生成を行う。
         // EN: Path trace to generate rendering paths and training data.
         curGPUTimer.pathTrace.start(cuStream);
         CUDADRV_CHECK(cuMemcpyHtoDAsync(plpOnDevice, &plp, sizeof(plp), cuStream));
-        gpuEnv.pipeline.setRayGenerationProgram(gpuEnv.pathTraceRayGenProgram);
+        if (useNRC)
+            gpuEnv.pipeline.setRayGenerationProgram(gpuEnv.pathTraceNRCRayGenProgram);
+        else
+            gpuEnv.pipeline.setRayGenerationProgram(gpuEnv.pathTraceBaselineRayGenProgram);
         gpuEnv.pipeline.launch(cuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);
         curGPUTimer.pathTrace.stop(cuStream);
 
-        // JP: CUDAではdispatchIndirectのような動的なディスパッチサイズの指定が
-        //     サポートされていないので仕方なくGPUと同期して訓練データ数などを取得する。
-        //     実際のリアルタイムレンダリング実装の場合は動的なディスパッチサイズ指定を行う必要がある。
-        // EN: CUDA does not support dynamic dispatch size like dispatchIndirect,
-        //     so it has no choice but to synchronize with the GPU to obtain the number of training data and so on.
-        //     Practical real-time rendering implementation requires dynamic dispatch size specification.
-        uint32_t numTrainingData;
-        CUDADRV_CHECK(cuMemcpyDtoH(&numTrainingData, numTrainingDataOnDevice, sizeof(numTrainingData)));
-        uint2 tileSize;
-        CUDADRV_CHECK(cuMemcpyDtoH(&tileSize, tileSizeOnDevice, sizeof(tileSize)));
-        uint2 numTiles = (uint2(renderTargetSizeX, renderTargetSizeY) + tileSize - 1) / tileSize;
-        uint32_t numInferenceQueries = renderTargetSizeX * renderTargetSizeY + numTiles.x * numTiles.y;
-        //printf("numTrainingData: %u, TileSize: %u x %u\n",
-        //       numTrainingData, tileSize.x, tileSize.y);
+        if (useNRC) {
+            // JP: CUDAではdispatchIndirectのような動的なディスパッチサイズの指定が
+            //     サポートされていないので仕方なくGPUと同期して訓練データ数などを取得する。
+            //     実際のリアルタイムレンダリング実装の場合は動的なディスパッチサイズ指定を行う必要がある。
+            // EN: CUDA does not support dynamic dispatch size like dispatchIndirect,
+            //     so it has no choice but to synchronize with the GPU to obtain the number of training data and so on.
+            //     Practical real-time rendering implementation requires dynamic dispatch size specification.
+            uint32_t numTrainingData;
+            CUDADRV_CHECK(cuMemcpyDtoH(&numTrainingData, numTrainingDataOnDevice, sizeof(numTrainingData)));
+            uint2 tileSize;
+            CUDADRV_CHECK(cuMemcpyDtoH(&tileSize, tileSizeOnDevice, sizeof(tileSize)));
+            uint2 numTiles = (uint2(renderTargetSizeX, renderTargetSizeY) + tileSize - 1) / tileSize;
+            uint32_t numInferenceQueries = renderTargetSizeX * renderTargetSizeY + numTiles.x * numTiles.y;
+            //printf("numTrainingData: %u, TileSize: %u x %u\n",
+            //       numTrainingData, tileSize.x, tileSize.y);
 
-        // JP: Rendering PathとTraining Suffixの終端の輝度を推定する。
-        // EN: Predict radiance values at the terminals of rendering paths and training suffixes.
-        curGPUTimer.infer.start(cuStream);
-        neuralRadianceCache.infer(
-            cuStream,
-            reinterpret_cast<float*>(inferenceRadianceQueryBuffer.getDevicePointer()),
-            numInferenceQueries,
-            reinterpret_cast<float*>(inferredRadianceBuffer.getDevicePointer()));
-        curGPUTimer.infer.stop(cuStream);
+            // JP: Rendering PathとTraining Suffixの終端の輝度を推定する。
+            // EN: Predict radiance values at the terminals of rendering paths and training suffixes.
+            curGPUTimer.infer.start(cuStream);
+            neuralRadianceCache.infer(
+                cuStream,
+                reinterpret_cast<float*>(inferenceRadianceQueryBuffer.getDevicePointer()),
+                numInferenceQueries,
+                reinterpret_cast<float*>(inferredRadianceBuffer.getDevicePointer()));
+            curGPUTimer.infer.stop(cuStream);
 
-        // JP: 各ピクセルに推定した輝度を加算する。
-        // EN: Accumulate the predicted radiance values to the pixels.
-        curGPUTimer.accumulateInferredRadiances.start(cuStream);
-        gpuEnv.kernelAccumulateInferredRadianceValues(
-            cuStream,
-            gpuEnv.kernelAccumulateInferredRadianceValues.calcGridDim(renderTargetSizeX * renderTargetSizeY));
-        curGPUTimer.accumulateInferredRadiances.stop(cuStream);
+            // JP: 各ピクセルに推定した輝度を加算する。
+            // EN: Accumulate the predicted radiance values to the pixels.
+            curGPUTimer.accumulateInferredRadiances.start(cuStream);
+            gpuEnv.kernelAccumulateInferredRadianceValues(
+                cuStream,
+                gpuEnv.kernelAccumulateInferredRadianceValues.calcGridDim(renderTargetSizeX * renderTargetSizeY));
+            curGPUTimer.accumulateInferredRadiances.stop(cuStream);
 
-        if (train || stepTrain) {
-            // JP: Training Suffixの終端から輝度を伝播させてTraining Vertexのデータを完成させる。
-            // EN: Propagate the radiance values from the terminals of training suffixes to
-            //     complete training vertex data.
-            curGPUTimer.propagateRadiances.start(cuStream);
-            gpuEnv.kernelPropagateRadianceValues(
-                cuStream, gpuEnv.kernelPropagateRadianceValues.calcGridDim(maxNumTrainingSuffixes));
-            curGPUTimer.propagateRadiances.stop(cuStream);
+            if (train || stepTrain) {
+                // JP: Training Suffixの終端から輝度を伝播させてTraining Vertexのデータを完成させる。
+                // EN: Propagate the radiance values from the terminals of training suffixes to
+                //     complete training vertex data.
+                curGPUTimer.propagateRadiances.start(cuStream);
+                gpuEnv.kernelPropagateRadianceValues(
+                    cuStream, gpuEnv.kernelPropagateRadianceValues.calcGridDim(maxNumTrainingSuffixes));
+                curGPUTimer.propagateRadiances.stop(cuStream);
 
-            // JP: 訓練データの空間的な相関を取り除くためにデータをシャッフルする。
-            // EN: Shuffle the training data to get rid of spatial correlations of the training data.
-            curGPUTimer.shuffleTrainingData.start(cuStream);
-            gpuEnv.kernelShuffleTrainingData(
-                cuStream, gpuEnv.kernelShuffleTrainingData.calcGridDim(shared::numTrainingDataPerFrame));
-            curGPUTimer.shuffleTrainingData.stop(cuStream);
+                // JP: 訓練データの空間的な相関を取り除くためにデータをシャッフルする。
+                // EN: Shuffle the training data to get rid of spatial correlations of the training data.
+                curGPUTimer.shuffleTrainingData.start(cuStream);
+                gpuEnv.kernelShuffleTrainingData(
+                    cuStream, gpuEnv.kernelShuffleTrainingData.calcGridDim(shared::numTrainingDataPerFrame));
+                curGPUTimer.shuffleTrainingData.stop(cuStream);
 
-            // JP: トレーニングの実行。
-            // EN: Perform training.
-            curGPUTimer.train.start(cuStream);
-            {
-                constexpr uint32_t batchSize = shared::numTrainingDataPerFrame / 4;
-                static_assert((batchSize & 0xFF) == 0, "Batch size has to be a multiple of 256.");
-                //const uint32_t targetBatchSize =
-                //    (std::min(numTrainingData, shared::numTrainingDataPerFrame) / 4 + 255) / 256 * 256;
-                uint32_t dataStartIndex = 0;
-                for (int step = 0; step < 4; ++step) {
-                    //uint32_t batchSize = std::min(numTrainingData - dataStartIndex, targetBatchSize);
-                    //batchSize = batchSize / 256 * 256;
-                    neuralRadianceCache.train(
-                        cuStream,
-                        reinterpret_cast<float*>(trainRadianceQueryBuffer[1].getDevicePointerAt(dataStartIndex)),
-                        reinterpret_cast<float*>(trainTargetBuffer[1].getDevicePointerAt(dataStartIndex)),
-                        batchSize);
-                    dataStartIndex += batchSize;
+                // JP: トレーニングの実行。
+                // EN: Perform training.
+                curGPUTimer.train.start(cuStream);
+                {
+                    constexpr uint32_t batchSize = shared::numTrainingDataPerFrame / 4;
+                    static_assert((batchSize & 0xFF) == 0, "Batch size has to be a multiple of 256.");
+                    //const uint32_t targetBatchSize =
+                    //    (std::min(numTrainingData, shared::numTrainingDataPerFrame) / 4 + 255) / 256 * 256;
+                    uint32_t dataStartIndex = 0;
+                    for (int step = 0; step < 4; ++step) {
+                        //uint32_t batchSize = std::min(numTrainingData - dataStartIndex, targetBatchSize);
+                        //batchSize = batchSize / 256 * 256;
+                        neuralRadianceCache.train(
+                            cuStream,
+                            reinterpret_cast<float*>(trainRadianceQueryBuffer[1].getDevicePointerAt(dataStartIndex)),
+                            reinterpret_cast<float*>(trainTargetBuffer[1].getDevicePointerAt(dataStartIndex)),
+                            batchSize);
+                        dataStartIndex += batchSize;
+                    }
                 }
+                curGPUTimer.train.stop(cuStream);
             }
-            curGPUTimer.train.stop(cuStream);
         }
 
         // JP: ニューラルネットワークの推定値を直接可視化する。
