@@ -24,10 +24,10 @@ namespace optixu {
         CUsurfObject m_surfObject;
 
     public:
-        RT_DEVICE_FUNCTION NativeBlockBuffer2D() : m_surfObject(0) {}
-        RT_DEVICE_FUNCTION NativeBlockBuffer2D(CUsurfObject surfObject) : m_surfObject(surfObject) {};
+        RT_COMMON_FUNCTION NativeBlockBuffer2D() : m_surfObject(0) {}
+        RT_COMMON_FUNCTION NativeBlockBuffer2D(CUsurfObject surfObject) : m_surfObject(surfObject) {};
 
-        RT_DEVICE_FUNCTION NativeBlockBuffer2D &operator=(CUsurfObject surfObject) {
+        RT_COMMON_FUNCTION NativeBlockBuffer2D &operator=(CUsurfObject surfObject) {
             m_surfObject = surfObject;
             return *this;
         }
@@ -168,8 +168,8 @@ namespace optixu {
 #endif
 
     public:
-        RT_DEVICE_FUNCTION BlockBuffer2D() {}
-        RT_DEVICE_FUNCTION BlockBuffer2D(T* rawBuffer, uint32_t width, uint32_t height) :
+        RT_COMMON_FUNCTION BlockBuffer2D() {}
+        RT_COMMON_FUNCTION BlockBuffer2D(T* rawBuffer, uint32_t width, uint32_t height) :
             m_rawBuffer(rawBuffer), m_width(width), m_height(height) {
             constexpr uint32_t blockWidth = 1 << log2BlockWidth;
             constexpr uint32_t mask = blockWidth - 1;

@@ -77,18 +77,18 @@ void devPrintf(const char* fmt, ...);
 
 
 template <typename T, size_t size>
-CUDA_DEVICE_FUNCTION constexpr size_t lengthof(const T (&array)[size]) {
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr size_t lengthof(const T(&array)[size]) {
     return size;
 }
 
 
 
 template <typename T>
-CUDA_DEVICE_FUNCTION T alignUp(T value, uint32_t alignment) {
+CUDA_COMMON_FUNCTION CUDA_INLINE T alignUp(T value, uint32_t alignment) {
     return (value + alignment - 1) / alignment * alignment;
 }
 
-CUDA_DEVICE_FUNCTION uint32_t tzcnt(uint32_t x) {
+CUDA_COMMON_FUNCTION CUDA_INLINE uint32_t tzcnt(uint32_t x) {
 #if defined(__CUDA_ARCH__)
     return __clz(__brev(x));
 #else
@@ -96,7 +96,7 @@ CUDA_DEVICE_FUNCTION uint32_t tzcnt(uint32_t x) {
 #endif
 }
 
-CUDA_DEVICE_FUNCTION uint32_t lzcnt(uint32_t x) {
+CUDA_COMMON_FUNCTION CUDA_INLINE uint32_t lzcnt(uint32_t x) {
 #if defined(__CUDA_ARCH__)
     return __clz(x);
 #else
@@ -104,7 +104,7 @@ CUDA_DEVICE_FUNCTION uint32_t lzcnt(uint32_t x) {
 #endif
 }
 
-CUDA_DEVICE_FUNCTION int32_t popcnt(uint32_t x) {
+CUDA_COMMON_FUNCTION CUDA_INLINE int32_t popcnt(uint32_t x) {
 #if defined(__CUDA_ARCH__)
     return __popc(x);
 #else
@@ -119,7 +119,7 @@ CUDA_DEVICE_FUNCTION int32_t popcnt(uint32_t x) {
 //  8-15: 3
 // 16-31: 4
 // ...
-CUDA_DEVICE_FUNCTION uint32_t prevPowOf2Exponent(uint32_t x) {
+CUDA_COMMON_FUNCTION CUDA_INLINE uint32_t prevPowOf2Exponent(uint32_t x) {
     if (x == 0)
         return 0;
     return 31 - lzcnt(x);
@@ -132,7 +132,7 @@ CUDA_DEVICE_FUNCTION uint32_t prevPowOf2Exponent(uint32_t x) {
 // 5- 8: 3
 // 9-16: 4
 // ...
-CUDA_DEVICE_FUNCTION uint32_t nextPowOf2Exponent(uint32_t x) {
+CUDA_COMMON_FUNCTION CUDA_INLINE uint32_t nextPowOf2Exponent(uint32_t x) {
     if (x == 0)
         return 0;
     return 32 - lzcnt(x - 1);
@@ -145,7 +145,7 @@ CUDA_DEVICE_FUNCTION uint32_t nextPowOf2Exponent(uint32_t x) {
 //  8-15: 8
 // 16-31: 16
 // ...
-CUDA_DEVICE_FUNCTION uint32_t prevPowerOf2(uint32_t x) {
+CUDA_COMMON_FUNCTION CUDA_INLINE uint32_t prevPowerOf2(uint32_t x) {
     if (x == 0)
         return 0;
     return 1 << prevPowOf2Exponent(x);
@@ -158,24 +158,24 @@ CUDA_DEVICE_FUNCTION uint32_t prevPowerOf2(uint32_t x) {
 // 5- 8: 8
 // 9-16: 16
 // ...
-CUDA_DEVICE_FUNCTION uint32_t nextPowerOf2(uint32_t x) {
+CUDA_COMMON_FUNCTION CUDA_INLINE uint32_t nextPowerOf2(uint32_t x) {
     if (x == 0)
         return 0;
     return 1 << nextPowOf2Exponent(x);
 }
 
 template <typename IntType>
-CUDA_DEVICE_FUNCTION constexpr IntType nextMultiplesForPowOf2(IntType x, uint32_t exponent) {
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr IntType nextMultiplesForPowOf2(IntType x, uint32_t exponent) {
     IntType mask = (1 << exponent) - 1;
     return (x + mask) & ~mask;
 }
 
 template <typename IntType>
-CUDA_DEVICE_FUNCTION constexpr IntType nextMultiplierForPowOf2(IntType x, uint32_t exponent) {
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr IntType nextMultiplierForPowOf2(IntType x, uint32_t exponent) {
     return nextMultiplesForPowOf2(x, exponent) >> exponent;
 }
 
-CUDA_DEVICE_FUNCTION uint32_t nthSetBit(uint32_t value, int32_t n) {
+CUDA_COMMON_FUNCTION CUDA_INLINE uint32_t nthSetBit(uint32_t value, int32_t n) {
     uint32_t idx = 0;
     int32_t count;
     if (n >= popcnt(value))
@@ -199,7 +199,7 @@ CUDA_DEVICE_FUNCTION uint32_t nthSetBit(uint32_t value, int32_t n) {
 
 
 
-#if !defined(__CUDA_ARCH__)
+#if !defined(__CUDA_ARCH__) && !defined(__CUDACC__)
 // ----------------------------------------------------------------
 // JP: CUDAビルトインに対応する型・関数をホスト側で定義しておく。
 // EN: Define types and functions on the host corresponding to CUDA built-ins.
@@ -284,310 +284,310 @@ inline constexpr float4 make_float4(float x, float y, float z, float w) {
 // ----------------------------------------------------------------
 #endif
 
-CUDA_DEVICE_FUNCTION float3 getXYZ(const float4 &v) {
+CUDA_COMMON_FUNCTION CUDA_INLINE float3 getXYZ(const float4 &v) {
     return make_float3(v.x, v.y, v.z);
 }
 
-CUDA_DEVICE_FUNCTION bool operator==(const int2 &v0, const int2 &v1) {
+CUDA_COMMON_FUNCTION CUDA_INLINE bool operator==(const int2 &v0, const int2 &v1) {
     return v0.x == v1.x && v0.y == v1.y;
 }
-CUDA_DEVICE_FUNCTION bool operator!=(const int2 &v0, const int2 &v1) {
+CUDA_COMMON_FUNCTION CUDA_INLINE bool operator!=(const int2 &v0, const int2 &v1) {
     return v0.x != v1.x || v0.y != v1.y;
 }
-CUDA_DEVICE_FUNCTION bool operator==(const int2 &v0, const uint2 &v1) {
+CUDA_COMMON_FUNCTION CUDA_INLINE bool operator==(const int2 &v0, const uint2 &v1) {
     return v0.x == v1.x && v0.y == v1.y;
 }
-CUDA_DEVICE_FUNCTION bool operator!=(const int2 &v0, const uint2 &v1) {
+CUDA_COMMON_FUNCTION CUDA_INLINE bool operator!=(const int2 &v0, const uint2 &v1) {
     return v0.x != v1.x || v0.y != v1.y;
 }
-CUDA_DEVICE_FUNCTION uint2 operator+(const int2 &v0, const uint2 &v1) {
+CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator+(const int2 &v0, const uint2 &v1) {
     return make_uint2(v0.x + v1.x, v0.y + v1.y);
 }
-CUDA_DEVICE_FUNCTION int2 operator*(const int2 &v0, const int2 &v1) {
+CUDA_COMMON_FUNCTION CUDA_INLINE int2 operator*(const int2 &v0, const int2 &v1) {
     return make_int2(v0.x * v1.x, v0.y * v1.y);
 }
-CUDA_DEVICE_FUNCTION int2 operator/(const int2 &v0, const int2 &v1) {
+CUDA_COMMON_FUNCTION CUDA_INLINE int2 operator/(const int2 &v0, const int2 &v1) {
     return make_int2(v0.x / v1.x, v0.y / v1.y);
 }
-CUDA_DEVICE_FUNCTION uint2 operator/(const int2 &v0, const uint2 &v1) {
+CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator/(const int2 &v0, const uint2 &v1) {
     return make_uint2(v0.x / v1.x, v0.y / v1.y);
 }
 
-CUDA_DEVICE_FUNCTION bool operator==(const uint2 &v0, const uint2 &v1) {
+CUDA_COMMON_FUNCTION CUDA_INLINE bool operator==(const uint2 &v0, const uint2 &v1) {
     return v0.x == v1.x && v0.y == v1.y;
 }
-CUDA_DEVICE_FUNCTION bool operator!=(const uint2 &v0, const uint2 &v1) {
+CUDA_COMMON_FUNCTION CUDA_INLINE bool operator!=(const uint2 &v0, const uint2 &v1) {
     return v0.x != v1.x || v0.y != v1.y;
 }
-CUDA_DEVICE_FUNCTION bool operator==(const uint2 &v0, const int2 &v1) {
+CUDA_COMMON_FUNCTION CUDA_INLINE bool operator==(const uint2 &v0, const int2 &v1) {
     return v0.x == v1.x && v0.y == v1.y;
 }
-CUDA_DEVICE_FUNCTION bool operator!=(const uint2 &v0, const int2 &v1) {
+CUDA_COMMON_FUNCTION CUDA_INLINE bool operator!=(const uint2 &v0, const int2 &v1) {
     return v0.x != v1.x || v0.y != v1.y;
 }
-CUDA_DEVICE_FUNCTION uint2 operator+(const uint2 &v0, const uint2 &v1) {
+CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator+(const uint2 &v0, const uint2 &v1) {
     return make_uint2(v0.x + v1.x, v0.y + v1.y);
 }
-CUDA_DEVICE_FUNCTION uint2 operator-(const uint2 &v, uint32_t s) {
+CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator-(const uint2 &v, uint32_t s) {
     return make_uint2(v.x - s, v.y - s);
 }
-CUDA_DEVICE_FUNCTION uint2 operator*(const uint2 &v0, const uint2 &v1) {
+CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator*(const uint2 &v0, const uint2 &v1) {
     return make_uint2(v0.x * v1.x, v0.y * v1.y);
 }
-CUDA_DEVICE_FUNCTION uint2 operator/(const uint2 &v0, const uint2 &v1) {
+CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator/(const uint2 &v0, const uint2 &v1) {
     return make_uint2(v0.x / v1.x, v0.y / v1.y);
 }
-CUDA_DEVICE_FUNCTION uint2 operator/(const uint2 &v0, const int2 &v1) {
+CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator/(const uint2 &v0, const int2 &v1) {
     return make_uint2(v0.x / v1.x, v0.y / v1.y);
 }
-CUDA_DEVICE_FUNCTION uint2 operator%(const uint2 &v0, const uint2 &v1) {
+CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator%(const uint2 &v0, const uint2 &v1) {
     return make_uint2(v0.x % v1.x, v0.y % v1.y);
 }
-CUDA_DEVICE_FUNCTION uint2 &operator+=(uint2 &v, uint32_t s) {
+CUDA_COMMON_FUNCTION CUDA_INLINE uint2 &operator+=(uint2 &v, uint32_t s) {
     v.x += s;
     v.x += s;
     return v;
 }
-CUDA_DEVICE_FUNCTION uint2 &operator-=(uint2 &v, uint32_t s) {
+CUDA_COMMON_FUNCTION CUDA_INLINE uint2 &operator-=(uint2 &v, uint32_t s) {
     v.x -= s;
     v.x -= s;
     return v;
 }
 
-CUDA_DEVICE_FUNCTION float2 make_float2(float v) {
+CUDA_COMMON_FUNCTION CUDA_INLINE float2 make_float2(float v) {
     return make_float2(v, v);
 }
-CUDA_DEVICE_FUNCTION bool operator==(const float2 &v0, const float2 &v1) {
+CUDA_COMMON_FUNCTION CUDA_INLINE bool operator==(const float2 &v0, const float2 &v1) {
     return v0.x == v1.x && v0.y == v1.y;
 }
-CUDA_DEVICE_FUNCTION bool operator!=(const float2 &v0, const float2 &v1) {
+CUDA_COMMON_FUNCTION CUDA_INLINE bool operator!=(const float2 &v0, const float2 &v1) {
     return v0.x != v1.x || v0.y != v1.y;
 }
-CUDA_DEVICE_FUNCTION float2 operator-(const float2 &v) {
+CUDA_COMMON_FUNCTION CUDA_INLINE float2 operator-(const float2 &v) {
     return make_float2(-v.x, -v.y);
 }
-CUDA_DEVICE_FUNCTION float2 operator+(const float2 &v0, const float2 &v1) {
+CUDA_COMMON_FUNCTION CUDA_INLINE float2 operator+(const float2 &v0, const float2 &v1) {
     return make_float2(v0.x + v1.x, v0.y + v1.y);
 }
-CUDA_DEVICE_FUNCTION float2 operator-(const float2 &v0, const float2 &v1) {
+CUDA_COMMON_FUNCTION CUDA_INLINE float2 operator-(const float2 &v0, const float2 &v1) {
     return make_float2(v0.x - v1.x, v0.y - v1.y);
 }
-CUDA_DEVICE_FUNCTION float2 operator*(const float2 &v0, const float2 &v1) {
+CUDA_COMMON_FUNCTION CUDA_INLINE float2 operator*(const float2 &v0, const float2 &v1) {
     return make_float2(v0.x * v1.x, v0.y * v1.y);
 }
-CUDA_DEVICE_FUNCTION float2 operator*(float s, const float2 &v) {
+CUDA_COMMON_FUNCTION CUDA_INLINE float2 operator*(float s, const float2 &v) {
     return make_float2(s * v.x, s * v.y);
 }
-CUDA_DEVICE_FUNCTION float2 operator*(const float2 &v, float s) {
+CUDA_COMMON_FUNCTION CUDA_INLINE float2 operator*(const float2 &v, float s) {
     return make_float2(s * v.x, s * v.y);
 }
-CUDA_DEVICE_FUNCTION float2 operator/(const float2 &v, float s) {
+CUDA_COMMON_FUNCTION CUDA_INLINE float2 operator/(const float2 &v, float s) {
     float r = 1 / s;
     return r * v;
 }
 
-CUDA_DEVICE_FUNCTION float3 make_float3(float v) {
+CUDA_COMMON_FUNCTION CUDA_INLINE float3 make_float3(float v) {
     return make_float3(v, v, v);
 }
-CUDA_DEVICE_FUNCTION float3 make_float3(const float4 &v) {
+CUDA_COMMON_FUNCTION CUDA_INLINE float3 make_float3(const float4 &v) {
     return make_float3(v.x, v.y, v.z);
 }
-CUDA_DEVICE_FUNCTION bool operator==(const float3 &v0, const float3 &v1) {
+CUDA_COMMON_FUNCTION CUDA_INLINE bool operator==(const float3 &v0, const float3 &v1) {
     return v0.x == v1.x && v0.y == v1.y && v0.z == v1.z;
 }
-CUDA_DEVICE_FUNCTION bool operator!=(const float3 &v0, const float3 &v1) {
+CUDA_COMMON_FUNCTION CUDA_INLINE bool operator!=(const float3 &v0, const float3 &v1) {
     return v0.x != v1.x || v0.y != v1.y || v0.z != v1.z;
 }
-CUDA_DEVICE_FUNCTION float3 operator-(const float3 &v) {
+CUDA_COMMON_FUNCTION CUDA_INLINE float3 operator-(const float3 &v) {
     return make_float3(-v.x, -v.y, -v.z);
 }
-CUDA_DEVICE_FUNCTION float3 operator+(const float3 &v0, const float3 &v1) {
+CUDA_COMMON_FUNCTION CUDA_INLINE float3 operator+(const float3 &v0, const float3 &v1) {
     return make_float3(v0.x + v1.x, v0.y + v1.y, v0.z + v1.z);
 }
-CUDA_DEVICE_FUNCTION float3 &operator+=(float3 &v0, const float3 &v1) {
+CUDA_COMMON_FUNCTION CUDA_INLINE float3 &operator+=(float3 &v0, const float3 &v1) {
     v0.x += v1.x;
     v0.y += v1.y;
     v0.z += v1.z;
     return v0;
 }
-CUDA_DEVICE_FUNCTION float3 operator-(const float3 &v0, const float3 &v1) {
+CUDA_COMMON_FUNCTION CUDA_INLINE float3 operator-(const float3 &v0, const float3 &v1) {
     return make_float3(v0.x - v1.x, v0.y - v1.y, v0.z - v1.z);
 }
-CUDA_DEVICE_FUNCTION float3 &operator-=(float3 &v0, const float3 &v1) {
+CUDA_COMMON_FUNCTION CUDA_INLINE float3 &operator-=(float3 &v0, const float3 &v1) {
     v0.x -= v1.x;
     v0.y -= v1.y;
     v0.z -= v1.z;
     return v0;
 }
-CUDA_DEVICE_FUNCTION float3 operator*(const float3 &v0, const float3 &v1) {
+CUDA_COMMON_FUNCTION CUDA_INLINE float3 operator*(const float3 &v0, const float3 &v1) {
     return make_float3(v0.x * v1.x, v0.y * v1.y, v0.z * v1.z);
 }
-CUDA_DEVICE_FUNCTION float3 operator*(float s, const float3 &v) {
+CUDA_COMMON_FUNCTION CUDA_INLINE float3 operator*(float s, const float3 &v) {
     return make_float3(s * v.x, s * v.y, s * v.z);
 }
-CUDA_DEVICE_FUNCTION float3 operator*(const float3 &v, float s) {
+CUDA_COMMON_FUNCTION CUDA_INLINE float3 operator*(const float3 &v, float s) {
     return make_float3(s * v.x, s * v.y, s * v.z);
 }
-CUDA_DEVICE_FUNCTION float3 &operator*=(float3 &v0, const float3 &v1) {
+CUDA_COMMON_FUNCTION CUDA_INLINE float3 &operator*=(float3 &v0, const float3 &v1) {
     v0.x *= v1.x;
     v0.y *= v1.y;
     v0.z *= v1.z;
     return v0;
 }
-CUDA_DEVICE_FUNCTION float3 &operator*=(float3 &v, float s) {
+CUDA_COMMON_FUNCTION CUDA_INLINE float3 &operator*=(float3 &v, float s) {
     v.x *= s;
     v.y *= s;
     v.z *= s;
     return v;
 }
-CUDA_DEVICE_FUNCTION float3 operator/(const float3 &v0, const float3 &v1) {
+CUDA_COMMON_FUNCTION CUDA_INLINE float3 operator/(const float3 &v0, const float3 &v1) {
     return make_float3(v0.x / v1.x, v0.y / v1.y, v0.z / v1.z);
 }
-CUDA_DEVICE_FUNCTION float3 operator/(const float3 &v, float s) {
+CUDA_COMMON_FUNCTION CUDA_INLINE float3 operator/(const float3 &v, float s) {
     float r = 1 / s;
     return r * v;
 }
-CUDA_DEVICE_FUNCTION float3 &operator/=(float3 &v, float s) {
+CUDA_COMMON_FUNCTION CUDA_INLINE float3 &operator/=(float3 &v, float s) {
     float r = 1 / s;
     return v *= r;
 }
-CUDA_DEVICE_FUNCTION bool allFinite(const float3 &v) {
+CUDA_COMMON_FUNCTION CUDA_INLINE bool allFinite(const float3 &v) {
 #if !defined(__CUDA_ARCH__)
     using std::isfinite;
 #endif
     return isfinite(v.x) && isfinite(v.y) && isfinite(v.z);
 }
 
-CUDA_DEVICE_FUNCTION float4 make_float4(float v) {
+CUDA_COMMON_FUNCTION CUDA_INLINE float4 make_float4(float v) {
     return make_float4(v, v, v, v);
 }
-CUDA_DEVICE_FUNCTION float4 make_float4(const float3 &v) {
+CUDA_COMMON_FUNCTION CUDA_INLINE float4 make_float4(const float3 &v) {
     return make_float4(v.x, v.y, v.z, 0.0f);
 }
-CUDA_DEVICE_FUNCTION float4 make_float4(const float3 &v, float w) {
+CUDA_COMMON_FUNCTION CUDA_INLINE float4 make_float4(const float3 &v, float w) {
     return make_float4(v.x, v.y, v.z, w);
 }
-CUDA_DEVICE_FUNCTION bool operator==(const float4 &v0, const float4 &v1) {
+CUDA_COMMON_FUNCTION CUDA_INLINE bool operator==(const float4 &v0, const float4 &v1) {
     return v0.x == v1.x && v0.y == v1.y && v0.z == v1.z && v0.w == v1.w;
 }
-CUDA_DEVICE_FUNCTION bool operator!=(const float4 &v0, const float4 &v1) {
+CUDA_COMMON_FUNCTION CUDA_INLINE bool operator!=(const float4 &v0, const float4 &v1) {
     return v0.x != v1.x || v0.y != v1.y || v0.z != v1.z || v0.w != v1.w;
 }
-CUDA_DEVICE_FUNCTION float4 operator-(const float4 &v) {
+CUDA_COMMON_FUNCTION CUDA_INLINE float4 operator-(const float4 &v) {
     return make_float4(-v.x, -v.y, -v.z, -v.w);
 }
-CUDA_DEVICE_FUNCTION float4 operator+(const float4 &v0, const float4 &v1) {
+CUDA_COMMON_FUNCTION CUDA_INLINE float4 operator+(const float4 &v0, const float4 &v1) {
     return make_float4(v0.x + v1.x, v0.y + v1.y, v0.z + v1.z, v0.w + v1.w);
 }
-CUDA_DEVICE_FUNCTION float4 &operator+=(float4 &v0, const float4 &v1) {
+CUDA_COMMON_FUNCTION CUDA_INLINE float4 &operator+=(float4 &v0, const float4 &v1) {
     v0.x += v1.x;
     v0.y += v1.y;
     v0.z += v1.z;
     v0.w += v1.w;
     return v0;
 }
-CUDA_DEVICE_FUNCTION float4 operator-(const float4 &v0, const float4 &v1) {
+CUDA_COMMON_FUNCTION CUDA_INLINE float4 operator-(const float4 &v0, const float4 &v1) {
     return make_float4(v0.x - v1.x, v0.y - v1.y, v0.z - v1.z, v0.w - v1.w);
 }
-CUDA_DEVICE_FUNCTION float4 &operator-=(float4 &v0, const float4 &v1) {
+CUDA_COMMON_FUNCTION CUDA_INLINE float4 &operator-=(float4 &v0, const float4 &v1) {
     v0.x -= v1.x;
     v0.y -= v1.y;
     v0.z -= v1.z;
     v0.w -= v1.w;
     return v0;
 }
-CUDA_DEVICE_FUNCTION float4 operator*(const float4 &v0, const float4 &v1) {
+CUDA_COMMON_FUNCTION CUDA_INLINE float4 operator*(const float4 &v0, const float4 &v1) {
     return make_float4(v0.x * v1.x, v0.y * v1.y, v0.z * v1.z, v0.w * v1.w);
 }
-CUDA_DEVICE_FUNCTION float4 operator*(float s, const float4 &v) {
+CUDA_COMMON_FUNCTION CUDA_INLINE float4 operator*(float s, const float4 &v) {
     return make_float4(s * v.x, s * v.y, s * v.z, s * v.w);
 }
-CUDA_DEVICE_FUNCTION float4 operator*(const float4 &v, float s) {
+CUDA_COMMON_FUNCTION CUDA_INLINE float4 operator*(const float4 &v, float s) {
     return make_float4(s * v.x, s * v.y, s * v.z, s * v.w);
 }
-CUDA_DEVICE_FUNCTION float4 &operator*=(float4 &v0, const float4 &v1) {
+CUDA_COMMON_FUNCTION CUDA_INLINE float4 &operator*=(float4 &v0, const float4 &v1) {
     v0.x *= v1.x;
     v0.y *= v1.y;
     v0.z *= v1.z;
     v0.w *= v1.w;
     return v0;
 }
-CUDA_DEVICE_FUNCTION float4 &operator*=(float4 &v, float s) {
+CUDA_COMMON_FUNCTION CUDA_INLINE float4 &operator*=(float4 &v, float s) {
     v.x *= s;
     v.y *= s;
     v.z *= s;
     v.w *= s;
     return v;
 }
-CUDA_DEVICE_FUNCTION float4 operator/(const float4 &v0, const float4 &v1) {
+CUDA_COMMON_FUNCTION CUDA_INLINE float4 operator/(const float4 &v0, const float4 &v1) {
     return make_float4(v0.x / v1.x, v0.y / v1.y, v0.z / v1.z, v0.w / v1.w);
 }
-CUDA_DEVICE_FUNCTION float4 operator/(const float4 &v, float s) {
+CUDA_COMMON_FUNCTION CUDA_INLINE float4 operator/(const float4 &v, float s) {
     float r = 1 / s;
     return r * v;
 }
-CUDA_DEVICE_FUNCTION float4 &operator/=(float4 &v, float s) {
+CUDA_COMMON_FUNCTION CUDA_INLINE float4 &operator/=(float4 &v, float s) {
     float r = 1 / s;
     return v *= r;
 }
-CUDA_DEVICE_FUNCTION bool allFinite(const float4 &v) {
+CUDA_COMMON_FUNCTION CUDA_INLINE bool allFinite(const float4 &v) {
 #if !defined(__CUDA_ARCH__)
     using std::isfinite;
 #endif
     return isfinite(v.x) && isfinite(v.y) && isfinite(v.z) && isfinite(v.w);
 }
 
-CUDA_DEVICE_FUNCTION float3 min(const float3 &v0, const float3 &v1) {
+CUDA_COMMON_FUNCTION CUDA_INLINE float3 min(const float3 &v0, const float3 &v1) {
     return make_float3(std::fmin(v0.x, v1.x),
                        std::fmin(v0.y, v1.y),
                        std::fmin(v0.z, v1.z));
 }
-CUDA_DEVICE_FUNCTION float3 max(const float3 &v0, const float3 &v1) {
+CUDA_COMMON_FUNCTION CUDA_INLINE float3 max(const float3 &v0, const float3 &v1) {
     return make_float3(std::fmax(v0.x, v1.x),
                        std::fmax(v0.y, v1.y),
                        std::fmax(v0.z, v1.z));
 }
-CUDA_DEVICE_FUNCTION float dot(const float3 &v0, const float3 &v1) {
+CUDA_COMMON_FUNCTION CUDA_INLINE float dot(const float3 &v0, const float3 &v1) {
     return v0.x * v1.x + v0.y * v1.y + v0.z * v1.z;
 }
-CUDA_DEVICE_FUNCTION float3 cross(const float3 &v0, const float3 &v1) {
+CUDA_COMMON_FUNCTION CUDA_INLINE float3 cross(const float3 &v0, const float3 &v1) {
     return make_float3(v0.y * v1.z - v0.z * v1.y,
                        v0.z * v1.x - v0.x * v1.z,
                        v0.x * v1.y - v0.y * v1.x);
 }
-CUDA_DEVICE_FUNCTION float squaredDistance(const float3 &p0, const float3 &p1) {
+CUDA_COMMON_FUNCTION CUDA_INLINE float squaredDistance(const float3 &p0, const float3 &p1) {
     float3 d = p1 - p0;
     return dot(d, d);
 }
-CUDA_DEVICE_FUNCTION float length(const float3 &v) {
+CUDA_COMMON_FUNCTION CUDA_INLINE float length(const float3 &v) {
     return std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
 }
-CUDA_DEVICE_FUNCTION float sqLength(const float3 &v) {
+CUDA_COMMON_FUNCTION CUDA_INLINE float sqLength(const float3 &v) {
     return v.x * v.x + v.y * v.y + v.z * v.z;
 }
-CUDA_DEVICE_FUNCTION float3 normalize(const float3 &v) {
+CUDA_COMMON_FUNCTION CUDA_INLINE float3 normalize(const float3 &v) {
     return v / length(v);
 }
 
-CUDA_DEVICE_FUNCTION float4 min(const float4 &v0, const float4 &v1) {
+CUDA_COMMON_FUNCTION CUDA_INLINE float4 min(const float4 &v0, const float4 &v1) {
     return make_float4(std::fmin(v0.x, v1.x),
                        std::fmin(v0.y, v1.y),
                        std::fmin(v0.z, v1.z),
                        std::fmin(v0.w, v1.w));
 }
-CUDA_DEVICE_FUNCTION float4 max(const float4 &v0, const float4 &v1) {
+CUDA_COMMON_FUNCTION CUDA_INLINE float4 max(const float4 &v0, const float4 &v1) {
     return make_float4(std::fmax(v0.x, v1.x),
                        std::fmax(v0.y, v1.y),
                        std::fmax(v0.z, v1.z),
                        std::fmax(v0.w, v1.w));
 }
-CUDA_DEVICE_FUNCTION float dot(const float4 &v0, const float4 &v1) {
+CUDA_COMMON_FUNCTION CUDA_INLINE float dot(const float4 &v0, const float4 &v1) {
     return v0.x * v1.x + v0.y * v1.y + v0.z * v1.z + v0.w * v1.w;
 }
 
 
 
-CUDA_DEVICE_FUNCTION float3 HSVtoRGB(float h, float s, float v) {
+CUDA_COMMON_FUNCTION CUDA_INLINE float3 HSVtoRGB(float h, float s, float v) {
     if (s == 0)
         return make_float3(v, v, v);
 
@@ -612,32 +612,32 @@ CUDA_DEVICE_FUNCTION float3 HSVtoRGB(float h, float s, float v) {
     return make_float3(0, 0, 0);
 }
 
-CUDA_DEVICE_FUNCTION float simpleToneMap_s(float value) {
+CUDA_COMMON_FUNCTION CUDA_INLINE float simpleToneMap_s(float value) {
     Assert(value >= 0, "Input value must be equal to or greater than 0: %g", value);
     return 1 - std::exp(-value);
 }
 
-CUDA_DEVICE_FUNCTION float sRGB_degamma_s(float value) {
+CUDA_COMMON_FUNCTION CUDA_INLINE float sRGB_degamma_s(float value) {
     Assert(value >= 0, "Input value must be equal to or greater than 0: %g", value);
     if (value <= 0.04045f)
         return value / 12.92f;
     return std::pow((value + 0.055f) / 1.055f, 2.4f);
 }
 
-CUDA_DEVICE_FUNCTION float sRGB_gamma_s(float value) {
+CUDA_COMMON_FUNCTION CUDA_INLINE float sRGB_gamma_s(float value) {
     Assert(value >= 0, "Input value must be equal to or greater than 0: %g", value);
     if (value <= 0.0031308f)
         return 12.92f * value;
     return 1.055f * std::pow(value, 1 / 2.4f) - 0.055f;
 }
 
-CUDA_DEVICE_FUNCTION float3 sRGB_degamma(const float3 &value) {
+CUDA_COMMON_FUNCTION CUDA_INLINE float3 sRGB_degamma(const float3 &value) {
     return make_float3(sRGB_degamma_s(value.x),
                        sRGB_degamma_s(value.y),
                        sRGB_degamma_s(value.z));
 }
 
-CUDA_DEVICE_FUNCTION float sRGB_calcLuminance(const float3 &value) {
+CUDA_COMMON_FUNCTION CUDA_INLINE float sRGB_calcLuminance(const float3 &value) {
     return 0.2126729f * value.x + 0.7151522f * value.y + 0.0721750f * value.z;
 }
 
@@ -648,15 +648,15 @@ struct CompensatedSum {
     RealType result;
     RealType comp;
 
-    CUDA_DEVICE_FUNCTION CompensatedSum(const RealType &value = RealType(0)) : result(value), comp(0.0) { };
+    CUDA_COMMON_FUNCTION CompensatedSum(const RealType &value = RealType(0)) : result(value), comp(0.0) { };
 
-    CUDA_DEVICE_FUNCTION CompensatedSum &operator=(const RealType &value) {
+    CUDA_COMMON_FUNCTION CompensatedSum &operator=(const RealType &value) {
         result = value;
         comp = 0;
         return *this;
     }
 
-    CUDA_DEVICE_FUNCTION CompensatedSum &operator+=(const RealType &value) {
+    CUDA_COMMON_FUNCTION CompensatedSum &operator+=(const RealType &value) {
         RealType cInput = value - comp;
         RealType sumTemp = result + cInput;
         comp = (sumTemp - result) - cInput;
@@ -664,7 +664,7 @@ struct CompensatedSum {
         return *this;
     }
 
-    CUDA_DEVICE_FUNCTION operator RealType() const { return result; };
+    CUDA_COMMON_FUNCTION operator RealType() const { return result; };
 };
 
 //using FloatSum = float;
@@ -686,40 +686,40 @@ struct Matrix3x3 {
         float3 c2;
     };
 
-    CUDA_DEVICE_FUNCTION constexpr Matrix3x3() :
+    CUDA_COMMON_FUNCTION /*constexpr*/ Matrix3x3() :
         c0(make_float3(1, 0, 0)),
         c1(make_float3(0, 1, 0)),
         c2(make_float3(0, 0, 1)) { }
-    CUDA_DEVICE_FUNCTION Matrix3x3(const float array[9]) :
+    CUDA_COMMON_FUNCTION Matrix3x3(const float array[9]) :
         m00(array[0]), m10(array[1]), m20(array[2]),
         m01(array[3]), m11(array[4]), m21(array[5]),
         m02(array[6]), m12(array[7]), m22(array[8]) { }
-    CUDA_DEVICE_FUNCTION constexpr Matrix3x3(const float3 &col0, const float3 &col1, const float3 &col2) :
+    CUDA_COMMON_FUNCTION constexpr Matrix3x3(const float3 &col0, const float3 &col1, const float3 &col2) :
         c0(col0), c1(col1), c2(col2)
     { }
 
-    CUDA_DEVICE_FUNCTION Matrix3x3 operator+() const { return *this; }
-    CUDA_DEVICE_FUNCTION Matrix3x3 operator-() const { return Matrix3x3(-c0, -c1, -c2); }
+    CUDA_COMMON_FUNCTION Matrix3x3 operator+() const { return *this; }
+    CUDA_COMMON_FUNCTION Matrix3x3 operator-() const { return Matrix3x3(-c0, -c1, -c2); }
 
-    CUDA_DEVICE_FUNCTION Matrix3x3 operator+(const Matrix3x3 &mat) const { return Matrix3x3(c0 + mat.c0, c1 + mat.c1, c2 + mat.c2); }
-    CUDA_DEVICE_FUNCTION Matrix3x3 operator-(const Matrix3x3 &mat) const { return Matrix3x3(c0 - mat.c0, c1 - mat.c1, c2 - mat.c2); }
-    CUDA_DEVICE_FUNCTION Matrix3x3 operator*(const Matrix3x3 &mat) const {
+    CUDA_COMMON_FUNCTION Matrix3x3 operator+(const Matrix3x3 &mat) const { return Matrix3x3(c0 + mat.c0, c1 + mat.c1, c2 + mat.c2); }
+    CUDA_COMMON_FUNCTION Matrix3x3 operator-(const Matrix3x3 &mat) const { return Matrix3x3(c0 - mat.c0, c1 - mat.c1, c2 - mat.c2); }
+    CUDA_COMMON_FUNCTION Matrix3x3 operator*(const Matrix3x3 &mat) const {
         const float3 r[] = { row(0), row(1), row(2) };
         return Matrix3x3(make_float3(dot(r[0], mat.c0), dot(r[1], mat.c0), dot(r[2], mat.c0)),
                          make_float3(dot(r[0], mat.c1), dot(r[1], mat.c1), dot(r[2], mat.c1)),
                          make_float3(dot(r[0], mat.c2), dot(r[1], mat.c2), dot(r[2], mat.c2)));
     }
-    CUDA_DEVICE_FUNCTION friend Matrix3x3 operator*(float s, const Matrix3x3 &mat) {
+    CUDA_COMMON_FUNCTION CUDA_INLINE friend Matrix3x3 operator*(float s, const Matrix3x3 &mat) {
         return Matrix3x3(s * mat.c0, s * mat.c1, s * mat.c2);
     }
-    CUDA_DEVICE_FUNCTION float3 operator*(const float3 &v) const {
+    CUDA_COMMON_FUNCTION float3 operator*(const float3 &v) const {
         const float3 r[] = { row(0), row(1), row(2) };
         return make_float3(dot(r[0], v),
                            dot(r[1], v),
                            dot(r[2], v));
     }
 
-    CUDA_DEVICE_FUNCTION Matrix3x3 &operator*=(const Matrix3x3 &mat) {
+    CUDA_COMMON_FUNCTION Matrix3x3 &operator*=(const Matrix3x3 &mat) {
         const float3 r[] = { row(0), row(1), row(2) };
         c0 = make_float3(dot(r[0], mat.c0), dot(r[1], mat.c0), dot(r[2], mat.c0));
         c1 = make_float3(dot(r[0], mat.c1), dot(r[1], mat.c1), dot(r[2], mat.c1));
@@ -727,7 +727,7 @@ struct Matrix3x3 {
         return *this;
     }
 
-    CUDA_DEVICE_FUNCTION float3 row(unsigned int r) const {
+    CUDA_COMMON_FUNCTION float3 row(unsigned int r) const {
         //Assert(r < 3, "\"r\" is out of range [0, 2].");
         switch (r) {
         case 0:
@@ -741,7 +741,7 @@ struct Matrix3x3 {
         }
     }
 
-    CUDA_DEVICE_FUNCTION Matrix3x3 &inverse() {
+    CUDA_COMMON_FUNCTION Matrix3x3 &inverse() {
         float det = 1.0f / (m00 * m11 * m22 + m01 * m12 * m20 + m02 * m10 * m21 -
                             m02 * m11 * m20 - m01 * m10 * m22 - m00 * m12 * m21);
         Matrix3x3 m;
@@ -753,7 +753,7 @@ struct Matrix3x3 {
         return *this;
     }
 
-    CUDA_DEVICE_FUNCTION Matrix3x3 &transpose() {
+    CUDA_COMMON_FUNCTION Matrix3x3 &transpose() {
         float temp;
         temp = m10; m10 = m01; m01 = temp;
         temp = m20; m20 = m02; m02 = temp;
@@ -762,28 +762,28 @@ struct Matrix3x3 {
     }
 };
 
-CUDA_DEVICE_FUNCTION Matrix3x3 transpose(const Matrix3x3 &mat) {
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix3x3 transpose(const Matrix3x3 &mat) {
     Matrix3x3 ret = mat;
     return ret.transpose();
 }
-CUDA_DEVICE_FUNCTION Matrix3x3 inverse(const Matrix3x3 &mat) {
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix3x3 inverse(const Matrix3x3 &mat) {
     Matrix3x3 ret = mat;
     return ret.inverse();
 }
 
-CUDA_DEVICE_FUNCTION Matrix3x3 scale3x3(const float3 &s) {
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix3x3 scale3x3(const float3 &s) {
     return Matrix3x3(make_float3(s.x, 0, 0),
                      make_float3(0, s.y, 0),
                      make_float3(0, 0, s.z));
 }
-CUDA_DEVICE_FUNCTION Matrix3x3 scale3x3(float sx, float sy, float sz) {
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix3x3 scale3x3(float sx, float sy, float sz) {
     return scale3x3(make_float3(sx, sy, sz));
 }
-CUDA_DEVICE_FUNCTION Matrix3x3 scale3x3(float s) {
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix3x3 scale3x3(float s) {
     return scale3x3(make_float3(s, s, s));
 }
 
-CUDA_DEVICE_FUNCTION Matrix3x3 rotate3x3(float angle, const float3 &axis) {
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix3x3 rotate3x3(float angle, const float3 &axis) {
     Matrix3x3 matrix;
     float3 nAxis = normalize(axis);
     float s = std::sin(angle);
@@ -802,12 +802,12 @@ CUDA_DEVICE_FUNCTION Matrix3x3 rotate3x3(float angle, const float3 &axis) {
 
     return matrix;
 }
-CUDA_DEVICE_FUNCTION Matrix3x3 rotate3x3(float angle, float ax, float ay, float az) {
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix3x3 rotate3x3(float angle, float ax, float ay, float az) {
     return rotate3x3(angle, make_float3(ax, ay, az));
 }
-CUDA_DEVICE_FUNCTION Matrix3x3 rotateX3x3(float angle) { return rotate3x3(angle, make_float3(1, 0, 0)); }
-CUDA_DEVICE_FUNCTION Matrix3x3 rotateY3x3(float angle) { return rotate3x3(angle, make_float3(0, 1, 0)); }
-CUDA_DEVICE_FUNCTION Matrix3x3 rotateZ3x3(float angle) { return rotate3x3(angle, make_float3(0, 0, 1)); }
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix3x3 rotateX3x3(float angle) { return rotate3x3(angle, make_float3(1, 0, 0)); }
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix3x3 rotateY3x3(float angle) { return rotate3x3(angle, make_float3(0, 1, 0)); }
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix3x3 rotateZ3x3(float angle) { return rotate3x3(angle, make_float3(0, 0, 1)); }
 
 
 
@@ -829,51 +829,51 @@ struct Matrix4x4 {
         float4 c3;
     };
 
-    CUDA_DEVICE_FUNCTION constexpr Matrix4x4() :
+    CUDA_COMMON_FUNCTION /*constexpr*/ Matrix4x4() :
         c0(make_float4(1, 0, 0, 0)),
         c1(make_float4(0, 1, 0, 0)),
         c2(make_float4(0, 0, 1, 0)),
         c3(make_float4(0, 0, 0, 1)) { }
-    CUDA_DEVICE_FUNCTION Matrix4x4(const float array[9]) :
+    CUDA_COMMON_FUNCTION Matrix4x4(const float array[9]) :
         m00(array[0]), m10(array[1]), m20(array[2]), m30(array[3]),
         m01(array[4]), m11(array[5]), m21(array[6]), m31(array[7]),
         m02(array[8]), m12(array[9]), m22(array[10]), m32(array[11]),
         m03(array[12]), m13(array[13]), m23(array[14]), m33(array[15]) { }
-    CUDA_DEVICE_FUNCTION constexpr Matrix4x4(const float4 &col0, const float4 &col1, const float4 &col2, const float4 &col3) :
+    CUDA_COMMON_FUNCTION constexpr Matrix4x4(const float4 &col0, const float4 &col1, const float4 &col2, const float4 &col3) :
         c0(col0), c1(col1), c2(col2), c3(col3)
     { }
-    CUDA_DEVICE_FUNCTION Matrix4x4(const Matrix3x3 &mat3x3, const float3 &position) :
+    CUDA_COMMON_FUNCTION Matrix4x4(const Matrix3x3 &mat3x3, const float3 &position) :
         c0(make_float4(mat3x3.c0)), c1(make_float4(mat3x3.c1)), c2(make_float4(mat3x3.c2)), c3(make_float4(position, 1.0f))
     { }
 
-    CUDA_DEVICE_FUNCTION Matrix4x4 operator+() const {
+    CUDA_COMMON_FUNCTION Matrix4x4 operator+() const {
         return *this;
     }
-    CUDA_DEVICE_FUNCTION Matrix4x4 operator-() const {
+    CUDA_COMMON_FUNCTION Matrix4x4 operator-() const {
         return Matrix4x4(-c0, -c1, -c2, -c3);
     }
 
-    CUDA_DEVICE_FUNCTION Matrix4x4 operator+(const Matrix4x4 &mat) const {
+    CUDA_COMMON_FUNCTION Matrix4x4 operator+(const Matrix4x4 &mat) const {
         return Matrix4x4(c0 + mat.c0, c1 + mat.c1, c2 + mat.c2, c3 + mat.c3);
     }
-    CUDA_DEVICE_FUNCTION Matrix4x4 operator-(const Matrix4x4 &mat) const {
+    CUDA_COMMON_FUNCTION Matrix4x4 operator-(const Matrix4x4 &mat) const {
         return Matrix4x4(c0 - mat.c0, c1 - mat.c1, c2 - mat.c2, c3 - mat.c3);
     }
-    CUDA_DEVICE_FUNCTION Matrix4x4 operator*(const Matrix4x4 &mat) const {
+    CUDA_COMMON_FUNCTION Matrix4x4 operator*(const Matrix4x4 &mat) const {
         const float4 r[] = { row(0), row(1), row(2), row(3) };
         return Matrix4x4(make_float4(dot(r[0], mat.c0), dot(r[1], mat.c0), dot(r[2], mat.c0), dot(r[3], mat.c0)),
                          make_float4(dot(r[0], mat.c1), dot(r[1], mat.c1), dot(r[2], mat.c1), dot(r[3], mat.c1)),
                          make_float4(dot(r[0], mat.c2), dot(r[1], mat.c2), dot(r[2], mat.c2), dot(r[3], mat.c2)),
                          make_float4(dot(r[0], mat.c3), dot(r[1], mat.c3), dot(r[2], mat.c3), dot(r[3], mat.c3)));
     }
-    CUDA_DEVICE_FUNCTION float3 operator*(const float3 &v) const {
+    CUDA_COMMON_FUNCTION float3 operator*(const float3 &v) const {
         const float4 r[] = { row(0), row(1), row(2), row(3) };
         float4 v4 = make_float4(v, 1.0f);
         return make_float3(dot(r[0], v4),
                            dot(r[1], v4),
                            dot(r[2], v4));
     }
-    CUDA_DEVICE_FUNCTION float4 operator*(const float4 &v) const {
+    CUDA_COMMON_FUNCTION float4 operator*(const float4 &v) const {
         const float4 r[] = { row(0), row(1), row(2), row(3) };
         return make_float4(dot(r[0], v),
                            dot(r[1], v),
@@ -881,7 +881,7 @@ struct Matrix4x4 {
                            dot(r[3], v));
     }
 
-    CUDA_DEVICE_FUNCTION Matrix4x4 &operator*=(const Matrix4x4 &mat) {
+    CUDA_COMMON_FUNCTION Matrix4x4 &operator*=(const Matrix4x4 &mat) {
         const float4 r[] = { row(0), row(1), row(2), row(3) };
         c0 = make_float4(dot(r[0], mat.c0), dot(r[1], mat.c0), dot(r[2], mat.c0), dot(r[3], mat.c0));
         c1 = make_float4(dot(r[0], mat.c1), dot(r[1], mat.c1), dot(r[2], mat.c1), dot(r[3], mat.c1));
@@ -890,7 +890,7 @@ struct Matrix4x4 {
         return *this;
     }
 
-    CUDA_DEVICE_FUNCTION float4 row(unsigned int r) const {
+    CUDA_COMMON_FUNCTION float4 row(unsigned int r) const {
         //Assert(r < 3, "\"r\" is out of range [0, 2].");
         switch (r) {
         case 0:
@@ -906,7 +906,7 @@ struct Matrix4x4 {
         }
     }
 
-    CUDA_DEVICE_FUNCTION Matrix4x4 &inverse() {
+    CUDA_COMMON_FUNCTION Matrix4x4 &inverse() {
         float inv[] = {
             +((m11 * m22 * m33) - (m31 * m22 * m13) + (m21 * m32 * m13) - (m11 * m32 * m23) + (m31 * m12 * m23) - (m21 * m12 * m33)),
             -((m10 * m22 * m33) - (m30 * m22 * m13) + (m20 * m32 * m13) - (m10 * m32 * m23) + (m30 * m12 * m23) - (m20 * m12 * m33)),
@@ -937,7 +937,7 @@ struct Matrix4x4 {
         return *this;
     }
 
-    CUDA_DEVICE_FUNCTION Matrix4x4 &transpose() {
+    CUDA_COMMON_FUNCTION Matrix4x4 &transpose() {
         float temp;
         temp = m10; m10 = m01; m01 = temp;
         temp = m20; m20 = m02; m02 = temp;
@@ -948,11 +948,11 @@ struct Matrix4x4 {
         return *this;
     }
 
-    CUDA_DEVICE_FUNCTION Matrix3x3 getUpperLeftMatrix() const {
+    CUDA_COMMON_FUNCTION Matrix3x3 getUpperLeftMatrix() const {
         return Matrix3x3(make_float3(c0), make_float3(c1), make_float3(c2));
     }
 
-    CUDA_DEVICE_FUNCTION void decompose(float3* retScale, float3* rotation, float3* translation) const {
+    CUDA_COMMON_FUNCTION void decompose(float3* retScale, float3* rotation, float3* translation) const {
         Matrix4x4 mat = *this;
 
         // JP: 移動成分
@@ -1010,29 +1010,29 @@ struct Matrix4x4 {
     }
 };
 
-CUDA_DEVICE_FUNCTION Matrix4x4 transpose(const Matrix4x4 &mat) {
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix4x4 transpose(const Matrix4x4 &mat) {
     Matrix4x4 ret = mat;
     return ret.transpose();
 }
-CUDA_DEVICE_FUNCTION Matrix4x4 inverse(const Matrix4x4 &mat) {
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix4x4 inverse(const Matrix4x4 &mat) {
     Matrix4x4 ret = mat;
     return ret.inverse();
 }
 
-CUDA_DEVICE_FUNCTION Matrix4x4 scale4x4(const float3 &s) {
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix4x4 scale4x4(const float3 &s) {
     return Matrix4x4(make_float4(s.x, 0, 0, 0),
                      make_float4(0, s.y, 0, 0),
                      make_float4(0, 0, s.z, 0),
                      make_float4(0, 0, 0, 1));
 }
-CUDA_DEVICE_FUNCTION Matrix4x4 scale4x4(float sx, float sy, float sz) {
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix4x4 scale4x4(float sx, float sy, float sz) {
     return scale4x4(make_float3(sx, sy, sz));
 }
-CUDA_DEVICE_FUNCTION Matrix4x4 scale4x4(float s) {
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix4x4 scale4x4(float s) {
     return scale4x4(make_float3(s, s, s));
 }
 
-CUDA_DEVICE_FUNCTION Matrix4x4 rotate4x4(float angle, const float3 &axis) {
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix4x4 rotate4x4(float angle, const float3 &axis) {
     Matrix4x4 matrix;
     float3 nAxis = normalize(axis);
     float s = std::sin(angle);
@@ -1058,20 +1058,20 @@ CUDA_DEVICE_FUNCTION Matrix4x4 rotate4x4(float angle, const float3 &axis) {
 
     return matrix;
 }
-CUDA_DEVICE_FUNCTION Matrix4x4 rotate4x4(float angle, float ax, float ay, float az) {
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix4x4 rotate4x4(float angle, float ax, float ay, float az) {
     return rotate4x4(angle, make_float3(ax, ay, az));
 }
-CUDA_DEVICE_FUNCTION Matrix4x4 rotateX4x4(float angle) { return rotate4x4(angle, make_float3(1, 0, 0)); }
-CUDA_DEVICE_FUNCTION Matrix4x4 rotateY4x4(float angle) { return rotate4x4(angle, make_float3(0, 1, 0)); }
-CUDA_DEVICE_FUNCTION Matrix4x4 rotateZ4x4(float angle) { return rotate4x4(angle, make_float3(0, 0, 1)); }
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix4x4 rotateX4x4(float angle) { return rotate4x4(angle, make_float3(1, 0, 0)); }
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix4x4 rotateY4x4(float angle) { return rotate4x4(angle, make_float3(0, 1, 0)); }
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix4x4 rotateZ4x4(float angle) { return rotate4x4(angle, make_float3(0, 0, 1)); }
 
-CUDA_DEVICE_FUNCTION Matrix4x4 translate4x4(const float3 &t) {
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix4x4 translate4x4(const float3 &t) {
     return Matrix4x4(make_float4(1, 0, 0, 0),
                      make_float4(0, 1, 0, 0),
                      make_float4(0, 0, 1, 0),
                      make_float4(t, 1.0f));
 }
-CUDA_DEVICE_FUNCTION Matrix4x4 translate4x4(float tx, float ty, float tz) {
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix4x4 translate4x4(float tx, float ty, float tz) {
     return translate4x4(make_float3(tx, ty, tz));
 }
 
@@ -1088,34 +1088,34 @@ struct Quaternion {
     };
     float w;
 
-    CUDA_DEVICE_FUNCTION constexpr Quaternion() : v(), w(1) {}
-    CUDA_DEVICE_FUNCTION constexpr Quaternion(float xx, float yy, float zz, float ww) : v(make_float3(xx, yy, zz)), w(ww) {}
-    CUDA_DEVICE_FUNCTION constexpr Quaternion(const float3 &vv, float ww) : v(vv), w(ww) {}
+    CUDA_COMMON_FUNCTION constexpr Quaternion() : v(), w(1) {}
+    CUDA_COMMON_FUNCTION /*constexpr*/ Quaternion(float xx, float yy, float zz, float ww) : v(make_float3(xx, yy, zz)), w(ww) {}
+    CUDA_COMMON_FUNCTION constexpr Quaternion(const float3 &vv, float ww) : v(vv), w(ww) {}
 
-    CUDA_DEVICE_FUNCTION bool operator==(const Quaternion &q) const {
+    CUDA_COMMON_FUNCTION bool operator==(const Quaternion &q) const {
         return v == q.v && w == q.w;
     }
-    CUDA_DEVICE_FUNCTION bool operator!=(const Quaternion &q) const {
+    CUDA_COMMON_FUNCTION bool operator!=(const Quaternion &q) const {
         return v != q.v || w != q.w;
     }
 
-    CUDA_DEVICE_FUNCTION Quaternion operator+() const { return *this; }
-    CUDA_DEVICE_FUNCTION Quaternion operator-() const { return Quaternion(-v, -w); }
+    CUDA_COMMON_FUNCTION Quaternion operator+() const { return *this; }
+    CUDA_COMMON_FUNCTION Quaternion operator-() const { return Quaternion(-v, -w); }
 
-    CUDA_DEVICE_FUNCTION Quaternion operator+(const Quaternion &q) const {
+    CUDA_COMMON_FUNCTION Quaternion operator+(const Quaternion &q) const {
         return Quaternion(v + q.v, w + q.w);
     }
-    CUDA_DEVICE_FUNCTION Quaternion operator-(const Quaternion &q) const {
+    CUDA_COMMON_FUNCTION Quaternion operator-(const Quaternion &q) const {
         return Quaternion(v - q.v, w - q.w);
     }
-    CUDA_DEVICE_FUNCTION Quaternion operator*(const Quaternion &q) const {
+    CUDA_COMMON_FUNCTION Quaternion operator*(const Quaternion &q) const {
         return Quaternion(cross(v, q.v) + w * q.v + q.w * v, w * q.w - dot(v, q.v));
     }
-    CUDA_DEVICE_FUNCTION Quaternion operator*(float s) const { return Quaternion(v * s, w * s); }
-    CUDA_DEVICE_FUNCTION Quaternion operator/(float s) const { float r = 1 / s; return *this * r; }
-    CUDA_DEVICE_FUNCTION friend Quaternion operator*(float s, const Quaternion &q) { return q * s; }
+    CUDA_COMMON_FUNCTION Quaternion operator*(float s) const { return Quaternion(v * s, w * s); }
+    CUDA_COMMON_FUNCTION Quaternion operator/(float s) const { float r = 1 / s; return *this * r; }
+    CUDA_COMMON_FUNCTION CUDA_INLINE friend Quaternion operator*(float s, const Quaternion &q) { return q * s; }
 
-    CUDA_DEVICE_FUNCTION void toEulerAngles(float* roll, float* pitch, float* yaw) const {
+    CUDA_COMMON_FUNCTION void toEulerAngles(float* roll, float* pitch, float* yaw) const {
         float xx = x * x;
         float xy = x * y;
         float xz = x * z;
@@ -1130,7 +1130,7 @@ struct Quaternion {
         *yaw = std::asin(std::fmin(std::fmax(2.0f * (yw - xz), -1.0f), 1.0f)); // around y
         *roll = std::atan2(2 * (zw + xy), ww + xx - yy - zz); // around z
     }
-    CUDA_DEVICE_FUNCTION Matrix3x3 toMatrix3x3() const {
+    CUDA_COMMON_FUNCTION Matrix3x3 toMatrix3x3() const {
         float xx = x * x, yy = y * y, zz = z * z;
         float xy = x * y, yz = y * z, zx = z * x;
         float xw = x * w, yw = y * w, zw = z * w;
@@ -1139,40 +1139,44 @@ struct Quaternion {
                          make_float3(2 * (zx + yw), 2 * (yz - xw), 1 - 2 * (xx + yy)));
     }
 
-    CUDA_DEVICE_FUNCTION bool allFinite() const {
+    CUDA_COMMON_FUNCTION bool allFinite() const {
+#if defined(__CUDA_ARCH__)
+        return ::allFinite(v) && isfinite(w);
+#else
         return ::allFinite(v) && std::isfinite(w);
+#endif
     }
 };
 
-CUDA_DEVICE_FUNCTION bool allFinite(const Quaternion &q) {
+CUDA_COMMON_FUNCTION CUDA_INLINE bool allFinite(const Quaternion &q) {
     return q.allFinite();
 }
 
-CUDA_DEVICE_FUNCTION float dot(const Quaternion &q0, const Quaternion &q1) {
+CUDA_COMMON_FUNCTION CUDA_INLINE float dot(const Quaternion &q0, const Quaternion &q1) {
     return dot(q0.v, q1.v) + q0.w * q1.w;
 }
 
-CUDA_DEVICE_FUNCTION Quaternion normalize(const Quaternion &q) {
+CUDA_COMMON_FUNCTION CUDA_INLINE Quaternion normalize(const Quaternion &q) {
     return q / std::sqrt(dot(q, q));
 }
 
-CUDA_DEVICE_FUNCTION static Quaternion qRotate(float angle, const float3 &axis) {
+CUDA_COMMON_FUNCTION CUDA_INLINE static Quaternion qRotate(float angle, const float3 &axis) {
     float ha = angle / 2;
     float s = std::sin(ha), c = std::cos(ha);
     return Quaternion(s * normalize(axis), c);
 }
-CUDA_DEVICE_FUNCTION static Quaternion qRotate(float angle, float ax, float ay, float az) {
+CUDA_COMMON_FUNCTION CUDA_INLINE static Quaternion qRotate(float angle, float ax, float ay, float az) {
     return qRotate(angle, make_float3(ax, ay, az));
 }
-CUDA_DEVICE_FUNCTION static Quaternion qRotateX(float angle) { return qRotate(angle, make_float3(1, 0, 0)); }
-CUDA_DEVICE_FUNCTION static Quaternion qRotateY(float angle) { return qRotate(angle, make_float3(0, 1, 0)); }
-CUDA_DEVICE_FUNCTION static Quaternion qRotateZ(float angle) { return qRotate(angle, make_float3(0, 0, 1)); }
+CUDA_COMMON_FUNCTION CUDA_INLINE static Quaternion qRotateX(float angle) { return qRotate(angle, make_float3(1, 0, 0)); }
+CUDA_COMMON_FUNCTION CUDA_INLINE static Quaternion qRotateY(float angle) { return qRotate(angle, make_float3(0, 1, 0)); }
+CUDA_COMMON_FUNCTION CUDA_INLINE static Quaternion qRotateZ(float angle) { return qRotate(angle, make_float3(0, 0, 1)); }
 
-CUDA_DEVICE_FUNCTION Quaternion qFromEulerAngles(float roll, float pitch, float yaw) {
+CUDA_COMMON_FUNCTION CUDA_INLINE Quaternion qFromEulerAngles(float roll, float pitch, float yaw) {
     return qRotateZ(roll) * qRotateY(yaw) * qRotateX(pitch);
 }
 
-CUDA_DEVICE_FUNCTION Quaternion Slerp(float t, const Quaternion &q0, const Quaternion &q1) {
+CUDA_COMMON_FUNCTION CUDA_INLINE Quaternion Slerp(float t, const Quaternion &q0, const Quaternion &q1) {
     float cosTheta = dot(q0, q1);
     if (cosTheta > 0.9995f)
         return normalize((1 - t) * q0 + t * q1);
@@ -1194,27 +1198,27 @@ struct AABB {
     float3 minP;
     float3 maxP;
 
-    CUDA_DEVICE_FUNCTION AABB() : minP(make_float3(INFINITY)), maxP(make_float3(-INFINITY)) {}
+    CUDA_COMMON_FUNCTION AABB() : minP(make_float3(INFINITY)), maxP(make_float3(-INFINITY)) {}
 
-    CUDA_DEVICE_FUNCTION AABB &unify(const float3 &p) {
+    CUDA_COMMON_FUNCTION AABB &unify(const float3 &p) {
         minP = min(minP, p);
         maxP = max(maxP, p);
         return *this;
     }
-    CUDA_DEVICE_FUNCTION AABB &unify(const AABB &bb) {
+    CUDA_COMMON_FUNCTION AABB &unify(const AABB &bb) {
         minP = min(minP, bb.minP);
         maxP = max(maxP, bb.maxP);
         return *this;
     }
 
-    CUDA_DEVICE_FUNCTION AABB &dilate(float scale) {
+    CUDA_COMMON_FUNCTION AABB &dilate(float scale) {
         float3 d = maxP - minP;
         minP -= 0.5f * (scale - 1) * d;
         maxP += 0.5f * (scale - 1) * d;
         return *this;
     }
 
-    CUDA_DEVICE_FUNCTION friend AABB operator*(const Matrix4x4 &mat, const AABB &aabb) {
+    CUDA_COMMON_FUNCTION CUDA_INLINE friend AABB operator*(const Matrix4x4 &mat, const AABB &aabb) {
         AABB ret;
         ret
             .unify(mat * make_float3(aabb.minP.x, aabb.minP.y, aabb.minP.z))
@@ -1306,10 +1310,10 @@ namespace shared {
         optixu::DirectCallableProgramID<ReturnType(ArgTypes...)> m_callableHandle;
 
     public:
-        CUDA_DEVICE_FUNCTION DynamicFunction() {}
-        CUDA_DEVICE_FUNCTION DynamicFunction(uint32_t sbtIndex) : m_callableHandle(sbtIndex) {}
+        CUDA_COMMON_FUNCTION DynamicFunction() {}
+        CUDA_COMMON_FUNCTION DynamicFunction(uint32_t sbtIndex) : m_callableHandle(sbtIndex) {}
 
-        CUDA_DEVICE_FUNCTION explicit operator uint32_t() const { return static_cast<uint32_t>(m_callableHandle); }
+        CUDA_COMMON_FUNCTION explicit operator uint32_t() const { return static_cast<uint32_t>(m_callableHandle); }
 
 #if defined(__CUDA_ARCH__) || defined(OPTIXU_Platform_CodeCompletion)
         CUDA_DEVICE_FUNCTION ReturnType operator()(const ArgTypes &... args) const {
@@ -1330,11 +1334,11 @@ namespace shared {
         uint64_t state;
 
     public:
-        CUDA_DEVICE_FUNCTION PCG32RNG() {}
+        CUDA_COMMON_FUNCTION PCG32RNG() {}
 
-        CUDA_DEVICE_FUNCTION void setState(uint64_t _state) { state = _state; }
+        CUDA_COMMON_FUNCTION void setState(uint64_t _state) { state = _state; }
 
-        CUDA_DEVICE_FUNCTION uint32_t operator()() {
+        CUDA_COMMON_FUNCTION uint32_t operator()() {
             uint64_t oldstate = state;
             // Advance internal state
             state = oldstate * 6364136223846793005ULL + 1;
@@ -1344,7 +1348,7 @@ namespace shared {
             return (xorshifted >> rot) | (xorshifted << ((-static_cast<int32_t>(rot)) & 31));
         }
 
-        CUDA_DEVICE_FUNCTION float getFloat0cTo1o() {
+        CUDA_COMMON_FUNCTION float getFloat0cTo1o() {
             uint32_t fractionBits = ((*this)() >> 9) | 0x3f800000;
             return *(float*)&fractionBits - 1.0f;
         }
@@ -1352,7 +1356,7 @@ namespace shared {
 
 
 
-    CUDA_DEVICE_FUNCTION uint32_t mapPrimarySampleToDiscrete(
+    CUDA_COMMON_FUNCTION CUDA_INLINE uint32_t mapPrimarySampleToDiscrete(
         float u01, uint32_t numValues, float* uRemapped = nullptr) {
 #if defined(__CUDA_ARCH__)
         uint32_t idx = min(static_cast<uint32_t>(u01 * numValues), numValues - 1);
@@ -1371,8 +1375,8 @@ namespace shared {
         uint32_t secondIndex;
         RealType probToPickFirst;
 
-        CUDA_DEVICE_FUNCTION AliasTableEntry() {}
-        CUDA_DEVICE_FUNCTION AliasTableEntry(uint32_t _secondIndex, RealType _probToPickFirst) :
+        CUDA_COMMON_FUNCTION AliasTableEntry() {}
+        CUDA_COMMON_FUNCTION AliasTableEntry(uint32_t _secondIndex, RealType _probToPickFirst) :
             secondIndex(_secondIndex), probToPickFirst(_probToPickFirst) {}
     };
 
@@ -1410,9 +1414,9 @@ namespace shared {
             m_PMF(PMF), m_CDF(CDF), m_integral(integral), m_numValues(numValues) {}
 #endif
 
-        CUDA_DEVICE_FUNCTION DiscreteDistribution1DTemplate() {}
+        CUDA_COMMON_FUNCTION DiscreteDistribution1DTemplate() {}
 
-        CUDA_DEVICE_FUNCTION uint32_t sample(RealType u, RealType* prob) const {
+        CUDA_COMMON_FUNCTION uint32_t sample(RealType u, RealType* prob) const {
             Assert(u >= 0 && u < 1, "\"u\": %g must be in range [0, 1).", u);
 #if defined(USE_WALKER_ALIAS_METHOD)
             uint32_t idx = mapPrimarySampleToDiscrete(u, m_numValues, &u);
@@ -1433,7 +1437,7 @@ namespace shared {
             return idx;
         }
 
-        CUDA_DEVICE_FUNCTION uint32_t sample(RealType u, RealType* prob, RealType* remapped) const {
+        CUDA_COMMON_FUNCTION uint32_t sample(RealType u, RealType* prob, RealType* remapped) const {
             Assert(u >= 0 && u < 1, "\"u\": %g must be in range [0, 1).", u);
 #if defined(USE_WALKER_ALIAS_METHOD)
             uint32_t idx = mapPrimarySampleToDiscrete(u, m_numValues, &u);
@@ -1463,14 +1467,14 @@ namespace shared {
             return idx;
         }
 
-        CUDA_DEVICE_FUNCTION RealType evaluatePMF(uint32_t idx) const {
+        CUDA_COMMON_FUNCTION RealType evaluatePMF(uint32_t idx) const {
             Assert(idx < m_numValues, "\"idx\" is out of range [0, %u)", m_numValues);
             return m_PMF[idx];
         }
 
-        CUDA_DEVICE_FUNCTION RealType integral() const { return m_integral; }
+        CUDA_COMMON_FUNCTION RealType integral() const { return m_integral; }
 
-        CUDA_DEVICE_FUNCTION uint32_t numValues() const { return m_numValues; }
+        CUDA_COMMON_FUNCTION uint32_t numValues() const { return m_numValues; }
     };
 
     using DiscreteDistribution1D = DiscreteDistribution1DTemplate<float>;
@@ -1502,9 +1506,9 @@ namespace shared {
             m_PDF(PDF), m_CDF(CDF), m_integral(integral), m_numValues(numValues) {}
 #endif
 
-        CUDA_DEVICE_FUNCTION RegularConstantContinuousDistribution1DTemplate() {}
+        CUDA_COMMON_FUNCTION RegularConstantContinuousDistribution1DTemplate() {}
 
-        CUDA_DEVICE_FUNCTION RealType sample(RealType u, RealType* probDensity) const {
+        CUDA_COMMON_FUNCTION RealType sample(RealType u, RealType* probDensity) const {
             Assert(u >= 0 && u < 1, "\"u\": %g must be in range [0, 1).", u);
 #if defined(USE_WALKER_ALIAS_METHOD)
             uint32_t idx = mapPrimarySampleToDiscrete(u, m_numValues, &u);
@@ -1532,14 +1536,14 @@ namespace shared {
             *probDensity = m_PDF[idx];
             return (idx + t) / m_numValues;
         }
-        CUDA_DEVICE_FUNCTION RealType evaluatePDF(RealType smp) const {
+        CUDA_COMMON_FUNCTION RealType evaluatePDF(RealType smp) const {
             Assert(smp >= 0 && smp < 1.0, "\"smp\": %g is out of range [0, 1).", smp);
             int32_t idx = min(m_numValues - 1, static_cast<uint32_t>(smp * m_numValues));
             return m_PDF[idx];
         }
-        CUDA_DEVICE_FUNCTION RealType integral() const { return m_integral; }
+        CUDA_COMMON_FUNCTION RealType integral() const { return m_integral; }
 
-        CUDA_DEVICE_FUNCTION uint32_t numValues() const { return m_numValues; }
+        CUDA_COMMON_FUNCTION uint32_t numValues() const { return m_numValues; }
     };
 
     using RegularConstantContinuousDistribution1D = RegularConstantContinuousDistribution1DTemplate<float>;
@@ -1552,20 +1556,21 @@ namespace shared {
         RegularConstantContinuousDistribution1DTemplate<RealType> m_top1DDist;
 
     public:
-        RegularConstantContinuousDistribution2DTemplate(const RegularConstantContinuousDistribution1DTemplate<RealType>* _1DDists,
-                                                        const RegularConstantContinuousDistribution1DTemplate<RealType> &top1DDist) :
+        RegularConstantContinuousDistribution2DTemplate(
+            const RegularConstantContinuousDistribution1DTemplate<RealType>* _1DDists,
+            const RegularConstantContinuousDistribution1DTemplate<RealType> &top1DDist) :
             m_1DDists(_1DDists), m_top1DDist(top1DDist) {}
 
-        CUDA_DEVICE_FUNCTION RegularConstantContinuousDistribution2DTemplate() {}
+        CUDA_COMMON_FUNCTION RegularConstantContinuousDistribution2DTemplate() {}
 
-        CUDA_DEVICE_FUNCTION void sample(RealType u0, RealType u1, RealType* d0, RealType* d1, RealType* probDensity) const {
+        CUDA_COMMON_FUNCTION void sample(RealType u0, RealType u1, RealType* d0, RealType* d1, RealType* probDensity) const {
             RealType topPDF;
             *d1 = m_top1DDist.sample(u1, &topPDF);
             uint32_t idx1D = mapPrimarySampleToDiscrete(*d1, m_top1DDist.numValues());
             *d0 = m_1DDists[idx1D].sample(u0, probDensity);
             *probDensity *= topPDF;
         }
-        CUDA_DEVICE_FUNCTION RealType evaluatePDF(RealType d0, RealType d1) const {
+        CUDA_COMMON_FUNCTION RealType evaluatePDF(RealType d0, RealType d1) const {
             uint32_t idx1D = mapPrimarySampleToDiscrete(d1, m_top1DDist.numValues());
             return m_top1DDist.evaluatePDF(d1) * m_1DDists[idx1D].evaluatePDF(d0);
         }
@@ -1578,7 +1583,10 @@ namespace shared {
     // Reference:
     // Long-Period Hash Functions for Procedural Texturing
     // combined permutation table of the hash function of period 739,024 = lcm(11, 13, 16, 17, 19)
-    CUDA_CONSTANT_MEM static uint8_t PermutationTable[] = {
+#if defined(__CUDA_ARCH__)
+    CUDA_CONSTANT_MEM
+#endif
+    static uint8_t PermutationTable[] = {
         // table 0: 11 numbers
         0, 10, 2, 7, 3, 5, 6, 4, 8, 1, 9,
         // table 1: 13 numbers
@@ -1600,7 +1608,7 @@ namespace shared {
     class PerlinNoise3D {
         int32_t m_repeat;
 
-        CUDA_DEVICE_FUNCTION static uint8_t hash(int32_t x, int32_t y, int32_t z) {
+        CUDA_COMMON_FUNCTION CUDA_INLINE static uint8_t hash(int32_t x, int32_t y, int32_t z) {
             uint32_t sum = 0;
             sum += PermutationTable[0 + (PermutationTable[0 + (PermutationTable[0 + x % 11] + y) % 11] + z) % 11];
             sum += PermutationTable[11 + (PermutationTable[11 + (PermutationTable[11 + x % 13] + y) % 13] + z) % 13];
@@ -1610,7 +1618,7 @@ namespace shared {
             return sum % 16;
         }
 
-        CUDA_DEVICE_FUNCTION static float gradient(uint32_t hash, float xu, float yu, float zu) {
+        CUDA_COMMON_FUNCTION CUDA_INLINE static float gradient(uint32_t hash, float xu, float yu, float zu) {
             switch (hash & 0xF) {
                 // Dot products with 12 vectors defined by the directions from the center of a cube to its edges.
             case 0x0: return  xu + yu; // ( 1,  1,  0)
@@ -1638,9 +1646,9 @@ namespace shared {
         }
 
     public:
-        CUDA_DEVICE_FUNCTION PerlinNoise3D(int32_t repeat) : m_repeat(repeat) {}
+        CUDA_COMMON_FUNCTION PerlinNoise3D(int32_t repeat) : m_repeat(repeat) {}
 
-        CUDA_DEVICE_FUNCTION float evaluate(const float3 &p, float frequency) const {
+        CUDA_COMMON_FUNCTION float evaluate(const float3 &p, float frequency) const {
             float x = frequency * p.x;
             float y = frequency * p.y;
             float z = frequency * p.z;
@@ -1741,7 +1749,7 @@ namespace shared {
         float m_supValue;
 
     public:
-        CUDA_DEVICE_FUNCTION MultiOctavePerlinNoise3D(uint32_t numOctaves, float initialFrequency, float supValueOrInitialAmplitude, bool supSpecified,
+        CUDA_COMMON_FUNCTION MultiOctavePerlinNoise3D(uint32_t numOctaves, float initialFrequency, float supValueOrInitialAmplitude, bool supSpecified,
                                                       float frequencyMultiplier, float persistence, uint32_t repeat) :
             m_primaryNoiseGen(repeat),
             m_numOctaves(numOctaves),
@@ -1768,7 +1776,7 @@ namespace shared {
             }
         }
 
-        CUDA_DEVICE_FUNCTION float evaluate(const float3 &p) const {
+        CUDA_COMMON_FUNCTION float evaluate(const float3 &p) const {
             float total = 0;
             float frequency = m_initialFrequency;
             float amplitude = m_initialAmplitude;

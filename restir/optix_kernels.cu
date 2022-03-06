@@ -6,7 +6,7 @@ struct HitPointParameter {
     float b1, b2;
     int32_t primIndex;
 
-    CUDA_DEVICE_FUNCTION static HitPointParameter get() {
+    CUDA_DEVICE_FUNCTION CUDA_INLINE static HitPointParameter get() {
         HitPointParameter ret;
         float2 bc = optixGetTriangleBarycentrics();
         ret.b1 = bc.x;
@@ -19,7 +19,7 @@ struct HitPointParameter {
 struct HitGroupSBTRecordData {
     GeometryInstanceData geomInstData;
 
-    CUDA_DEVICE_FUNCTION static const HitGroupSBTRecordData &get() {
+    CUDA_DEVICE_FUNCTION CUDA_INLINE static const HitGroupSBTRecordData &get() {
         return *reinterpret_cast<HitGroupSBTRecordData*>(optixGetSbtDataPointer());
     }
 };
@@ -252,7 +252,7 @@ CUDA_DEVICE_KERNEL void RT_MS_NAME(setupGBuffers)() {
 
 
 template <bool testGeometry>
-CUDA_DEVICE_FUNCTION bool testNeighbor(
+CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNeighbor(
     uint32_t nbBufIdx, int2 nbCoord, float dist, const float3 &normalInWorld) {
     if (nbCoord.x < 0 || nbCoord.x >= plp.s->imageSize.x ||
         nbCoord.y < 0 || nbCoord.y >= plp.s->imageSize.y)
@@ -280,7 +280,7 @@ static constexpr bool useMIS_RIS = true;
 
 
 template <bool withTemporalRIS, bool useUnbiasedEstimator>
-CUDA_DEVICE_FUNCTION void performInitialAndTemporalRIS() {
+CUDA_DEVICE_FUNCTION CUDA_INLINE void performInitialAndTemporalRIS() {
     static_assert(withTemporalRIS || !useUnbiasedEstimator, "Invalid combination.");
 
     int2 launchIndex = make_int2(optixGetLaunchIndex().x, optixGetLaunchIndex().y);
@@ -562,7 +562,7 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(performInitialAndTemporalRISUnbiased)() {
 
 
 template <bool useUnbiasedEstimator>
-CUDA_DEVICE_FUNCTION void performSpatialRIS() {
+CUDA_DEVICE_FUNCTION CUDA_INLINE void performSpatialRIS() {
     int2 launchIndex = make_int2(optixGetLaunchIndex().x, optixGetLaunchIndex().y);
 
     uint32_t bufIdx = plp.f->bufferIndex;
@@ -909,7 +909,7 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(shading)() {
 // Rearchitected ReSTIR
 
 template <bool withTemporalRIS, bool withSpatialRIS, bool useUnbiasedEstimator>
-CUDA_DEVICE_FUNCTION void traceShadowRays() {
+CUDA_DEVICE_FUNCTION CUDA_INLINE void traceShadowRays() {
     int2 launchIndex = make_int2(optixGetLaunchIndex().x, optixGetLaunchIndex().y);
 
     uint32_t curBufIdx = plp.f->bufferIndex;
@@ -1158,7 +1158,7 @@ enum class SampleType {
 };
 
 template <SampleType sampleType, bool withTemporalRIS, bool withSpatialRIS>
-CUDA_DEVICE_FUNCTION float computeMISWeight(
+CUDA_DEVICE_FUNCTION CUDA_INLINE float computeMISWeight(
     const int2 &launchIndex, uint32_t prevBufIdx, const optixu::BlockBuffer2D<Reservoir<LightSample>, 0> &prevReservoirs,
     uint32_t maxPrevStreamLength, const SampleVisibility &sampleVis,
     uint32_t selfStreamLength, const float3 &positionInWorld, const float3 &vOutLocal,
@@ -1305,7 +1305,7 @@ CUDA_DEVICE_FUNCTION float computeMISWeight(
 }
 
 template <bool withTemporalRIS, bool withSpatialRIS>
-CUDA_DEVICE_FUNCTION void shadeAndResample() {
+CUDA_DEVICE_FUNCTION CUDA_INLINE void shadeAndResample() {
     int2 launchIndex = make_int2(optixGetLaunchIndex().x, optixGetLaunchIndex().y);
 
     uint32_t curBufIdx = plp.f->bufferIndex;

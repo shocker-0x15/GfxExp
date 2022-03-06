@@ -1947,6 +1947,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
             CUDADRV_CHECK(cuMemcpyDtoH(&tileSize, tileSizeOnDevice, sizeof(tileSize)));
             uint2 numTiles = (uint2(renderTargetSizeX, renderTargetSizeY) + tileSize - 1) / tileSize;
             uint32_t numInferenceQueries = renderTargetSizeX * renderTargetSizeY + numTiles.x * numTiles.y;
+            numInferenceQueries = (numInferenceQueries + 127) / 128 * 128;
             //printf("numTrainingData: %u, TileSize: %u x %u\n",
             //       numTrainingData, tileSize.x, tileSize.y);
 
@@ -1960,8 +1961,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
                 reinterpret_cast<float*>(inferredRadianceBuffer.getDevicePointer()));
             curGPUTimer.infer.stop(cuStream);
 
-            // JP: 各ピクセルに推定した輝度を加算する。
-            // EN: Accumulate the predicted radiance values to the pixels.
+            // JP: 各ピクセルに推定した輝度を加算して現在のフレームを完成させる。
+            // EN: Accumulate the predicted radiance values to the pixels to complete the current frame.
             curGPUTimer.accumulateInferredRadiances.start(cuStream);
             gpuEnv.kernelAccumulateInferredRadianceValues(
                 cuStream,

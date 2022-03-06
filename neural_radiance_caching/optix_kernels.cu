@@ -6,7 +6,7 @@ struct HitPointParameter {
     float b1, b2;
     int32_t primIndex;
 
-    CUDA_DEVICE_FUNCTION static HitPointParameter get() {
+    CUDA_DEVICE_FUNCTION CUDA_INLINE static HitPointParameter get() {
         HitPointParameter ret;
         float2 bc = optixGetTriangleBarycentrics();
         ret.b1 = bc.x;
@@ -19,7 +19,7 @@ struct HitPointParameter {
 struct HitGroupSBTRecordData {
     GeometryInstanceData geomInstData;
 
-    CUDA_DEVICE_FUNCTION static const HitGroupSBTRecordData &get() {
+    CUDA_DEVICE_FUNCTION CUDA_INLINE static const HitGroupSBTRecordData &get() {
         return *reinterpret_cast<HitGroupSBTRecordData*>(optixGetSbtDataPointer());
     }
 };
@@ -40,9 +40,6 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(setupGBuffers)() {
     float jx = 0.5f;
     float jy = 0.5f;
     if (plp.f->enableJittering) {
-        // JP: ジッターをかけると現状の実装ではUnbiased要件を満たさないかもしれない。要検討。
-        // EN: Jittering may break the requirements for unbiasedness with the current implementation.
-        //     Need more consideration.
         PCG32RNG rng = plp.s->rngBuffer.read(launchIndex);
         jx = rng.getFloat0cTo1o();
         jy = rng.getFloat0cTo1o();
@@ -251,13 +248,13 @@ CUDA_DEVICE_KERNEL void RT_MS_NAME(setupGBuffers)() {
 
 
 
-CUDA_DEVICE_FUNCTION void convertToPolar(const float3 &dir, float* phi, float* theta) {
+CUDA_DEVICE_FUNCTION CUDA_INLINE void convertToPolar(const float3 &dir, float* phi, float* theta) {
     float z = std::fmin(std::fmax(dir.z, -1.0f), 1.0f);
     *theta = std::acos(z);
     *phi = std::atan2(dir.y, dir.x);
 }
 
-CUDA_DEVICE_FUNCTION void createRadianceQuery(
+CUDA_DEVICE_FUNCTION CUDA_INLINE void createRadianceQuery(
     const float3 &positionInWorld, const float3 &normalInWorld, const float3 &scatteredDirInWorld,
     float roughness, const float3 &diffuseReflectance, const float3 &specularReflectance,
     RadianceQuery* query) {
@@ -276,7 +273,7 @@ CUDA_DEVICE_FUNCTION void createRadianceQuery(
 
 static constexpr bool useSolidAngleSampling = false;
 
-CUDA_DEVICE_FUNCTION float3 performNextEventEstimation(
+CUDA_DEVICE_FUNCTION CUDA_INLINE float3 performNextEventEstimation(
     const float3 &shadingPoint, const float3 &vOutLocal, const ReferenceFrame &shadingFrame, const BSDF &bsdf,
     PCG32RNG &rng) {
     float uLight = rng.getFloat0cTo1o();
@@ -322,7 +319,7 @@ CUDA_DEVICE_FUNCTION float3 performNextEventEstimation(
 }
 
 template <bool useNRC>
-CUDA_DEVICE_FUNCTION void pathTrace_raygen_generic() {
+CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_raygen_generic() {
     uint2 launchIndex = make_uint2(optixGetLaunchIndex().x, optixGetLaunchIndex().y);
 
     uint32_t bufIdx = plp.f->bufferIndex;
@@ -571,7 +568,7 @@ CUDA_DEVICE_FUNCTION void pathTrace_raygen_generic() {
 }
 
 template <bool useNRC>
-CUDA_DEVICE_FUNCTION void pathTrace_closestHit_generic() {
+CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_closestHit_generic() {
     uint2 launchIndex = make_uint2(optixGetLaunchIndex().x, optixGetLaunchIndex().y);
 
     auto sbtr = HitGroupSBTRecordData::get();
@@ -776,7 +773,8 @@ CUDA_DEVICE_FUNCTION void pathTrace_closestHit_generic() {
                 plp.s->trainVertexInfoBuffer[trainDataIndex] = vertInfo;
 
                 // JP: 現在の頂点に対する直接照明(NEE)によるScattered Radianceでターゲット値を初期化。
-                // EN: Initialize a target value by scattered radiance at the current vertex by direct lighting (NEE).
+                // EN: Initialize a target value by scattered radiance at the current vertex by
+                //     direct lighting (NEE).
                 plp.s->trainTargetBuffer[0][trainDataIndex] = directContNEE;
                 //if (!allFinite(directContNEE))
                 //    printf("NEE: (%g, %g, %g)\n",
@@ -802,7 +800,7 @@ CUDA_DEVICE_FUNCTION void pathTrace_closestHit_generic() {
 }
 
 template <bool useNRC>
-CUDA_DEVICE_FUNCTION void pathTrace_miss_generic() {
+CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_miss_generic() {
     if (!plp.s->envLightTexture || !plp.f->enableEnvLight)
         return;
 

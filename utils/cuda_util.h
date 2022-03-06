@@ -1,6 +1,6 @@
 ﻿/*
 
-   Copyright 2021 Shin Watanabe
+   Copyright 2022 Shin Watanabe
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -76,18 +76,22 @@ typedef unsigned long long CUsurfObject;
 
 
 
-#if defined(__CUDA_ARCH__)
+#if defined(__CUDACC__)
 #   define CUDA_SHARED_MEM __shared__
 #   define CUDA_CONSTANT_MEM __constant__
 #   define CUDA_DEVICE_MEM __device__
 #   define CUDA_DEVICE_KERNEL extern "C" __global__
-#   define CUDA_DEVICE_FUNCTION __device__ __forceinline__
+#   define CUDA_INLINE __forceinline__
+#   define CUDA_DEVICE_FUNCTION __device__
+#   define CUDA_COMMON_FUNCTION __host__ __device__
 #else
 #   define CUDA_SHARED_MEM
 #   define CUDA_CONSTANT_MEM
 #   define CUDA_DEVICE_MEM
 #   define CUDA_DEVICE_KERNEL
+#   define CUDA_INLINE inline
 #   define CUDA_DEVICE_FUNCTION
+#   define CUDA_COMMON_FUNCTION
 #endif
 
 

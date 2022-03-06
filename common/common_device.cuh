@@ -1,4 +1,4 @@
-#pragma once
+ï»¿#pragma once
 
 #include "common_shared.h"
 
@@ -15,21 +15,21 @@ static constexpr float RayEpsilon = 1e-4;
 
 
 
-CUDA_DEVICE_FUNCTION float pow2(float x) {
+CUDA_DEVICE_FUNCTION CUDA_INLINE float pow2(float x) {
     return x * x;
 }
-CUDA_DEVICE_FUNCTION float pow3(float x) {
+CUDA_DEVICE_FUNCTION CUDA_INLINE float pow3(float x) {
     return x * x * x;
 }
-CUDA_DEVICE_FUNCTION float pow4(float x) {
+CUDA_DEVICE_FUNCTION CUDA_INLINE float pow4(float x) {
     return x * x * x * x;
 }
-CUDA_DEVICE_FUNCTION float pow5(float x) {
+CUDA_DEVICE_FUNCTION CUDA_INLINE float pow5(float x) {
     return x * x * x * x * x;
 }
 
 template <typename T>
-CUDA_DEVICE_FUNCTION T lerp(const T &v0, const T &v1, float t) {
+CUDA_DEVICE_FUNCTION CUDA_INLINE T lerp(const T & v0, const T & v1, float t) {
     return (1 - t) * v0 + t * v1;
 }
 
@@ -39,28 +39,28 @@ CUDA_DEVICE_FUNCTION T lerp(const T &v0, const T &v1, float t) {
 // (-1, 0,  0) <=> phi: 1/2 pi
 // ( 0, 0, -1) <=> phi:   1 pi
 // ( 1, 0,  0) <=> phi: 3/2 pi
-CUDA_DEVICE_FUNCTION float3 fromPolarYUp(float phi, float theta) {
+CUDA_DEVICE_FUNCTION CUDA_INLINE float3 fromPolarYUp(float phi, float theta) {
     float sinPhi, cosPhi;
     float sinTheta, cosTheta;
     sincosf(phi, &sinPhi, &cosPhi);
     sincosf(theta, &sinTheta, &cosTheta);
     return make_float3(-sinPhi * sinTheta, cosTheta, cosPhi * sinTheta);
 }
-CUDA_DEVICE_FUNCTION void toPolarYUp(const float3 &v, float* phi, float* theta) {
+CUDA_DEVICE_FUNCTION CUDA_INLINE void toPolarYUp(const float3 & v, float* phi, float* theta) {
     *theta = std::acos(min(max(v.y, -1.0f), 1.0f));
     *phi = std::fmod(std::atan2(-v.x, v.z) + 2 * Pi,
                      2 * Pi);
 }
 
-CUDA_DEVICE_FUNCTION float3 halfVector(const float3 &a, const float3 &b) {
+CUDA_DEVICE_FUNCTION CUDA_INLINE float3 halfVector(const float3 & a, const float3 & b) {
     return normalize(a + b);
 }
 
-CUDA_DEVICE_FUNCTION float absDot(const float3 &a, const float3 &b) {
+CUDA_DEVICE_FUNCTION CUDA_INLINE float absDot(const float3 & a, const float3 & b) {
     return std::fabs(dot(a, b));
 }
 
-CUDA_DEVICE_FUNCTION void makeCoordinateSystem(const float3 &normal, float3* tangent, float3* bitangent) {
+CUDA_DEVICE_FUNCTION CUDA_INLINE void makeCoordinateSystem(const float3 & normal, float3 * tangent, float3 * bitangent) {
     float sign = normal.z >= 0 ? 1 : -1;
     const float a = -1 / (sign + normal.z);
     const float b = normal.x * normal.y * a;
@@ -68,15 +68,15 @@ CUDA_DEVICE_FUNCTION void makeCoordinateSystem(const float3 &normal, float3* tan
     *bitangent = make_float3(b, sign + normal.y * normal.y * a, -normal.y);
 }
 
-// JP: ©ŒÈŒğ³‰ñ”ğ‚Ì‚½‚ß‚ÉƒŒƒC‚ÌŒ´“_‚ÉƒIƒtƒZƒbƒg‚ğ•t‰Á‚·‚éB
+// JP: è‡ªå·±äº¤å‰å›é¿ã®ãŸã‚ã«ãƒ¬ã‚¤ã®åŸç‚¹ã«ã‚ªãƒ•ã‚»ãƒƒãƒˆã‚’ä»˜åŠ ã™ã‚‹ã€‚
 // EN: Add an offset to a ray origin to avoid self-intersection.
-CUDA_DEVICE_FUNCTION float3 offsetRayOriginNaive(const float3 &p, const float3 &geometricNormal) {
+CUDA_DEVICE_FUNCTION CUDA_INLINE float3 offsetRayOriginNaive(const float3 & p, const float3 & geometricNormal) {
     return p + RayEpsilon * geometricNormal;
 }
 
 // Reference:
 // Chapter 6. A Fast and Robust Method for Avoiding Self-Intersection, Ray Tracing Gems, 2019
-CUDA_DEVICE_FUNCTION float3 offsetRayOrigin(const float3 &p, const float3 &geometricNormal) {
+CUDA_DEVICE_FUNCTION CUDA_INLINE float3 offsetRayOrigin(const float3 &p, const float3 &geometricNormal) {
     constexpr float kOrigin = 1.0f / 32.0f;
     constexpr float kFloatScale = 1.0f / 65536.0f;
     constexpr float kIntScale = 256.0f;
@@ -87,15 +87,15 @@ CUDA_DEVICE_FUNCTION float3 offsetRayOrigin(const float3 &p, const float3 &geome
         static_cast<int32_t>(kIntScale * geometricNormal.z)
     };
 
-    // JP: ”Šw“I‚ÈÕ“Ë“_‚ÌÀ•W‚ÆAÀÛ‚ÌÀ•W‚ÌŒë·‚ÍŒ´“_‚©‚ç‚Ì‹——£‚É”ä—á‚·‚éB
-    //     int‚Æ‚µ‚ÄƒIƒtƒZƒbƒg‚ğ‰Á‚¦‚é‚±‚Æ‚ÅƒXƒP[ƒ‹”ñˆË‘¶‚É“KØ‚ÈƒIƒtƒZƒbƒg‚ğ‰Á‚¦‚é‚±‚Æ‚ª‚Å‚«‚éB
+    // JP: æ•°å­¦çš„ãªè¡çªç‚¹ã®åº§æ¨™ã¨ã€å®Ÿéš›ã®åº§æ¨™ã®èª¤å·®ã¯åŸç‚¹ã‹ã‚‰ã®è·é›¢ã«æ¯”ä¾‹ã™ã‚‹ã€‚
+    //     intã¨ã—ã¦ã‚ªãƒ•ã‚»ãƒƒãƒˆã‚’åŠ ãˆã‚‹ã“ã¨ã§ã‚¹ã‚±ãƒ¼ãƒ«éä¾å­˜ã«é©åˆ‡ãªã‚ªãƒ•ã‚»ãƒƒãƒˆã‚’åŠ ãˆã‚‹ã“ã¨ãŒã§ãã‚‹ã€‚
     // EN: The error of the actual coorinates of the intersection point to the mathematical one is proportional to the distance to the origin.
     //     Applying the offset as int makes applying appropriate scale invariant amount of offset possible.
     float3 newP1 = make_float3(__int_as_float(__float_as_int(p.x) + (p.x < 0 ? -1 : 1) * offsetInInt[0]),
                                __int_as_float(__float_as_int(p.y) + (p.y < 0 ? -1 : 1) * offsetInInt[1]),
                                __int_as_float(__float_as_int(p.z) + (p.z < 0 ? -1 : 1) * offsetInInt[2]));
 
-    // JP: Œ´“_‚É‹ß‚¢êŠ‚Å‚ÍAŒ´“_‚©‚ç‚Ì‹——£‚ÉˆË‘¶‚¹‚¸ˆê’è‚ÌŒë·‚ªc‚é‚½‚ß•Êˆ—‚ª•K—vB
+    // JP: åŸç‚¹ã«è¿‘ã„å ´æ‰€ã§ã¯ã€åŸç‚¹ã‹ã‚‰ã®è·é›¢ã«ä¾å­˜ã›ãšä¸€å®šã®èª¤å·®ãŒæ®‹ã‚‹ãŸã‚åˆ¥å‡¦ç†ãŒå¿…è¦ã€‚
     // EN: A constant amount of error remains near the origin independent of the distance to the origin so we need handle it separately.
     float3 newP2 = p + kFloatScale * geometricNormal;
 
@@ -129,8 +129,8 @@ struct ReferenceFrame {
     }
 };
 
-CUDA_DEVICE_FUNCTION void applyBumpMapping(const float3 &modNormalInTF, ReferenceFrame* frameToModify) {
-    // JP: –@ü‚©‚ç‰ñ“]²‚Æ‰ñ“]Šp(AQuaternion)‚ğ‹‚ß‚Ä‘Î‰‚·‚éÚ•½–ÊƒxƒNƒgƒ‹‚ğ‹‚ß‚éB
+CUDA_DEVICE_FUNCTION CUDA_INLINE void applyBumpMapping(const float3 &modNormalInTF, ReferenceFrame* frameToModify) {
+    // JP: æ³•ç·šã‹ã‚‰å›è»¢è»¸ã¨å›è»¢è§’(ã€Quaternion)ã‚’æ±‚ã‚ã¦å¯¾å¿œã™ã‚‹æ¥å¹³é¢ãƒ™ã‚¯ãƒˆãƒ«ã‚’æ±‚ã‚ã‚‹ã€‚
     // EN: calculate a rotating axis and an angle (and quaternion) from the normal then calculate corresponding tangential vectors.
     float projLength = std::sqrt(modNormalInTF.x * modNormalInTF.x + modNormalInTF.y * modNormalInTF.y);
     if (projLength < 1e-3f)
@@ -187,7 +187,7 @@ CUDA_DECLARE_CALLABLE_PROGRAM_POINTER(readModifiedNormalFromHeightMap);
 
 
 
-CUDA_DEVICE_FUNCTION void concentricSampleDisk(float u0, float u1, float* dx, float* dy) {
+CUDA_DEVICE_FUNCTION CUDA_INLINE void concentricSampleDisk(float u0, float u1, float* dx, float* dy) {
     float r, theta;
     float sx = 2 * u0 - 1;
     float sy = 2 * u1 - 1;
@@ -222,7 +222,7 @@ CUDA_DEVICE_FUNCTION void concentricSampleDisk(float u0, float u1, float* dx, fl
     *dy = r * sin(theta);
 }
 
-CUDA_DEVICE_FUNCTION float3 cosineSampleHemisphere(float u0, float u1) {
+CUDA_DEVICE_FUNCTION CUDA_INLINE float3 cosineSampleHemisphere(float u0, float u1) {
     float x, y;
     concentricSampleDisk(u0, u1, &x, &y);
     return make_float3(x, y, std::sqrt(std::fmax(0.0f, 1.0f - x * x - y * y)));
@@ -231,7 +231,7 @@ CUDA_DEVICE_FUNCTION float3 cosineSampleHemisphere(float u0, float u1) {
 
 
 template <typename BSDFType>
-CUDA_DEVICE_FUNCTION void setupBSDFBody(
+CUDA_DEVICE_FUNCTION CUDA_INLINE void setupBSDFBody(
     const shared::MaterialData &matData, const float2 &texCoord, uint32_t* bodyData);
 
 
@@ -277,7 +277,7 @@ public:
 };
 
 template<>
-CUDA_DEVICE_FUNCTION void setupBSDFBody<LambertBRDF>(
+CUDA_DEVICE_FUNCTION CUDA_INLINE void setupBSDFBody<LambertBRDF>(
     const shared::MaterialData &matData, const float2 &texCoord, uint32_t* bodyData) {
     float4 reflectance = tex2DLod<float4>(matData.asLambert.reflectance, texCoord.x, texCoord.y, 0.0f);
     auto &bsdfBody = *reinterpret_cast<LambertBRDF*>(bodyData);
@@ -286,14 +286,14 @@ CUDA_DEVICE_FUNCTION void setupBSDFBody<LambertBRDF>(
 
 
 
-// DiffuseAndSpecularBRDF‚ÌDirectional-Hemispherical Reflectance‚ğ–‘OŒvZ‚µ‚Ä
-// ƒeƒNƒXƒ`ƒƒ[‰»‚µ‚½Œ‹‰Ê‚ğƒtƒBƒbƒeƒBƒ“ƒO‚·‚éB
-// DiffuseASpecular¬•ª‚Í‚»‚ê‚¼‚ê
+// DiffuseAndSpecularBRDFã®Directional-Hemispherical Reflectanceã‚’äº‹å‰è¨ˆç®—ã—ã¦
+// ãƒ†ã‚¯ã‚¹ãƒãƒ£ãƒ¼åŒ–ã—ãŸçµæœã‚’ãƒ•ã‚£ãƒƒãƒ†ã‚£ãƒ³ã‚°ã™ã‚‹ã€‚
+// Diffuseã€Specularæˆåˆ†ã¯ãã‚Œãã‚Œ
 // - baseColor * diffusePreInt(cosV, roughness)
 // - specularF0 * specularPreIntA(cosV, roughness) + (1 - specularF0) * specularPreIntB(cosV, roughness)
-// ‚Å•\‚³‚ê‚éB
+// ã§è¡¨ã•ã‚Œã‚‹ã€‚
 // https://www.shadertoy.com/view/WtjfRD
-CUDA_DEVICE_FUNCTION void calcFittedPreIntegratedTerms(
+CUDA_DEVICE_FUNCTION CUDA_INLINE void calcFittedPreIntegratedTerms(
     float cosV, float roughness,
     float* diffusePreInt, float* specularPreIntA, float* specularPreIntB) {
         {
@@ -465,12 +465,12 @@ public:
         if (sumWeights * uComponent < diffuseWeight) {
             uDir1 = (sumWeights * uComponent - 0) / diffuseWeight;
 
-            // JP: ƒRƒTƒCƒ“•ª•z‚©‚çƒTƒ“ƒvƒ‹‚·‚éB
+            // JP: ã‚³ã‚µã‚¤ãƒ³åˆ†å¸ƒã‹ã‚‰ã‚µãƒ³ãƒ—ãƒ«ã™ã‚‹ã€‚
             // EN: sample based on cosine distribution.
             dirL = cosineSampleHemisphere(uDir0, uDir1);
             diffuseDirPDF = dirL.z / Pi;
 
-            // JP: “¯‚¶•ûŒüƒTƒ“ƒvƒ‹‚ğƒXƒyƒLƒ…ƒ‰[‘w‚©‚çƒTƒ“ƒvƒ‹‚·‚éŠm—¦–§“x‚ğ‹‚ß‚éB
+            // JP: åŒã˜æ–¹å‘ã‚µãƒ³ãƒ—ãƒ«ã‚’ã‚¹ãƒšã‚­ãƒ¥ãƒ©ãƒ¼å±¤ã‹ã‚‰ã‚µãƒ³ãƒ—ãƒ«ã™ã‚‹ç¢ºç‡å¯†åº¦ã‚’æ±‚ã‚ã‚‹ã€‚
             // EN: calculate PDF to generate the sampled direction from the specular layer.
             m = halfVector(dirL, dirV);
             dotLH = min(dot(dirL, m), 1.0f);
@@ -482,7 +482,7 @@ public:
         else {
             uDir1 = (sumWeights * uComponent - diffuseWeight) / specularWeight;
 
-            // JP: ƒXƒyƒLƒ…ƒ‰[‘w‚Ìƒ}ƒCƒNƒƒtƒ@ƒZƒbƒg•ª•z‚©‚çƒTƒ“ƒvƒ‹‚·‚éB
+            // JP: ã‚¹ãƒšã‚­ãƒ¥ãƒ©ãƒ¼å±¤ã®ãƒã‚¤ã‚¯ãƒ­ãƒ•ã‚¡ã‚»ãƒƒãƒˆåˆ†å¸ƒã‹ã‚‰ã‚µãƒ³ãƒ—ãƒ«ã™ã‚‹ã€‚
             // EN: sample based on the specular microfacet distribution.
             float mPDF;
             D = ggx.sample(dirV, uDir0, uDir1, &m, &mPDF);
@@ -496,7 +496,7 @@ public:
             float commonPDFTerm = 1.0f / (4 * dotLH);
             specularDirPDF = commonPDFTerm * mPDF;
 
-            // JP: “¯‚¶•ûŒüƒTƒ“ƒvƒ‹‚ğƒRƒTƒCƒ“•ª•z‚©‚çƒTƒ“ƒvƒ‹‚·‚éŠm—¦–§“x‚ğ‹‚ß‚éB
+            // JP: åŒã˜æ–¹å‘ã‚µãƒ³ãƒ—ãƒ«ã‚’ã‚³ã‚µã‚¤ãƒ³åˆ†å¸ƒã‹ã‚‰ã‚µãƒ³ãƒ—ãƒ«ã™ã‚‹ç¢ºç‡å¯†åº¦ã‚’æ±‚ã‚ã‚‹ã€‚
             // EN: calculate PDF to generate the sampled direction from the cosine distribution.
             diffuseDirPDF = dirL.z / Pi;
         }
@@ -659,7 +659,7 @@ public:
 };
 
 template<>
-CUDA_DEVICE_FUNCTION void setupBSDFBody<DiffuseAndSpecularBRDF>(
+CUDA_DEVICE_FUNCTION CUDA_INLINE void setupBSDFBody<DiffuseAndSpecularBRDF>(
     const shared::MaterialData &matData, const float2 &texCoord, uint32_t* bodyData) {
     float4 diffuseColor =
         tex2DLod<float4>(matData.asDiffuseAndSpecular.diffuse, texCoord.x, texCoord.y, 0.0f);
@@ -673,7 +673,7 @@ CUDA_DEVICE_FUNCTION void setupBSDFBody<DiffuseAndSpecularBRDF>(
 }
 
 template<>
-CUDA_DEVICE_FUNCTION void setupBSDFBody<SimplePBR_BRDF>(
+CUDA_DEVICE_FUNCTION CUDA_INLINE void setupBSDFBody<SimplePBR_BRDF>(
     const shared::MaterialData &matData, const float2 &texCoord, uint32_t* bodyData) {
     float4 baseColor_opacity =
         tex2DLod<float4>(matData.asSimplePBR.baseColor_opacity, texCoord.x, texCoord.y, 0.0f);

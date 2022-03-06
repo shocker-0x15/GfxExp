@@ -24,8 +24,7 @@ namespace shared {
         float3 position;
         Matrix3x3 orientation;
 
-#if defined(__CUDA_ARCH__) || defined(OPTIXU_Platform_CodeCompletion)
-        CUDA_DEVICE_FUNCTION float2 calcScreenPosition(const float3 &posInWorld) const {
+        CUDA_COMMON_FUNCTION float2 calcScreenPosition(const float3 &posInWorld) const {
             Matrix3x3 invOri = inverse(orientation);
             float3 posInView = invOri * (posInWorld - position);
             float2 posAtZ1 = make_float2(posInView.x / posInView.z, posInView.y / posInView.z);
@@ -34,7 +33,6 @@ namespace shared {
             return make_float2(1 - (posAtZ1.x + 0.5f * w) / w,
                                1 - (posAtZ1.y + 0.5f * h) / h);
         }
-#endif
     };
 
 
@@ -50,7 +48,7 @@ namespace shared {
 
 
 
-    CUDA_DEVICE_FUNCTION float convertToWeight(const float3 &color) {
+    CUDA_COMMON_FUNCTION CUDA_INLINE float convertToWeight(const float3 &color) {
         //return sRGB_calcLuminance(color);
         return (color.x + color.y + color.z) / 3;
     }
@@ -74,11 +72,11 @@ namespace shared {
         uint32_t m_streamLength;
 
     public:
-        CUDA_DEVICE_FUNCTION void initialize() {
+        CUDA_COMMON_FUNCTION void initialize() {
             m_sumWeights = 0;
             m_streamLength = 0;
         }
-        CUDA_DEVICE_FUNCTION bool update(const SampleType &newSample, float weight, float u) {
+        CUDA_COMMON_FUNCTION bool update(const SampleType &newSample, float weight, float u) {
             m_sumWeights += weight;
             bool accepted = u < weight / m_sumWeights;
             if (accepted)
@@ -87,16 +85,16 @@ namespace shared {
             return accepted;
         }
 
-        CUDA_DEVICE_FUNCTION const LightSample &getSample() const {
+        CUDA_COMMON_FUNCTION const LightSample &getSample() const {
             return m_sample;
         }
-        CUDA_DEVICE_FUNCTION float getSumWeights() const {
+        CUDA_COMMON_FUNCTION float getSumWeights() const {
             return m_sumWeights;
         }
-        CUDA_DEVICE_FUNCTION uint32_t getStreamLength() const {
+        CUDA_COMMON_FUNCTION uint32_t getStreamLength() const {
             return m_streamLength;
         }
-        CUDA_DEVICE_FUNCTION void setStreamLength(uint32_t length) {
+        CUDA_COMMON_FUNCTION void setStreamLength(uint32_t length) {
             m_streamLength = length;
         }
     };
@@ -218,7 +216,7 @@ namespace shared {
             debugSwitches &= ~(1 << idx);
             debugSwitches |= b << idx;
         }
-        CUDA_DEVICE_FUNCTION bool getDebugSwitch(int32_t idx) const {
+        CUDA_COMMON_FUNCTION bool getDebugSwitch(int32_t idx) const {
             return (debugSwitches >> idx) & 0b1;
         }
     };
@@ -261,7 +259,7 @@ RT_PIPELINE_LAUNCH_PARAMETERS shared::PipelineLaunchParameters plp;
 #endif
 
 template <bool useSolidAngleSampling>
-CUDA_DEVICE_FUNCTION void sampleLight(
+CUDA_DEVICE_FUNCTION CUDA_INLINE void sampleLight(
     const float3 &shadingPoint,
     float ul, bool sampleEnvLight, float u0, float u1,
     shared::LightSample* lightSample, float* areaPDensity) {
@@ -383,17 +381,17 @@ CUDA_DEVICE_FUNCTION void sampleLight(
 
                 const auto restoreBarycentrics = [&geomNormal]
                 (const float3 &org, const float3 &dir,
-                    const float3 &pA, const float3 &pB, const float3 &pC,
-                    float* dist, float* b1, float* b2) {
-                        float3 eAB = pB - pA;
-                        float3 eAC = pC - pA;
-                        float3 pVec = cross(dir, eAC);
-                        float recDet = 1.0f / dot(eAB, pVec);
-                        float3 tVec = org - pA;
-                        *b1 = dot(tVec, pVec) * recDet;
-                        float3 qVec = cross(tVec, eAB);
-                        *b2 = dot(dir, qVec) * recDet;
-                        *dist = dot(eAC, qVec) * recDet;
+                 const float3 &pA, const float3 &pB, const float3 &pC,
+                 float* dist, float* b1, float* b2) {
+                     float3 eAB = pB - pA;
+                     float3 eAC = pC - pA;
+                     float3 pVec = cross(dir, eAC);
+                     float recDet = 1.0f / dot(eAB, pVec);
+                     float3 tVec = org - pA;
+                     *b1 = dot(tVec, pVec) * recDet;
+                     float3 qVec = cross(tVec, eAB);
+                     *b2 = dot(dir, qVec) * recDet;
+                     *dist = dot(eAC, qVec) * recDet;
                 };
                 dir = P;
                 restoreBarycentrics(shadingPoint, dir, p[0], p[1], p[2], &dist, &t1, &t2);
@@ -443,7 +441,7 @@ CUDA_DEVICE_FUNCTION void sampleLight(
 }
 
 template <bool withVisibility>
-CUDA_DEVICE_FUNCTION float3 performDirectLighting(
+CUDA_DEVICE_FUNCTION CUDA_INLINE float3 performDirectLighting(
     const float3 &shadingPoint, const float3 &vOutLocal, const ReferenceFrame &shadingFrame, const BSDF &bsdf,
     const shared::LightSample &lightSample) {
     float3 shadowRayDir = lightSample.atInfinity ?
@@ -481,7 +479,7 @@ CUDA_DEVICE_FUNCTION float3 performDirectLighting(
     }
 }
 
-CUDA_DEVICE_FUNCTION bool evaluateVisibility(
+CUDA_DEVICE_FUNCTION CUDA_INLINE bool evaluateVisibility(
     const float3 &shadingPoint, const shared::LightSample &lightSample) {
     float3 shadowRayDir = lightSample.atInfinity ?
         lightSample.position :
@@ -504,7 +502,7 @@ CUDA_DEVICE_FUNCTION bool evaluateVisibility(
 }
 
 template <bool computeHypotheticalAreaPDensity, bool useSolidAngleSampling>
-CUDA_DEVICE_FUNCTION void computeSurfacePoint(
+CUDA_DEVICE_FUNCTION CUDA_INLINE void computeSurfacePoint(
     const shared::InstanceData &inst,
     const shared::GeometryInstanceData &geomInst,
     uint32_t primIndex, float b1, float b2,

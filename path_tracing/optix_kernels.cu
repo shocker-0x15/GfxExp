@@ -6,7 +6,7 @@ struct HitPointParameter {
     float b1, b2;
     int32_t primIndex;
 
-    CUDA_DEVICE_FUNCTION static HitPointParameter get() {
+    CUDA_DEVICE_FUNCTION CUDA_INLINE static HitPointParameter get() {
         HitPointParameter ret;
         float2 bc = optixGetTriangleBarycentrics();
         ret.b1 = bc.x;
@@ -19,7 +19,7 @@ struct HitPointParameter {
 struct HitGroupSBTRecordData {
     GeometryInstanceData geomInstData;
 
-    CUDA_DEVICE_FUNCTION static const HitGroupSBTRecordData &get() {
+    CUDA_DEVICE_FUNCTION CUDA_INLINE static const HitGroupSBTRecordData &get() {
         return *reinterpret_cast<HitGroupSBTRecordData*>(optixGetSbtDataPointer());
     }
 };
@@ -257,7 +257,7 @@ static constexpr bool useExplicitLightSampling = true;
 static constexpr bool useMultipleImportanceSampling = useImplicitLightSampling && useExplicitLightSampling;
 static_assert(useImplicitLightSampling || useExplicitLightSampling, "Invalid configuration for light sampling.");
 
-CUDA_DEVICE_FUNCTION float3 performNextEventEstimation(
+CUDA_DEVICE_FUNCTION CUDA_INLINE float3 performNextEventEstimation(
     const float3 &shadingPoint, const float3 &vOutLocal, const ReferenceFrame &shadingFrame, const BSDF &bsdf,
     PCG32RNG &rng) {
     float3 ret = make_float3(0.0f);
@@ -306,7 +306,7 @@ CUDA_DEVICE_FUNCTION float3 performNextEventEstimation(
     return ret;
 }
 
-CUDA_DEVICE_FUNCTION void pathTrace_rayGen_generic() {
+CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_rayGen_generic() {
     uint2 launchIndex = make_uint2(optixGetLaunchIndex().x, optixGetLaunchIndex().y);
 
     uint32_t bufIdx = plp.f->bufferIndex;
@@ -438,7 +438,7 @@ CUDA_DEVICE_FUNCTION void pathTrace_rayGen_generic() {
     plp.s->beautyAccumBuffer.write(launchIndex, make_float4(colorResult, 1.0f));
 }
 
-CUDA_DEVICE_FUNCTION void pathTrace_closestHit_generic() {
+CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_closestHit_generic() {
     auto sbtr = HitGroupSBTRecordData::get();
     const InstanceData &inst = plp.f->instanceDataBuffer[optixGetInstanceId()];
     const GeometryInstanceData &geomInst = sbtr.geomInstData;

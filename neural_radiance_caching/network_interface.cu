@@ -1,4 +1,5 @@
 #include "network_interface.h"
+#include "../common/common_shared.h"
 
 #include <cuda_runtime.h>
 
@@ -91,16 +92,16 @@ void NeuralRadianceCache::finalize() {
 
 void NeuralRadianceCache::infer(
     CUstream stream, float* inputData, uint32_t numData, float* predictionData) {
-    uint32_t numDataPadded = (numData + 255) / 256 * 256;
-    GPUMatrix<float> inputs(inputData, numInputDims, numDataPadded);
-    GPUMatrix<float> predictions(predictionData, numOutputDims, numDataPadded);
+    Assert((numData & 0x7F) == 0, "numData must be a multiple of 128.");
+    GPUMatrix<float> inputs(inputData, numInputDims, numData);
+    GPUMatrix<float> predictions(predictionData, numOutputDims, numData);
     m->network->inference(stream, inputs, predictions);
 }
 
 void NeuralRadianceCache::train(
     CUstream stream, float* inputData, float* targetData, uint32_t numData) {
-    uint32_t numDataPadded = (numData + 255) / 256 * 256;
-    GPUMatrix<float> inputs(inputData, numInputDims, numDataPadded);
-    GPUMatrix<float> targets(targetData, numOutputDims, numDataPadded);
+    Assert((numData & 0x7F) == 0, "numData must be a multiple of 128.");
+    GPUMatrix<float> inputs(inputData, numInputDims, numData);
+    GPUMatrix<float> targets(targetData, numOutputDims, numData);
     m->trainer->training_step(stream, inputs, targets, nullptr);
 }

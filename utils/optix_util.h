@@ -1,6 +1,6 @@
 ﻿/*
 
-   Copyright 2021 Shin Watanabe
+   Copyright 2022 Shin Watanabe
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -192,15 +192,19 @@ TODO:
 #endif
 #define OPTIXU_ENABLE_RUNTIME_ERROR
 
-#if defined(__CUDA_ARCH__)
+#if defined(__CUDACC__)
 #   define RT_CALLABLE_PROGRAM extern "C" __device__
-#   define RT_DEVICE_FUNCTION __device__ __forceinline__
+#   define RT_INLINE __forceinline__
+#   define RT_DEVICE_FUNCTION __device__
+#   define RT_COMMON_FUNCTION __host__ __device__
 #   if !defined(RT_PIPELINE_LAUNCH_PARAMETERS)
 #       define RT_PIPELINE_LAUNCH_PARAMETERS extern "C" __constant__
 #   endif
 #else
 #   define RT_CALLABLE_PROGRAM
+#   define RT_INLINE inline
 #   define RT_DEVICE_FUNCTION
+#   define RT_COMMON_FUNCTION
 #   define RT_PIPELINE_LAUNCH_PARAMETERS
 #endif
 
@@ -225,20 +229,20 @@ TODO:
 
 
 #define OPTIXU_DEFINE_OPERATORS_FOR_FLAGS(Type) \
-    RT_DEVICE_FUNCTION inline Type operator~(Type a) { \
+    RT_COMMON_FUNCTION RT_INLINE Type operator~(Type a) { \
         return static_cast<Type>(~static_cast<uint32_t>(a)); \
     } \
-    RT_DEVICE_FUNCTION inline Type operator|(Type a, Type b) { \
+    RT_COMMON_FUNCTION RT_INLINE Type operator|(Type a, Type b) { \
         return static_cast<Type>(static_cast<uint32_t>(a) | static_cast<uint32_t>(b)); \
     } \
-    RT_DEVICE_FUNCTION inline Type &operator|=(Type &a, Type b) { \
+    RT_COMMON_FUNCTION RT_INLINE Type &operator|=(Type &a, Type b) { \
         a = static_cast<Type>(static_cast<uint32_t>(a) | static_cast<uint32_t>(b)); \
         return a; \
     } \
-    RT_DEVICE_FUNCTION inline Type operator&(Type a, Type b) { \
+    RT_COMMON_FUNCTION RT_INLINE Type operator&(Type a, Type b) { \
         return static_cast<Type>(static_cast<uint32_t>(a) & static_cast<uint32_t>(b)); \
     } \
-    RT_DEVICE_FUNCTION inline Type &operator&=(Type &a, Type b) { \
+    RT_COMMON_FUNCTION RT_INLINE Type &operator&=(Type &a, Type b) { \
         a = static_cast<Type>(static_cast<uint32_t>(a) & static_cast<uint32_t>(b)); \
         return a; \
     }
@@ -326,9 +330,9 @@ namespace optixu {
         uint32_t m_sbtIndex;
 
     public:
-        RT_DEVICE_FUNCTION DirectCallableProgramID() {}
-        RT_DEVICE_FUNCTION explicit DirectCallableProgramID(uint32_t sbtIndex) : m_sbtIndex(sbtIndex) {}
-        RT_DEVICE_FUNCTION explicit operator uint32_t() const { return m_sbtIndex; }
+        RT_COMMON_FUNCTION DirectCallableProgramID() {}
+        RT_COMMON_FUNCTION explicit DirectCallableProgramID(uint32_t sbtIndex) : m_sbtIndex(sbtIndex) {}
+        RT_COMMON_FUNCTION explicit operator uint32_t() const { return m_sbtIndex; }
 
 #if defined(__CUDA_ARCH__) || defined(OPTIXU_Platform_CodeCompletion)
         RT_DEVICE_FUNCTION ReturnType operator()(const ArgTypes &... args) const {
@@ -345,9 +349,9 @@ namespace optixu {
         uint32_t m_sbtIndex;
 
     public:
-        RT_DEVICE_FUNCTION ContinuationCallableProgramID() {}
-        RT_DEVICE_FUNCTION explicit ContinuationCallableProgramID(uint32_t sbtIndex) : m_sbtIndex(sbtIndex) {}
-        RT_DEVICE_FUNCTION explicit operator uint32_t() const { return m_sbtIndex; }
+        RT_COMMON_FUNCTION ContinuationCallableProgramID() {}
+        RT_COMMON_FUNCTION explicit ContinuationCallableProgramID(uint32_t sbtIndex) : m_sbtIndex(sbtIndex) {}
+        RT_COMMON_FUNCTION explicit operator uint32_t() const { return m_sbtIndex; }
 
 #if defined(__CUDA_ARCH__) || defined(OPTIXU_Platform_CodeCompletion)
         RT_DEVICE_FUNCTION ReturnType operator()(const ArgTypes &... args) const {
@@ -421,7 +425,8 @@ namespace optixu {
 
     namespace detail {
         template <uint32_t start, typename HeadType, typename... TailTypes>
-        RT_DEVICE_FUNCTION void packToUInts(uint32_t* v, const HeadType &head, const TailTypes &... tails) {
+        RT_DEVICE_FUNCTION RT_INLINE void packToUInts(
+            uint32_t* v, const HeadType &head, const TailTypes &... tails) {
             static_assert(sizeof(HeadType) % sizeof(uint32_t) == 0,
                           "Value type of size not multiple of Dword is not supported.");
             constexpr uint32_t numDwords = sizeof(HeadType) / sizeof(uint32_t);
@@ -433,7 +438,8 @@ namespace optixu {
         }
 
         template <typename Func, typename Type, uint32_t offsetInDst, uint32_t srcSlot>
-        RT_DEVICE_FUNCTION void getValue(Type* value) {
+        RT_DEVICE_FUNCTION RT_INLINE void getValue(
+            Type* value) {
             if (!value)
                 return;
             *(reinterpret_cast<uint32_t*>(value) + offsetInDst) = Func::get<srcSlot>();
@@ -442,7 +448,8 @@ namespace optixu {
         }
 
         template <typename Func, uint32_t srcStartSlot, typename HeadType, typename... TailTypes>
-        RT_DEVICE_FUNCTION void getValues(HeadType* head, TailTypes*... tails) {
+        RT_DEVICE_FUNCTION RT_INLINE void getValues(
+            HeadType* head, TailTypes*... tails) {
             static_assert(sizeof(HeadType) % sizeof(uint32_t) == 0,
                           "Value type of size not multiple of Dword is not supported.");
             getValue<Func, HeadType, 0, srcStartSlot>(head);
@@ -451,7 +458,8 @@ namespace optixu {
         }
 
         template <typename Func, typename Type, uint32_t offsetInSrc, uint32_t dstSlot>
-        RT_DEVICE_FUNCTION void setValue(const Type* value) {
+        RT_DEVICE_FUNCTION RT_INLINE void setValue(
+            const Type* value) {
             if (!value)
                 return;
             Func::set<dstSlot>(*(reinterpret_cast<const uint32_t*>(value) + offsetInSrc));
@@ -460,7 +468,8 @@ namespace optixu {
         }
 
         template <typename Func, uint32_t dstStartSlot, typename HeadType, typename... TailTypes>
-        RT_DEVICE_FUNCTION void setValues(const HeadType* head, const TailTypes*... tails) {
+        RT_DEVICE_FUNCTION RT_INLINE void setValues(
+            const HeadType* head, const TailTypes*... tails) {
             static_assert(sizeof(HeadType) % sizeof(uint32_t) == 0,
                           "Value type of size not multiple of Dword is not supported.");
             setValue<Func, HeadType, 0, dstStartSlot>(head);
@@ -469,7 +478,8 @@ namespace optixu {
         }
 
         template <uint32_t startSlot, typename HeadType, typename... TailTypes>
-        RT_DEVICE_FUNCTION void traceSetPayloads(uint32_t** p, HeadType &headPayload, TailTypes &... tailPayloads) {
+        RT_DEVICE_FUNCTION RT_INLINE void traceSetPayloads(
+            uint32_t** p, HeadType &headPayload, TailTypes &... tailPayloads) {
             static_assert(sizeof(HeadType) % sizeof(uint32_t) == 0,
                           "Payload type of size not multiple of Dword is not supported.");
             constexpr uint32_t numDwords = getNumDwords<HeadType>();
@@ -481,14 +491,15 @@ namespace optixu {
         }
 
         template <size_t... I>
-        RT_DEVICE_FUNCTION void trace(OptixPayloadTypeID payloadTypeID,
-                                      OptixTraversableHandle handle,
-                                      const float3 &origin, const float3 &direction,
-                                      float tmin, float tmax, float rayTime,
-                                      OptixVisibilityMask visibilityMask, OptixRayFlags rayFlags,
-                                      uint32_t SBToffset, uint32_t SBTstride, uint32_t missSBTIndex,
-                                      uint32_t* const* payloads,
-                                      std::index_sequence<I...>) {
+        RT_DEVICE_FUNCTION RT_INLINE void trace(
+            OptixPayloadTypeID payloadTypeID,
+            OptixTraversableHandle handle,
+            const float3 &origin, const float3 &direction,
+            float tmin, float tmax, float rayTime,
+            OptixVisibilityMask visibilityMask, OptixRayFlags rayFlags,
+            uint32_t SBToffset, uint32_t SBTstride, uint32_t missSBTIndex,
+            uint32_t* const* payloads,
+            std::index_sequence<I...>) {
             optixTrace(payloadTypeID,
                        handle,
                        origin, direction,
@@ -499,20 +510,22 @@ namespace optixu {
         }
 
         template <size_t... I>
-        RT_DEVICE_FUNCTION void reportIntersection(float hitT, uint32_t hitKind, const uint32_t* attributes,
-                                                   std::index_sequence<I...>) {
+        RT_DEVICE_FUNCTION RT_INLINE void reportIntersection(
+            float hitT, uint32_t hitKind, const uint32_t* attributes,
+            std::index_sequence<I...>) {
             optixReportIntersection(hitT, hitKind, attributes[I]...);
         }
 
         template <size_t... I>
-        RT_DEVICE_FUNCTION void throwException(int32_t exceptionCode, const uint32_t* exDetails,
-                                               std::index_sequence<I...>) {
+        RT_DEVICE_FUNCTION RT_INLINE void throwException(
+            int32_t exceptionCode, const uint32_t* exDetails,
+            std::index_sequence<I...>) {
             optixThrowException(exceptionCode, exDetails[I]...);
         }
 
         struct PayloadFunc {
             template <uint32_t index>
-            RT_DEVICE_FUNCTION static uint32_t get() {
+            RT_DEVICE_FUNCTION RT_INLINE static uint32_t get() {
 #define OPTIXU_INTRINSIC_GET_PAYLOAD(Index) \
     if constexpr (index == Index) return optixGetPayload_##Index()
                 OPTIXU_INTRINSIC_GET_PAYLOAD(0);
@@ -552,7 +565,7 @@ namespace optixu {
             }
 
             template <uint32_t index>
-            RT_DEVICE_FUNCTION static void set(uint32_t p) {
+            RT_DEVICE_FUNCTION RT_INLINE static void set(uint32_t p) {
 #define OPTIXU_INTRINSIC_SET_PAYLOAD(Index) \
     if constexpr (index == Index) optixSetPayload_ ##Index(p)
                 OPTIXU_INTRINSIC_SET_PAYLOAD(0);
@@ -593,7 +606,7 @@ namespace optixu {
 
         struct AttributeFunc {
             template <uint32_t index>
-            RT_DEVICE_FUNCTION static uint32_t get() {
+            RT_DEVICE_FUNCTION RT_INLINE static uint32_t get() {
 #define OPTIXU_INTRINSIC_GET_ATTRIBUTE(Index) \
     if constexpr (index == Index) return optixGetAttribute_##Index()
                 OPTIXU_INTRINSIC_GET_ATTRIBUTE(0);
@@ -611,7 +624,7 @@ namespace optixu {
 
         struct ExceptionDetailFunc {
             template <uint32_t index>
-            RT_DEVICE_FUNCTION static uint32_t get() {
+            RT_DEVICE_FUNCTION RT_INLINE static uint32_t get() {
 #define OPTIXU_INTRINSIC_GET_EXCEPTION_DETAIL(Index) \
     if constexpr (index == Index) return optixGetExceptionDetail_##Index()
                 OPTIXU_INTRINSIC_GET_EXCEPTION_DETAIL(0);
@@ -634,13 +647,14 @@ namespace optixu {
     //     However take them as normal reference to ease consistency check of template arguments and for
     //     conforming optixTrace.
     template <typename PayloadSignatureType, typename... PayloadTypes>
-    RT_DEVICE_FUNCTION void trace(OptixPayloadTypeID payloadTypeID,
-                                  OptixTraversableHandle handle,
-                                  const float3 &origin, const float3 &direction,
-                                  float tmin, float tmax, float rayTime,
-                                  OptixVisibilityMask visibilityMask, OptixRayFlags rayFlags,
-                                  uint32_t SBToffset, uint32_t SBTstride, uint32_t missSBTIndex,
-                                  PayloadTypes &... payloads) {
+    RT_DEVICE_FUNCTION RT_INLINE void trace(
+        OptixPayloadTypeID payloadTypeID,
+        OptixTraversableHandle handle,
+        const float3 &origin, const float3 &direction,
+        float tmin, float tmax, float rayTime,
+        OptixVisibilityMask visibilityMask, OptixRayFlags rayFlags,
+        uint32_t SBToffset, uint32_t SBTstride, uint32_t missSBTIndex,
+        PayloadTypes &... payloads) {
         static_assert(std::is_same_v<PayloadSignatureType, PayloadSignature<PayloadTypes...>>,
                       "Payload types are inconsistent with the signature.");
         constexpr size_t numDwords = PayloadSignatureType::numDwords;
@@ -668,12 +682,13 @@ namespace optixu {
     }
 
     template <typename PayloadSignatureType, typename... PayloadTypes>
-    RT_DEVICE_FUNCTION void trace(OptixTraversableHandle handle,
-                                  const float3 &origin, const float3 &direction,
-                                  float tmin, float tmax, float rayTime,
-                                  OptixVisibilityMask visibilityMask, OptixRayFlags rayFlags,
-                                  uint32_t SBToffset, uint32_t SBTstride, uint32_t missSBTIndex,
-                                  PayloadTypes &... payloads) {
+    RT_DEVICE_FUNCTION RT_INLINE void trace(
+        OptixTraversableHandle handle,
+        const float3 &origin, const float3 &direction,
+        float tmin, float tmax, float rayTime,
+        OptixVisibilityMask visibilityMask, OptixRayFlags rayFlags,
+        uint32_t SBToffset, uint32_t SBTstride, uint32_t missSBTIndex,
+        PayloadTypes &... payloads) {
         trace<PayloadSignatureType>(
             OPTIX_PAYLOAD_TYPE_DEFAULT,
             handle,
@@ -685,7 +700,8 @@ namespace optixu {
     }
 
     template <typename... PayloadTypes>
-    RT_DEVICE_FUNCTION void PayloadSignature<PayloadTypes...>::get(PayloadTypes*... payloads) {
+    RT_DEVICE_FUNCTION RT_INLINE void PayloadSignature<PayloadTypes...>::
+        get(PayloadTypes*... payloads) {
         static_assert(numDwords <= detail::maxNumPayloadsInDwords,
                       "Maximum number of payloads is " OPTIXU_STR_MAX_NUM_PAYLOADS " in dwords.");
         static_assert(numDwords > 0, "Calling this function for this signature has no effect.");
@@ -694,7 +710,8 @@ namespace optixu {
     }
 
     template <typename... PayloadTypes>
-    RT_DEVICE_FUNCTION void PayloadSignature<PayloadTypes...>::set(const PayloadTypes*... payloads) {
+    RT_DEVICE_FUNCTION RT_INLINE void PayloadSignature<PayloadTypes...>::
+        set(const PayloadTypes*... payloads) {
         static_assert(numDwords <= detail::maxNumPayloadsInDwords,
                       "Maximum number of payloads is " OPTIXU_STR_MAX_NUM_PAYLOADS " in dwords.");
         static_assert(numDwords > 0, "Calling this function for this signature has no effect.");
@@ -705,8 +722,9 @@ namespace optixu {
 
 
     template <typename AttributeSignatureType, typename... AttributeTypes>
-    RT_DEVICE_FUNCTION void reportIntersection(float hitT, uint32_t hitKind,
-                                               const AttributeTypes &... attributes) {
+    RT_DEVICE_FUNCTION RT_INLINE void reportIntersection(
+        float hitT, uint32_t hitKind,
+        const AttributeTypes &... attributes) {
         static_assert(std::is_same_v<AttributeSignatureType, AttributeSignature<AttributeTypes...>>,
                       "Attribute types are inconsistent with the signature.");
         constexpr size_t numDwords = detail::calcSumDwords<AttributeTypes...>();
@@ -722,7 +740,8 @@ namespace optixu {
     }
 
     template <typename... AttributeTypes>
-    RT_DEVICE_FUNCTION void AttributeSignature<AttributeTypes...>::get(AttributeTypes*... attributes) {
+    RT_DEVICE_FUNCTION RT_INLINE void AttributeSignature<AttributeTypes...>::
+        get(AttributeTypes*... attributes) {
         static_assert(numDwords <= 8, "Maximum number of attributes is 8 dwords.");
         static_assert(numDwords > 0, "Calling this function for this signature has no effect.");
         if constexpr (numDwords > 0)
@@ -732,8 +751,9 @@ namespace optixu {
 
 
     template <typename ExceptionDetailSignatureType, typename... ExceptionDetailTypes>
-    RT_DEVICE_FUNCTION void throwException(int32_t exceptionCode,
-                                           const ExceptionDetailTypes &... exDetails) {
+    RT_DEVICE_FUNCTION RT_INLINE void throwException(
+        int32_t exceptionCode,
+        const ExceptionDetailTypes &... exDetails) {
         static_assert(std::is_same_v<ExceptionDetailSignatureType, ExceptionDetailSignature<ExceptionDetailTypes...>>,
                       "Exception detail types are inconsistent with the signature.");
         constexpr size_t numDwords = detail::calcSumDwords<ExceptionDetailTypes...>();
@@ -749,7 +769,8 @@ namespace optixu {
     }
 
     template <typename... ExceptionDetailTypes>
-    RT_DEVICE_FUNCTION void ExceptionDetailSignature<ExceptionDetailTypes...>::get(ExceptionDetailTypes*... exDetails) {
+    RT_DEVICE_FUNCTION RT_INLINE void ExceptionDetailSignature<ExceptionDetailTypes...>::
+        get(ExceptionDetailTypes*... exDetails) {
         static_assert(numDwords <= 8, "Maximum number of exception details is 8 dwords.");
         static_assert(numDwords > 0, "Calling this function for this signature has no effect.");
         if constexpr (numDwords > 0)

@@ -6,7 +6,7 @@ using namespace shared;
 // TODO: セルの中央だけのサンプリングだと、セルの中央が光源の裏側に回ってしまっている場合に、
 //       寄与の可能性のあるサンプルを棄却してしまう。代表点をランダムに決定するなどで解決できそうだが、
 //       PDFが毎回変わるのでそれを考慮する必要あり？
-CUDA_DEVICE_FUNCTION float3 sampleIntensity(
+CUDA_DEVICE_FUNCTION CUDA_INLINE float3 sampleIntensity(
     const float3 &shadingPoint, float minSquaredDistance,
     float uLight, bool sampleEnvLight, float uPos0, float uPos1,
     LightSample* lightSample, float* probDensity) {
@@ -35,7 +35,7 @@ CUDA_DEVICE_FUNCTION float3 sampleIntensity(
 }
 
 template <bool useTemporalReuse>
-CUDA_DEVICE_FUNCTION void buildCellReservoirsAndTemporalReuse(uint32_t frameIndex) {
+CUDA_DEVICE_FUNCTION CUDA_INLINE void buildCellReservoirsAndTemporalReuse(uint32_t frameIndex) {
     uint32_t linearThreadIndex = blockDim.x * blockIdx.x + threadIdx.x;
     uint32_t cellLinearIndex = linearThreadIndex / kNumLightSlotsPerCell;
     uint32_t lastAccessFrameIndex = plp.s->lastAccessFrameIndices[cellLinearIndex];

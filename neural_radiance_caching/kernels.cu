@@ -93,7 +93,7 @@ CUDA_DEVICE_KERNEL void propagateRadianceValues() {
     // JP: 各Training Vertexのローカルスループットを乗じながら再帰的にネットワークから与えられた輝度を
     //     伝播させることで訓練データを完成させる。
     // EN: Recursively propagate the radiance value from the network while multiplying a local throughput
-    //     at each training vertex to compute training data.
+    //     at each training vertex to complete training data.
     uint32_t lastTrainDataIndex = terminalInfo.prevVertexDataIndex;
     while (lastTrainDataIndex != invalidVertexDataIndex) {
         const TrainingVertexInfo &vertexInfo = plp.s->trainVertexInfoBuffer[lastTrainDataIndex];

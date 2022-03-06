@@ -465,7 +465,7 @@ struct InstanceController {
 
     void updateBody(float dt) {
         time = std::fmod(time + dt, frequency);
-        float t = 0.5f - 0.5f * std::cos(2 * M_PI * time / frequency);
+        float t = 0.5f - 0.5f * std::cos(2 * pi_v<float> * time / frequency);
         curScale = (1 - t) * beginScale + t * endScale;
         curOrientation = Slerp(t, beginOrientation, endOrientation);
         curPosition = (1 - t) * beginPosition + t * endPosition;

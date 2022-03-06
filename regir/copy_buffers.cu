@@ -27,7 +27,7 @@ CUDA_DEVICE_KERNEL void copyToLinearBuffers(
     linearMotionVectorBuffer[linearIndex] = make_float2(motionVector.x, motionVector.y);
 }
 
-CUDA_DEVICE_FUNCTION uint32_t calcCellLinearIndex(
+CUDA_DEVICE_FUNCTION CUDA_INLINE uint32_t calcCellLinearIndex(
     const float3 &gridOrigin, const float3 &gridCellSize, const uint3 &gridDimension,
     const float3 &positionInWorld) {
     float3 relPos = positionInWorld - gridOrigin;
@@ -43,7 +43,7 @@ CUDA_DEVICE_FUNCTION uint32_t calcCellLinearIndex(
 }
 
 template <typename T>
-CUDA_DEVICE_FUNCTION uint32_t getFNV1Hash32(const T &x) {
+CUDA_DEVICE_FUNCTION CUDA_INLINE uint32_t getFNV1Hash32(const T &x) {
     static const uint32_t FNV_OFFSET_BASIS_32 = 2166136261U;
     //static const uint64_t FNV_OFFSET_BASIS_64 = 14695981039346656037U;
 
@@ -58,7 +58,7 @@ CUDA_DEVICE_FUNCTION uint32_t getFNV1Hash32(const T &x) {
     return hash;
 }
 
-CUDA_DEVICE_FUNCTION float3 calcCellColor(
+CUDA_DEVICE_FUNCTION CUDA_INLINE float3 calcCellColor(
     const float3 &gridOrigin, const float3 &gridCellSize, const uint3 &gridDimension,
     const float3 &positionInWorld) {
     uint32_t cellLinearIndex = calcCellLinearIndex(gridOrigin, gridCellSize, gridDimension, positionInWorld);
