@@ -16,7 +16,7 @@ CUDA_DEVICE_KERNEL void preprocessNRC(
         // EN: Adjust tile size based on the number of training data generated in the previous frame.
         uint2 newTileSize;
         if (isNewSequence) {
-            newTileSize = make_uint2(8, 8);
+            newTileSize = make_uint2(4, 4);
         }
         else {
             uint32_t prevNumTrainingData = *plp.s->numTrainingData;
