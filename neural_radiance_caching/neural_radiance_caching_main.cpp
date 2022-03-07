@@ -83,7 +83,6 @@ struct GPUEnvironment {
     cudau::Kernel kernelAccumulateInferredRadianceValues;
     cudau::Kernel kernelPropagateRadianceValues;
     cudau::Kernel kernelShuffleTrainingData;
-    cudau::Kernel kernelVisualizeInferredRadianceValues;
     CUdeviceptr plpPtr;
 
     optixu::Pipeline pipeline;
@@ -127,8 +126,6 @@ struct GPUEnvironment {
             cudau::Kernel(cudaModule, "propagateRadianceValues", cudau::dim3(32), 0);
         kernelShuffleTrainingData =
             cudau::Kernel(cudaModule, "shuffleTrainingData", cudau::dim3(32), 0);
-        kernelVisualizeInferredRadianceValues =
-            cudau::Kernel(cudaModule, "visualizeInferredRadianceValues", cudau::dim3(32), 0);
 
         size_t plpSize;
         CUDADRV_CHECK(cuModuleGetGlobal(&plpPtr, &plpSize, cudaModule, "plp"));
@@ -1628,6 +1625,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         static bool enableJittering = false;
         static bool enableBumpMapping = false;
         bool lastFrameWasAnimated = false;
+        static bool infBounces = false;
         static int32_t maxPathLength = 5;
         static bool useNRC = true;
         static bool visualizeTrainingPath = false;
@@ -1682,11 +1680,17 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
             if (ImGui::BeginTabBar("MyTabBar")) {
                 if (ImGui::BeginTabItem("Renderer")) {
-                    resetAccumulation |= ImGui::SliderInt("Max Path Length", &maxPathLength, 2, 15);
+                    resetAccumulation |= ImGui::Checkbox("Infinite-Bounce", &infBounces);
+                    if (!infBounces)
+                        resetAccumulation |= ImGui::SliderInt("Max Path Length", &maxPathLength, 2, 15);
 
                     bool tempUseNRC = useNRC;
-                    if (ImGui::RadioButton("Baseline Path Tracing", !useNRC))
+                    if (ImGui::RadioButton("Baseline Path Tracing", !useNRC)) {
                         useNRC = false;
+                        if (bufferTypeToDisplay == shared::BufferToDisplay::RenderingPathLength ||
+                            bufferTypeToDisplay == shared::BufferToDisplay::DirectlyVisualizedPrediction)
+                            bufferTypeToDisplay = shared::BufferToDisplay::NoisyBeauty;
+                    }
                     if (ImGui::RadioButton("Path Tracing + NRC", useNRC))
                         useNRC = true;
                     resetAccumulation |= useNRC != tempUseNRC;
@@ -1729,8 +1733,10 @@ int32_t main(int32_t argc, const char* argv[]) try {
                     ImGui::RadioButtonE("Albedo", &bufferTypeToDisplay, shared::BufferToDisplay::Albedo);
                     ImGui::RadioButtonE("Normal", &bufferTypeToDisplay, shared::BufferToDisplay::Normal);
                     ImGui::RadioButtonE("Motion Vector", &bufferTypeToDisplay, shared::BufferToDisplay::Flow);
-                    ImGui::RadioButtonE("Rendering Path Length", &bufferTypeToDisplay, shared::BufferToDisplay::RenderingPathLength);
-                    ImGui::RadioButtonE("Directly Visualized Prediction", &bufferTypeToDisplay, shared::BufferToDisplay::DirectlyVisualizedPrediction);
+                    if (useNRC) {
+                        ImGui::RadioButtonE("Rendering Path Length", &bufferTypeToDisplay, shared::BufferToDisplay::RenderingPathLength);
+                        ImGui::RadioButtonE("Directly Visualized Prediction", &bufferTypeToDisplay, shared::BufferToDisplay::DirectlyVisualizedPrediction);
+                    }
                     ImGui::RadioButtonE(
                         "Denoised Beauty", &bufferTypeToDisplay, shared::BufferToDisplay::DenoisedBeauty);
 
@@ -1889,7 +1895,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
                                          static_cast<int32_t>(g_mouseY));
         perFramePlp.pickInfo = pickInfos[bufferIndex].getDevicePointer();
 
-        perFramePlp.maxPathLength = maxPathLength;
+        perFramePlp.maxPathLength = infBounces ? 0xFFFFFFFF : maxPathLength;
         perFramePlp.bufferIndex = bufferIndex;
         perFramePlp.resetFlowBuffer = newSequence;
         perFramePlp.enableJittering = enableJittering;
@@ -2020,10 +2026,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
                 reinterpret_cast<float*>(inferenceRadianceQueryBuffer.getDevicePointer()),
                 renderTargetSizeX * renderTargetSizeY,
                 reinterpret_cast<float*>(inferredRadianceBuffer.getDevicePointer()));
-
-            gpuEnv.kernelVisualizeInferredRadianceValues(
-                cuStream,
-                gpuEnv.kernelVisualizeInferredRadianceValues.calcGridDim(renderTargetSizeX * renderTargetSizeY));
         }
 
         // JP: 結果をリニアバッファーにコピーする。(法線の正規化も行う。)
@@ -2068,7 +2070,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
         void* bufferToDisplay = nullptr;
         switch (bufferTypeToDisplay) {
         case shared::BufferToDisplay::NoisyBeauty:
-        case shared::BufferToDisplay::DirectlyVisualizedPrediction:
             bufferToDisplay = linearBeautyBuffer.getDevicePointer();
             break;
         case shared::BufferToDisplay::Albedo:
@@ -2081,6 +2082,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
             bufferToDisplay = linearFlowBuffer.getDevicePointer();
             break;
         case shared::BufferToDisplay::RenderingPathLength:
+        case shared::BufferToDisplay::DirectlyVisualizedPrediction:
             break;
         case shared::BufferToDisplay::DenoisedBeauty:
             bufferToDisplay = linearDenoisedBeautyBuffer.getDevicePointer();

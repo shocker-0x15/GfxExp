@@ -50,14 +50,24 @@ CUDA_DEVICE_KERNEL void visualizeToOutputBuffer(
     case BufferToDisplay::NoisyBeauty:
     case BufferToDisplay::DirectlyVisualizedPrediction:
     case BufferToDisplay::DenoisedBeauty: {
-        auto typedLinearBuffer = reinterpret_cast<const float4*>(linearBuffer);
-        //value = brightness * typedLinearBuffer[linearIndex];
-        //// simple tone-map
-        //value.x = 1 - std::exp(-value.x);
-        //value.y = 1 - std::exp(-value.y);
-        //value.z = 1 - std::exp(-value.z);
+        if (bufferTypeToDisplay == BufferToDisplay::DirectlyVisualizedPrediction) {
+            const TerminalInfo &terminalInfo = plp.s->inferenceTerminalInfoBuffer[linearIndex];
 
-        value = typedLinearBuffer[linearIndex];
+            float3 radiance = make_float3(0.0f, 0.0f, 0.0f);
+            if (terminalInfo.hasQuery)
+                radiance = max(plp.s->inferredRadianceBuffer[linearIndex], make_float3(0.0f, 0.0f, 0.0f));
+            value = make_float4(terminalInfo.alpha * radiance, 1.0f);
+        }
+        else {
+            auto typedLinearBuffer = reinterpret_cast<const float4*>(linearBuffer);
+            //value = brightness * typedLinearBuffer[linearIndex];
+            //// simple tone-map
+            //value.x = 1 - std::exp(-value.x);
+            //value.y = 1 - std::exp(-value.y);
+            //value.z = 1 - std::exp(-value.z);
+
+            value = typedLinearBuffer[linearIndex];
+        }
         float lum = sRGB_calcLuminance(make_float3(value));
         if (lum > 0.0f) {
             float lumT = 1 - std::exp(-brightness * lum);

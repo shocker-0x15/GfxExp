@@ -145,23 +145,3 @@ CUDA_DEVICE_KERNEL void shuffleTrainingData() {
     plp.s->trainRadianceQueryBuffer[1][dstIdx] = query;
     plp.s->trainTargetBuffer[1][dstIdx] = targetValue;
 }
-
-
-
-CUDA_DEVICE_KERNEL void visualizeInferredRadianceValues() {
-    uint32_t linearIndex = blockDim.x * blockIdx.x + threadIdx.x;
-    uint32_t numPixels = plp.s->imageSize.x * plp.s->imageSize.y;
-    if (linearIndex >= numPixels)
-        return;
-
-    const TerminalInfo &terminalInfo = plp.s->inferenceTerminalInfoBuffer[linearIndex];
-
-    float3 radiance = make_float3(0.0f, 0.0f, 0.0f);
-    if (terminalInfo.hasQuery)
-        radiance = max(plp.s->inferredRadianceBuffer[linearIndex], make_float3(0.0f, 0.0f, 0.0f));
-    float3 contribution = terminalInfo.alpha * radiance;
-
-    uint2 pixelIndex = make_uint2(linearIndex % plp.s->imageSize.x,
-                                  linearIndex / plp.s->imageSize.x);
-    plp.s->beautyAccumBuffer.write(pixelIndex, make_float4(contribution, 1.0f));
-}

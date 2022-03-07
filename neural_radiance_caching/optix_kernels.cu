@@ -496,6 +496,10 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_raygen_generic() {
                 break;
 
             ++rwPayload.pathLength;
+            // JP: 通常のパストレーシングとNRCを正しく比較するには(特に通常のパストレーシングにおいて)
+            //     反射回数制限を解除する必要がある。
+            // EN: Disabling the limitation in the number of bounces (particularly for the base path tracing)
+            //     is required to properly compare the base path tracing and NRC.
             if (rwPayload.pathLength >= plp.f->maxPathLength)
                 rwPayload.maxLengthTerminate = true;
             rwPayload.terminate = true;
