@@ -57,8 +57,10 @@ CUDA_DEVICE_KERNEL void visualizeToOutputBuffer(
             if (terminalInfo.hasQuery) {
                 radiance = max(plp.s->inferredRadianceBuffer[linearIndex], make_float3(0.0f, 0.0f, 0.0f));
 
-                const RadianceQuery &terminalQuery = plp.s->inferenceRadianceQueryBuffer[linearIndex];
-                radiance *= (terminalQuery.diffuseReflectance + terminalQuery.specularReflectance);
+                if constexpr (useReflectanceFactorization) {
+                    const RadianceQuery &terminalQuery = plp.s->inferenceRadianceQueryBuffer[linearIndex];
+                    radiance *= (terminalQuery.diffuseReflectance + terminalQuery.specularReflectance);
+                }
             }
             value = make_float4(terminalInfo.alpha * radiance, 1.0f);
         }
@@ -115,7 +117,7 @@ CUDA_DEVICE_KERNEL void visualizeToOutputBuffer(
     }
     case BufferToDisplay::RenderingPathLength: {
         const TerminalInfo &terminalInfo = plp.s->inferenceTerminalInfoBuffer[linearIndex];
-        float t = fminf(terminalInfo.pathLength / 5.0f, 1.0f);
+        float t = fminf((terminalInfo.pathLength - 1) / 5.0f, 1.0f);
         const float3 R = make_float3(1.0f, 0.0f, 0.0f);
         const float3 G = make_float3(0.0f, 1.0f, 0.0f);
         const float3 B = make_float3(0.0f, 0.0f, 1.0f);

@@ -63,8 +63,10 @@ CUDA_DEVICE_KERNEL void accumulateInferredRadianceValues() {
     if (terminalInfo.hasQuery) {
         radiance = max(plp.s->inferredRadianceBuffer[linearIndex], make_float3(0.0f, 0.0f, 0.0f));
 
-        const RadianceQuery &terminalQuery = plp.s->inferenceRadianceQueryBuffer[linearIndex];
-        radiance *= (terminalQuery.diffuseReflectance + terminalQuery.specularReflectance);
+        if constexpr (useReflectanceFactorization) {
+            const RadianceQuery &terminalQuery = plp.s->inferenceRadianceQueryBuffer[linearIndex];
+            radiance *= (terminalQuery.diffuseReflectance + terminalQuery.specularReflectance);
+        }
     }
     float3 indirectCont = terminalInfo.alpha * radiance;
     float3 contribution = directCont + indirectCont;
@@ -93,8 +95,10 @@ CUDA_DEVICE_KERNEL void propagateRadianceValues() {
         uint32_t offset = plp.s->imageSize.x * plp.s->imageSize.y;
         contribution = max(plp.s->inferredRadianceBuffer[offset + linearIndex], make_float3(0.0f, 0.0f, 0.0f));
 
-        const RadianceQuery &terminalQuery = plp.s->inferenceRadianceQueryBuffer[offset + linearIndex];
-        contribution *= (terminalQuery.diffuseReflectance + terminalQuery.specularReflectance);
+        if constexpr (useReflectanceFactorization) {
+            const RadianceQuery &terminalQuery = plp.s->inferenceRadianceQueryBuffer[offset + linearIndex];
+            contribution *= (terminalQuery.diffuseReflectance + terminalQuery.specularReflectance);
+        }
     }
 
     // JP: 各Training Vertexのローカルスループットを乗じながら再帰的にネットワークから与えられた輝度を
@@ -110,9 +114,11 @@ CUDA_DEVICE_KERNEL void propagateRadianceValues() {
 
         targetValue = contribution;
 
-        const RadianceQuery &query = plp.s->trainRadianceQueryBuffer[0][lastTrainDataIndex];
-        float3 refFactor = query.diffuseReflectance + query.specularReflectance;
-        targetValue = safeDivide(targetValue, refFactor);
+        if constexpr (useReflectanceFactorization) {
+            const RadianceQuery &query = plp.s->trainRadianceQueryBuffer[0][lastTrainDataIndex];
+            float3 refFactor = query.diffuseReflectance + query.specularReflectance;
+            targetValue = safeDivide(targetValue, refFactor);
+        }
         
         lastTrainDataIndex = vertexInfo.prevVertexDataIndex;
     }
