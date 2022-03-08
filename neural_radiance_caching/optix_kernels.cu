@@ -667,7 +667,6 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_closestHit_generic() {
     if constexpr (useNRC) {
         // JP: Neural Radiance Cacheによる推定でパスを終了させる。
         // EN: Path termination into the neural radiance cache.
-        //     Always generate the training data for a secondary vertex to make the accuracy better.
         bool pathIsSpreadEnough =
             pow2(rwPayload->curSqrtPathSpread) > pathTerminationFactor * rwPayload->primaryPathSpread;
         bool isUnbiasedTrainingPath = rwPayload->isTrainingPath && rwPayload->isUnbiasedTrainingTile;
