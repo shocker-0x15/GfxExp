@@ -13,7 +13,7 @@ public:
     NeuralRadianceCache();
     ~NeuralRadianceCache();
 
-    void initialize();
+    void initialize(uint32_t numHiddenLayers, float learningRate);
     void finalize();
 
     void infer(CUstream stream, float* inputData, uint32_t numData, float* predictionData);

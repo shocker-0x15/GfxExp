@@ -319,6 +319,9 @@ static Quaternion g_tempCameraOrientation;
 static float3 g_cameraPosition;
 static std::filesystem::path g_envLightTexturePath;
 
+static uint32_t g_numHiddenLayers = 6;
+static float g_learningRate = 1e-1f;
+
 static bool g_takeScreenShot = false;
 
 struct MeshGeometryInfo {
@@ -616,6 +619,26 @@ static void parseCommandline(int32_t argc, const char* argv[]) {
             frequency = 5.0f;
             initTime = 0.0f;
 
+            i += 1;
+        }
+        else if (0 == strncmp(arg, "-num-hidden-layers", 19)) {
+            if (i + 1 >= argc) {
+                printf("Invalid option.\n");
+                exit(EXIT_FAILURE);
+            }
+            g_numHiddenLayers = atoi(argv[i + 1]);
+            i += 1;
+        }
+        else if (0 == strncmp(arg, "-learning-rate", 15)) {
+            if (i + 1 >= argc) {
+                printf("Invalid option.\n");
+                exit(EXIT_FAILURE);
+            }
+            g_learningRate = atof(argv[i + 1]);
+            if (!isfinite(g_learningRate)) {
+                printf("Invalid value.\n");
+                exit(EXIT_FAILURE);
+            }
             i += 1;
         }
         else {
@@ -1012,7 +1035,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
     }
 
     NeuralRadianceCache neuralRadianceCache;
-    neuralRadianceCache.initialize();
+    neuralRadianceCache.initialize(g_numHiddenLayers, g_learningRate);
 
     // END: Initialize NRC training-related buffers.
     // ----------------------------------------------------------------
@@ -1706,7 +1729,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
                         ImGui::SameLine();
                         if (ImGui::Button("Reset")) {
                             neuralRadianceCache.finalize();
-                            neuralRadianceCache.initialize();
+                            neuralRadianceCache.initialize(g_numHiddenLayers, g_learningRate);
                             train = false;
                             stepTrain = true;
                         }

@@ -44,7 +44,7 @@ NeuralRadianceCache::~NeuralRadianceCache() {
     delete m;
 }
 
-void NeuralRadianceCache::initialize() {
+void NeuralRadianceCache::initialize(uint32_t numHiddenLayers, float learningRate) {
     json config = {
         {"loss", {
             {"otype", "RelativeL2Luminance"}
@@ -54,7 +54,7 @@ void NeuralRadianceCache::initialize() {
             {"decay", 0.99f},
             {"nesteed", {
                 {"otype", "Adam"},
-                {"learning_rate", 1e-2f},
+                {"learning_rate", learningRate},
                 {"beta1", 0.9f},
                 {"beta2", 0.99f},
                 {"l2_reg", 0.0f}
@@ -66,7 +66,7 @@ void NeuralRadianceCache::initialize() {
         {"network", {
             {"otype", "FullyFusedMLP"},
             {"n_neurons", 64},
-            {"n_hidden_layers", 5},
+            {"n_hidden_layers", numHiddenLayers},
             {"activation", "ReLU"},
             {"output_activation", "None"},
         }}
