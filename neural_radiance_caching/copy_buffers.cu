@@ -54,8 +54,12 @@ CUDA_DEVICE_KERNEL void visualizeToOutputBuffer(
             const TerminalInfo &terminalInfo = plp.s->inferenceTerminalInfoBuffer[linearIndex];
 
             float3 radiance = make_float3(0.0f, 0.0f, 0.0f);
-            if (terminalInfo.hasQuery)
+            if (terminalInfo.hasQuery) {
                 radiance = max(plp.s->inferredRadianceBuffer[linearIndex], make_float3(0.0f, 0.0f, 0.0f));
+
+                const RadianceQuery &terminalQuery = plp.s->inferenceRadianceQueryBuffer[linearIndex];
+                radiance *= (terminalQuery.diffuseReflectance + terminalQuery.specularReflectance);
+            }
             value = make_float4(terminalInfo.alpha * radiance, 1.0f);
         }
         else {

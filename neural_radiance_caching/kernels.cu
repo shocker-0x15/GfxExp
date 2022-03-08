@@ -60,8 +60,12 @@ CUDA_DEVICE_KERNEL void accumulateInferredRadianceValues() {
     //     to infinity.
     float3 directCont = plp.s->perFrameContributionBuffer[linearIndex];
     float3 radiance = make_float3(0.0f, 0.0f, 0.0f);
-    if (terminalInfo.hasQuery)
+    if (terminalInfo.hasQuery) {
         radiance = max(plp.s->inferredRadianceBuffer[linearIndex], make_float3(0.0f, 0.0f, 0.0f));
+
+        const RadianceQuery &terminalQuery = plp.s->inferenceRadianceQueryBuffer[linearIndex];
+        radiance *= (terminalQuery.diffuseReflectance + terminalQuery.specularReflectance);
+    }
     float3 indirectCont = terminalInfo.alpha * radiance;
     float3 contribution = directCont + indirectCont;
 
@@ -88,6 +92,9 @@ CUDA_DEVICE_KERNEL void propagateRadianceValues() {
     if (terminalInfo.hasQuery) {
         uint32_t offset = plp.s->imageSize.x * plp.s->imageSize.y;
         contribution = max(plp.s->inferredRadianceBuffer[offset + linearIndex], make_float3(0.0f, 0.0f, 0.0f));
+
+        const RadianceQuery &terminalQuery = plp.s->inferenceRadianceQueryBuffer[offset + linearIndex];
+        contribution *= (terminalQuery.diffuseReflectance + terminalQuery.specularReflectance);
     }
 
     // JP: 各Training Vertexのローカルスループットを乗じながら再帰的にネットワークから与えられた輝度を
@@ -100,7 +107,12 @@ CUDA_DEVICE_KERNEL void propagateRadianceValues() {
         float3 &targetValue = plp.s->trainTargetBuffer[0][lastTrainDataIndex];
         float3 indirectCont = vertexInfo.localThroughput * contribution;
         contribution = targetValue + indirectCont;
+
         targetValue = contribution;
+
+        const RadianceQuery &query = plp.s->trainRadianceQueryBuffer[0][lastTrainDataIndex];
+        float3 refFactor = query.diffuseReflectance + query.specularReflectance;
+        targetValue = safeDivide(targetValue, refFactor);
         
         lastTrainDataIndex = vertexInfo.prevVertexDataIndex;
     }
