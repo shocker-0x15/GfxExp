@@ -1763,11 +1763,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
                     ImGui::RadioButtonE(
                         "Denoised Beauty", &bufferTypeToDisplay, shared::BufferToDisplay::DenoisedBeauty);
 
-                    applyGammaCorrection =
-                        bufferTypeToDisplay == shared::BufferToDisplay::NoisyBeauty ||
-                        bufferTypeToDisplay == shared::BufferToDisplay::DirectlyVisualizedPrediction ||
-                        bufferTypeToDisplay == shared::BufferToDisplay::DenoisedBeauty;
-
                     if (ImGui::Checkbox("Temporal Denoiser", &useTemporalDenosier)) {
                         CUDADRV_CHECK(cuStreamSynchronize(cuStream));
                         denoiser.destroy();
@@ -1864,6 +1859,11 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
             ImGui::End();
         }
+
+        applyGammaCorrection =
+            bufferTypeToDisplay == shared::BufferToDisplay::NoisyBeauty ||
+            bufferTypeToDisplay == shared::BufferToDisplay::DirectlyVisualizedPrediction ||
+            bufferTypeToDisplay == shared::BufferToDisplay::DenoisedBeauty;
 
 
 
