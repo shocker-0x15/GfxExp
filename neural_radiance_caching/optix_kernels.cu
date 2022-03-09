@@ -338,7 +338,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_raygen_generic() {
     bool isTrainingPath;
     bool isUnbiasedTrainingTile;
     if constexpr (useNRC) {
-        const uint2 tileSize = *plp.s->tileSize;
+        const uint2 tileSize = *plp.s->tileSize[bufIdx];
         const uint32_t numPixelsInTile = tileSize.x * tileSize.y;
 
         // JP: 動的サイズのタイルごとに1つトレーニングパスを選ぶ。
@@ -427,7 +427,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_raygen_generic() {
                 // JP: 訓練データエントリーの確保。
                 // EN: Allocate a training data entry.
                 if (isTrainingPath) {
-                    trainDataIndex = atomicAdd(plp.s->numTrainingData, 1u);
+                    trainDataIndex = atomicAdd(plp.s->numTrainingData[bufIdx], 1u);
 
                     if (trainDataIndex < trainBufferSize) {
                         float roughness;
@@ -574,6 +574,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_raygen_generic() {
 template <bool useNRC>
 CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_closestHit_generic() {
     uint2 launchIndex = make_uint2(optixGetLaunchIndex().x, optixGetLaunchIndex().y);
+    uint32_t bufIdx = plp.f->bufferIndex;
 
     auto sbtr = HitGroupSBTRecordData::get();
     const InstanceData &inst = plp.f->instanceDataBuffer[optixGetInstanceId()];
@@ -647,8 +648,10 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_closestHit_generic() {
 
     // Russian roulette
     bool performRR = true;
-    if constexpr (useNRC)
-        performRR = !rwPayload->isTrainingPath || rwPayload->pathLength > 2;
+    if constexpr (useNRC) {
+        if (rwPayload->isTrainingPath)
+            performRR = rwPayload->pathLength > 2;
+    }
     if (performRR) {
         float continueProb = std::fmin(sRGB_calcLuminance(rwPayload->alpha) / rwPayload->initImportance, 1.0f);
         if (rng.getFloat0cTo1o() >= continueProb || rwPayload->maxLengthTerminate)
@@ -665,13 +668,15 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_closestHit_generic() {
     bsdf.setup(mat, texCoord);
 
     if constexpr (useNRC) {
-        // JP: Neural Radiance Cacheによる推定でパスを終了させる。
-        // EN: Path termination into the neural radiance cache.
+        bool endsWithCache = false;
         bool pathIsSpreadEnough =
             pow2(rwPayload->curSqrtPathSpread) > pathTerminationFactor * rwPayload->primaryPathSpread;
-        bool isUnbiasedTrainingPath = rwPayload->isTrainingPath && rwPayload->isUnbiasedTrainingTile;
-        if (pathIsSpreadEnough &&
-            !(rwPayload->renderingPathEndsWithCache && isUnbiasedTrainingPath)) {
+        endsWithCache |= pathIsSpreadEnough;
+        if (rwPayload->renderingPathEndsWithCache &&
+            rwPayload->isTrainingPath && rwPayload->isUnbiasedTrainingTile)
+            endsWithCache = false;
+
+        if (endsWithCache) {
             uint32_t linearIndex = launchIndex.y * plp.s->imageSize.x + launchIndex.x;
 
             float roughness;
@@ -750,7 +755,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_closestHit_generic() {
         // JP: 訓練データエントリーの確保。
         // EN: Allocate a training data entry.
         if (rwPayload->isTrainingPath && !rwPayload->trainingSuffixEndsWithCache) {
-            uint32_t trainDataIndex = atomicAdd(plp.s->numTrainingData, 1u);
+            uint32_t trainDataIndex = atomicAdd(plp.s->numTrainingData[bufIdx], 1u);
 
             // TODO?: 訓練データ数の正確な推定のためにtrainingSuffixEndsWithCacheのチェックをここに持ってくる？
 

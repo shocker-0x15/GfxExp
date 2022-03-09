@@ -11,6 +11,8 @@ CUDA_DEVICE_KERNEL void preprocessNRC(
     if (linearIndex >= plp.s->maxNumTrainingSuffixes)
         return;
 
+    uint32_t prevBufIdx = (plp.f->bufferIndex + 1) % 2;
+    uint32_t bufIdx = plp.f->bufferIndex;
     if (linearIndex == 0) {
         // JP: 前フレームで生成された訓練データ数に基づいてタイルサイズを調整する。
         // EN: Adjust tile size based on the number of training data generated in the previous frame.
@@ -19,17 +21,17 @@ CUDA_DEVICE_KERNEL void preprocessNRC(
             newTileSize = make_uint2(4, 4);
         }
         else {
-            uint32_t prevNumTrainingData = *plp.s->numTrainingData;
+            uint32_t prevNumTrainingData = *plp.s->numTrainingData[prevBufIdx];
             float r = std::sqrt(static_cast<float>(prevNumTrainingData) / numTrainingDataPerFrame);
-            uint2 curTileSize = *plp.s->tileSize;
+            uint2 curTileSize = *plp.s->tileSize[prevBufIdx];
             newTileSize = make_uint2(static_cast<uint32_t>(curTileSize.x * r),
                                      static_cast<uint32_t>(curTileSize.y * r));
             newTileSize = make_uint2(min(max(newTileSize.x, 4u), 128u),
                                      min(max(newTileSize.y, 4u), 128u));
         }
-        *plp.s->tileSize = newTileSize;
+        *plp.s->tileSize[bufIdx] = newTileSize;
 
-        *plp.s->numTrainingData = 0;
+        *plp.s->numTrainingData[bufIdx] = 0;
         *plp.s->offsetToSelectUnbiasedTile = offsetToSelectUnbiasedTile;
         *plp.s->offsetToSelectTrainingPath = offsetToSelectTrainingPath;
     }
@@ -126,13 +128,14 @@ CUDA_DEVICE_KERNEL void propagateRadianceValues() {
 
 CUDA_DEVICE_KERNEL void shuffleTrainingData() {
     uint32_t linearIndex = blockDim.x * blockIdx.x + threadIdx.x;
+    uint32_t bufIdx = plp.f->bufferIndex;
     LinearCongruentialGenerator &shuffler = plp.s->dataShufflerBuffer[linearIndex];
     static_assert((numTrainingDataPerFrame & (numTrainingDataPerFrame - 1)) == 0,
                    "The number of traing data is assumed to be the power of 2 here.");
     uint32_t dstIdx = shuffler.next() % numTrainingDataPerFrame;
     RadianceQuery query = plp.s->trainRadianceQueryBuffer[0][linearIndex];
     float3 targetValue = plp.s->trainTargetBuffer[0][linearIndex];
-    if (linearIndex < *plp.s->numTrainingData) {
+    if (linearIndex < *plp.s->numTrainingData[bufIdx]) {
         if (!allFinite(query.position) ||
             !isfinite(query.normal_phi) || !isfinite(query.normal_theta) ||
             !isfinite(query.vOut_phi) || !isfinite(query.vOut_theta) ||

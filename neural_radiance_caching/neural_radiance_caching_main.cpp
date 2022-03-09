@@ -994,11 +994,12 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
     const uint32_t maxNumTrainingSuffixes = renderTargetSizeX * renderTargetSizeY / 16;
     
-    uintptr_t numTrainingDataOnDevice;
-    CUDADRV_CHECK(cuMemAlloc(&numTrainingDataOnDevice, sizeof(uint32_t)));
-
-    uintptr_t tileSizeOnDevice;
-    CUDADRV_CHECK(cuMemAlloc(&tileSizeOnDevice, sizeof(uint2)));
+    cudau::TypedBuffer<uint32_t> numTrainingData[2];
+    cudau::TypedBuffer<uint2> tileSize[2];
+    for (int i = 0; i < 2; ++i) {
+        numTrainingData[i].initialize(gpuEnv.cuContext, Scene::bufferType, 1, 0);
+        tileSize[i].initialize(gpuEnv.cuContext, Scene::bufferType, 1, uint2(4, 4));
+    }
 
     uintptr_t offsetToSelectUnbiasedTileOnDevice;
     CUDADRV_CHECK(cuMemAlloc(&offsetToSelectUnbiasedTileOnDevice, sizeof(uint32_t)));
@@ -1310,8 +1311,10 @@ int32_t main(int32_t argc, const char* argv[]) try {
         staticPlp.envLightTexture = envLightTexture;
 
         staticPlp.maxNumTrainingSuffixes = maxNumTrainingSuffixes;
-        staticPlp.numTrainingData = reinterpret_cast<uint32_t*>(numTrainingDataOnDevice);
-        staticPlp.tileSize = reinterpret_cast<uint2*>(tileSizeOnDevice);
+        for (int i = 0; i < 2; ++i) {
+            staticPlp.numTrainingData[i] = numTrainingData[i].getDevicePointer();
+            staticPlp.tileSize[i] = tileSize[i].getDevicePointer();
+        }
         staticPlp.offsetToSelectUnbiasedTile = reinterpret_cast<uint32_t*>(offsetToSelectUnbiasedTileOnDevice);
         staticPlp.offsetToSelectTrainingPath = reinterpret_cast<uint32_t*>(offsetToSelectTrainingPathOnDevice);
         staticPlp.inferenceRadianceQueryBuffer = inferenceRadianceQueryBuffer.getDevicePointer();
@@ -1701,6 +1704,17 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
             ImGui::Separator();
 
+            uint32_t numTrainingDataOnHost = 0;
+            uint2 tileSizeOnHost = uint2(0, 0);
+            if (useNRC) {
+                numTrainingData[bufferIndex].read(&numTrainingDataOnHost, 1, cuStream);
+                tileSize[bufferIndex].read(&tileSizeOnHost, 1, cuStream);
+            }
+            ImGui::Text("#Training Data: %6u", numTrainingDataOnHost);
+            ImGui::Text("Tile Size: %2u x %2u", tileSizeOnHost.x, tileSizeOnHost.y);
+
+            ImGui::Separator();
+
             if (ImGui::BeginTabBar("MyTabBar")) {
                 if (ImGui::BeginTabItem("Renderer")) {
                     resetAccumulation |= ImGui::Checkbox("Infinite-Bounce", &infBounces);
@@ -1970,11 +1984,11 @@ int32_t main(int32_t argc, const char* argv[]) try {
             // EN: CUDA does not support dynamic dispatch size like dispatchIndirect,
             //     so it has no choice but to synchronize with the GPU to obtain the number of training data and so on.
             //     Practical real-time rendering implementation requires dynamic dispatch size specification.
-            uint32_t numTrainingData;
-            CUDADRV_CHECK(cuMemcpyDtoH(&numTrainingData, numTrainingDataOnDevice, sizeof(numTrainingData)));
-            uint2 tileSize;
-            CUDADRV_CHECK(cuMemcpyDtoH(&tileSize, tileSizeOnDevice, sizeof(tileSize)));
-            uint2 numTiles = (uint2(renderTargetSizeX, renderTargetSizeY) + tileSize - 1) / tileSize;
+            uint32_t numTrainingDataOnHost;
+            uint2 tileSizeOnHost;
+            numTrainingData[bufferIndex].read(&numTrainingDataOnHost, 1, cuStream);
+            tileSize[bufferIndex].read(&tileSizeOnHost, 1, cuStream);
+            uint2 numTiles = (uint2(renderTargetSizeX, renderTargetSizeY) + tileSizeOnHost - 1) / tileSizeOnHost;
             uint32_t numInferenceQueries = renderTargetSizeX * renderTargetSizeY + numTiles.x * numTiles.y;
             numInferenceQueries = (numInferenceQueries + 127) / 128 * 128;
             //printf("numTrainingData: %u, TileSize: %u x %u\n",
@@ -2208,8 +2222,10 @@ int32_t main(int32_t argc, const char* argv[]) try {
     }
     CUDADRV_CHECK(cuMemFree(offsetToSelectTrainingPathOnDevice));
     CUDADRV_CHECK(cuMemFree(offsetToSelectUnbiasedTileOnDevice));
-    CUDADRV_CHECK(cuMemFree(tileSizeOnDevice));
-    CUDADRV_CHECK(cuMemFree(numTrainingDataOnDevice));
+    for (int i = 1; i >= 0; --i) {
+        tileSize[i].finalize();
+        numTrainingData[i].finalize();
+    }
 
 
 
