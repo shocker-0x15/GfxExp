@@ -1224,6 +1224,10 @@ struct AABB {
         return *this;
     }
 
+    CUDA_COMMON_FUNCTION float3 normalize(const float3 &p) const {
+        return safeDivide(p - minP, maxP - minP);
+    }
+
     CUDA_COMMON_FUNCTION CUDA_INLINE friend AABB operator*(const Matrix4x4 &mat, const AABB &aabb) {
         AABB ret;
         ret

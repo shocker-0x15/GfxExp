@@ -319,7 +319,8 @@ static Quaternion g_tempCameraOrientation;
 static float3 g_cameraPosition;
 static std::filesystem::path g_envLightTexturePath;
 
-static uint32_t g_numHiddenLayers = 6;
+static PositionEncoding g_positionEncoding = PositionEncoding::Hash;
+static uint32_t g_numHiddenLayers = 2;
 static float g_learningRate = 1e-2f;
 
 static bool g_takeScreenShot = false;
@@ -406,7 +407,6 @@ static void parseCommandline(int32_t argc, const char* argv[]) {
 
         if (strncmp(arg, "-screenshot", 12) == 0) {
             g_takeScreenShot = true;
-            i += 1;
         }
         else if (strncmp(arg, "-cam-pos", 9) == 0) {
             if (i + 3 >= argc) {
@@ -619,6 +619,24 @@ static void parseCommandline(int32_t argc, const char* argv[]) {
             frequency = 5.0f;
             initTime = 0.0f;
 
+            i += 1;
+        }
+        else if (strncmp(arg, "-position-encoding", 19) == 0) {
+            if (i + 1 >= argc) {
+                printf("Invalid option.\n");
+                exit(EXIT_FAILURE);
+            }
+            const char* enc = argv[i + 1];
+            if (strncmp(enc, "one-blob", 8) == 0) {
+                g_positionEncoding = PositionEncoding::OneBlob;
+            }
+            else if (strncmp(enc, "hash", 5) == 0) {
+                g_positionEncoding = PositionEncoding::Hash;
+            }
+            else {
+                printf("Invalid option.\n");
+                exit(EXIT_FAILURE);
+            }
             i += 1;
         }
         else if (0 == strncmp(arg, "-num-hidden-layers", 19)) {
@@ -983,6 +1001,10 @@ int32_t main(int32_t argc, const char* argv[]) try {
         loadEnvironmentalTexture(g_envLightTexturePath, gpuEnv.cuContext,
                                  &envLightArray, &envLightTexture, &envLightImportanceMap);
 
+    CUdeviceptr sceneAABBOnDevice;
+    CUDADRV_CHECK(cuMemAlloc(&sceneAABBOnDevice, sizeof(AABB)));
+    CUDADRV_CHECK(cuMemcpyHtoD(sceneAABBOnDevice, &scene.initialSceneAabb, sizeof(scene.initialSceneAabb)));
+
     // END: Setup a scene.
     // ----------------------------------------------------------------
 
@@ -1036,7 +1058,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
     }
 
     NeuralRadianceCache neuralRadianceCache;
-    neuralRadianceCache.initialize(g_numHiddenLayers, g_learningRate);
+    neuralRadianceCache.initialize(g_positionEncoding, g_numHiddenLayers, g_learningRate);
 
     // END: Initialize NRC training-related buffers.
     // ----------------------------------------------------------------
@@ -1309,6 +1331,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
         lightInstDist.getDeviceType(&staticPlp.lightInstDist);
         envLightImportanceMap.getDeviceType(&staticPlp.envLightImportanceMap);
         staticPlp.envLightTexture = envLightTexture;
+
+        staticPlp.sceneAABB = reinterpret_cast<AABB*>(sceneAABBOnDevice);
 
         staticPlp.maxNumTrainingSuffixes = maxNumTrainingSuffixes;
         for (int i = 0; i < 2; ++i) {
@@ -1743,7 +1767,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
                         ImGui::SameLine();
                         if (ImGui::Button("Reset")) {
                             neuralRadianceCache.finalize();
-                            neuralRadianceCache.initialize(g_numHiddenLayers, g_learningRate);
+                            neuralRadianceCache.initialize(g_positionEncoding, g_numHiddenLayers, g_learningRate);
                             train = false;
                             stepTrain = true;
                         }
@@ -2228,6 +2252,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
     }
 
 
+
+    CUDADRV_CHECK(cuMemFree(sceneAABBOnDevice));
 
     envLightImportanceMap.finalize(gpuEnv.cuContext);
     if (envLightTexture)

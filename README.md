@@ -46,7 +46,7 @@ https://research.nvidia.com/publication/2021-06_Real-time-Neural-Radiance
 - [x] Basic Implementation (based on simple path tracing, frequency/one-blob input encoding)
 - [ ] Advanced Items
   - [ ] Combine with many-light sampling techniques like ReSTIR/ReGIR
-  - [ ] Use hash grid input encoding\
+  - [x] Use hash grid input encoding\
         https://nvlabs.github.io/instant-ngp/
 
 ![example](neural_radiance_caching/comparison.jpg)
@@ -61,7 +61,7 @@ Programs here use [OptiX Utility](https://github.com/shocker-0x15/OptiX_Utility)
 現状以下の環境で動作を確認しています。\
 I've confirmed that the program runs correctly in the following environment.
 
-* Windows 10 (21H2) & Visual Studio Community 2022 (17.1.0)
+* Windows 10 (21H2) & Visual Studio Community 2022 (17.1.1)
 * Core i9-9900K, 32GB, RTX 3080 10GB
 * NVIDIA Driver 511.79
 

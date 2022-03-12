@@ -106,21 +106,25 @@ namespace shared {
         float3 alpha;
         unsigned int hasQuery : 1;
         // for stats/debug
-        unsigned int pathLength : 29;
+        unsigned int pathLength : 8;
         unsigned int isTrainingPixel : 1;
         unsigned int isUnbiasedTile : 1;
     };
 
-    static constexpr uint32_t invalidVertexDataIndex = 0x7FFFFFFF;
+    static constexpr uint32_t invalidVertexDataIndex = 0x007FFFFF;
 
     struct TrainingVertexInfo {
         float3 localThroughput;
-        unsigned int prevVertexDataIndex : 31;
+        unsigned int prevVertexDataIndex : 23;
+        // for stats/debug
+        unsigned int pathLength : 8;
     };
 
     struct TrainingSuffixTerminalInfo {
-        unsigned int prevVertexDataIndex : 31;
+        unsigned int prevVertexDataIndex : 23;
         unsigned int hasQuery : 1;
+        // for stats/debug
+        unsigned int pathLength : 8;
     };
 
     class LinearCongruentialGenerator {
@@ -202,6 +206,8 @@ namespace shared {
         DiscreteDistribution1D lightInstDist;
         RegularConstantContinuousDistribution2D envLightImportanceMap;
         CUtexObject envLightTexture;
+
+        AABB* sceneAABB;
 
         uint32_t maxNumTrainingSuffixes;
         uint32_t* numTrainingData[2];

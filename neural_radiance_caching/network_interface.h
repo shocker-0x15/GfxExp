@@ -1,7 +1,11 @@
 #pragma once
 
 #include <cuda.h>
-//#include "neural_radiance_caching_shared.h"
+
+enum class PositionEncoding {
+    OneBlob,
+    Hash,
+};
 
 class NeuralRadianceCache {
 public:
@@ -13,7 +17,7 @@ public:
     NeuralRadianceCache();
     ~NeuralRadianceCache();
 
-    void initialize(uint32_t numHiddenLayers, float learningRate);
+    void initialize(PositionEncoding posEnc, uint32_t numHiddenLayers, float learningRate);
     void finalize();
 
     void infer(CUstream stream, float* inputData, uint32_t numData, float* predictionData);

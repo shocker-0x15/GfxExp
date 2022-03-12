@@ -444,7 +444,6 @@ static void parseCommandline(int32_t argc, const char* argv[]) {
 
         if (strncmp(arg, "-screenshot", 12) == 0) {
             g_takeScreenShot = true;
-            i += 1;
         }
         else if (strncmp(arg, "-cam-pos", 9) == 0) {
             if (i + 3 >= argc) {

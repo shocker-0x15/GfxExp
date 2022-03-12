@@ -259,7 +259,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void createRadianceQuery(
     float roughness, const float3 &diffuseReflectance, const float3 &specularReflectance,
     RadianceQuery* query) {
     float phi, theta;
-    query->position = positionInWorld;
+    query->position = plp.s->sceneAABB->normalize(positionInWorld);
     convertToPolar(normalInWorld, &phi, &theta);
     query->normal_phi = phi;
     query->normal_theta = theta;
@@ -445,6 +445,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_raygen_generic() {
                         TrainingVertexInfo vertInfo;
                         vertInfo.localThroughput = localThroughput;
                         vertInfo.prevVertexDataIndex = invalidVertexDataIndex;
+                        vertInfo.pathLength = pathLength;
                         plp.s->trainVertexInfoBuffer[trainDataIndex] = vertInfo;
 
                         // JP: 現在の頂点に対する直接照明(NEE)によるScattered Radianceでターゲット値を初期化。
@@ -487,7 +488,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_raygen_generic() {
             rwPayload.isUnbiasedTrainingTile = isUnbiasedTrainingTile;
             rwPayload.trainingSuffixEndsWithCache = false;
         }
-        rwPayload.pathLength = 1;
+        rwPayload.pathLength = pathLength;
         float3 rayOrg = positionInWorld;
         float3 rayDir = vIn;
         while (true) {
@@ -526,6 +527,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_raygen_generic() {
                 TrainingSuffixTerminalInfo terminalInfo;
                 terminalInfo.prevVertexDataIndex = rwPayload.prevTrainDataIndex;
                 terminalInfo.hasQuery = false;
+                terminalInfo.pathLength = rwPayload.pathLength;
                 plp.s->trainSuffixTerminalInfoBuffer[rwPayload.linearTileIndex] = terminalInfo;
             }
         }
@@ -721,6 +723,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_closestHit_generic() {
                     TrainingSuffixTerminalInfo terminalInfo;
                     terminalInfo.prevVertexDataIndex = rwPayload->prevTrainDataIndex;
                     terminalInfo.hasQuery = true;
+                    terminalInfo.pathLength = rwPayload->pathLength;
                     plp.s->trainSuffixTerminalInfoBuffer[rwPayload->linearTileIndex] = terminalInfo;
 
                     rwPayload->trainingSuffixEndsWithCache = true;
@@ -778,6 +781,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_closestHit_generic() {
                 TrainingVertexInfo vertInfo;
                 vertInfo.localThroughput = localThroughput;
                 vertInfo.prevVertexDataIndex = rwPayload->prevTrainDataIndex;
+                vertInfo.pathLength = rwPayload->pathLength;
                 plp.s->trainVertexInfoBuffer[trainDataIndex] = vertInfo;
 
                 // JP: 現在の頂点に対する直接照明(NEE)によるScattered Radianceでターゲット値を初期化。
@@ -799,6 +803,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_closestHit_generic() {
                 TrainingSuffixTerminalInfo terminalInfo;
                 terminalInfo.prevVertexDataIndex = rwPayload->prevTrainDataIndex;
                 terminalInfo.hasQuery = true;
+                terminalInfo.pathLength = rwPayload->pathLength;
                 plp.s->trainSuffixTerminalInfoBuffer[rwPayload->linearTileIndex] = terminalInfo;
 
                 rwPayload->trainingSuffixEndsWithCache = true;

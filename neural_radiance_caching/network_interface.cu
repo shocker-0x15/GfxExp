@@ -44,7 +44,7 @@ NeuralRadianceCache::~NeuralRadianceCache() {
     delete m;
 }
 
-void NeuralRadianceCache::initialize(uint32_t numHiddenLayers, float learningRate) {
+void NeuralRadianceCache::initialize(PositionEncoding posEnc, uint32_t numHiddenLayers, float learningRate) {
     json config = {
         {"loss", {
             {"otype", "RelativeL2Luminance"}
@@ -57,9 +57,6 @@ void NeuralRadianceCache::initialize(uint32_t numHiddenLayers, float learningRat
                 {"learning_rate", learningRate},
             }}
         }},
-        {"encoding", {
-            {"otype", "NRC"}
-        }},
         {"network", {
             {"otype", "FullyFusedMLP"},
             {"n_neurons", 64},
@@ -68,6 +65,35 @@ void NeuralRadianceCache::initialize(uint32_t numHiddenLayers, float learningRat
             {"output_activation", "None"},
         }}
     };
+
+    if (posEnc == PositionEncoding::OneBlob) {
+        config["encoding"] = { {"otype", "NRC"} };
+    }
+    else if (posEnc == PositionEncoding::Hash) {
+        config["encoding"] = {
+            {"otype", "Composite"},
+            {"nested", {
+                {
+                    {"n_dims_to_encode", 3},
+                    {"otype", "HashGrid"},
+                    {"n_levels", 16},
+                    {"n_features_per_level", 2},
+                    {"log2_hashmap_size", 19},
+                    {"base_resolution", 16},
+                    {"per_level_scale", 1.5},
+                },
+                {
+                    {"n_dims_to_encode", 5},
+                    {"otype", "OneBlob"},
+                    {"n_bins", 4},
+                },
+                {
+                    {"otype", "Identity"}
+                },
+            }}
+        };
+        config["optimizer"]["nested"]["epsilon"] = 1e-15f;
+    }
 
     m->loss.reset(create_loss<precision_t>(config.value("loss", json::object())));
     m->optimizer.reset(create_optimizer<precision_t>(config.value("optimizer", json::object())));
