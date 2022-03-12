@@ -52,12 +52,9 @@ void NeuralRadianceCache::initialize(uint32_t numHiddenLayers, float learningRat
         {"optimizer", {
             {"otype", "EMA"},
             {"decay", 0.99f},
-            {"nesteed", {
+            {"nested", {
                 {"otype", "Adam"},
                 {"learning_rate", learningRate},
-                {"beta1", 0.9f},
-                {"beta2", 0.99f},
-                {"l2_reg", 0.0f}
             }}
         }},
         {"encoding", {

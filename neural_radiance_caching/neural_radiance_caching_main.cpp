@@ -320,7 +320,7 @@ static float3 g_cameraPosition;
 static std::filesystem::path g_envLightTexturePath;
 
 static uint32_t g_numHiddenLayers = 6;
-static float g_learningRate = 1e-1f;
+static float g_learningRate = 1e-2f;
 
 static bool g_takeScreenShot = false;
 
