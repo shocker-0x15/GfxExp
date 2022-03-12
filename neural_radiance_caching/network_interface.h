@@ -3,7 +3,7 @@
 #include <cuda.h>
 
 enum class PositionEncoding {
-    OneBlob,
+    TriangleWave,
     Hash,
 };
 

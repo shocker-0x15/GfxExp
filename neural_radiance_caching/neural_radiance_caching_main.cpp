@@ -627,8 +627,8 @@ static void parseCommandline(int32_t argc, const char* argv[]) {
                 exit(EXIT_FAILURE);
             }
             const char* enc = argv[i + 1];
-            if (strncmp(enc, "one-blob", 8) == 0) {
-                g_positionEncoding = PositionEncoding::OneBlob;
+            if (strncmp(enc, "tri-wave", 8) == 0) {
+                g_positionEncoding = PositionEncoding::TriangleWave;
             }
             else if (strncmp(enc, "hash", 5) == 0) {
                 g_positionEncoding = PositionEncoding::Hash;

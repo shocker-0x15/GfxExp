@@ -66,7 +66,7 @@ void NeuralRadianceCache::initialize(PositionEncoding posEnc, uint32_t numHidden
         }}
     };
 
-    if (posEnc == PositionEncoding::OneBlob) {
+    if (posEnc == PositionEncoding::TriangleWave) {
         config["encoding"] = { {"otype", "NRC"} };
     }
     else if (posEnc == PositionEncoding::Hash) {
