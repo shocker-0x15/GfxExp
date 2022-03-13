@@ -87,7 +87,7 @@ void NeuralRadianceCache::initialize(PositionEncoding posEnc, uint32_t numHidden
             }}
         };
     }
-    else if (posEnc == PositionEncoding::Hash) {
+    else if (posEnc == PositionEncoding::HashGrid) {
         config["encoding"] = {
             {"otype", "Composite"},
             {"nested", {

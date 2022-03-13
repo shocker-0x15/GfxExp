@@ -319,7 +319,7 @@ static Quaternion g_tempCameraOrientation;
 static float3 g_cameraPosition;
 static std::filesystem::path g_envLightTexturePath;
 
-static PositionEncoding g_positionEncoding = PositionEncoding::Hash;
+static PositionEncoding g_positionEncoding = PositionEncoding::HashGrid;
 static uint32_t g_numHiddenLayers = 2;
 static float g_learningRate = 1e-2f;
 
@@ -630,8 +630,8 @@ static void parseCommandline(int32_t argc, const char* argv[]) {
             if (strncmp(enc, "tri-wave", 8) == 0) {
                 g_positionEncoding = PositionEncoding::TriangleWave;
             }
-            else if (strncmp(enc, "hash", 5) == 0) {
-                g_positionEncoding = PositionEncoding::Hash;
+            else if (strncmp(enc, "hash-grid", 10) == 0) {
+                g_positionEncoding = PositionEncoding::HashGrid;
             }
             else {
                 printf("Invalid option.\n");

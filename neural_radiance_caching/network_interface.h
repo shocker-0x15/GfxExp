@@ -1,16 +1,18 @@
-#pragma once
+﻿#pragma once
 
 #include <cuda.h>
 
 enum class PositionEncoding {
     TriangleWave,
-    Hash,
+    HashGrid,
 };
 
+// JP: サンプルプログラム全体をnvcc経由でコンパイルしないといけない状況を避けるため、
+//     pimplイディオムによってtiny-cuda-nnをcpp側に隔離する。
+// EN: Isolate the tiny-cuda-nn into the cpp side by pimpl idiom to avoid the situation where
+//     the entire sample program needs to be compiled via nvcc.
 class NeuralRadianceCache {
-public:
     class Priv;
-private:
     Priv* m = nullptr;
 
 public:
