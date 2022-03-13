@@ -47,7 +47,7 @@ https://research.nvidia.com/publication/2021-06_Real-time-Neural-Radiance
 - [x] Basic Implementation (based on simple path tracing, frequency/one-blob input encoding)
 - [ ] Advanced Items
   - [ ] Combine with many-light sampling techniques like ReSTIR/ReGIR
-  - [x] Use multi-resolution hash grid input encoding:\
+  - [x] Add multi-resolution hash grid input encoding:\
         "Instant Neural Graphics Primitives with a Multiresolution Hash Encoding"\
         https://nvlabs.github.io/instant-ngp/
 
