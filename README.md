@@ -19,7 +19,8 @@ https://research.nvidia.com/publication/2020-07_Spatiotemporal-reservoir-resampl
   - [x] Diffuse + Glossy BRDF
   - [x] Environmental Light
   - [x] Unbiased RIS Estimator with MIS weights
-  - [x] Rearchitecting Spatiotemporal Resampling for Production\
+  - [x] Implement the improved ReSTIR algorithm:\
+        "Rearchitecting Spatiotemporal Resampling for Production"\
         https://research.nvidia.com/publication/2021-07_Rearchitecting-Spatiotemporal-Resampling
 
 ![example](restir/comparison.jpg)
@@ -46,7 +47,8 @@ https://research.nvidia.com/publication/2021-06_Real-time-Neural-Radiance
 - [x] Basic Implementation (based on simple path tracing, frequency/one-blob input encoding)
 - [ ] Advanced Items
   - [ ] Combine with many-light sampling techniques like ReSTIR/ReGIR
-  - [x] Use hash grid input encoding\
+  - [x] Use multi-resolution hash grid input encoding:\
+        "Instant Neural Graphics Primitives with a Multiresolution Hash Encoding"\
         https://nvlabs.github.io/instant-ngp/
 
 ![example](neural_radiance_caching/comparison.jpg)
