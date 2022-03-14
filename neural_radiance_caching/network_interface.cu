@@ -57,7 +57,7 @@ void NeuralRadianceCache::initialize(PositionEncoding posEnc, uint32_t numHidden
                 {"learning_rate", learningRate},
                 {"beta1", 0.9f},
                 {"beta2", 0.99f},
-                {"l2_reg", 1e-6f},
+                //{"l2_reg", 1e-6f},
             }}
         }},
         {"network", {

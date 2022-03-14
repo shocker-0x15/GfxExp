@@ -1771,6 +1771,26 @@ int32_t main(int32_t argc, const char* argv[]) try {
                             train = false;
                             stepTrain = true;
                         }
+
+                        PositionEncoding prevEncoding = g_positionEncoding;
+                        ImGui::Text("Position Encoding");
+                        ImGui::RadioButtonE("Triangle Wave", &g_positionEncoding, PositionEncoding::TriangleWave);
+                        ImGui::RadioButtonE("Hash Grid", &g_positionEncoding, PositionEncoding::HashGrid);
+                        ImGui::Text("MLP Num Hidden Layers");
+
+                        uint32_t prevNumHiddenLayers = g_numHiddenLayers;
+                        static bool use6HiddenLayers = g_numHiddenLayers == 6;
+                        if (ImGui::RadioButton("6", use6HiddenLayers))
+                            use6HiddenLayers = true;
+                        ImGui::SameLine();
+                        if (ImGui::RadioButton("2", !use6HiddenLayers))
+                            use6HiddenLayers = false;
+                        g_numHiddenLayers = use6HiddenLayers ? 6 : 2;
+
+                        if (g_positionEncoding != prevEncoding || g_numHiddenLayers != prevNumHiddenLayers) {
+                            neuralRadianceCache.finalize();
+                            neuralRadianceCache.initialize(g_positionEncoding, g_numHiddenLayers, g_learningRate);
+                        }
                     }
 
                     ImGui::PushID("Debug Switches");
