@@ -57,7 +57,7 @@ void NeuralRadianceCache::initialize(PositionEncoding posEnc, uint32_t numHidden
                 {"learning_rate", learningRate},
                 {"beta1", 0.9f},
                 {"beta2", 0.99f},
-                //{"l2_reg", 1e-6f},
+                {"l2_reg", 1e-6f},
             }}
         }},
         {"network", {
@@ -85,10 +85,12 @@ void NeuralRadianceCache::initialize(PositionEncoding posEnc, uint32_t numHidden
                     {"n_bins", 4},
                 },
                 {
+                    {"n_dims_to_encode", 6},
                     {"otype", "Identity"}
                 },
             }}
         };
+        config["optimizer"]["nested"]["epsilon"] = 1e-8f;
     }
     else if (posEnc == PositionEncoding::HashGrid) {
         config["encoding"] = {
@@ -97,11 +99,11 @@ void NeuralRadianceCache::initialize(PositionEncoding posEnc, uint32_t numHidden
                 {
                     {"n_dims_to_encode", 3},
                     {"otype", "HashGrid"},
+                    {"per_level_scale", 2.0f},
+                    {"log2_hashmap_size", 15},
+                    {"base_resolution", 16},
                     {"n_levels", 16},
                     {"n_features_per_level", 2},
-                    {"log2_hashmap_size", 19},
-                    {"base_resolution", 16},
-                    {"per_level_scale", 1.5},
                 },
                 {
                     {"n_dims_to_encode", 5},
@@ -109,6 +111,7 @@ void NeuralRadianceCache::initialize(PositionEncoding posEnc, uint32_t numHidden
                     {"n_bins", 4},
                 },
                 {
+                    {"n_dims_to_encode", 6},
                     {"otype", "Identity"}
                 },
             }}
