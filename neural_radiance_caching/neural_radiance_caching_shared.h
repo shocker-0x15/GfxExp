@@ -6,7 +6,7 @@ namespace shared {
     static constexpr float probToSampleEnvLight = 0.25f;
     static constexpr float pathTerminationFactor = 0.01f; // c in the paper.
     static constexpr uint32_t numTrainingDataPerFrame = 1 << 16;
-    static constexpr uint32_t trainBufferSize = 4 * numTrainingDataPerFrame; // 4x size for safety
+    static constexpr uint32_t trainBufferSize = 2 * numTrainingDataPerFrame;
     static constexpr bool useReflectanceFactorization = true;
 
 

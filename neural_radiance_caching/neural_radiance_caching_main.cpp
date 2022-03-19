@@ -1020,7 +1020,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
     cudau::TypedBuffer<uint2> tileSize[2];
     for (int i = 0; i < 2; ++i) {
         numTrainingData[i].initialize(gpuEnv.cuContext, Scene::bufferType, 1, 0);
-        tileSize[i].initialize(gpuEnv.cuContext, Scene::bufferType, 1, uint2(4, 4));
+        tileSize[i].initialize(gpuEnv.cuContext, Scene::bufferType, 1, uint2(8, 8));
     }
 
     uintptr_t offsetToSelectUnbiasedTileOnDevice;
