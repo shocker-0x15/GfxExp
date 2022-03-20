@@ -334,7 +334,7 @@
     <CopyFileToFolders Include="shaders\drawOptiXResult.vert">
       <Filter>non-essentials\shaders</Filter>
     </CopyFileToFolders>
-    <CopyFileToFolders Include="..\ext\assimp\assimp-vc142-mt.dll">
+    <CopyFileToFolders Include="..\ext\assimp\assimp-vc143-mt.dll">
       <Filter>non-essentials</Filter>
     </CopyFileToFolders>
   </ItemGroup>

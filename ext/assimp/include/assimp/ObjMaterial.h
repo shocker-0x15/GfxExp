@@ -12,18 +12,18 @@ with or without modification, are permitted provided that the following
 conditions are met:
 
 * Redistributions of source code must retain the above
-copyright notice, this list of conditions and the
-following disclaimer.
+  copyright notice, this list of conditions and the
+  following disclaimer.
 
 * Redistributions in binary form must reproduce the above
-copyright notice, this list of conditions and the
-following disclaimer in the documentation and/or other
-materials provided with the distribution.
+  copyright notice, this list of conditions and the
+  following disclaimer in the documentation and/or other
+  materials provided with the distribution.
 
 * Neither the name of the assimp team, nor the names of its
-contributors may be used to endorse or promote products
-derived from this software without specific prior
-written permission of the assimp team.
+  contributors may be used to endorse or promote products
+  derived from this software without specific prior
+  written permission of the assimp team.
 
 THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
 "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
@@ -39,45 +39,46 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ---------------------------------------------------------------------------
 */
 
-#pragma once
-#ifndef AI_AABB_H_INC
-#define AI_AABB_H_INC
+/** @file OBJMATERIAL.h
+ *  @brief Obj-specific material macros
+ *  
+ */
+
+#ifndef AI_OBJMATERIAL_H_INC
+#define AI_OBJMATERIAL_H_INC
 
 #ifdef __GNUC__
-#pragma GCC system_header
+#   pragma GCC system_header
 #endif
 
-#include <assimp/vector3.h>
+#include <assimp/material.h>
 
 // ---------------------------------------------------------------------------
-/** 
- *  An axis-aligned bounding box.  
- */
-struct aiAABB {
-    C_STRUCT aiVector3D mMin;
-    C_STRUCT aiVector3D mMax;
 
-#ifdef __cplusplus
-    /// @brief The default class constructor.
-    aiAABB() :
-            mMin(), mMax() {
-        // empty
-    }
+// the original illum property
+#define AI_MATKEY_OBJ_ILLUM "$mat.illum", 0, 0
 
-    /// @brief The class constructor with the minimum and maximum.
-    /// @param min  The minimum dimension.
-    /// @param max  The maximum dimension.
-    aiAABB(const aiVector3D &min, const aiVector3D &max) :
-            mMin(min), mMax(max) {
-        // empty
-    }
+// ---------------------------------------------------------------------------
 
-    ///	@brief  The class destructor.
-    ~aiAABB() {
-        // empty
-    }
+// ---------------------------------------------------------------------------
+// Pure key names for all obj texture-related properties
+//! @cond MATS_DOC_FULL
 
-#endif // __cplusplus
-};
+// support for bump -bm 
+#define _AI_MATKEY_OBJ_BUMPMULT_BASE "$tex.bumpmult"
+//! @endcond
 
-#endif // AI_AABB_H_INC
+// ---------------------------------------------------------------------------
+#define AI_MATKEY_OBJ_BUMPMULT(type, N) _AI_MATKEY_OBJ_BUMPMULT_BASE, type, N
+
+//! @cond MATS_DOC_FULL
+#define AI_MATKEY_OBJ_BUMPMULT_NORMALS(N) \
+    AI_MATKEY_OBJ_BUMPMULT(aiTextureType_NORMALS, N)
+
+#define AI_MATKEY_OBJ_BUMPMULT_HEIGHT(N) \
+    AI_MATKEY_OBJ_BUMPMULT(aiTextureType_HEIGHT, N)
+
+//! @endcond
+
+
+#endif

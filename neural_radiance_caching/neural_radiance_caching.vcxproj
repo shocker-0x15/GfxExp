@@ -140,7 +140,7 @@
     </CopyFileToFolders>
   </ItemGroup>
   <ItemGroup>
-    <CopyFileToFolders Include="..\ext\assimp\assimp-vc142-mt.dll">
+    <CopyFileToFolders Include="..\ext\assimp\assimp-vc143-mt.dll">
       <FileType>Document</FileType>
     </CopyFileToFolders>
   </ItemGroup>
@@ -200,7 +200,7 @@
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
-      <AdditionalDependencies>$(SolutionDir)ext\tiny-cuda-nn\build\src\$(Configuration)\tiny-cuda-nn.lib;$(SolutionDir)ext\assimp\assimp-vc142-mt.lib;cublas.lib;cuda.lib;cudart_static.lib;glfw3.lib;opengl32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(SolutionDir)ext\tiny-cuda-nn\build\src\$(Configuration)\tiny-cuda-nn.lib;$(SolutionDir)ext\assimp\assimp-vc143-mt.lib;cublas.lib;cuda.lib;cudart_static.lib;glfw3.lib;opengl32.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <IgnoreSpecificDefaultLibraries>msvcrt.lib</IgnoreSpecificDefaultLibraries>
     </Link>
     <PostBuildEvent>
@@ -242,7 +242,7 @@
       <SubSystem>Console</SubSystem>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
-      <AdditionalDependencies>$(SolutionDir)ext\tiny-cuda-nn\build\src\$(Configuration)\tiny-cuda-nn.lib;$(SolutionDir)ext\assimp\assimp-vc142-mt.lib;cublas.lib;cuda.lib;cudart_static.lib;glfw3.lib;opengl32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(SolutionDir)ext\tiny-cuda-nn\build\src\$(Configuration)\tiny-cuda-nn.lib;$(SolutionDir)ext\assimp\assimp-vc143-mt.lib;cublas.lib;cuda.lib;cudart_static.lib;glfw3.lib;opengl32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PostBuildEvent>
       <Command>

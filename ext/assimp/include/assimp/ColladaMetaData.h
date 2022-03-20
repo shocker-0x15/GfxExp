@@ -2,7 +2,8 @@
 Open Asset Import Library (assimp)
 ----------------------------------------------------------------------
 
-Copyright (c) 2006-2012, assimp team
+Copyright (c) 2006-2022, assimp team
+
 All rights reserved.
 
 Redistribution and use of this software in source and binary forms,
@@ -38,12 +39,18 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ----------------------------------------------------------------------
 */
 
-// We need those constants, workaround for any platforms where nobody defined them yet
-#if (!defined SIZE_MAX)
-#   define SIZE_MAX (~((size_t)0))
+/** @file ColladaMetaData.h
+ * Declares common metadata constants used by Collada files
+ */
+#pragma once
+#ifndef AI_COLLADAMETADATA_H_INC
+#define AI_COLLADAMETADATA_H_INC
+
+#ifdef __GNUC__
+#pragma GCC system_header
 #endif
 
-#if (!defined UINT_MAX)
-#   define UINT_MAX (~((unsigned int)0))
-#endif
+#define AI_METADATA_COLLADA_ID "Collada_id"
+#define AI_METADATA_COLLADA_SID "Collada_sid"
 
+#endif
