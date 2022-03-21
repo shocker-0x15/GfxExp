@@ -170,7 +170,7 @@
       <Filter>non-essentials\shaders</Filter>
     </CopyFileToFolders>
     <CopyFileToFolders Include="..\ext\assimp\assimp-vc143-mt.dll">
-      <Filter>non-essentials</Filter>
+      <Filter>non-essentials\ext</Filter>
     </CopyFileToFolders>
   </ItemGroup>
 </Project>
