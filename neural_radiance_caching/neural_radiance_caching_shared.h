@@ -100,6 +100,16 @@ namespace shared {
         float roughness;
         float3 diffuseReflectance;
         float3 specularReflectance;
+
+        CUDA_DEVICE_FUNCTION bool isValid() const {
+            return
+                allFinite(position) &&
+                isfinite(normal_phi) && isfinite(normal_theta) &&
+                isfinite(vOut_phi) && isfinite(vOut_theta) &&
+                isfinite(roughness) &&
+                allFinite(diffuseReflectance) &&
+                allFinite(specularReflectance);
+        }
     };
     
     struct TerminalInfo {

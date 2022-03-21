@@ -137,16 +137,13 @@ CUDA_DEVICE_KERNEL void shuffleTrainingData() {
                       "The number of traing data is assumed to be the power of 2 here.");
         uint32_t dstIdx = shuffler.next() % numTrainingDataPerFrame;
 
+        // JP: パストレーサーが生成したサンプル数が足りないときはラップアラウンドする。
+        // EN: Wrap around for the case where the path tracer generates too few samples.
         uint32_t srcIdx = linearIndex % numTrainingData;
         RadianceQuery query = plp.s->trainRadianceQueryBuffer[0][srcIdx];
         float3 targetValue = plp.s->trainTargetBuffer[0][srcIdx];
 
-        if (!allFinite(query.position) ||
-            !isfinite(query.normal_phi) || !isfinite(query.normal_theta) ||
-            !isfinite(query.vOut_phi) || !isfinite(query.vOut_theta) ||
-            !isfinite(query.roughness) ||
-            !allFinite(query.diffuseReflectance) ||
-            !allFinite(query.specularReflectance)) {
+        if (!query.isValid()) {
             printf("p: (%g, %g, %g), n: (%g, %g), v: (%g, %g), "
                    "r: %g, d: (%g, %g, %g), s: (%g, %g, %g)\n",
                    query.position.x, query.position.y, query.position.z,
