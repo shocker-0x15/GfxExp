@@ -140,7 +140,7 @@ namespace shared {
     class LinearCongruentialGenerator {
         static constexpr uint32_t a = 1103515245;
         static constexpr uint32_t c = 12345;
-        static constexpr uint32_t m = 1 << 31;
+        static constexpr uint32_t m = 1u << 31;
         uint32_t m_state;
 
     public:
@@ -222,6 +222,7 @@ namespace shared {
         uint32_t maxNumTrainingSuffixes;
         uint32_t* numTrainingData[2];
         uint2* tileSize[2];
+        float3AsOrderedInt* targetMinMax[2];
         uint32_t* offsetToSelectUnbiasedTile;
         uint32_t* offsetToSelectTrainingPath;
         RadianceQuery* inferenceRadianceQueryBuffer; // image size + #(training suffix)

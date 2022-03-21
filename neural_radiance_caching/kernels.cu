@@ -34,6 +34,9 @@ CUDA_DEVICE_KERNEL void preprocessNRC(
         *plp.s->numTrainingData[bufIdx] = 0;
         *plp.s->offsetToSelectUnbiasedTile = offsetToSelectUnbiasedTile;
         *plp.s->offsetToSelectTrainingPath = offsetToSelectTrainingPath;
+
+        plp.s->targetMinMax[bufIdx][0] = float3AsOrderedInt(make_float3(INFINITY)); //min
+        plp.s->targetMinMax[bufIdx][1] = float3AsOrderedInt(make_float3(-INFINITY)); // max
     }
 
     TrainingSuffixTerminalInfo terminalInfo;
@@ -163,6 +166,22 @@ CUDA_DEVICE_KERNEL void shuffleTrainingData() {
         if (!allFinite(targetValue)) {
             printf("tgt: (%g, %g, %g)\n", targetValue.x, targetValue.y, targetValue.z);
             targetValue = make_float3(0.0f);
+        }
+
+        CUDA_SHARED_MEM uint32_t sm_pool[2 * sizeof(float3) / sizeof(uint32_t)];
+        auto &sm_minRadiance = reinterpret_cast<float3AsOrderedInt &>(sm_pool[0]);
+        auto &sm_maxRadiance = reinterpret_cast<float3AsOrderedInt &>(sm_pool[3]);
+        if (threadIdx.x == 0) {
+            sm_minRadiance = float3AsOrderedInt(make_float3(INFINITY));
+            sm_maxRadiance = float3AsOrderedInt(make_float3(-INFINITY));
+        }
+        __syncthreads();
+        atomicMin_float3_block(&sm_minRadiance, targetValue);
+        atomicMax_float3_block(&sm_maxRadiance, targetValue);
+        __syncthreads();
+        if (threadIdx.x == 0) {
+            atomicMin_float3(&plp.s->targetMinMax[bufIdx][0], sm_minRadiance);
+            atomicMax_float3(&plp.s->targetMinMax[bufIdx][1], sm_maxRadiance);
         }
 
         plp.s->trainRadianceQueryBuffer[1][dstIdx] = query;

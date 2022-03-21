@@ -23,5 +23,6 @@ public:
     void finalize();
 
     void infer(CUstream stream, float* inputData, uint32_t numData, float* predictionData);
-    void train(CUstream stream, float* inputData, float* targetData, uint32_t numData);
+    void train(CUstream stream, float* inputData, float* targetData, uint32_t numData,
+               float* lossOnCPU = nullptr);
 };

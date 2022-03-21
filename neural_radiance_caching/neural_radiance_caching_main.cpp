@@ -1018,9 +1018,11 @@ int32_t main(int32_t argc, const char* argv[]) try {
     
     cudau::TypedBuffer<uint32_t> numTrainingData[2];
     cudau::TypedBuffer<uint2> tileSize[2];
+    cudau::TypedBuffer<float3AsOrderedInt> targetMinMax[2];
     for (int i = 0; i < 2; ++i) {
         numTrainingData[i].initialize(gpuEnv.cuContext, Scene::bufferType, 1, 0);
         tileSize[i].initialize(gpuEnv.cuContext, Scene::bufferType, 1, uint2(8, 8));
+        targetMinMax[i].initialize(gpuEnv.cuContext, Scene::bufferType, 2);
     }
 
     uintptr_t offsetToSelectUnbiasedTileOnDevice;
@@ -1338,6 +1340,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         for (int i = 0; i < 2; ++i) {
             staticPlp.numTrainingData[i] = numTrainingData[i].getDevicePointer();
             staticPlp.tileSize[i] = tileSize[i].getDevicePointer();
+            staticPlp.targetMinMax[i] = targetMinMax[i].getDevicePointer();
         }
         staticPlp.offsetToSelectUnbiasedTile = reinterpret_cast<uint32_t*>(offsetToSelectUnbiasedTileOnDevice);
         staticPlp.offsetToSelectTrainingPath = reinterpret_cast<uint32_t*>(offsetToSelectTrainingPathOnDevice);
@@ -1681,6 +1684,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
         static bool visualizeTrainingPath = false;
         static bool train = true;
         bool stepTrain = false;
+        static bool showLossValue = false;
+        static float lossValue = 0.0f;
+        static bool prevTrainDone = false;
         static bool debugSwitches[] = {
             false, false, false, false, false, false, false, false
         };
@@ -1730,12 +1736,40 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
             uint32_t numTrainingDataOnHost = 0;
             uint2 tileSizeOnHost = uint2(0, 0);
+            float3AsOrderedInt targetMinMaxAsOrderedIntOnHost[2];
             if (useNRC) {
                 numTrainingData[bufferIndex].read(&numTrainingDataOnHost, 1, cuStream);
                 tileSize[bufferIndex].read(&tileSizeOnHost, 1, cuStream);
+                targetMinMax[bufferIndex].read(targetMinMaxAsOrderedIntOnHost, 2, cuStream);
             }
+            float3 targetMinMaxOnHost[2] = {
+                static_cast<float3>(targetMinMaxAsOrderedIntOnHost[0]),
+                static_cast<float3>(targetMinMaxAsOrderedIntOnHost[1])
+            };
             ImGui::Text("#Training Data: %6u", numTrainingDataOnHost);
             ImGui::Text("Tile Size: %2u x %2u", tileSizeOnHost.x, tileSizeOnHost.y);
+            ImGui::Text("Target Range:");
+            ImGui::Text("  Min: %9.3f, %9.3f, %9.3f",
+                        targetMinMaxOnHost[0].x, targetMinMaxOnHost[0].y, targetMinMaxOnHost[0].z);
+            ImGui::Text("  Max: %9.3f, %9.3f, %9.3f",
+                        targetMinMaxOnHost[1].x, targetMinMaxOnHost[1].y, targetMinMaxOnHost[1].z);
+            bool prevShowLossValue = showLossValue;
+            ImGui::Checkbox("Show Loss", &showLossValue);
+            if (showLossValue && prevShowLossValue) {
+                static float log10Losses[100] = {};
+                static uint32_t startOffset = 0;
+                if (prevTrainDone) {
+                    log10Losses[startOffset] = std::log10(lossValue);
+                    startOffset = (startOffset + 1) % IM_ARRAYSIZE(log10Losses);
+                }
+
+                char overlayText[100];
+                sprintf_s(overlayText, "%.6f", lossValue);
+
+                ImGui::PlotLines(
+                    "Loss", log10Losses, IM_ARRAYSIZE(log10Losses), startOffset,
+                    overlayText, -3.0f, 3.0f, ImVec2(0, 80.0f));
+            }
 
             ImGui::Separator();
 
@@ -2056,7 +2090,10 @@ int32_t main(int32_t argc, const char* argv[]) try {
                 gpuEnv.kernelAccumulateInferredRadianceValues.calcGridDim(renderTargetSizeX * renderTargetSizeY));
             curGPUTimer.accumulateInferredRadiances.stop(cuStream);
 
+            prevTrainDone = false;
             if (train || stepTrain) {
+                prevTrainDone = true;
+
                 // JP: Training Suffixの終端から輝度を伝播させてTraining Vertexのデータを完成させる。
                 // EN: Propagate the radiance values from the terminals of training suffixes to
                 //     complete training vertex data.
@@ -2088,7 +2125,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
                             cuStream,
                             reinterpret_cast<float*>(trainRadianceQueryBuffer[1].getDevicePointerAt(dataStartIndex)),
                             reinterpret_cast<float*>(trainTargetBuffer[1].getDevicePointerAt(dataStartIndex)),
-                            batchSize);
+                            batchSize,
+                            (showLossValue && step == 3) ? &lossValue : nullptr);
                         dataStartIndex += batchSize;
                     }
                 }
@@ -2267,6 +2305,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
     CUDADRV_CHECK(cuMemFree(offsetToSelectTrainingPathOnDevice));
     CUDADRV_CHECK(cuMemFree(offsetToSelectUnbiasedTileOnDevice));
     for (int i = 1; i >= 0; --i) {
+        targetMinMax[i].finalize();
         tileSize[i].finalize();
         numTrainingData[i].finalize();
     }

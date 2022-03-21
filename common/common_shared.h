@@ -649,6 +649,106 @@ CUDA_COMMON_FUNCTION CUDA_INLINE float sRGB_calcLuminance(const float3 &value) {
 
 
 
+CUDA_COMMON_FUNCTION CUDA_INLINE int32_t floatToOrderedInt(float fVal) {
+#if defined(__CUDA_ARCH__)
+    int32_t iVal = __float_as_int(fVal);
+#else
+    int32_t iVal = *reinterpret_cast<int32_t*>(&fVal);
+#endif
+    return (iVal >= 0) ? iVal : iVal ^ 0x7FFFFFFF;
+}
+
+CUDA_COMMON_FUNCTION CUDA_INLINE float orderedIntToFloat(int32_t iVal) {
+    int32_t orgVal = (iVal >= 0) ? iVal : iVal ^ 0x7FFFFFFF;
+#if defined(__CUDA_ARCH__)
+    return __int_as_float(orgVal);
+#else
+    return *reinterpret_cast<float*>(&orgVal);
+#endif
+}
+
+struct float3AsOrderedInt {
+    int32_t x, y, z;
+
+    CUDA_COMMON_FUNCTION float3AsOrderedInt() : x(0), y(0), z(0) {
+    }
+    CUDA_COMMON_FUNCTION float3AsOrderedInt(const float3 &v) :
+        x(floatToOrderedInt(v.x)), y(floatToOrderedInt(v.y)), z(floatToOrderedInt(v.z)) {
+    }
+
+    CUDA_COMMON_FUNCTION float3AsOrderedInt& operator=(const float3AsOrderedInt &v) {
+        x = v.x;
+        y = v.y;
+        z = v.z;
+        return *this;
+    }
+    CUDA_COMMON_FUNCTION float3AsOrderedInt& operator=(const volatile float3AsOrderedInt &v) {
+        x = v.x;
+        y = v.y;
+        z = v.z;
+        return *this;
+    }
+    CUDA_COMMON_FUNCTION volatile float3AsOrderedInt& operator=(const float3AsOrderedInt &v) volatile {
+        x = v.x;
+        y = v.y;
+        z = v.z;
+        return *this;
+    }
+    CUDA_COMMON_FUNCTION volatile float3AsOrderedInt& operator=(const volatile float3AsOrderedInt &v) volatile {
+        x = v.x;
+        y = v.y;
+        z = v.z;
+        return *this;
+    }
+
+    CUDA_COMMON_FUNCTION explicit operator float3() const {
+        return make_float3(orderedIntToFloat(x), orderedIntToFloat(y), orderedIntToFloat(z));
+    }
+    CUDA_COMMON_FUNCTION explicit operator float3() const volatile {
+        return make_float3(orderedIntToFloat(x), orderedIntToFloat(y), orderedIntToFloat(z));
+    }
+};
+
+#if defined(__CUDA_ARCH__) || defined(__INTELLISENSE__)
+#   if __CUDA_ARCH__ < 600
+#       define atomicOr_block atomicOr
+#       define atomicAnd_block atomicAnd
+#       define atomicAdd_block atomicAdd
+#       define atomicMin_block atomicMin
+#       define atomicMax_block atomicMax
+#   endif
+
+CUDA_DEVICE_FUNCTION CUDA_INLINE void atomicMin_float3(
+    float3AsOrderedInt* dst, const float3AsOrderedInt &v) {
+    atomicMin(&dst->x, v.x);
+    atomicMin(&dst->y, v.y);
+    atomicMin(&dst->z, v.z);
+}
+
+CUDA_DEVICE_FUNCTION CUDA_INLINE void atomicMax_float3(
+    float3AsOrderedInt* dst, const float3AsOrderedInt &v) {
+    atomicMax(&dst->x, v.x);
+    atomicMax(&dst->y, v.y);
+    atomicMax(&dst->z, v.z);
+}
+
+CUDA_DEVICE_FUNCTION CUDA_INLINE void atomicMin_float3_block(
+    float3AsOrderedInt* dst, const float3AsOrderedInt &v) {
+    atomicMin_block(&dst->x, v.x);
+    atomicMin_block(&dst->y, v.y);
+    atomicMin_block(&dst->z, v.z);
+}
+
+CUDA_DEVICE_FUNCTION CUDA_INLINE void atomicMax_float3_block(
+    float3AsOrderedInt* dst, const float3AsOrderedInt &v) {
+    atomicMax_block(&dst->x, v.x);
+    atomicMax_block(&dst->y, v.y);
+    atomicMax_block(&dst->z, v.z);
+}
+#endif
+
+
+
 template <typename RealType>
 struct CompensatedSum {
     RealType result;

@@ -146,9 +146,9 @@ void NeuralRadianceCache::infer(
 }
 
 void NeuralRadianceCache::train(
-    CUstream stream, float* inputData, float* targetData, uint32_t numData) {
+    CUstream stream, float* inputData, float* targetData, uint32_t numData, float* lossOnCPU) {
     Assert((numData & 0x7F) == 0, "numData must be a multiple of 128.");
     GPUMatrix<float> inputs(inputData, numInputDims, numData);
     GPUMatrix<float> targets(targetData, numOutputDims, numData);
-    m->trainer->training_step(stream, inputs, targets, nullptr);
+    m->trainer->training_step(stream, inputs, targets, lossOnCPU);
 }
