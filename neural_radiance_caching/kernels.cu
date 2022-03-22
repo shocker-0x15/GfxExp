@@ -35,7 +35,7 @@ CUDA_DEVICE_KERNEL void preprocessNRC(
         *plp.s->offsetToSelectUnbiasedTile = offsetToSelectUnbiasedTile;
         *plp.s->offsetToSelectTrainingPath = offsetToSelectTrainingPath;
 
-        plp.s->targetMinMax[bufIdx][0] = float3AsOrderedInt(make_float3(INFINITY)); //min
+        plp.s->targetMinMax[bufIdx][0] = float3AsOrderedInt(make_float3(INFINITY)); // min
         plp.s->targetMinMax[bufIdx][1] = float3AsOrderedInt(make_float3(-INFINITY)); // max
     }
 

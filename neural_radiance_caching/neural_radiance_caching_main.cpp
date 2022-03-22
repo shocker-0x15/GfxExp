@@ -1415,6 +1415,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         cudau::Timer propagateRadiances;
         cudau::Timer shuffleTrainingData;
         cudau::Timer train;
+        cudau::Timer visualizeCache;
         cudau::Timer denoise;
 
         void initialize(CUcontext context) {
@@ -1428,10 +1429,12 @@ int32_t main(int32_t argc, const char* argv[]) try {
             propagateRadiances.initialize(context);
             shuffleTrainingData.initialize(context);
             train.initialize(context);
+            visualizeCache.initialize(context);
             denoise.initialize(context);
         }
         void finalize() {
             denoise.finalize();
+            visualizeCache.finalize();
             train.finalize();
             shuffleTrainingData.finalize();
             propagateRadiances.finalize();
@@ -1930,6 +1933,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
             static MovingAverageTime propagateRadiancesTime;
             static MovingAverageTime shuffleTrainingDataTime;
             static MovingAverageTime trainTime;
+            static MovingAverageTime visualizeCacheTime;
             static MovingAverageTime denoiseTime;
 
             cudaFrameTime.append(curGPUTimer.frame.report());
@@ -1942,6 +1946,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
             propagateRadiancesTime.append(curGPUTimer.propagateRadiances.report());
             shuffleTrainingDataTime.append(curGPUTimer.shuffleTrainingData.report());
             trainTime.append(curGPUTimer.train.report());
+            visualizeCacheTime.append(curGPUTimer.visualizeCache.report());
             denoiseTime.append(curGPUTimer.denoise.report());
 
             //ImGui::SetNextItemWidth(100.0f);
@@ -1955,6 +1960,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
             ImGui::Text("  prop radiance: %.3f [ms]", propagateRadiancesTime.getAverage());
             ImGui::Text("  shuffle train data: %.3f [ms]", shuffleTrainingDataTime.getAverage());
             ImGui::Text("  training: %.3f [ms]", trainTime.getAverage());
+            if (bufferTypeToDisplay == shared::BufferToDisplay::DirectlyVisualizedPrediction)
+                ImGui::Text("  visualize cache: %.3f [ms]", visualizeCacheTime.getAverage());
             if (bufferTypeToDisplay == shared::BufferToDisplay::DenoisedBeauty)
                 ImGui::Text("  denoise: %.3f [ms]", denoiseTime.getAverage());
 
@@ -2148,6 +2155,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
         // JP: ニューラルネットワークの推定値を直接可視化する。
         // EN: Directly visualize the predictions of the neural network.
         if (bufferTypeToDisplay == shared::BufferToDisplay::DirectlyVisualizedPrediction) {
+            curGPUTimer.visualizeCache.start(cuStream);
+
             gpuEnv.pipeline.setRayGenerationProgram(gpuEnv.visualizePredictionRayGenProgram);
             gpuEnv.pipeline.launch(cuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);
 
@@ -2156,6 +2165,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
                 reinterpret_cast<float*>(inferenceRadianceQueryBuffer.getDevicePointer()),
                 renderTargetSizeX * renderTargetSizeY,
                 reinterpret_cast<float*>(inferredRadianceBuffer.getDevicePointer()));
+
+            curGPUTimer.visualizeCache.stop(cuStream);
         }
 
         // JP: 結果をリニアバッファーにコピーする。(法線の正規化も行う。)
