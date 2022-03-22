@@ -650,20 +650,26 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_closestHit_generic() {
 
     // Russian roulette
     bool performRR = true;
+    bool terminatedByRR = false;
+    float recContinueProb = 1.0f;
     if constexpr (useNRC) {
         if (rwPayload->isTrainingPath)
             performRR = rwPayload->pathLength > 2;
     }
     if (performRR) {
         float continueProb = std::fmin(sRGB_calcLuminance(rwPayload->alpha) / rwPayload->initImportance, 1.0f);
-        if (rng.getFloat0cTo1o() >= continueProb || rwPayload->maxLengthTerminate)
-            return;
-        float recContinueProb = 1.0f / continueProb;
-        rwPayload->alpha *= recContinueProb;
-        if constexpr (useNRC) {
-            if (rwPayload->isTrainingPath && rwPayload->prevTrainDataIndex != invalidVertexDataIndex)
-                plp.s->trainVertexInfoBuffer[rwPayload->prevTrainDataIndex].localThroughput *= recContinueProb;
+        if (rng.getFloat0cTo1o() >= continueProb || rwPayload->maxLengthTerminate) {
+            if constexpr (useNRC) {
+                if (rwPayload->renderingPathEndsWithCache &&
+                    rwPayload->isTrainingPath && rwPayload->isUnbiasedTrainingTile)
+                    return;
+                terminatedByRR = true;
+            }
+            else {
+                return;
+            }
         }
+        recContinueProb = 1.0f / continueProb;
     }
 
     BSDF bsdf;
@@ -731,6 +737,16 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_closestHit_generic() {
                 return;
             }
         }
+    }
+
+    if constexpr (useNRC) {
+        if (terminatedByRR)
+            return;
+    }
+    rwPayload->alpha *= recContinueProb;
+    if constexpr (useNRC) {
+        if (rwPayload->isTrainingPath && rwPayload->prevTrainDataIndex != invalidVertexDataIndex)
+            plp.s->trainVertexInfoBuffer[rwPayload->prevTrainDataIndex].localThroughput *= recContinueProb;
     }
 
     // Next Event Estimation (Explicit Light Sampling)
