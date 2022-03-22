@@ -1802,16 +1802,14 @@ int32_t main(int32_t argc, const char* argv[]) try {
                         if (ImGui::Button("Reset")) {
                             neuralRadianceCache.finalize();
                             neuralRadianceCache.initialize(g_positionEncoding, g_numHiddenLayers, g_learningRate);
-                            train = false;
-                            stepTrain = true;
                         }
 
                         PositionEncoding prevEncoding = g_positionEncoding;
                         ImGui::Text("Position Encoding");
                         ImGui::RadioButtonE("Triangle Wave", &g_positionEncoding, PositionEncoding::TriangleWave);
                         ImGui::RadioButtonE("Hash Grid", &g_positionEncoding, PositionEncoding::HashGrid);
-                        ImGui::Text("MLP Num Hidden Layers");
 
+                        ImGui::Text("MLP Num Hidden Layers");
                         uint32_t prevNumHiddenLayers = g_numHiddenLayers;
                         static bool use6HiddenLayers = g_numHiddenLayers == 5;
                         if (ImGui::RadioButton("5", use6HiddenLayers))
@@ -1821,9 +1819,22 @@ int32_t main(int32_t argc, const char* argv[]) try {
                             use6HiddenLayers = false;
                         g_numHiddenLayers = use6HiddenLayers ? 5 : 2;
 
-                        if (g_positionEncoding != prevEncoding || g_numHiddenLayers != prevNumHiddenLayers) {
+                        float prevLearningRate = g_learningRate;
+                        {
+                            static int32_t log10LearningRate =
+                                static_cast<int32_t>(std::round(std::log10(g_learningRate)));
+                            ImGui::Text("Init Learning Rate: %.0e", g_learningRate);
+                            ImGui::SliderInt("##InitLearningRate", &log10LearningRate, -5, -1,
+                                             "", ImGuiSliderFlags_AlwaysClamp);
+                            g_learningRate = std::pow(10, log10LearningRate);
+                        }
+
+                        if (g_positionEncoding != prevEncoding ||
+                            g_numHiddenLayers != prevNumHiddenLayers ||
+                            g_learningRate != prevLearningRate) {
                             neuralRadianceCache.finalize();
                             neuralRadianceCache.initialize(g_positionEncoding, g_numHiddenLayers, g_learningRate);
+                            resetAccumulation = true;
                         }
                     }
 
