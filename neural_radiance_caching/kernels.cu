@@ -117,12 +117,13 @@ CUDA_DEVICE_KERNEL void propagateRadianceValues() {
         float3 indirectCont = vertexInfo.localThroughput * contribution;
         contribution = targetValue + indirectCont;
 
-        targetValue = contribution;
-
         if constexpr (useReflectanceFactorization) {
             const RadianceQuery &query = plp.s->trainRadianceQueryBuffer[0][lastTrainDataIndex];
             float3 refFactor = query.diffuseReflectance + query.specularReflectance;
-            targetValue = safeDivide(targetValue, refFactor);
+            targetValue = safeDivide(contribution, refFactor);
+        }
+        else {
+            targetValue = contribution;
         }
         
         lastTrainDataIndex = vertexInfo.prevVertexDataIndex;

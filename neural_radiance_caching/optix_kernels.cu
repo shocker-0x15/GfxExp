@@ -280,14 +280,19 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE float3 performNextEventEstimation(
     bool selectEnvLight = false;
     float probToSampleCurLightType = 1.0f;
     if (plp.s->envLightTexture && plp.f->enableEnvLight) {
-        if (uLight < probToSampleEnvLight) {
-            probToSampleCurLightType = probToSampleEnvLight;
-            uLight /= probToSampleCurLightType;
-            selectEnvLight = true;
+        if (plp.s->lightInstDist.integral() > 0.0f) {
+            if (uLight < probToSampleEnvLight) {
+                probToSampleCurLightType = probToSampleEnvLight;
+                uLight /= probToSampleCurLightType;
+                selectEnvLight = true;
+            }
+            else {
+                probToSampleCurLightType = 1.0f - probToSampleEnvLight;
+                uLight = (uLight - probToSampleEnvLight) / probToSampleCurLightType;
+            }
         }
         else {
-            probToSampleCurLightType = 1.0f - probToSampleEnvLight;
-            uLight = (uLight - probToSampleEnvLight) / probToSampleCurLightType;
+            selectEnvLight = true;
         }
     }
     LightSample lightSample;
@@ -314,6 +319,12 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE float3 performNextEventEstimation(
     if (areaPDensity > 0.0f)
         ret = performDirectLighting<true>(
             shadingPoint, vOutLocal, shadingFrame, bsdf, lightSample) * (misWeight / areaPDensity);
+    //if (!allFinite(ret)) {
+    //    printf("mis: %g / %g, p:(%g, %g, %g), v:(%g, %g, %g)\n",
+    //           misWeight, areaPDensity,
+    //           shadingPoint.x, shadingPoint.y, shadingPoint.z,
+    //           vOutLocal.x, vOutLocal.y, vOutLocal.z);
+    //}
 
     return ret;
 }
@@ -613,6 +624,12 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_closestHit_generic() {
         applyBumpMapping(modLocalNormal, &shadingFrame);
     positionInWorld = offsetRayOrigin(positionInWorld, frontHit * geometricNormalInWorld);
     float3 vOutLocal = shadingFrame.toLocal(vOut);
+    //if (!allFinite(vOutLocal)) {
+    //    printf("(%g, %g, %g), (%g, %g, %g), (%g, %g, %g)\n",
+    //           shadingFrame.tangent.x, shadingFrame.tangent.y, shadingFrame.tangent.z,
+    //           shadingFrame.bitangent.x, shadingFrame.bitangent.y, shadingFrame.bitangent.z,
+    //           shadingFrame.normal.x, shadingFrame.normal.y, shadingFrame.normal.z);
+    //}
 
     float dist2 = squaredDistance(rayOrigin, positionInWorld);
     if constexpr (useNRC)
@@ -859,9 +876,18 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_miss_generic() {
         // JP: 1つ前の頂点に対する直接照明(Implicit)によるScattered Radianceをターゲット値に加算。
         // EN: Accumulate scattered radiance at the previous vertex by direct lighting (implicit)
         //     to the target value.
-        if (rwPayload->isTrainingPath) {
+        if (rwPayload->isTrainingPath && rwPayload->prevTrainDataIndex != invalidVertexDataIndex) {
             plp.s->trainTargetBuffer[0][rwPayload->prevTrainDataIndex] +=
                 rwPayload->prevLocalThroughput * directContImplicit;
+            //if (!allFinite(rwPayload->prevLocalThroughput) ||
+            //    !allFinite(directContImplicit))
+            //    printf("Implicit: (%g, %g, %g), (%g, %g, %g)\n",
+            //           rwPayload->prevLocalThroughput.x,
+            //           rwPayload->prevLocalThroughput.y,
+            //           rwPayload->prevLocalThroughput.z,
+            //           directContImplicit.x,
+            //           directContImplicit.y,
+            //           directContImplicit.z);
         }
     }
 }

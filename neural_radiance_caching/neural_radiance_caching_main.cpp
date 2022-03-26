@@ -10,8 +10,6 @@ You can load a 3D model for example by downloading from the internet.
 
     * Zero-Day from Open Research Content Archive (ORCA)
       https://developer.nvidia.com/orca/beeple-zero-day
-    * JP: ネットワークが安定するまでに少し待つ必要があるかもしれません(要改善)。
-      EN: You may need to wait a bit for the network to become stable (needs improvement).
 
 (2) -cam-pos -9.5 5 0 -cam-yaw 90
     -name sponza -obj crytek_sponza/sponza.obj 0.01 trad
@@ -36,12 +34,14 @@ JP: このプログラムはNeural Radiance Caching (NRC) [1]の実装例です�
     キャッシュからのクエリーによって補完とすることでシーンによっては1フレームの時間も短くなります。
     ニューラルネットワーク部分にはtiny-cuda-nn [2]というライブラリーを使用しています。
     ※このサンプルをビルドするにはtiny-cuda-nnを予めビルドしておく必要があります。
+      現状RTX 3080 (Ampere)でしか動作確認していません。TuringアーキテクチャーのGPUでも動くと思いますが、
+      tiny-cuda-nnのビルドの調整やnetwork_interface.cuのTCNN_MIN_GPU_ARCHの変更などが必要だと思います。
     ※デフォルトではBRDFにOptiXのCallable ProgramやCUDAの関数ポインターを使用した汎用的な実装になっており、
       性能上のオーバーヘッドが著しいため、純粋な性能を見る上では restir_shared.h の USE_HARD_CODED_BSDF_FUNCTIONS
       を有効化したほうがよいかもしれません。
 
 EN: This program is an example implementation of Neural Radiance Caching (NRC) [1].
-    NRC trains a neural network where inputs are a position and a outgoing direction, surface parameters,
+    NRC trains a neural network where the inputs are a position and an outgoing direction, surface parameters,
     and the output is radiance. It constructs paths based on path tracing when rendering, but
     replaces contributions given from beyond a certain path length by a query to the cache.
     This achieves low variance estimates at the cost of a little bias.
@@ -49,6 +49,9 @@ EN: This program is an example implementation of Neural Radiance Caching (NRC) [
     based on spread of the path and complementing by a query to the cache.
     This program uses tiny-cuda-nn [2] for the neural network part.
     * Build tiny-cuda-nn first before building this sample.
+      I have tested only with RTX 3080 (Ampere). I think the program would work with
+      Turing architecture GPU as well, but some adjustments when building tiny-cuda-nn and changing
+      TCNN_MIN_GPU_ARCH in network_interface.cu are required.
     * The program is generic implementation with OptiX's callable program and CUDA's function pointer,
       and has significant performance overhead, therefore it may be recommended to enable USE_HARD_CODED_BSDF_FUNCTIONS
       in restir_shared.h to see pure performance.
@@ -989,7 +992,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
     DiscreteDistribution1D lightInstDist;
     lightInstDist.initialize(gpuEnv.cuContext, Scene::bufferType,
                              lightImportances.data(), lightImportances.size());
-    Assert(lightInstDist.getIntengral() > 0, "No lights!");
     hpprintf("%u emitter primitives\n", totalNumEmitterPrimitives);
 
     // JP: 環境光テクスチャーを読み込んで、サンプルするためのCDFを計算する。
@@ -1000,6 +1002,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
     if (!g_envLightTexturePath.empty())
         loadEnvironmentalTexture(g_envLightTexturePath, gpuEnv.cuContext,
                                  &envLightArray, &envLightTexture, &envLightImportanceMap);
+    Assert(lightInstDist.getIntengral() > 0 || !g_envLightTexturePath.empty(), "No lights!");
 
     CUdeviceptr sceneAABBOnDevice;
     CUDADRV_CHECK(cuMemAlloc(&sceneAABBOnDevice, sizeof(AABB)));

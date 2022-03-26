@@ -95,14 +95,16 @@ public:
 
     void getDeviceType(shared::DiscreteDistribution1DTemplate<RealType>* instance) const {
 #if defined(USE_WALKER_ALIAS_METHOD)
-        if (m_PMF.isInitialized() && m_aliasTable.isInitialized() && m_valueMaps.isInitialized())
-            new (instance) shared::DiscreteDistribution1DTemplate<RealType>(
-                m_PMF.getDevicePointer(), m_aliasTable.getDevicePointer(), m_valueMaps.getDevicePointer(),
-                m_integral, m_numValues);
+        new (instance) shared::DiscreteDistribution1DTemplate<RealType>(
+            m_PMF.isInitialized() ? m_PMF.getDevicePointer() : nullptr,
+            m_aliasTable.isInitialized() ? m_aliasTable.getDevicePointer() : nullptr,
+            m_valueMaps.isInitialized() ? m_valueMaps.getDevicePointer() : nullptr,
+            m_integral, m_numValues);
 #else
-        if (m_PMF.isInitialized() && m_CDF.isInitialized())
-            new (instance) shared::DiscreteDistribution1DTemplate<RealType>(
-                m_PMF.getDevicePointer(), m_CDF.getDevicePointer(), m_integral, m_numValues);
+        new (instance) shared::DiscreteDistribution1DTemplate<RealType>(
+            m_PMF.isInitialized() ? m_PMF.getDevicePointer() : nullptr,
+            m_CDF.isInitialized() ? m_CDF.getDevicePointer() : nullptr,
+            m_integral, m_numValues);
 #endif
     }
 };

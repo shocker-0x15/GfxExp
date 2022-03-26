@@ -56,6 +56,11 @@ template <typename RealType>
 void DiscreteDistribution1DTemplate<RealType>::
 initialize(CUcontext cuContext, cudau::BufferType type, const RealType* values, size_t numValues) {
     m_numValues = static_cast<uint32_t>(numValues);
+    if (m_numValues == 0) {
+        m_integral = 0.0f;
+        return;
+    }
+
 #if defined(USE_WALKER_ALIAS_METHOD)
     m_PMF.initialize(cuContext, type, m_numValues);
     m_aliasTable.initialize(cuContext, type, m_numValues);
