@@ -37,6 +37,7 @@ CUDA_DEVICE_KERNEL void preprocessNRC(
 
         plp.s->targetMinMax[bufIdx][0] = float3AsOrderedInt(make_float3(INFINITY)); // min
         plp.s->targetMinMax[bufIdx][1] = float3AsOrderedInt(make_float3(-INFINITY)); // max
+        *plp.s->targetAvg[bufIdx] = make_float3(0.0f); // max
     }
 
     TrainingSuffixTerminalInfo terminalInfo;
@@ -67,6 +68,8 @@ CUDA_DEVICE_KERNEL void accumulateInferredRadianceValues() {
     float3 radiance = make_float3(0.0f, 0.0f, 0.0f);
     if (terminalInfo.hasQuery) {
         radiance = max(plp.s->inferredRadianceBuffer[linearIndex], make_float3(0.0f, 0.0f, 0.0f));
+        if (plp.f->radianceScale > 0)
+            radiance /= plp.f->radianceScale;
 
         if constexpr (useReflectanceFactorization) {
             const RadianceQuery &terminalQuery = plp.s->inferenceRadianceQueryBuffer[linearIndex];
@@ -99,6 +102,8 @@ CUDA_DEVICE_KERNEL void propagateRadianceValues() {
     if (terminalInfo.hasQuery) {
         uint32_t offset = plp.s->imageSize.x * plp.s->imageSize.y;
         contribution = max(plp.s->inferredRadianceBuffer[offset + linearIndex], make_float3(0.0f, 0.0f, 0.0f));
+        if (plp.f->radianceScale > 0)
+            contribution /= plp.f->radianceScale;
 
         if constexpr (useReflectanceFactorization) {
             const RadianceQuery &terminalQuery = plp.s->inferenceRadianceQueryBuffer[offset + linearIndex];
@@ -169,21 +174,33 @@ CUDA_DEVICE_KERNEL void shuffleTrainingData() {
             targetValue = make_float3(0.0f);
         }
 
-        CUDA_SHARED_MEM uint32_t sm_pool[2 * sizeof(float3) / sizeof(uint32_t)];
+        CUDA_SHARED_MEM uint32_t sm_pool[3 * sizeof(float3) / sizeof(uint32_t)];
         auto &sm_minRadiance = reinterpret_cast<float3AsOrderedInt &>(sm_pool[0]);
         auto &sm_maxRadiance = reinterpret_cast<float3AsOrderedInt &>(sm_pool[3]);
+        auto &sm_avgRadiance = reinterpret_cast<float3 &>(sm_pool[6]);
         if (threadIdx.x == 0) {
             sm_minRadiance = float3AsOrderedInt(make_float3(INFINITY));
             sm_maxRadiance = float3AsOrderedInt(make_float3(-INFINITY));
+            sm_avgRadiance = make_float3(0.0f);
         }
         __syncthreads();
         atomicMin_float3_block(&sm_minRadiance, targetValue);
         atomicMax_float3_block(&sm_maxRadiance, targetValue);
+        atomicAdd_float3_block(&sm_avgRadiance, targetValue / numTrainingDataPerFrame);
         __syncthreads();
         if (threadIdx.x == 0) {
             atomicMin_float3(&plp.s->targetMinMax[bufIdx][0], sm_minRadiance);
             atomicMax_float3(&plp.s->targetMinMax[bufIdx][1], sm_maxRadiance);
+            atomicAdd_float3(plp.s->targetAvg[bufIdx], sm_avgRadiance);
         }
+
+        // JP: ロス関数の計算にあるゼロ除算を防ぐためのイプシロンが支配的にならないよう、
+        //     ネットワークに入力する値のスケールを調整する必要がある。
+        // EN: Adjusting the scale of the input values to the network is required so that
+        //     the epsilon to avoid division by zero in the loss function calculation.
+        if (plp.f->radianceScale > 0)
+            targetValue *= plp.f->radianceScale;
+        targetValue = min(targetValue, make_float3(1e+6f));
 
         plp.s->trainRadianceQueryBuffer[1][dstIdx] = query;
         plp.s->trainTargetBuffer[1][dstIdx] = targetValue;

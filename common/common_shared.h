@@ -732,6 +732,12 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void atomicMax_float3(
     atomicMax(&dst->z, v.z);
 }
 
+CUDA_DEVICE_FUNCTION CUDA_INLINE void atomicAdd_float3(float3* dst, const float3 &v) {
+    atomicAdd(&dst->x, v.x);
+    atomicAdd(&dst->y, v.y);
+    atomicAdd(&dst->z, v.z);
+}
+
 CUDA_DEVICE_FUNCTION CUDA_INLINE void atomicMin_float3_block(
     float3AsOrderedInt* dst, const float3AsOrderedInt &v) {
     atomicMin_block(&dst->x, v.x);
@@ -744,6 +750,12 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void atomicMax_float3_block(
     atomicMax_block(&dst->x, v.x);
     atomicMax_block(&dst->y, v.y);
     atomicMax_block(&dst->z, v.z);
+}
+
+CUDA_DEVICE_FUNCTION CUDA_INLINE void atomicAdd_float3_block(float3* dst, const float3 &v) {
+    atomicAdd_block(&dst->x, v.x);
+    atomicAdd_block(&dst->y, v.y);
+    atomicAdd_block(&dst->z, v.z);
 }
 #endif
 

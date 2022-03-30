@@ -1022,10 +1022,12 @@ int32_t main(int32_t argc, const char* argv[]) try {
     cudau::TypedBuffer<uint32_t> numTrainingData[2];
     cudau::TypedBuffer<uint2> tileSize[2];
     cudau::TypedBuffer<float3AsOrderedInt> targetMinMax[2];
+    cudau::TypedBuffer<float3> targetAvg[2];
     for (int i = 0; i < 2; ++i) {
         numTrainingData[i].initialize(gpuEnv.cuContext, Scene::bufferType, 1, 0);
         tileSize[i].initialize(gpuEnv.cuContext, Scene::bufferType, 1, uint2(8, 8));
         targetMinMax[i].initialize(gpuEnv.cuContext, Scene::bufferType, 2);
+        targetAvg[i].initialize(gpuEnv.cuContext, Scene::bufferType, 1);
     }
 
     uintptr_t offsetToSelectUnbiasedTileOnDevice;
@@ -1344,6 +1346,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
             staticPlp.numTrainingData[i] = numTrainingData[i].getDevicePointer();
             staticPlp.tileSize[i] = tileSize[i].getDevicePointer();
             staticPlp.targetMinMax[i] = targetMinMax[i].getDevicePointer();
+            staticPlp.targetAvg[i] = targetAvg[i].getDevicePointer();
         }
         staticPlp.offsetToSelectUnbiasedTile = reinterpret_cast<uint32_t*>(offsetToSelectUnbiasedTileOnDevice);
         staticPlp.offsetToSelectTrainingPath = reinterpret_cast<uint32_t*>(offsetToSelectTrainingPathOnDevice);
@@ -1687,6 +1690,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         static bool infBounces = false;
         static int32_t maxPathLength = 5;
         static bool useNRC = true;
+        static int32_t log10RadianceScale = 1;
         static bool visualizeTrainingPath = false;
         static bool train = true;
         bool stepTrain = false;
@@ -1743,10 +1747,12 @@ int32_t main(int32_t argc, const char* argv[]) try {
             uint32_t numTrainingDataOnHost = 0;
             uint2 tileSizeOnHost = uint2(0, 0);
             float3AsOrderedInt targetMinMaxAsOrderedIntOnHost[2];
+            float3 targetAvgOnHost;
             if (useNRC) {
                 numTrainingData[bufferIndex].read(&numTrainingDataOnHost, 1, cuStream);
                 tileSize[bufferIndex].read(&tileSizeOnHost, 1, cuStream);
                 targetMinMax[bufferIndex].read(targetMinMaxAsOrderedIntOnHost, 2, cuStream);
+                targetAvg[bufferIndex].read(&targetAvgOnHost, 1, cuStream);
             }
             float3 targetMinMaxOnHost[2] = {
                 static_cast<float3>(targetMinMaxAsOrderedIntOnHost[0]),
@@ -1755,10 +1761,12 @@ int32_t main(int32_t argc, const char* argv[]) try {
             ImGui::Text("#Training Data: %6u", numTrainingDataOnHost);
             ImGui::Text("Tile Size: %2u x %2u", tileSizeOnHost.x, tileSizeOnHost.y);
             ImGui::Text("Target Range:");
-            ImGui::Text("  Min: %9.3f, %9.3f, %9.3f",
+            ImGui::Text("  Min: %10.4f, %10.4f, %10.4f",
                         targetMinMaxOnHost[0].x, targetMinMaxOnHost[0].y, targetMinMaxOnHost[0].z);
-            ImGui::Text("  Max: %9.3f, %9.3f, %9.3f",
+            ImGui::Text("  Max: %10.4f, %10.4f, %10.4f",
                         targetMinMaxOnHost[1].x, targetMinMaxOnHost[1].y, targetMinMaxOnHost[1].z);
+            ImGui::Text("  Avg: %10.4f, %10.4f, %10.4f",
+                        targetAvgOnHost.x, targetAvgOnHost.y, targetAvgOnHost.z);
             bool prevShowLossValue = showLossValue;
             ImGui::Checkbox("Show Loss", &showLossValue);
             if (showLossValue && prevShowLossValue) {
@@ -1810,6 +1818,10 @@ int32_t main(int32_t argc, const char* argv[]) try {
                             neuralRadianceCache.initialize(g_positionEncoding, g_numHiddenLayers, g_learningRate);
                         }
 
+                        ImGui::Text("Radiance Scale: %.0e", std::pow(10.0f, log10RadianceScale));
+                        resetAccumulation = ImGui::SliderInt(
+                            "##RadianceScale", &log10RadianceScale, -5, 5, "", ImGuiSliderFlags_AlwaysClamp);
+
                         PositionEncoding prevEncoding = g_positionEncoding;
                         ImGui::Text("Position Encoding");
                         ImGui::RadioButtonE("Triangle Wave", &g_positionEncoding, PositionEncoding::TriangleWave);
@@ -1817,13 +1829,13 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
                         ImGui::Text("MLP Num Hidden Layers");
                         uint32_t prevNumHiddenLayers = g_numHiddenLayers;
-                        static bool use6HiddenLayers = g_numHiddenLayers == 5;
-                        if (ImGui::RadioButton("5", use6HiddenLayers))
-                            use6HiddenLayers = true;
+                        static bool use5HiddenLayers = g_numHiddenLayers == 5;
+                        if (ImGui::RadioButton("5", use5HiddenLayers))
+                            use5HiddenLayers = true;
                         ImGui::SameLine();
-                        if (ImGui::RadioButton("2", !use6HiddenLayers))
-                            use6HiddenLayers = false;
-                        g_numHiddenLayers = use6HiddenLayers ? 5 : 2;
+                        if (ImGui::RadioButton("2", !use5HiddenLayers))
+                            use5HiddenLayers = false;
+                        g_numHiddenLayers = use5HiddenLayers ? 5 : 2;
 
                         float prevLearningRate = g_learningRate;
                         {
@@ -2025,13 +2037,14 @@ int32_t main(int32_t argc, const char* argv[]) try {
         perFramePlp.numAccumFrames = numAccumFrames;
         perFramePlp.frameIndex = frameIndex;
         perFramePlp.instanceDataBuffer = scene.instDataBuffer[bufferIndex].getDevicePointer();
+        perFramePlp.radianceScale = std::pow(10.0f, log10RadianceScale);
         perFramePlp.envLightPowerCoeff = std::pow(10.0f, log10EnvLightPowerCoeff);
         perFramePlp.envLightRotation = envLightRotation;
         perFramePlp.mousePosition = int2(static_cast<int32_t>(g_mouseX),
                                          static_cast<int32_t>(g_mouseY));
         perFramePlp.pickInfo = pickInfos[bufferIndex].getDevicePointer();
 
-        perFramePlp.maxPathLength = infBounces ? 0xFFFFFFFF : maxPathLength;
+        perFramePlp.maxPathLength = infBounces ? 0 : maxPathLength;
         perFramePlp.bufferIndex = bufferIndex;
         perFramePlp.resetFlowBuffer = newSequence;
         perFramePlp.enableJittering = enableJittering;
@@ -2330,6 +2343,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
     CUDADRV_CHECK(cuMemFree(offsetToSelectTrainingPathOnDevice));
     CUDADRV_CHECK(cuMemFree(offsetToSelectUnbiasedTileOnDevice));
     for (int i = 1; i >= 0; --i) {
+        targetAvg[i].finalize();
         targetMinMax[i].finalize();
         tileSize[i].finalize();
         numTrainingData[i].finalize();
