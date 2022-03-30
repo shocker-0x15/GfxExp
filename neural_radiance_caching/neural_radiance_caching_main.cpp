@@ -1690,7 +1690,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         static bool infBounces = false;
         static int32_t maxPathLength = 5;
         static bool useNRC = true;
-        static int32_t log10RadianceScale = 1;
+        static float log10RadianceScale = brightness;
         static bool visualizeTrainingPath = false;
         static bool train = true;
         bool stepTrain = false;
@@ -1813,14 +1813,11 @@ int32_t main(int32_t argc, const char* argv[]) try {
                             stepTrain = true;
                         }
                         ImGui::SameLine();
-                        if (ImGui::Button("Reset")) {
-                            neuralRadianceCache.finalize();
-                            neuralRadianceCache.initialize(g_positionEncoding, g_numHiddenLayers, g_learningRate);
-                        }
+                        bool resetNN = ImGui::Button("Reset");
 
-                        ImGui::Text("Radiance Scale: %.0e", std::pow(10.0f, log10RadianceScale));
-                        resetAccumulation = ImGui::SliderInt(
-                            "##RadianceScale", &log10RadianceScale, -5, 5, "", ImGuiSliderFlags_AlwaysClamp);
+                        ImGui::Text("Radiance Scale (Log10): %.2e", std::pow(10.0f, log10RadianceScale));
+                        resetAccumulation = ImGui::SliderFloat(
+                            "##RadianceScale", &log10RadianceScale, -5, 5, "%.3f", ImGuiSliderFlags_AlwaysClamp);
 
                         PositionEncoding prevEncoding = g_positionEncoding;
                         ImGui::Text("Position Encoding");
@@ -1847,9 +1844,11 @@ int32_t main(int32_t argc, const char* argv[]) try {
                             g_learningRate = std::pow(10, log10LearningRate);
                         }
 
-                        if (g_positionEncoding != prevEncoding ||
+                        resetNN |=
+                            g_positionEncoding != prevEncoding ||
                             g_numHiddenLayers != prevNumHiddenLayers ||
-                            g_learningRate != prevLearningRate) {
+                            g_learningRate != prevLearningRate;
+                        if (resetNN) {
                             neuralRadianceCache.finalize();
                             neuralRadianceCache.initialize(g_positionEncoding, g_numHiddenLayers, g_learningRate);
                             resetAccumulation = true;

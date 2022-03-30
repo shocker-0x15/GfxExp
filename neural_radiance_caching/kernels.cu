@@ -197,7 +197,7 @@ CUDA_DEVICE_KERNEL void shuffleTrainingData() {
         // JP: ロス関数の計算にあるゼロ除算を防ぐためのイプシロンが支配的にならないよう、
         //     ネットワークに入力する値のスケールを調整する必要がある。
         // EN: Adjusting the scale of the input values to the network is required so that
-        //     the epsilon to avoid division by zero in the loss function calculation.
+        //     the epsilon to avoid division by zero in the loss function calculation does not dominate.
         if (plp.f->radianceScale > 0)
             targetValue *= plp.f->radianceScale;
         targetValue = min(targetValue, make_float3(1e+6f));
