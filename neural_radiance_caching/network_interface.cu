@@ -4,7 +4,6 @@
 #include <cuda_runtime.h>
 
 #define TCNN_MIN_GPU_ARCH 86
-#include <tiny-cuda-nn/common_device.h>
 #include <tiny-cuda-nn/config.h>
 #include <memory>
 
