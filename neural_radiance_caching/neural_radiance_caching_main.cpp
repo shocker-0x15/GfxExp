@@ -1816,7 +1816,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
                         bool resetNN = ImGui::Button("Reset");
 
                         ImGui::Text("Radiance Scale (Log10): %.2e", std::pow(10.0f, log10RadianceScale));
-                        resetAccumulation = ImGui::SliderFloat(
+                        resetAccumulation |= ImGui::SliderFloat(
                             "##RadianceScale", &log10RadianceScale, -5, 5, "%.3f", ImGuiSliderFlags_AlwaysClamp);
 
                         PositionEncoding prevEncoding = g_positionEncoding;
