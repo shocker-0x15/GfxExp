@@ -384,7 +384,7 @@ static void parseCommandline(int32_t argc, const char* argv[]) {
                     hpprintf("Invalid option.\n");
                     exit(EXIT_FAILURE);
                 }
-                *ori = qRotateZ(atof(argv[i + 1]) * M_PI / 180) * *ori;
+                *ori = qRotateZ(atof(argv[i + 1]) * pi_v<float> / 180) * *ori;
                 i += 1;
             }
             else if (strncmp(arg, "-pitch", 7) == 0) {
@@ -392,7 +392,7 @@ static void parseCommandline(int32_t argc, const char* argv[]) {
                     hpprintf("Invalid option.\n");
                     exit(EXIT_FAILURE);
                 }
-                *ori = qRotateX(atof(argv[i + 1]) * M_PI / 180) * *ori;
+                *ori = qRotateX(atof(argv[i + 1]) * pi_v<float> / 180) * *ori;
                 i += 1;
             }
             else if (strncmp(arg, "-yaw", 5) == 0) {
@@ -400,7 +400,7 @@ static void parseCommandline(int32_t argc, const char* argv[]) {
                     hpprintf("Invalid option.\n");
                     exit(EXIT_FAILURE);
                 }
-                *ori = qRotateY(atof(argv[i + 1]) * M_PI / 180) * *ori;
+                *ori = qRotateY(atof(argv[i + 1]) * pi_v<float> / 180) * *ori;
                 i += 1;
             }
         };
@@ -1372,7 +1372,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
     shared::PerFramePipelineLaunchParameters perFramePlp = {};
     perFramePlp.travHandle = scene.ias.getHandle();
-    perFramePlp.camera.fovY = 50 * M_PI / 180;
+    perFramePlp.camera.fovY = 50 * pi_v<float> / 180;
     perFramePlp.camera.aspect = static_cast<float>(renderTargetSizeX) / renderTargetSizeY;
     perFramePlp.camera.position = g_cameraPosition;
     perFramePlp.camera.orientation = g_cameraOrientation.toMatrix3x3();
@@ -1646,13 +1646,13 @@ int32_t main(int32_t argc, const char* argv[]) try {
             ImGui::InputFloat3("Position", reinterpret_cast<float*>(&perFramePlp.camera.position));
             static float rollPitchYaw[3];
             g_tempCameraOrientation.toEulerAngles(&rollPitchYaw[0], &rollPitchYaw[1], &rollPitchYaw[2]);
-            rollPitchYaw[0] *= 180 / M_PI;
-            rollPitchYaw[1] *= 180 / M_PI;
-            rollPitchYaw[2] *= 180 / M_PI;
+            rollPitchYaw[0] *= 180 / pi_v<float>;
+            rollPitchYaw[1] *= 180 / pi_v<float>;
+            rollPitchYaw[2] *= 180 / pi_v<float>;
             if (ImGui::InputFloat3("Roll/Pitch/Yaw", rollPitchYaw))
-                g_cameraOrientation = qFromEulerAngles(rollPitchYaw[0] * M_PI / 180,
-                                                       rollPitchYaw[1] * M_PI / 180,
-                                                       rollPitchYaw[2] * M_PI / 180);
+                g_cameraOrientation = qFromEulerAngles(rollPitchYaw[0] * pi_v<float> / 180,
+                                                       rollPitchYaw[1] * pi_v<float> / 180,
+                                                       rollPitchYaw[2] * pi_v<float> / 180);
             ImGui::Text("Pos. Speed (T/G): %g", g_cameraPositionalMovingSpeed);
             ImGui::SliderFloat("Brightness", &brightness, -5.0f, 5.0f);
 
