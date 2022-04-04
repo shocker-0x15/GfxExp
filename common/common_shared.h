@@ -1278,17 +1278,17 @@ CUDA_COMMON_FUNCTION CUDA_INLINE Quaternion normalize(const Quaternion &q) {
     return q / std::sqrt(dot(q, q));
 }
 
-CUDA_COMMON_FUNCTION CUDA_INLINE static Quaternion qRotate(float angle, const float3 &axis) {
+CUDA_COMMON_FUNCTION CUDA_INLINE Quaternion qRotate(float angle, const float3 &axis) {
     float ha = angle / 2;
     float s = std::sin(ha), c = std::cos(ha);
     return Quaternion(s * normalize(axis), c);
 }
-CUDA_COMMON_FUNCTION CUDA_INLINE static Quaternion qRotate(float angle, float ax, float ay, float az) {
+CUDA_COMMON_FUNCTION CUDA_INLINE Quaternion qRotate(float angle, float ax, float ay, float az) {
     return qRotate(angle, make_float3(ax, ay, az));
 }
-CUDA_COMMON_FUNCTION CUDA_INLINE static Quaternion qRotateX(float angle) { return qRotate(angle, make_float3(1, 0, 0)); }
-CUDA_COMMON_FUNCTION CUDA_INLINE static Quaternion qRotateY(float angle) { return qRotate(angle, make_float3(0, 1, 0)); }
-CUDA_COMMON_FUNCTION CUDA_INLINE static Quaternion qRotateZ(float angle) { return qRotate(angle, make_float3(0, 0, 1)); }
+CUDA_COMMON_FUNCTION CUDA_INLINE Quaternion qRotateX(float angle) { return qRotate(angle, make_float3(1, 0, 0)); }
+CUDA_COMMON_FUNCTION CUDA_INLINE Quaternion qRotateY(float angle) { return qRotate(angle, make_float3(0, 1, 0)); }
+CUDA_COMMON_FUNCTION CUDA_INLINE Quaternion qRotateZ(float angle) { return qRotate(angle, make_float3(0, 0, 1)); }
 
 CUDA_COMMON_FUNCTION CUDA_INLINE Quaternion qFromEulerAngles(float roll, float pitch, float yaw) {
     return qRotateZ(roll) * qRotateY(yaw) * qRotateX(pitch);

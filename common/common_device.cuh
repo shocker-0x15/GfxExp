@@ -336,8 +336,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void calcFittedPreIntegratedTerms(
 }
 
 #define USE_HEIGHT_CORRELATED_SMITH
-#define USE_FITTED_PRE_INTEGRATION_FOR_WEIGHTS
-#define USE_FITTED_PRE_INTEGRATION_FOR_DH_REFLECTANCE
+//#define USE_FITTED_PRE_INTEGRATION_FOR_WEIGHTS
+//#define USE_FITTED_PRE_INTEGRATION_FOR_DH_REFLECTANCE
 
 class DiffuseAndSpecularBRDF {
     struct GGXMicrofacetDistribution {
@@ -442,7 +442,8 @@ public:
 #else
         float expectedF_D90 = 0.5f * m_roughness + 2 * m_roughness * vGiven.z * vGiven.z;
         float expectedDiffuseFresnel = lerp(1.0f, expectedF_D90, oneMinusDotVN5);
-        float iBaseColor = sRGB_calcLuminance(m_diffuseColor) * pow2(expectedDiffuseFresnel) * lerp(1.0f, 1.0f / 1.51f, m_roughness);
+        float iBaseColor = sRGB_calcLuminance(m_diffuseColor) * pow2(expectedDiffuseFresnel) *
+            lerp(1.0f, 1.0f / 1.51f, m_roughness);
 
         float expectedOneMinusDotVH5 = pow5(1 - dirV.z);
         float iSpecularF0 = sRGB_calcLuminance(m_specularF0Color);
@@ -598,10 +599,11 @@ public:
         float expectedF_D90 = 0.5f * m_roughness + 2 * m_roughness * vGiven.z * vGiven.z;
         float oneMinusDotVN5 = pow5(1 - dirV.z);
         float expectedDiffuseFresnel = lerp(1.0f, expectedF_D90, oneMinusDotVN5);
-        float iBaseColor = calcLuminance(m_diffuseColor) * expectedDiffuseFresnel * expectedDiffuseFresnel * lerp(1.0f, 1.0f / 1.51f, m_roughness);
+        float iBaseColor = sRGB_calcLuminance(m_diffuseColor) * pow2(expectedDiffuseFresnel) *
+            lerp(1.0f, 1.0f / 1.51f, m_roughness);
 
         float expectedOneMinusDotVH5 = pow5(1 - dirV.z);
-        float iSpecularF0 = calcLuminance(m_specularF0Color);
+        float iSpecularF0 = sRGB_calcLuminance(m_specularF0Color);
 
         float diffuseWeight = iBaseColor;
         float specularWeight = lerp(iSpecularF0, 1.0f, expectedOneMinusDotVH5);
