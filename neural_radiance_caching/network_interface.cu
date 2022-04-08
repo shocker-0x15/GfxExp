@@ -3,7 +3,9 @@
 
 #include <cuda_runtime.h>
 
-#define TCNN_MIN_GPU_ARCH 86
+#if !defined(TCNN_MIN_GPU_ARCH)
+#   define TCNN_MIN_GPU_ARCH 86
+#endif
 #include <tiny-cuda-nn/config.h>
 #include <memory>
 
