@@ -86,15 +86,20 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void buildCellReservoirsAndTemporalReuse(uint32
         bool sampleEnvLight = false;
         float probToSampleCurLightType = 1.0f;
         if (plp.s->envLightTexture && plp.f->enableEnvLight) {
-            float prob = min(max(probToSampleEnvLight * numCandidates - candIdx, 0.0f), 1.0f);
-            if (uLight < prob) {
-                probToSampleCurLightType = probToSampleEnvLight;
-                uLight = uLight / prob;
-                sampleEnvLight = true;
+            if (plp.s->lightInstDist.integral() > 0.0f) {
+                float prob = min(max(probToSampleEnvLight * numCandidates - candIdx, 0.0f), 1.0f);
+                if (uLight < prob) {
+                    probToSampleCurLightType = probToSampleEnvLight;
+                    uLight = uLight / prob;
+                    sampleEnvLight = true;
+                }
+                else {
+                    probToSampleCurLightType = 1.0f - probToSampleEnvLight;
+                    uLight = (uLight - prob) / (1 - prob);
+                }
             }
             else {
-                probToSampleCurLightType = 1.0f - probToSampleEnvLight;
-                uLight = (uLight - prob) / (1 - prob);
+                sampleEnvLight = true;
             }
         }
 

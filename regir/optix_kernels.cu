@@ -360,14 +360,19 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE float3 performNextEventEstimation(
             bool selectEnvLight = false;
             float probToSampleCurLightType = 1.0f;
             if (plp.s->envLightTexture && plp.f->enableEnvLight) {
-                if (uLight < probToSampleEnvLight) {
-                    probToSampleCurLightType = probToSampleEnvLight;
-                    uLight /= probToSampleCurLightType;
-                    selectEnvLight = true;
+                if (plp.s->lightInstDist.integral() > 0.0f) {
+                    if (uLight < probToSampleEnvLight) {
+                        probToSampleCurLightType = probToSampleEnvLight;
+                        uLight /= probToSampleCurLightType;
+                        selectEnvLight = true;
+                    }
+                    else {
+                        probToSampleCurLightType = 1.0f - probToSampleEnvLight;
+                        uLight = (uLight - probToSampleEnvLight) / probToSampleCurLightType;
+                    }
                 }
                 else {
-                    probToSampleCurLightType = 1.0f - probToSampleEnvLight;
-                    uLight = (uLight - probToSampleEnvLight) / probToSampleCurLightType;
+                    selectEnvLight = true;
                 }
             }
             LightSample lightSample;
@@ -648,7 +653,9 @@ CUDA_DEVICE_KERNEL void RT_MS_NAME(pathTraceBaseline)() {
         if constexpr (useMultipleImportanceSampling) {
             float uvPDF = plp.s->envLightImportanceMap.evaluatePDF(texCoord.x, texCoord.y);
             float hypAreaPDensity = uvPDF / (2 * Pi * Pi * std::sin(theta));
-            float lightPDensity = probToSampleEnvLight * hypAreaPDensity;
+            float lightPDensity =
+                (plp.s->lightInstDist.integral() > 0.0f ? probToSampleEnvLight : 1.0f) *
+                hypAreaPDensity;
             float bsdfPDensity = rwPayload->prevDirPDensity;
             misWeight = pow2(bsdfPDensity) / (pow2(bsdfPDensity) + pow2(lightPDensity));
         }

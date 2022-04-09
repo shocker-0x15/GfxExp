@@ -561,6 +561,10 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void computeSurfacePoint(
         *shadingNormalInWorld = make_float3(0, 0, 1);
         *texCoord0DirInWorld = make_float3(1, 0, 0);
     }
+    if (!allFinite(*texCoord0DirInWorld)) {
+        float3 bitangent;
+        makeCoordinateSystem(*shadingNormalInWorld, texCoord0DirInWorld, &bitangent);
+    }
 
     if constexpr (computeHypotheticalAreaPDensity) {
         // JP: 交点をExplicit Light Samplingでサンプルする場合の仮想的な確率密度を求める。

@@ -990,7 +990,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
     DiscreteDistribution1D lightInstDist;
     lightInstDist.initialize(gpuEnv.cuContext, Scene::bufferType,
                              lightImportances.data(), lightImportances.size());
-    Assert(lightInstDist.getIntengral() > 0, "No lights!");
     hpprintf("%u emitter primitives\n", totalNumEmitterPrimitives);
 
     // JP: 環境光テクスチャーを読み込んで、サンプルするためのCDFを計算する。
@@ -1001,6 +1000,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
     if (!g_envLightTexturePath.empty())
         loadEnvironmentalTexture(g_envLightTexturePath, gpuEnv.cuContext,
                                  &envLightArray, &envLightTexture, &envLightImportanceMap);
+    Assert(lightInstDist.getIntengral() > 0 || !g_envLightTexturePath.empty(), "No lights!");
 
     // END: Setup a scene.
     // ----------------------------------------------------------------

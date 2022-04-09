@@ -334,15 +334,20 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void performInitialAndTemporalRIS() {
         float probToSampleCurLightType = 1.0f;
         bool sampleEnvLight = false;
         if (plp.s->envLightTexture && plp.f->enableEnvLight) {
-            float prob = min(max(probToSampleEnvLight * numCandidates - i, 0.0f), 1.0f);
-            if (ul < prob) {
-                probToSampleCurLightType = probToSampleEnvLight;
-                ul = ul / prob;
-                sampleEnvLight = true;
+            if (plp.s->lightInstDist.integral() > 0.0f) {
+                float prob = min(max(probToSampleEnvLight * numCandidates - i, 0.0f), 1.0f);
+                if (ul < prob) {
+                    probToSampleCurLightType = probToSampleEnvLight;
+                    ul = ul / prob;
+                    sampleEnvLight = true;
+                }
+                else {
+                    probToSampleCurLightType = 1.0f - probToSampleEnvLight;
+                    ul = (ul - prob) / (1 - prob);
+                }
             }
             else {
-                probToSampleCurLightType = 1.0f - probToSampleEnvLight;
-                ul = (ul - prob) / (1 - prob);
+                sampleEnvLight = true;
             }
         }
 

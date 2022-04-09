@@ -17,9 +17,14 @@ CUDA_DEVICE_KERNEL void performLightPreSampling() {
     float probToSampleCurLightType = 1.0f;
     bool sampleEnvLight = false;
     if (plp.s->envLightTexture && plp.f->enableEnvLight) {
-        sampleEnvLight = indexInSubset < probToSampleEnvLight * lightSubsetSize;
-        probToSampleCurLightType = sampleEnvLight ?
-            probToSampleEnvLight : (1 - probToSampleEnvLight);
+        if (plp.s->lightInstDist.integral() > 0.0f) {
+            sampleEnvLight = indexInSubset < probToSampleEnvLight * lightSubsetSize;
+            probToSampleCurLightType = sampleEnvLight ?
+                probToSampleEnvLight : (1 - probToSampleEnvLight);
+        }
+        else {
+            sampleEnvLight = true;
+        }
     }
 
     PreSampledLight preSampledLight;

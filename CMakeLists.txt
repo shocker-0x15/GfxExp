@@ -68,9 +68,6 @@ list(
 list(
     FILTER COMMON_SOURCES
     EXCLUDE REGEX "${CMAKE_SOURCE_DIR}/ext/imgui/imgui_demo\.cpp")
-# foreach(f IN LISTS COMMON_SOURCES)
-#     message("${f}")
-# endforeach()
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 set(CMAKE_RUNTIME_LIBRARY_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
@@ -86,6 +83,7 @@ target_compile_definitions(
 )
 target_compile_options(
     fakelib INTERFACE
+    # if (compilerID == MSVC && compilerLanguage != CUDA) set(/MP);
     "$<$<AND:$<C_COMPILER_ID:MSVC>,$<NOT:$<COMPILE_LANGUAGE:CUDA>>>:/MP>"
     "$<$<AND:$<CXX_COMPILER_ID:MSVC>,$<NOT:$<COMPILE_LANGUAGE:CUDA>>>:/MP>"
 )
