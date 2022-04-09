@@ -70,7 +70,7 @@ copy_files(
     GENERATED_FILES COPIED_SHADERS
 )
 
-set(ASSIMP_DLL "${CMAKE_SOURCE_DIR}/ext/assimp/assimp-vc143-mt.dll")
+set(ASSIMP_DLL "../ext/assimp/assimp-vc143-mt.dll")
 copy_files(
     SOURCES "${ASSIMP_DLL}"
     TARGET_PATH "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${CMAKE_CFG_INTDIR}"
@@ -80,31 +80,31 @@ copy_files(
 # non-essentials
 source_group(
     "non-essentials" REGULAR_EXPRESSION
-    "${CMAKE_SOURCE_DIR}/common/.*\.(h|hpp|c|cpp)$")
+    "../common/.*\.(h|hpp|c|cpp)$")
 source_group(
     "non-essentials/ext/gl3w" REGULAR_EXPRESSION
-    "${CMAKE_SOURCE_DIR}/ext/gl3w/.*$")
+    "../ext/gl3w/.*$")
 source_group(
     "non-essentials/ext/glfw" REGULAR_EXPRESSION
-    "${CMAKE_SOURCE_DIR}/ext/glfw/.*\.h$")
+    "../ext/glfw/.*\.h$")
 source_group(
     "non-essentials/ext/imgui/core" REGULAR_EXPRESSION
-    "${CMAKE_SOURCE_DIR}/ext/imgui/[^/]*\.(h|cpp)$")
+    "../ext/imgui/[^/]*\.(h|cpp)$")
 source_group(
     "non-essentials/ext/imgui" REGULAR_EXPRESSION
-    "${CMAKE_SOURCE_DIR}/ext/imgui/backends/.*\.(h|cpp)$")
+    "../ext/imgui/backends/.*\.(h|cpp)$")
 source_group(
     "non-essentials/ext/miniz" REGULAR_EXPRESSION
-    "${CMAKE_SOURCE_DIR}/ext/miniz/[^/]*\.(h|hpp|c|cpp)$")
+    "../ext/miniz/[^/]*\.(h|hpp|c|cpp)$")
 source_group(
     "non-essentials/ext/assimp" REGULAR_EXPRESSION
-    "${CMAKE_SOURCE_DIR}/ext/assimp/[^/]*\.(dll)$")
+    "../ext/assimp/[^/]*\.(dll)$")
 source_group(
     "non-essentials/ext" REGULAR_EXPRESSION
-    "${CMAKE_SOURCE_DIR}/ext/[^/]*\.(h|hpp|c|cc|cpp)$")
+    "../ext/[^/]*\.(h|hpp|c|cc|cpp)$")
 source_group(
     "non-essentials/utils" REGULAR_EXPRESSION
-    "${CMAKE_SOURCE_DIR}/utils/.*$")
+    "../utils/.*$")
 source_group(
     "non-essentials/shaders" REGULAR_EXPRESSION
     "${CMAKE_CURRENT_SOURCE_DIR}/shaders/.*$")
@@ -144,19 +144,19 @@ target_compile_definitions("${TARGET_NAME}" PRIVATE ${DEFINITIONS})
 target_compile_options("${TARGET_NAME}" PRIVATE "$<$<COMPILE_LANGUAGE:CUDA>:${CUDA_NVCC_FLAGS}>")
 target_include_directories(
     "${TARGET_NAME}" PRIVATE
-    "${CMAKE_SOURCE_DIR}/ext/miniz"
-    "${CMAKE_SOURCE_DIR}/ext/assimp/include"
-    "${CMAKE_SOURCE_DIR}/ext/gl3w/include"
-    "${CMAKE_SOURCE_DIR}/ext/glfw/include"
-    "${CMAKE_SOURCE_DIR}/ext/imgui"
-    "${CMAKE_SOURCE_DIR}/ext/tiny-cuda-nn/dependencies"
-    "${CMAKE_SOURCE_DIR}/ext/tiny-cuda-nn/include"
+    "../ext/miniz"
+    "../ext/assimp/include"
+    "../ext/gl3w/include"
+    "../ext/glfw/include"
+    "../ext/imgui"
+    "../ext/tiny-cuda-nn/dependencies"
+    "../ext/tiny-cuda-nn/include"
     "${OPTIX_INCLUDE_DIR}"
 )
 target_link_directories(
     "${TARGET_NAME}" PRIVATE
-    "${CMAKE_SOURCE_DIR}/ext/glfw/lib"
-    "${CMAKE_SOURCE_DIR}/ext/assimp"
+    "../ext/glfw/lib"
+    "../ext/assimp"
 )
 target_link_libraries(
     "${TARGET_NAME}"

@@ -15,7 +15,7 @@ function(COPY_FILES)
     add_custom_command(
       OUTPUT  "${OUTPUT}"
       MAIN_DEPENDENCY "${INPUT}"
-      COMMAND ${CMAKE_COMMAND} -E copy "${INPUT}" "${OUTPUT}"
+      COMMAND ${CMAKE_COMMAND} -E copy "${INPUT}" "${OUTPUT}" WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
     )
   endforeach()
 

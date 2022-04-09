@@ -27,35 +27,35 @@ endif()
 
 file(
     GLOB_RECURSE COMMON_SOURCES
-    "${CMAKE_SOURCE_DIR}/common/*"
-    "${CMAKE_SOURCE_DIR}/utils/*"
-    "${CMAKE_SOURCE_DIR}/ext/*"
+    "common/*"
+    "utils/*"
+    "ext/*"
 )
 list(
     FILTER COMMON_SOURCES INCLUDE REGEX
     ".*(h|hpp|cuh|c|cc|cpp)$")
 list(
     FILTER COMMON_SOURCES EXCLUDE REGEX
-    "${CMAKE_SOURCE_DIR}/common/obj_loader\..*")
+    "common/obj_loader\..*")
 list(
     FILTER COMMON_SOURCES EXCLUDE REGEX
-    "${CMAKE_SOURCE_DIR}/ext/imgui/imgui_demo\.cpp$")
+    "ext/imgui/imgui_demo\.cpp$")
 list(
     FILTER COMMON_SOURCES EXCLUDE REGEX
-    "${CMAKE_SOURCE_DIR}/ext/imgui/(backends|misc|examples)/.*")
+    "ext/imgui/(backends|misc|examples)/.*")
 list(
     FILTER COMMON_SOURCES EXCLUDE REGEX
-    "${CMAKE_SOURCE_DIR}/ext/assimp/.*")
+    "ext/assimp/.*")
 list(
     FILTER COMMON_SOURCES EXCLUDE REGEX
-    "${CMAKE_SOURCE_DIR}/ext/miniz/examples/.*")
+    "ext/miniz/examples/.*")
 list(
     FILTER COMMON_SOURCES EXCLUDE REGEX
-    "${CMAKE_SOURCE_DIR}/ext/tiny-cuda-nn/.*")
+    "ext/tiny-cuda-nn/.*")
 file(
     GLOB IMGUI_BACKEND_SOURCES
-    "${CMAKE_SOURCE_DIR}/ext/imgui/backends/imgui_impl_glfw*"
-    "${CMAKE_SOURCE_DIR}/ext/imgui/backends/imgui_impl_opengl3*"
+    "ext/imgui/backends/imgui_impl_glfw*"
+    "ext/imgui/backends/imgui_impl_opengl3*"
 )
 set(
     COMMON_SOURCES
