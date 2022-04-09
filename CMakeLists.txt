@@ -20,54 +20,56 @@ else()
     message(FATAL_ERROR "OptiX SDK 7.4 not found.")
 endif()
 
+
+
+# ----------------------------------------------------------------
+# JP: プロジェクト間で共通のソースコードのリスト作成。
+
 file(
     GLOB_RECURSE COMMON_SOURCES
-    "${CMAKE_SOURCE_DIR}/common/*.h"
-    "${CMAKE_SOURCE_DIR}/common/*.hpp"
-    "${CMAKE_SOURCE_DIR}/common/*.c"
-    "${CMAKE_SOURCE_DIR}/common/*.cpp"
-    "${CMAKE_SOURCE_DIR}/common/*.cuh"
-    "${CMAKE_SOURCE_DIR}/utils/*.h"
-    "${CMAKE_SOURCE_DIR}/utils/*.hpp"
-    "${CMAKE_SOURCE_DIR}/utils/*.c"
-    "${CMAKE_SOURCE_DIR}/utils/*.cpp"
-    "${CMAKE_SOURCE_DIR}/ext/gl3w/*"
-    "${CMAKE_SOURCE_DIR}/ext/glfw/*.h"
+    "${CMAKE_SOURCE_DIR}/common/*"
+    "${CMAKE_SOURCE_DIR}/utils/*"
+    "${CMAKE_SOURCE_DIR}/ext/*"
 )
+list(
+    FILTER COMMON_SOURCES INCLUDE REGEX
+    ".*(h|hpp|cuh|c|cc|cpp)$")
+list(
+    FILTER COMMON_SOURCES EXCLUDE REGEX
+    "${CMAKE_SOURCE_DIR}/common/obj_loader\..*")
+list(
+    FILTER COMMON_SOURCES EXCLUDE REGEX
+    "${CMAKE_SOURCE_DIR}/ext/imgui/imgui_demo\.cpp$")
+list(
+    FILTER COMMON_SOURCES EXCLUDE REGEX
+    "${CMAKE_SOURCE_DIR}/ext/imgui/(backends|misc|examples)/.*")
+list(
+    FILTER COMMON_SOURCES EXCLUDE REGEX
+    "${CMAKE_SOURCE_DIR}/ext/assimp/.*")
+list(
+    FILTER COMMON_SOURCES EXCLUDE REGEX
+    "${CMAKE_SOURCE_DIR}/ext/miniz/examples/.*")
+list(
+    FILTER COMMON_SOURCES EXCLUDE REGEX
+    "${CMAKE_SOURCE_DIR}/ext/tiny-cuda-nn/.*")
 file(
-    GLOB IMGUI_SOURCES
-    "${CMAKE_SOURCE_DIR}/ext/imgui/*.h"
-    "${CMAKE_SOURCE_DIR}/ext/imgui/*.cpp"
+    GLOB IMGUI_BACKEND_SOURCES
     "${CMAKE_SOURCE_DIR}/ext/imgui/backends/imgui_impl_glfw*"
     "${CMAKE_SOURCE_DIR}/ext/imgui/backends/imgui_impl_opengl3*"
-)
-file(
-    GLOB MINIZ_SOURCES
-    "${CMAKE_SOURCE_DIR}/ext/miniz/*.h"
-    "${CMAKE_SOURCE_DIR}/ext/miniz/*.c"
-)
-file(
-    GLOB STB_SOURCES
-    "${CMAKE_SOURCE_DIR}/ext/stb_*"
-)
-file(
-    GLOB TINYEXR_SOURCES
-    "${CMAKE_SOURCE_DIR}/ext/tinyexr*"
 )
 set(
     COMMON_SOURCES
     ${COMMON_SOURCES}
-    ${IMGUI_SOURCES}
-    ${MINIZ_SOURCES}
-    ${STB_SOURCES}
-    ${TINYEXR_SOURCES}
+    ${IMGUI_BACKEND_SOURCES}
 )
-list(
-    FILTER COMMON_SOURCES
-    EXCLUDE REGEX "${CMAKE_SOURCE_DIR}/common/obj_loader\..*")
-list(
-    FILTER COMMON_SOURCES
-    EXCLUDE REGEX "${CMAKE_SOURCE_DIR}/ext/imgui/imgui_demo\.cpp")
+# foreach(f IN LISTS COMMON_SOURCES)
+#     message("${f}")
+# endforeach()
+
+# END:JP: プロジェクト間で共通のソースコードのリスト作成。
+# ----------------------------------------------------------------
+
+
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 set(CMAKE_RUNTIME_LIBRARY_DIRECTORY "${CMAKE_BINARY_DIR}/bin")

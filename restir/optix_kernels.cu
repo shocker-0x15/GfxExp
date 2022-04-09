@@ -978,7 +978,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void traceShadowRays() {
         //     バイアスが増えてしまうため、そのようなピクセルは棄却する。
         // EN: Reusing candidates from neighboring pixels with substantially different geometry/material
         //     leads to increased bias. Reject such a pixel.
-        sampleVis.temporalPassedHeuristic = testNeighbor<true>(prevBufIdx, tNbCoord, dist, shadingNormalInWorld);
+        sampleVis.temporalPassedHeuristic =
+            testNeighbor<true>(prevBufIdx, tNbCoord, dist, shadingNormalInWorld);
         if (sampleVis.temporalPassedHeuristic) {
             Reservoir<LightSample> neighbor;
             LightSample temporalSample;
@@ -1055,7 +1056,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void traceShadowRays() {
         //     バイアスが増えてしまうため、そのようなピクセルは棄却する。
         // EN: Reusing candidates from neighboring pixels with substantially different geometry/material
         //     leads to increased bias. Reject such a pixel.
-        sampleVis.spatiotemporalPassedHeuristic = testNeighbor<true>(prevBufIdx, stNbCoord, dist, shadingNormalInWorld);
+        sampleVis.spatiotemporalPassedHeuristic =
+            testNeighbor<true>(prevBufIdx, stNbCoord, dist, shadingNormalInWorld);
         sampleVis.spatiotemporalPassedHeuristic &= stNbCoord.x != launchIndex.x || stNbCoord.y != launchIndex.y;
         if (sampleVis.spatiotemporalPassedHeuristic) {
             bool reused = false;
