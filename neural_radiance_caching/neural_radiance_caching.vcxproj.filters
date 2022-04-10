@@ -19,9 +19,6 @@
     <Filter Include="non-essentials\utils">
       <UniqueIdentifier>{6f26d21a-72b8-449a-b8dd-7ac1d7c4bfb2}</UniqueIdentifier>
     </Filter>
-    <Filter Include="non-essentials\ext\miniz">
-      <UniqueIdentifier>{3e67c4a3-116d-4c60-bf4e-3ff7bdfdd409}</UniqueIdentifier>
-    </Filter>
     <Filter Include="non-essentials\ext\imgui">
       <UniqueIdentifier>{1566c5b8-0bee-4b3b-b517-867c59af6517}</UniqueIdentifier>
     </Filter>
@@ -43,6 +40,12 @@
     <Filter Include="ext/tiny-cuda-nn\optimizers">
       <UniqueIdentifier>{f17844ec-4465-4ce4-a871-6bf6d09057c5}</UniqueIdentifier>
     </Filter>
+    <Filter Include="non-essentials\ext\tinyexr">
+      <UniqueIdentifier>{c456869c-21c8-4339-8787-6e91fb97141b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="non-essentials\ext\tinyexr\miniz">
+      <UniqueIdentifier>{7a7f3879-e89a-4af6-b5e9-f51ab13dcb28}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="neural_radiance_caching_main.cpp" />
@@ -60,12 +63,6 @@
     </ClCompile>
     <ClCompile Include="..\utils\optix_util.cpp">
       <Filter>non-essentials\utils</Filter>
-    </ClCompile>
-    <ClCompile Include="..\ext\miniz\miniz.c">
-      <Filter>non-essentials\ext\miniz</Filter>
-    </ClCompile>
-    <ClCompile Include="..\ext\tinyexr.cc">
-      <Filter>non-essentials\ext</Filter>
     </ClCompile>
     <ClCompile Include="..\ext\stb_image_write_compile.cpp">
       <Filter>non-essentials\ext</Filter>
@@ -90,6 +87,12 @@
     </ClCompile>
     <ClCompile Include="..\ext\imgui\imgui_widgets.cpp">
       <Filter>non-essentials\ext\imgui\core</Filter>
+    </ClCompile>
+    <ClCompile Include="..\ext\tinyexr\tinyexr.cc">
+      <Filter>non-essentials\ext\tinyexr</Filter>
+    </ClCompile>
+    <ClCompile Include="..\ext\tinyexr\deps\miniz\miniz.c">
+      <Filter>non-essentials\ext\tinyexr\miniz</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -132,12 +135,6 @@
     </ClInclude>
     <ClInclude Include="..\utils\optixu_on_cudau.h">
       <Filter>non-essentials\utils</Filter>
-    </ClInclude>
-    <ClInclude Include="..\ext\tinyexr.h">
-      <Filter>non-essentials\ext</Filter>
-    </ClInclude>
-    <ClInclude Include="..\ext\miniz\miniz.h">
-      <Filter>non-essentials\ext\miniz</Filter>
     </ClInclude>
     <ClInclude Include="..\common\common_host.h">
       <Filter>non-essentials</Filter>
@@ -322,6 +319,12 @@
     <ClInclude Include="network_interface.h" />
     <ClInclude Include="..\ext\stb_image.h">
       <Filter>non-essentials\ext</Filter>
+    </ClInclude>
+    <ClInclude Include="..\ext\tinyexr\tinyexr.h">
+      <Filter>non-essentials\ext\tinyexr</Filter>
+    </ClInclude>
+    <ClInclude Include="..\ext\tinyexr\deps\miniz\miniz.h">
+      <Filter>non-essentials\ext\tinyexr\miniz</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

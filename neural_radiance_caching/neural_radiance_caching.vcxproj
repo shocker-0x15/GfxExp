@@ -20,9 +20,9 @@
     <ClCompile Include="..\ext\imgui\imgui_draw.cpp" />
     <ClCompile Include="..\ext\imgui\imgui_tables.cpp" />
     <ClCompile Include="..\ext\imgui\imgui_widgets.cpp" />
-    <ClCompile Include="..\ext\miniz\miniz.c" />
     <ClCompile Include="..\ext\stb_image_write_compile.cpp" />
-    <ClCompile Include="..\ext\tinyexr.cc" />
+    <ClCompile Include="..\ext\tinyexr\deps\miniz\miniz.c" />
+    <ClCompile Include="..\ext\tinyexr\tinyexr.cc" />
     <ClCompile Include="..\utils\cuda_util.cpp" />
     <ClCompile Include="..\utils\gl_util.cpp" />
     <ClCompile Include="..\utils\optix_util.cpp" />
@@ -59,7 +59,6 @@
     <ClInclude Include="..\ext\imgui\imstb_rectpack.h" />
     <ClInclude Include="..\ext\imgui\imstb_textedit.h" />
     <ClInclude Include="..\ext\imgui\imstb_truetype.h" />
-    <ClInclude Include="..\ext\miniz\miniz.h" />
     <ClInclude Include="..\ext\stb_image.h" />
     <ClInclude Include="..\ext\stb_image_write.h" />
     <ClInclude Include="..\ext\tiny-cuda-nn\include\tiny-cuda-nn\common.h" />
@@ -111,7 +110,8 @@
     <ClInclude Include="..\ext\tiny-cuda-nn\include\tiny-cuda-nn\random.h" />
     <ClInclude Include="..\ext\tiny-cuda-nn\include\tiny-cuda-nn\reduce_sum.h" />
     <ClInclude Include="..\ext\tiny-cuda-nn\include\tiny-cuda-nn\trainer.h" />
-    <ClInclude Include="..\ext\tinyexr.h" />
+    <ClInclude Include="..\ext\tinyexr\deps\miniz\miniz.h" />
+    <ClInclude Include="..\ext\tinyexr\tinyexr.h" />
     <ClInclude Include="..\utils\cuda_util.h" />
     <ClInclude Include="..\utils\gl_util.h" />
     <ClInclude Include="..\utils\optixu_on_cudau.h" />
@@ -182,12 +182,12 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <LibraryPath>C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v11.6\lib\x64;$(SolutionDir)ext\glfw\lib;$(LibraryPath)</LibraryPath>
     <TargetName>neural_radiance_caching</TargetName>
-    <ExternalIncludePath>$(SolutionDir)ext\tiny-cuda-nn\dependencies;$(SolutionDir)ext\tiny-cuda-nn\include;$(SolutionDir)ext\miniz;$(SolutionDir)ext\gl3w\include;$(SolutionDir)ext\glfw\include;$(SolutionDir)ext\imgui;$(SolutionDir)ext\prebuilt\include;C:\ProgramData\NVIDIA Corporation\OptiX SDK 7.4.0\include;$(ExternalIncludePath)</ExternalIncludePath>
+    <ExternalIncludePath>$(SolutionDir)ext\tiny-cuda-nn\dependencies;$(SolutionDir)ext\tiny-cuda-nn\include;$(SolutionDir)ext\tinyexr;$(SolutionDir)ext\tinyexr\deps\miniz;$(SolutionDir)ext\gl3w\include;$(SolutionDir)ext\glfw\include;$(SolutionDir)ext\imgui;$(SolutionDir)ext\prebuilt\include;C:\ProgramData\NVIDIA Corporation\OptiX SDK 7.4.0\include;$(ExternalIncludePath)</ExternalIncludePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <LibraryPath>C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v11.6\lib\x64;$(SolutionDir)ext\glfw\lib;$(LibraryPath)</LibraryPath>
     <TargetName>neural_radiance_caching</TargetName>
-    <ExternalIncludePath>$(SolutionDir)ext\tiny-cuda-nn\dependencies;$(SolutionDir)ext\tiny-cuda-nn\include;$(SolutionDir)ext\miniz;$(SolutionDir)ext\gl3w\include;$(SolutionDir)ext\glfw\include;$(SolutionDir)ext\imgui;$(SolutionDir)ext\prebuilt\include;C:\ProgramData\NVIDIA Corporation\OptiX SDK 7.4.0\include;$(ExternalIncludePath)</ExternalIncludePath>
+    <ExternalIncludePath>$(SolutionDir)ext\tiny-cuda-nn\dependencies;$(SolutionDir)ext\tiny-cuda-nn\include;$(SolutionDir)ext\tinyexr;$(SolutionDir)ext\tinyexr\deps\miniz;$(SolutionDir)ext\gl3w\include;$(SolutionDir)ext\glfw\include;$(SolutionDir)ext\imgui;$(SolutionDir)ext\prebuilt\include;C:\ProgramData\NVIDIA Corporation\OptiX SDK 7.4.0\include;$(ExternalIncludePath)</ExternalIncludePath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
