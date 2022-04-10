@@ -320,6 +320,9 @@
       <Filter>ext/tiny-cuda-nn</Filter>
     </ClInclude>
     <ClInclude Include="network_interface.h" />
+    <ClInclude Include="..\ext\stb_image.h">
+      <Filter>non-essentials\ext</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <CudaCompile Include="optix_kernels.cu" />
@@ -334,7 +337,7 @@
     <CopyFileToFolders Include="shaders\drawOptiXResult.vert">
       <Filter>non-essentials\shaders</Filter>
     </CopyFileToFolders>
-    <CopyFileToFolders Include="..\ext\assimp\assimp-vc143-mt.dll">
+    <CopyFileToFolders Include="..\ext\prebuilt\bin\assimp-vc143-mt.dll">
       <Filter>non-essentials\ext</Filter>
     </CopyFileToFolders>
   </ItemGroup>

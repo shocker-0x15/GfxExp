@@ -4,3 +4,6 @@
 [submodule "ext/tiny-cuda-nn"]
 	path = ext/tiny-cuda-nn
 	url = https://github.com/NVlabs/tiny-cuda-nn.git
+[submodule "ext/assimp"]
+	path = ext/assimp
+	url = https://github.com/assimp/assimp.git

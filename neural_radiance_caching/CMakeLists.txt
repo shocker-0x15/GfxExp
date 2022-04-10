@@ -70,13 +70,6 @@ copy_files(
     GENERATED_FILES COPIED_SHADERS
 )
 
-set(ASSIMP_DLL "../ext/assimp/assimp-vc143-mt.dll")
-copy_files(
-    SOURCES "${ASSIMP_DLL}"
-    TARGET_PATH "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${CMAKE_CFG_INTDIR}"
-    GENERATED_FILES COPIED_FILES
-)
-
 # non-essentials
 source_group(
     "non-essentials" REGULAR_EXPRESSION
@@ -96,9 +89,6 @@ source_group(
 source_group(
     "non-essentials/ext/miniz" REGULAR_EXPRESSION
     "../ext/miniz/[^/]*\.(h|hpp|c|cpp)$")
-source_group(
-    "non-essentials/ext/assimp" REGULAR_EXPRESSION
-    "../ext/assimp/[^/]*\.(dll)$")
 source_group(
     "non-essentials/ext" REGULAR_EXPRESSION
     "../ext/[^/]*\.(h|hpp|c|cc|cpp)$")
@@ -136,7 +126,6 @@ add_executable(
     ${OPTIX_KERNELS}
     ${CUDA_SOURCES}
     ${SHADERS}
-    ${ASSIMP_DLL}
 )
 target_compile_features("${TARGET_NAME}" PRIVATE cxx_std_20)
 set_target_properties("${TARGET_NAME}" PROPERTIES CXX_EXTENSIONS OFF CUDA_EXTENSIOINS OFF)
@@ -146,6 +135,7 @@ target_include_directories(
     "${TARGET_NAME}" PRIVATE
     "../ext/miniz"
     "../ext/assimp/include"
+    "${CMAKE_BINARY_DIR}/ext/assimp/include"
     "../ext/gl3w/include"
     "../ext/glfw/include"
     "../ext/imgui"
@@ -156,7 +146,6 @@ target_include_directories(
 target_link_directories(
     "${TARGET_NAME}" PRIVATE
     "../ext/glfw/lib"
-    "../ext/assimp"
 )
 target_link_libraries(
     "${TARGET_NAME}"
@@ -164,6 +153,6 @@ target_link_libraries(
     CUDA::cuda_driver
     opengl32
     glfw3
-    assimp-vc143-mt
+    assimp::assimp
     tiny-cuda-nn
 )

@@ -74,6 +74,15 @@ set(
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 set(CMAKE_RUNTIME_LIBRARY_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 
+option(ASSIMP_BUILD_ASSIMP_TOOLS "If the supplementary tools for Assimp are built in addition to the library." OFF)
+option(ASSIMP_BUILD_SAMPLES "If the official samples are built as well (needs Glut)." OFF)
+option(ASSIMP_BUILD_TESTS "If the test suite for Assimp is built in addition to the library." OFF)
+option(ASSIMP_INSTALL "Disable this if you want to use assimp as a submodule." OFF)
+if(MSVC)
+    option(ASSIMP_BUILD_ASSIMP_VIEW "If the Assimp view tool is built. (requires DirectX)" OFF)
+endif()
+add_subdirectory(ext/assimp)
+
 option(TCNN_BUILD_BENCHMARK "Build tiny-cuda-nn example benchmark?" OFF)
 option(TCNN_BUILD_EXAMPLES "Build tiny-cuda-nn example applications?" OFF)
 add_subdirectory(ext/tiny-cuda-nn)
@@ -91,7 +100,10 @@ target_compile_options(
 )
 
 add_subdirectory(path_tracing)
+add_dependencies(path_tracing assimp)
 add_subdirectory(restir)
+add_dependencies(restir assimp)
 add_subdirectory(regir)
+add_dependencies(regir assimp)
 add_subdirectory(neural_radiance_caching)
-add_dependencies(neural_radiance_caching tiny-cuda-nn)
+add_dependencies(neural_radiance_caching assimp tiny-cuda-nn)
