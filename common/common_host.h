@@ -19,13 +19,6 @@
 
 #include "stopwatch.h"
 
-#include <assimp/scene.h>
-#include <assimp/Importer.hpp>
-#include <assimp/postprocess.h>
-#include "../common/dds_loader.h"
-#include "../../ext/stb_image.h"
-#include "../../ext/tinyexr.h"
-
 template <std::floating_point T>
 static constexpr T pi_v = std::numbers::pi_v<T>;
 

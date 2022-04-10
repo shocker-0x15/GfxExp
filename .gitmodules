@@ -7,3 +7,6 @@
 [submodule "ext/assimp"]
 	path = ext/assimp
 	url = https://github.com/assimp/assimp.git
+[submodule "ext/tinyexr"]
+	path = ext/tinyexr
+	url = https://github.com/syoyo/tinyexr.git

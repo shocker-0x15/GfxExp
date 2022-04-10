@@ -38,7 +38,10 @@ file(
 )
 list(
     FILTER COMMON_SOURCES INCLUDE REGEX
-    ".*(h|hpp|cuh|c|cc|cpp)$")
+    ".*\.(h|hpp|cuh|c|cc|cpp)$")
+list(
+    FILTER COMMON_SOURCES EXCLUDE REGEX
+    "ext/prebuilt/.*")
 list(
     FILTER COMMON_SOURCES EXCLUDE REGEX
     "common/obj_loader\..*")
@@ -53,7 +56,13 @@ list(
     "ext/assimp/.*")
 list(
     FILTER COMMON_SOURCES EXCLUDE REGEX
-    "ext/miniz/examples/.*")
+    "ext/tinyexr/deps/miniz/examples/.*")
+list(
+    FILTER COMMON_SOURCES EXCLUDE REGEX
+    "ext/tinyexr/(examples|experimental|test)/.*")
+list(
+    FILTER COMMON_SOURCES EXCLUDE REGEX
+    "ext/tinyexr/test_tinyexr.cc$")
 list(
     FILTER COMMON_SOURCES EXCLUDE REGEX
     "ext/tiny-cuda-nn/.*")

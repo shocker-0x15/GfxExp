@@ -87,8 +87,11 @@ source_group(
     "non-essentials/ext/imgui" REGULAR_EXPRESSION
     "../ext/imgui/backends/.*\.(h|cpp)$")
 source_group(
-    "non-essentials/ext/miniz" REGULAR_EXPRESSION
-    "../ext/miniz/[^/]*\.(h|hpp|c|cpp)$")
+    "non-essentials/ext/tinyexr" REGULAR_EXPRESSION
+    "../ext/tinyexr/[^/]*\.(h|hpp|c|cpp)$")
+source_group(
+    "non-essentials/ext/tinyexr/miniz" REGULAR_EXPRESSION
+    "../ext/tinyexr/deps/miniz/[^/]*\.(h|hpp|c|cpp)$")
 source_group(
     "non-essentials/ext" REGULAR_EXPRESSION
     "../ext/[^/]*\.(h|hpp|c|cc|cpp)$")
@@ -133,7 +136,8 @@ target_compile_definitions("${TARGET_NAME}" PRIVATE ${DEFINITIONS})
 target_compile_options("${TARGET_NAME}" PRIVATE "$<$<COMPILE_LANGUAGE:CUDA>:${CUDA_NVCC_FLAGS}>")
 target_include_directories(
     "${TARGET_NAME}" PRIVATE
-    "../ext/miniz"
+    "../ext/tinyexr"
+    "../ext/tinyexr/deps/miniz"
     "../ext/assimp/include"
     "${CMAKE_BINARY_DIR}/ext/assimp/include"
     "../ext/gl3w/include"

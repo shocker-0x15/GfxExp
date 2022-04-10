@@ -1,5 +1,11 @@
 #include "common_host.h"
 
+#include <assimp/scene.h>
+#include <assimp/Importer.hpp>
+#include <assimp/postprocess.h>
+#include "../common/dds_loader.h"
+#include "../../ext/stb_image.h"
+#include "tinyexr.h"
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "../ext/stb_image_write.h"
 
