@@ -59,6 +59,9 @@ list(
     "ext/tinyexr/deps/miniz/examples/.*")
 list(
     FILTER COMMON_SOURCES EXCLUDE REGEX
+    "ext/tinyexr/deps/ZFP/.*")
+list(
+    FILTER COMMON_SOURCES EXCLUDE REGEX
     "ext/tinyexr/(examples|experimental|test)/.*")
 list(
     FILTER COMMON_SOURCES EXCLUDE REGEX
