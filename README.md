@@ -54,7 +54,7 @@ https://research.nvidia.com/publication/2021-06_Real-time-Neural-Radiance
 
 Path Tracing + Neural Radiance Cache (NRC)は、ある経路長より先から得られる寄与をニューラルネットワークによるキャッシュからの値によって置き換えることで、少しのバイアスと引き換えに低い分散の推定値(、さらにシーンによっては短いレンダリング時間)を実現します。NRCは比較的小さなネットワークであり、トレーニングはレンダリングの最中に行うオンラインラーニングとすることで、「適応による汎化」を実現、推論の実行時間もリアルタイムレンダリングに適した短いものとなります。
 
-Path Tracing + Neural Radiance Cache (NRC) replaces contributions given from beyond a certain path length by a value from the cache based on a neural network. This achieves low variance estimates at the cost of a little bias (, and additionally rendering time can even be reduced depending on a scene). NRC is a relatively small network, and training is online learning during rendering. This achieve "generalization via adaptation", and short inference time appropriate to real-time rendering.
+Path Tracing + Neural Radiance Cache (NRC) replaces contributions given from beyond a certain path length by a value from the cache based on a neural network. This achieves low variance estimates at the cost of a little bias (, and additionally rendering time can even be reduced depending on a scene). NRC is a relatively small network, and training is online learning during rendering. This achieves "generalization via adaptation", and short inference time appropriate to real-time rendering.
 
 - [x] Basic Implementation (based on simple path tracing, frequency/one-blob input encoding)
 - [ ] Advanced Items
