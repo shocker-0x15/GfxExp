@@ -26,12 +26,13 @@ You can load a 3D model for example by downloading from the internet.
     -begin-pos 5 7 4.8 -begin-pitch 30 -end-pos -5 7 4.8 -end-pitch 30 -freq 5 -inst rectlight3
 
 JP: このプログラムはNeural Radiance Caching (NRC) [1]の実装例です。
-    NRCでは位置や出射方向、物体表面のパラメターを入力、輝度を出力とするニューラルネットワークによる
-    Radiance Cacheをトレーニングします。レンダリング時にはパストレーシングによって経路を構築しますが、
-    ある経路長より先から得られる寄与をキャッシュからのクエリーによって置き換えることで
+    NRCは位置や出射方向、物体表面のパラメターを入力、輝度を出力とするニューラルネットワークです。
+    レンダリング時にはパストレーシングによって経路を構築しますが、
+    ある経路長より先から得られる寄与をキャッシュからのクエリーによって置き換えることで、
     少しのバイアスと引き換えに低い分散の推定値を得ることができます。
-    また、パスの広がりに基づいて早期にパストレーシングの経路を終了、
-    キャッシュからのクエリーによって補完とすることでシーンによっては1フレームの時間も短くなります。
+    さらに経路長が短くなることでシーンによっては1フレームの時間も短くなり得ます。
+    NRCは比較的小さなネットワークであり、トレーニングはレンダリングの最中に行うオンラインラーニングとすることで、
+    「適応による汎化」を実現、推論の実行時間もリアルタイムレンダリングに適した短いものとなります。
     ニューラルネットワーク部分にはtiny-cuda-nn [2]というライブラリーを使用しています。
     ※このサンプルをビルドするにはtiny-cuda-nnを予めビルドしておく必要があります。
       現状RTX 3080 (Ampere)でしか動作確認していません。TuringアーキテクチャーのGPUでも動くと思いますが、
@@ -41,12 +42,13 @@ JP: このプログラムはNeural Radiance Caching (NRC) [1]の実装例です�
       を有効化したほうがよいかもしれません。
 
 EN: This program is an example implementation of Neural Radiance Caching (NRC) [1].
-    NRC trains a neural network where the inputs are a position and an outgoing direction, surface parameters,
-    and the output is radiance. It constructs paths based on path tracing when rendering, but
-    replaces contributions given from beyond a certain path length by a query to the cache.
+    NRC is a neural network where the inputs are a position and an outgoing direction, surface parameters,
+    and the output is radiance. It constructs paths based on path tracing when rendering,
+    but replaces contributions given from beyond a certain path length by a query to the cache.
     This achieves low variance estimates at the cost of a little bias.
-    Additionally, one frame time can even be reduced depending on a scene by early exiting a path of path tracing
-    based on spread of the path and complementing by a query to the cache.
+    Additionally, one frame time can even be reduced depending on a scene thanks to path shortening.
+    NRC is a relatively small network, and training is online learning during rendering.
+    This achieve "generalization via adaptation", and short inference time appropriate to real-time rendering.
     This program uses tiny-cuda-nn [2] for the neural network part.
     * Build tiny-cuda-nn first before building this sample.
       I have tested only with RTX 3080 (Ampere). I think the program would work with

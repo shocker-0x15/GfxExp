@@ -27,7 +27,8 @@ You can load a 3D model for example by downloading from the internet.
 
 JP: このプログラムはReSTIR (Reservoir-based Spatio-Temporal Importance Resampling) [1]の実装例です。
     ReSTIRでは、Resampled Importance Sampling (RIS), Weighted Reservoir Sampling (WRS)、
-    そして複数のReservoirを結合する際の特性を利用することで大量の発光プリミティブからの効率的なサンプリングが可能となります。
+    そして複数のReservoirを結合する際の特性を利用することで、プライマリーヒットにおいて
+    大量の発光プリミティブからの効率的なサンプリングが可能となります。
     さらにRearchitected ReSTIR [2]の実装も行っています。
     Rearchitected版はアルゴリズムの構造を変更することでオリジナルのReSTIRにあったボトルネックを解消、
     劇的な性能向上・品質向上を実現しています。
@@ -36,8 +37,8 @@ JP: このプログラムはReSTIR (Reservoir-based Spatio-Temporal Importance R
       を有効化したほうがよいかもしれません。
 
 EN: This program is an example implementation of ReSTIR (Reservoir-based Spatio-Temporal Importance Resampling) [1].
-    ReSTIR enables efficient sampling from a massive amount of emitter primitives by
-    Resampled Importance Sampling (RIS), Weighted Reservoir Sampling (WRS) and exploiting the property of
+    ReSTIR enables efficient sampling from a massive amount of emitter primitives at primary hit by
+    Resampled Importance Sampling (RIS), Weighted Reservoir Sampling (WRS), and utilizing the property of
     combining multiple reservoirs.
     Additionally this implements the rearchitected ReSTIR [2] as well.
     The rearchitected variant achieves significant improvements on performance and quality

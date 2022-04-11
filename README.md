@@ -14,6 +14,10 @@ You need to install [Git LFS](https://git-lfs.github.com/) to correctly clone th
 Spatiotemporal reservoir resampling for real-time ray tracing with dynamic direct lighting\
 https://research.nvidia.com/publication/2020-07_Spatiotemporal-reservoir-resampling
 
+ReSTIRでは、Resampled Importance Sampling (RIS), Weighted Reservoir Sampling (WRS)、そして複数のReservoirを結合する際の特性を利用することで、プライマリーヒットにおいて大量の発光プリミティブからの効率的なサンプリングが可能となります。
+
+ReSTIR enables efficient sampling from a massive amount of emitter primitives at primary hit by Resampled Importance Sampling (RIS), Weighted Reservoir Sampling (WRS) and utilizing the property of combining multiple reservoirs.
+
 - [x] Basic Implementation (Biased RIS Estimator, Spatio-temporal Reuse)
 - [x] Advanced Items
   - [x] Diffuse + Glossy BRDF
@@ -30,6 +34,10 @@ Amazon Lumberyard Bistro (Exterior) from Morgan McGuire's [Computer Graphics Arc
 Chapter 23. "Rendering Many Lights with Grid-based Reservoirs", Ray Tracing Gems II\
 https://www.realtimerendering.com/raytracinggems/rtg2/index.html
 
+ReGIRでは、ReSTIRと同様にStreaming RISを用いて大量の発光プリミティブからの効率的なサンプリングが可能となります。ReSTIRとは異なり、セカンダリー以降の光源サンプリングにも対応するため、Reservoirをワールド空間のグリッドに記録し、2段階のStreaming RISを行います。
+
+ReGIR enables efficient sampling from a massive amount of emitter primitives by using streaming RIS similar to ReSTIR. Unlike ReSTIR, ReGIR stores reservoirs in a world space grid and performs two-stage streaming RIS to support light sampling after secondary visibility.
+
 - [x] Basic Implementation (Uniform Grid, Temporal Reuse)
 - [ ] Advanced Items
   - [x] Diffuse + Glossy BRDF
@@ -43,6 +51,10 @@ Amazon Lumberyard Bistro (Interior) from Morgan McGuire's [Computer Graphics Arc
 ### Neural Radiance Caching
 Real-time Neural Radiance Caching for Path Tracing\
 https://research.nvidia.com/publication/2021-06_Real-time-Neural-Radiance
+
+Neural Radiance Cache (NRC)は位置や出射方向、物体表面のパラメターを入力、輝度を出力とするニューラルネットワークです。レンダリング時にはパストレーシングによって経路を構築しますが、ある経路長より先から得られる寄与をキャッシュからのクエリーによって置き換えることで、少しのバイアスと引き換えに低い分散の推定値を得ることができます。さらに経路長が短くなることでシーンによっては1フレームの時間も短くなり得ます。NRCは比較的小さなネットワークであり、トレーニングはレンダリングの最中に行うオンラインラーニングとすることで、「適応による汎化」を実現、推論の実行時間もリアルタイムレンダリングに適した短いものとなります。
+
+Neural Radiance Cache (NRC) is a neural network where the inputs are a position and an outgoing direction, surface parameters, and the output is radiance. It constructs paths based on path tracing when rendering, but replaces contributions given from beyond a certain path length by a query to the cache. This achieves low variance estimates at the cost of a little bias. Additionally, one frame time can even be reduced depending on a scene thanks to path shortening. NRC is a relatively small network, and training is online learning during rendering. This achieve "generalization via adaptation", and short inference time appropriate to real-time rendering.
 
 - [x] Basic Implementation (based on simple path tracing, frequency/one-blob input encoding)
 - [ ] Advanced Items
