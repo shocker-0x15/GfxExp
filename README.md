@@ -52,9 +52,9 @@ Amazon Lumberyard Bistro (Interior) from Morgan McGuire's [Computer Graphics Arc
 Real-time Neural Radiance Caching for Path Tracing\
 https://research.nvidia.com/publication/2021-06_Real-time-Neural-Radiance
 
-Neural Radiance Cache (NRC)は位置や出射方向、物体表面のパラメターを入力、輝度を出力とするニューラルネットワークです。レンダリング時にはパストレーシングによって経路を構築しますが、ある経路長より先から得られる寄与をキャッシュからのクエリーによって置き換えることで、少しのバイアスと引き換えに低い分散の推定値を得ることができます。さらに経路長が短くなることでシーンによっては1フレームの時間も短くなり得ます。NRCは比較的小さなネットワークであり、トレーニングはレンダリングの最中に行うオンラインラーニングとすることで、「適応による汎化」を実現、推論の実行時間もリアルタイムレンダリングに適した短いものとなります。
+Path Tracing + Neural Radiance Cache (NRC)は、ある経路長より先から得られる寄与をニューラルネットワークによるキャッシュからの値によって置き換えることで、少しのバイアスと引き換えに低い分散の推定値(、さらにシーンによっては短いレンダリング時間)を実現します。NRCは比較的小さなネットワークであり、トレーニングはレンダリングの最中に行うオンラインラーニングとすることで、「適応による汎化」を実現、推論の実行時間もリアルタイムレンダリングに適した短いものとなります。
 
-Neural Radiance Cache (NRC) is a neural network where the inputs are a position and an outgoing direction, surface parameters, and the output is radiance. It constructs paths based on path tracing when rendering, but replaces contributions given from beyond a certain path length by a query to the cache. This achieves low variance estimates at the cost of a little bias. Additionally, one frame time can even be reduced depending on a scene thanks to path shortening. NRC is a relatively small network, and training is online learning during rendering. This achieve "generalization via adaptation", and short inference time appropriate to real-time rendering.
+Path Tracing + Neural Radiance Cache (NRC) replaces contributions given from beyond a certain path length by a value from the cache based on a neural network. This achieves low variance estimates at the cost of a little bias (, and additionally rendering time can even be reduced depending on a scene). NRC is a relatively small network, and training is online learning during rendering. This achieve "generalization via adaptation", and short inference time appropriate to real-time rendering.
 
 - [x] Basic Implementation (based on simple path tracing, frequency/one-blob input encoding)
 - [ ] Advanced Items
