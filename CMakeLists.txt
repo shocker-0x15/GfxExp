@@ -38,7 +38,7 @@ file(
 )
 list(
     FILTER COMMON_SOURCES INCLUDE REGEX
-    ".*\.(h|hpp|cuh|c|cc|cpp)$")
+    ".*\.(h|hpp|cuh|c|cc|cpp|vert|frag)$")
 list(
     FILTER COMMON_SOURCES EXCLUDE REGEX
     "ext/prebuilt/.*")

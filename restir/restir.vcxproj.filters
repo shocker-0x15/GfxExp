@@ -7,9 +7,6 @@
     <Filter Include="non-essentials\ext">
       <UniqueIdentifier>{e8ab81e0-a20c-43cc-b39f-e8410987f66d}</UniqueIdentifier>
     </Filter>
-    <Filter Include="non-essentials\shaders">
-      <UniqueIdentifier>{f33b0876-e7b2-4cb3-963d-6338f19ffb9d}</UniqueIdentifier>
-    </Filter>
     <Filter Include="non-essentials\ext\glfw">
       <UniqueIdentifier>{ae362f0b-b9f2-4ab4-8b15-30db48768794}</UniqueIdentifier>
     </Filter>
@@ -30,6 +27,9 @@
     </Filter>
     <Filter Include="non-essentials\ext\tinyexr\miniz">
       <UniqueIdentifier>{71c91cc2-994e-4f4d-80b7-192afe7aea04}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="non-essentials\shaders">
+      <UniqueIdentifier>{c4348e78-4505-4f28-8060-ff087ab24c80}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
@@ -170,14 +170,14 @@
     <CudaCompile Include="per_pixel_ris.cu" />
   </ItemGroup>
   <ItemGroup>
-    <CopyFileToFolders Include="shaders\drawOptiXResult.frag">
-      <Filter>non-essentials\shaders</Filter>
-    </CopyFileToFolders>
-    <CopyFileToFolders Include="shaders\drawOptiXResult.vert">
-      <Filter>non-essentials\shaders</Filter>
-    </CopyFileToFolders>
     <CopyFileToFolders Include="..\ext\prebuilt\bin\assimp-vc143-mt.dll">
       <Filter>non-essentials\ext</Filter>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="..\common\shaders\drawOptiXResult.frag">
+      <Filter>non-essentials\shaders</Filter>
+    </CopyFileToFolders>
+    <CopyFileToFolders Include="..\common\shaders\drawOptiXResult.vert">
+      <Filter>non-essentials\shaders</Filter>
     </CopyFileToFolders>
   </ItemGroup>
 </Project>

@@ -54,7 +54,7 @@ https://research.nvidia.com/publication/2021-06_Real-time-Neural-Radiance
 
 Path Tracing + Neural Radiance Cache (NRC)は、ある経路長より先から得られる寄与をニューラルネットワークによるキャッシュからの値によって置き換えることで、少しのバイアスと引き換えに低い分散の推定値(、さらにシーンによっては短いレンダリング時間)を実現します。NRCは比較的小さなネットワークであり、トレーニングはレンダリングの最中に行うオンラインラーニングとすることで、「適応による汎化」を実現、推論の実行時間もリアルタイムレンダリングに適した短いものとなります。
 
-Path Tracing + Neural Radiance Cache (NRC) replaces contributions given from beyond a certain path length by a value from the cache based on a neural network. This achieves low variance estimates at the cost of a little bias (, and additionally rendering time can even be reduced depending on a scene). NRC is a relatively small network, and training is online learning during rendering. This achieves "generalization via adaptation", and short inference time appropriate to real-time rendering.
+Path Tracing + Neural Radiance Cache (NRC) replaces contributions given from beyond a certain path length by a value from the cache based on a neural network. This achieves low variance estimates at the cost of a little bias (, and additionally rendering time can even be reduced depending on the scene). NRC is a relatively small network, and training is online learning during rendering. This achieves "generalization via adaptation", and short inference time appropriate to real-time rendering.
 
 - [x] Basic Implementation (based on simple path tracing, frequency/one-blob input encoding)
 - [ ] Advanced Items
@@ -75,14 +75,14 @@ Programs here use [OptiX Utility](https://github.com/shocker-0x15/OptiX_Utility)
 現状以下の環境で動作を確認しています。\
 I've confirmed that the program runs correctly in the following environment.
 
-* Windows 10 (21H2) & Visual Studio Community 2022 (17.1.1)
+* Windows 10 (21H2) & Visual Studio Community 2022 (17.1.3)
 * Core i9-9900K, 32GB, RTX 3080 10GB
-* NVIDIA Driver 511.79
+* NVIDIA Driver 512.15
 
 動作させるにあたっては以下のライブラリが必要です。\
 It requires the following libraries.
 
-* CUDA 11.6
+* CUDA 11.6 Update 2
 * OptiX 7.4.0 (requires Maxwell or later generation NVIDIA GPU)
 
 ## オープンソースソフトウェア / Open Source Software
@@ -91,9 +91,8 @@ It requires the following libraries.
 - [gl3w](https://github.com/skaslev/gl3w)
 - [GLFW](https://github.com/glfw/glfw)
 - [stb](https://github.com/nothings/stb)
-- [Tiny CUDA Neural Networks](https://github.com/NVlabs/tiny-cuda-nn)
+- [Tiny CUDA Neural Networks (tiny-cuda-nn)](https://github.com/NVlabs/tiny-cuda-nn)
 - [Tiny OpenEXR image library (tinyexr)](https://github.com/syoyo/tinyexr)
-  - [miniz](https://github.com/richgel999/miniz)
 
 ----
 2022 [@Shocker_0x15](https://twitter.com/Shocker_0x15)

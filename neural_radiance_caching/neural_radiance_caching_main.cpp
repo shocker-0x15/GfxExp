@@ -34,8 +34,8 @@ JP: このプログラムはNeural Radiance Caching (NRC) [1]の実装例です�
     NRCは比較的小さなネットワークであり、トレーニングはレンダリングの最中に行うオンラインラーニングとすることで、
     「適応による汎化」を実現、推論の実行時間もリアルタイムレンダリングに適した短いものとなります。
     ニューラルネットワーク部分にはtiny-cuda-nn [2]というライブラリーを使用しています。
-    ※このサンプルをビルドするにはtiny-cuda-nnを予めビルドしておく必要があります。
-      現状RTX 3080 (Ampere)でしか動作確認していません。TuringアーキテクチャーのGPUでも動くと思いますが、
+    ※TuringアーキテクチャーのGPUでも動くと思いますが、現状RTX 3080 (Ampere)でしか動作確認していません。
+      CMakeを使わずにこのサンプルをビルドするには外部ライブラリを先に手動でビルドしておく必要があります。
       tiny-cuda-nnのビルドの調整やnetwork_interface.cuのTCNN_MIN_GPU_ARCHの変更などが必要だと思います。
     ※デフォルトではBRDFにOptiXのCallable ProgramやCUDAの関数ポインターを使用した汎用的な実装になっており、
       性能上のオーバーヘッドが著しいため、純粋な性能を見る上では restir_shared.h の USE_HARD_CODED_BSDF_FUNCTIONS
@@ -46,14 +46,15 @@ EN: This program is an example implementation of Neural Radiance Caching (NRC) [
     and the output is radiance. It constructs paths based on path tracing when rendering,
     but replaces contributions given from beyond a certain path length by a query to the cache.
     This achieves low variance estimates at the cost of a little bias.
-    Additionally, one frame time can even be reduced depending on a scene thanks to path shortening.
+    Additionally, one frame time can even be reduced depending on the scene thanks to path shortening.
     NRC is a relatively small network, and training is online learning during rendering.
     This achieve "generalization via adaptation", and short inference time appropriate to real-time rendering.
     This program uses tiny-cuda-nn [2] for the neural network part.
-    * Build tiny-cuda-nn first before building this sample.
-      I have tested only with RTX 3080 (Ampere). I think the program would work with
-      Turing architecture GPU as well, but some adjustments when building tiny-cuda-nn and changing
-      TCNN_MIN_GPU_ARCH in network_interface.cu are required.
+    * I have tested only with RTX 3080 (Ampere) while I think the program would work with
+      Turing architecture GPU as well.
+      It requires to manually build external libaries before building the program when not using CMake.
+      Some adjustments for building tiny-cuda-nn and changing TCNN_MIN_GPU_ARCH in network_interface.cu
+      are required.
     * The program is generic implementation with OptiX's callable program and CUDA's function pointer,
       and has significant performance overhead, therefore it may be recommended to enable USE_HARD_CODED_BSDF_FUNCTIONS
       in restir_shared.h to see pure performance.

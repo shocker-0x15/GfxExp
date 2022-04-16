@@ -15,8 +15,8 @@ set(
 )
 
 file(
-    GLOB_RECURSE SHADERS
-    "shaders/*")
+    GLOB_RECURSE COMMON_SHADERS
+    "../common/shaders/*")
 
 set(
     GPU_KERNEL_DEPENDENCIES
@@ -59,15 +59,15 @@ nvcuda_compile_ptx(
 )
 
 copy_files(
-    SOURCES ${SHADERS}
+    SOURCES ${COMMON_SHADERS}
     TARGET_PATH "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${CMAKE_CFG_INTDIR}/${TARGET_NAME}/shaders"
-    GENERATED_FILES COPIED_SHADERS
+    GENERATED_FILES COPIED_COMMON_SHADERS
 )
 
 # non-essentials
 source_group(
     "non-essentials" REGULAR_EXPRESSION
-    "../common/.*\.(h|hpp|c|cpp)$")
+    "../common/[^/]*\.(h|hpp|c|cpp)$")
 source_group(
     "non-essentials/ext/gl3w" REGULAR_EXPRESSION
     "../ext/gl3w/.*$")
@@ -94,7 +94,7 @@ source_group(
     "../utils/.*$")
 source_group(
     "non-essentials/shaders" REGULAR_EXPRESSION
-    "${CMAKE_CURRENT_SOURCE_DIR}/shaders/.*$")
+    "../common/shaders/.*")
 
 # essentials
 source_group(
@@ -110,7 +110,7 @@ add_executable(
     ${SOURCES}
     ${CUDA_KERNELS}
     ${OPTIX_KERNELS}
-    ${SHADERS}
+    ${COMMON_SHADERS}
 )
 target_compile_features("${TARGET_NAME}" PRIVATE cxx_std_20)
 set_target_properties("${TARGET_NAME}" PROPERTIES CXX_EXTENSIONS OFF)
