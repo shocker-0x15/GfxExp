@@ -695,21 +695,28 @@ void loadEnvironmentalTexture(
 
 
 void saveImage(const std::filesystem::path &filepath, uint32_t width, uint32_t height, const uint32_t* data);
+void saveImageHDR(const std::filesystem::path &filepath, uint32_t width, uint32_t height,
+                  float brightnessScale,
+                  const float4* data);
 
 void saveImage(const std::filesystem::path &filepath, uint32_t width, uint32_t height, const float4* data,
+               float brightnessScale,
                bool applyToneMap, bool apply_sRGB_gammaCorrection);
 
 void saveImage(const std::filesystem::path &filepath,
                uint32_t width, cudau::TypedBuffer<float4> &buffer,
+               float brightnessScale,
                bool applyToneMap, bool apply_sRGB_gammaCorrection);
 
 void saveImage(const std::filesystem::path &filepath,
                cudau::Array &array,
+               float brightnessScale,
                bool applyToneMap, bool apply_sRGB_gammaCorrection);
 
 template <uint32_t log2BlockWidth>
 void saveImage(const std::filesystem::path &filepath,
                optixu::HostBlockBuffer2D<float4, log2BlockWidth> &buffer,
+               float brightnessScale,
                bool applyToneMap, bool apply_sRGB_gammaCorrection) {
     uint32_t width = buffer.getWidth();
     uint32_t height = buffer.getHeight();
@@ -721,6 +728,8 @@ void saveImage(const std::filesystem::path &filepath,
         }
     }
     buffer.unmap();
-    saveImage(filepath, width, height, data, applyToneMap, apply_sRGB_gammaCorrection);
+    saveImage(filepath, width, height, data,
+              brightnessScale,
+              applyToneMap, apply_sRGB_gammaCorrection);
     delete[] data;
 }

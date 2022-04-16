@@ -77,7 +77,6 @@ CUDA_DEVICE_KERNEL void visualizeToOutputBuffer(
     float3 gridOrigin, float3 gridCellSize, uint3 gridDimension,
     void* linearBuffer,
     shared::BufferToDisplay bufferTypeToDisplay,
-    float brightness,
     float motionVectorOffset, float motionVectorScale,
     optixu::NativeBlockBuffer2D<float4> outputBuffer,
     uint2 imageSize) {
@@ -93,41 +92,14 @@ CUDA_DEVICE_KERNEL void visualizeToOutputBuffer(
     case shared::BufferToDisplay::NoisyBeauty:
     case shared::BufferToDisplay::DenoisedBeauty: {
         auto typedLinearBuffer = reinterpret_cast<const float4*>(linearBuffer);
-        //value = brightness * typedLinearBuffer[linearIndex];
-        //// simple tone-map
-        //value.x = 1 - std::exp(-value.x);
-        //value.y = 1 - std::exp(-value.y);
-        //value.z = 1 - std::exp(-value.z);
-
         value = typedLinearBuffer[linearIndex];
-        float lum = sRGB_calcLuminance(make_float3(value));
-        if (lum > 0.0f) {
-            float lumT = 1 - std::exp(-brightness * lum);
-            // simple tone-map
-            value = value * (lumT / lum);
-        }
-        else {
-            value.x = value.y = value.z = 0.0f;
-        }
         if (visualizeCell) {
             shared::GBuffer0 gb0 = gBuffer0.read(launchIndex);
             float3 cellColor = calcCellColor(gridOrigin, gridCellSize, gridDimension, gb0.positionInWorld);
-            //value.x = 0.5f * value.x + 0.5f * cellColor.x;
-            //value.y = 0.5f * value.y + 0.5f * cellColor.y;
-            //value.z = 0.5f * value.z + 0.5f * cellColor.z;
             value.x *= cellColor.x;
             value.y *= cellColor.y;
             value.z *= cellColor.z;
         }
-        value.w = 1.0f;
-
-        //const auto reinhard = [](float x, float Lw) {
-        //    return x / (1 + x) * (1 + x / (Lw * Lw));
-        //};
-        //value = brightness * typedLinearBuffer[linearIndex];
-        //value.x = reinhard(value.x, 1.0f);
-        //value.y = reinhard(value.y, 1.0f);
-        //value.z = reinhard(value.z, 1.0f);
         break;
     }
     case shared::BufferToDisplay::Albedo: {

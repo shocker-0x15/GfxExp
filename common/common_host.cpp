@@ -2142,16 +2142,82 @@ void saveImage(const std::filesystem::path &filepath, uint32_t width, uint32_t h
         Assert_ShouldNotBeCalled();
 }
 
+void saveImageHDR(const std::filesystem::path &filepath, uint32_t width, uint32_t height,
+                  float brightnessScale,
+                  const float4* data) {
+    EXRHeader header;
+    InitEXRHeader(&header);
+
+    EXRImage image;
+    InitEXRImage(&image);
+
+    image.num_channels = 4;
+
+    std::vector<float> images[4];
+    images[0].resize(width * height);
+    images[1].resize(width * height);
+    images[2].resize(width * height);
+    images[3].resize(width * height);
+
+    for (int i = 0; i < width * height; i++) {
+        images[0][i] = brightnessScale * data[i].x;
+        images[1][i] = brightnessScale * data[i].y;
+        images[2][i] = brightnessScale * data[i].z;
+        images[3][i] = brightnessScale * data[i].w;
+    }
+
+    float* image_ptr[4];
+    image_ptr[0] = &(images[3].at(0)); // A
+    image_ptr[1] = &(images[2].at(0)); // B
+    image_ptr[2] = &(images[1].at(0)); // G
+    image_ptr[3] = &(images[0].at(0)); // R
+
+    image.images = (unsigned char**)image_ptr;
+    image.width = width;
+    image.height = height;
+
+    header.num_channels = 4;
+    header.channels = (EXRChannelInfo *)malloc(sizeof(EXRChannelInfo) * header.num_channels);
+    // Must be (A)BGR order, since most of EXR viewers expect this channel order.
+    strncpy(header.channels[0].name, "A", 255); header.channels[0].name[strlen("A")] = '\0';
+    strncpy(header.channels[1].name, "B", 255); header.channels[1].name[strlen("B")] = '\0';
+    strncpy(header.channels[2].name, "G", 255); header.channels[2].name[strlen("G")] = '\0';
+    strncpy(header.channels[3].name, "R", 255); header.channels[3].name[strlen("R")] = '\0';
+
+    header.pixel_types = (int32_t*)malloc(sizeof(int32_t) * header.num_channels);
+    header.requested_pixel_types = (int32_t*)malloc(sizeof(int32_t) * header.num_channels);
+    for (int i = 0; i < header.num_channels; i++) {
+        header.pixel_types[i] = TINYEXR_PIXELTYPE_FLOAT; // pixel type of input image
+        header.requested_pixel_types[i] = TINYEXR_PIXELTYPE_HALF; // pixel type of output image to be stored in .EXR
+    }
+
+    const char* err = nullptr;
+    int32_t ret = SaveEXRImageToFile(&image, &header, filepath.string().c_str(), &err);
+    if (ret != TINYEXR_SUCCESS) {
+        fprintf(stderr, "Save EXR err: %s\n", err);
+        FreeEXRErrorMessage(err);
+    }
+
+    free(header.channels);
+    free(header.pixel_types);
+    free(header.requested_pixel_types);
+}
+
 void saveImage(const std::filesystem::path &filepath, uint32_t width, uint32_t height, const float4* data,
+               float brightnessScale,
                bool applyToneMap, bool apply_sRGB_gammaCorrection) {
     auto image = new uint32_t[width * height];
     for (int y = 0; y < static_cast<int32_t>(height); ++y) {
         for (int x = 0; x < static_cast<int32_t>(width); ++x) {
             float4 src = data[y * width + x];
             if (applyToneMap) {
-                src.x = simpleToneMap_s(src.x);
-                src.y = simpleToneMap_s(src.y);
-                src.z = simpleToneMap_s(src.z);
+                float3 rgb = make_float3(src);
+                float lum = sRGB_calcLuminance(rgb);
+                float lumT = simpleToneMap_s(brightnessScale * lum);
+                float s = lumT / lum;
+                src.x = rgb.x * s;
+                src.y = rgb.y * s;
+                src.z = rgb.z * s;
             }
             if (apply_sRGB_gammaCorrection) {
                 src.x = sRGB_gamma_s(src.x);
@@ -2173,18 +2239,24 @@ void saveImage(const std::filesystem::path &filepath, uint32_t width, uint32_t h
 
 void saveImage(const std::filesystem::path &filepath,
                uint32_t width, cudau::TypedBuffer<float4> &buffer,
+               float brightnessScale,
                bool applyToneMap, bool apply_sRGB_gammaCorrection) {
     Assert(buffer.numElements() % width == 0, "Buffer's length is not divisible by the width.");
     uint32_t height = buffer.numElements() / width;
     auto data = buffer.map();
-    saveImage(filepath, width, height, data, applyToneMap, apply_sRGB_gammaCorrection);
+    saveImage(filepath, width, height, data,
+              brightnessScale,
+              applyToneMap, apply_sRGB_gammaCorrection);
     buffer.unmap();
 }
 
 void saveImage(const std::filesystem::path &filepath,
                cudau::Array &array,
+               float brightnessScale,
                bool applyToneMap, bool apply_sRGB_gammaCorrection) {
     auto data = array.map<float4>();
-    saveImage(filepath, array.getWidth(), array.getHeight(), data, applyToneMap, apply_sRGB_gammaCorrection);
+    saveImage(filepath, array.getWidth(), array.getHeight(), data,
+              brightnessScale,
+              applyToneMap, apply_sRGB_gammaCorrection);
     array.unmap();
 }

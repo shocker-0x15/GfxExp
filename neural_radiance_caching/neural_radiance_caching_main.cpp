@@ -1635,7 +1635,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         
         // Camera Window
         static shared::BufferToDisplay bufferTypeToDisplay = shared::BufferToDisplay::NoisyBeauty;
-        static bool applyGammaCorrection = true;
+        static bool applyToneMapAndGammaCorrection = true;
         static float brightness = g_initBrightness;
         static bool enableEnvLight = true;
         static float log10EnvLightPowerCoeff = 0.0f;
@@ -1659,15 +1659,24 @@ int32_t main(int32_t argc, const char* argv[]) try {
             ImGui::Text("Pos. Speed (T/G): %g", g_cameraPositionalMovingSpeed);
             ImGui::SliderFloat("Brightness", &brightness, -5.0f, 5.0f);
 
-            if (ImGui::Button("Screenshot")) {
+            bool saveSS_LDR = ImGui::Button("Screenshot");
+            ImGui::SameLine();
+            bool saveSS_HDR = ImGui::Button("Screenshot (HDR)");
+            if (saveSS_LDR || saveSS_HDR) {
                 CUDADRV_CHECK(cuStreamSynchronize(cuStream));
                 auto rawImage = new float4[renderTargetSizeX * renderTargetSizeY];
                 glGetTextureSubImage(
                     outputTexture.getHandle(), 0,
                     0, 0, 0, renderTargetSizeX, renderTargetSizeY, 1,
                     GL_RGBA, GL_FLOAT, sizeof(float4) * renderTargetSizeX * renderTargetSizeY, rawImage);
-                saveImage("output.png", renderTargetSizeX, renderTargetSizeY, rawImage,
-                          false, applyGammaCorrection);
+
+                if (saveSS_LDR)
+                    saveImage("output.png", renderTargetSizeX, renderTargetSizeY, rawImage,
+                              std::pow(10.0f, brightness),
+                              applyToneMapAndGammaCorrection, applyToneMapAndGammaCorrection);
+                else
+                    saveImageHDR("output.exr", renderTargetSizeX, renderTargetSizeY,
+                                 std::pow(10.0f, brightness), rawImage);
                 delete[] rawImage;
             }
 
@@ -1987,7 +1996,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
             ImGui::End();
         }
 
-        applyGammaCorrection =
+        applyToneMapAndGammaCorrection =
             bufferTypeToDisplay == shared::BufferToDisplay::NoisyBeauty ||
             bufferTypeToDisplay == shared::BufferToDisplay::DirectlyVisualizedPrediction ||
             bufferTypeToDisplay == shared::BufferToDisplay::DenoisedBeauty;
@@ -2254,7 +2263,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
             cuStream, kernelVisualizeToOutputBuffer.calcGridDim(renderTargetSizeX, renderTargetSizeY),
             visualizeTrainingPath,
             bufferToDisplay, bufferTypeToDisplay,
-            std::pow(10.0f, brightness),
             0.5f, std::pow(10.0f, motionVectorScale),
             outputBufferSurfaceHolder.getNext());
 
@@ -2268,7 +2276,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         // JP: OptiXによる描画結果を表示用レンダーターゲットにコピーする。
         // EN: Copy the OptiX rendering results to the display render target.
 
-        if (applyGammaCorrection) {
+        if (applyToneMapAndGammaCorrection) {
             glEnable(GL_FRAMEBUFFER_SRGB);
             ImGui::GetStyle() = guiStyleWithGamma;
         }
@@ -2282,6 +2290,10 @@ int32_t main(int32_t argc, const char* argv[]) try {
         glUseProgram(drawOptiXResultShader.getHandle());
 
         glUniform2ui(0, curFBWidth, curFBHeight);
+        int32_t flags =
+            (applyToneMapAndGammaCorrection ? 1 : 0);
+        glUniform1i(2, flags);
+        glUniform1f(3, std::pow(10.0f, brightness));
 
         glBindTextureUnit(0, outputTexture.getHandle());
         glBindSampler(0, outputSampler.getHandle());
