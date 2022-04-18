@@ -23,7 +23,7 @@ ReSTIR enables efficient sampling from a massive amount of emitter primitives at
   - [x] Diffuse + Glossy BRDF
   - [x] Environmental Light
   - [x] Unbiased RIS Estimator with MIS weights
-  - [x] Implement the improved ReSTIR algorithm:\
+  - [ ] (WIP) Implement the improved ReSTIR algorithm:\
         "Rearchitecting Spatiotemporal Resampling for Production"\
         https://research.nvidia.com/publication/2021-07_Rearchitecting-Spatiotemporal-Resampling
 

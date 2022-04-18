@@ -1655,9 +1655,15 @@ int32_t main(int32_t argc, const char* argv[]) try {
             ImGui::Text("Pos. Speed (T/G): %g", g_cameraPositionalMovingSpeed);
             ImGui::SliderFloat("Brightness", &brightness, -5.0f, 5.0f);
 
-            bool saveSS_LDR = ImGui::Button("Screenshot");
+            ImGui::AlignTextToFramePadding();
+            ImGui::Text("Screen Shot:");
             ImGui::SameLine();
-            bool saveSS_HDR = ImGui::Button("Screenshot (HDR)");
+            bool saveSS_LDR = ImGui::Button("SDR");
+            ImGui::SameLine();
+            bool saveSS_HDR = ImGui::Button("HDR");
+            ImGui::SameLine();
+            if (ImGui::Button("Both"))
+                saveSS_LDR = saveSS_HDR = true;
             if (saveSS_LDR || saveSS_HDR) {
                 CUDADRV_CHECK(cuStreamSynchronize(cuStream));
                 auto rawImage = new float4[renderTargetSizeX * renderTargetSizeY];
@@ -1670,7 +1676,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
                     saveImage("output.png", renderTargetSizeX, renderTargetSizeY, rawImage,
                               std::pow(10.0f, brightness),
                               applyToneMapAndGammaCorrection, applyToneMapAndGammaCorrection);
-                else
+                if (saveSS_HDR)
                     saveImageHDR("output.exr", renderTargetSizeX, renderTargetSizeY,
                                  std::pow(10.0f, brightness), rawImage);
                 delete[] rawImage;
