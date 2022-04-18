@@ -88,6 +88,53 @@ set(
 
 
 
+# Called from the sub directories
+function(set_common_sources)
+    file(
+        GLOB_RECURSE COMMON_SHADERS
+        "../common/shaders/*")
+
+    copy_files(
+        SOURCES ${COMMON_SHADERS}
+        TARGET_PATH "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${CMAKE_CFG_INTDIR}/${TARGET_NAME}/shaders"
+        GENERATED_FILES COPIED_COMMON_SHADERS
+    )
+
+    # non-essentials
+    source_group(
+        "non-essentials" REGULAR_EXPRESSION
+        "../common/[^/]*\.(h|hpp|c|cpp)$")
+    source_group(
+        "non-essentials/ext/gl3w" REGULAR_EXPRESSION
+        "../ext/gl3w/.*$")
+    source_group(
+        "non-essentials/ext/glfw" REGULAR_EXPRESSION
+        "../ext/glfw/.*\.h$")
+    source_group(
+        "non-essentials/ext/imgui/core" REGULAR_EXPRESSION
+        "../ext/imgui/[^/]*\.(h|cpp)$")
+    source_group(
+        "non-essentials/ext/imgui" REGULAR_EXPRESSION
+        "../ext/imgui/backends/.*\.(h|cpp)$")
+    source_group(
+        "non-essentials/ext/tinyexr" REGULAR_EXPRESSION
+        "../ext/tinyexr/[^/]*\.(h|hpp|c|cpp)$")
+    source_group(
+        "non-essentials/ext/tinyexr/miniz" REGULAR_EXPRESSION
+        "../ext/tinyexr/deps/miniz/[^/]*\.(h|hpp|c|cpp)$")
+    source_group(
+        "non-essentials/ext" REGULAR_EXPRESSION
+        "../ext/[^/]*\.(h|hpp|c|cc|cpp)$")
+    source_group(
+        "non-essentials/utils" REGULAR_EXPRESSION
+        "../utils/.*$")
+    source_group(
+        "non-essentials/shaders" REGULAR_EXPRESSION
+        "../common/shaders/.*")
+endfunction()
+
+
+
 # ----------------------------------------------------------------
 # JP: CMakeLists.txtのあるサブディレクトリ内のターゲット全てにフォルダーを設定する。
 # https://stackoverflow.com/questions/45092198/cmake-how-do-i-change-properties-on-subdirectory-project-targets

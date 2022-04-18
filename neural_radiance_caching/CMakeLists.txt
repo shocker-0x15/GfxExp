@@ -20,10 +20,6 @@ set(
     "network_interface.cu"
 )
 
-file(
-    GLOB_RECURSE COMMON_SHADERS
-    "../common/shaders/*")
-
 set(
     GPU_KERNEL_DEPENDENCIES
     "../utils/cuda_util.h"
@@ -64,43 +60,7 @@ nvcuda_compile_ptx(
     "-I${OPTIX_INCLUDE_DIR}"
 )
 
-copy_files(
-    SOURCES ${COMMON_SHADERS}
-    TARGET_PATH "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${CMAKE_CFG_INTDIR}/${TARGET_NAME}/shaders"
-    GENERATED_FILES COPIED_COMMON_SHADERS
-)
-
-# non-essentials
-source_group(
-    "non-essentials" REGULAR_EXPRESSION
-    "../common/[^/]*\.(h|hpp|c|cpp)$")
-source_group(
-    "non-essentials/ext/gl3w" REGULAR_EXPRESSION
-    "../ext/gl3w/.*$")
-source_group(
-    "non-essentials/ext/glfw" REGULAR_EXPRESSION
-    "../ext/glfw/.*\.h$")
-source_group(
-    "non-essentials/ext/imgui/core" REGULAR_EXPRESSION
-    "../ext/imgui/[^/]*\.(h|cpp)$")
-source_group(
-    "non-essentials/ext/imgui" REGULAR_EXPRESSION
-    "../ext/imgui/backends/.*\.(h|cpp)$")
-source_group(
-    "non-essentials/ext/tinyexr" REGULAR_EXPRESSION
-    "../ext/tinyexr/[^/]*\.(h|hpp|c|cpp)$")
-source_group(
-    "non-essentials/ext/tinyexr/miniz" REGULAR_EXPRESSION
-    "../ext/tinyexr/deps/miniz/[^/]*\.(h|hpp|c|cpp)$")
-source_group(
-    "non-essentials/ext" REGULAR_EXPRESSION
-    "../ext/[^/]*\.(h|hpp|c|cc|cpp)$")
-source_group(
-    "non-essentials/utils" REGULAR_EXPRESSION
-    "../utils/.*$")
-source_group(
-    "non-essentials/shaders" REGULAR_EXPRESSION
-    "../common/shaders/.*")
+set_common_sources()
 
 # essentials
 source_group(
@@ -128,7 +88,6 @@ add_executable(
     ${CUDA_KERNELS}
     ${OPTIX_KERNELS}
     ${CUDA_SOURCES}
-    ${COMMON_SHADERS}
 )
 target_compile_features("${TARGET_NAME}" PRIVATE cxx_std_20)
 set_target_properties("${TARGET_NAME}" PROPERTIES CXX_EXTENSIONS OFF CUDA_EXTENSIOINS OFF)
