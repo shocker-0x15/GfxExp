@@ -67,6 +67,31 @@ EN: This program is an example implementation of ReSTIR (Reservoir-based Spatio-
 
 
 
+enum class GBufferEntryPoint {
+    setupGBuffers = 0,
+};
+enum class ReSTIREntryPoint {
+    performInitialRIS,
+    performInitialAndTemporalRISBiased,
+    performInitialAndTemporalRISUnbiased,
+    performSpatialRISBiased,
+    performSpatialRISUnbiased,
+    shading,
+};
+enum class RearchitectedReSTIREntryPoint {
+    traceShadowRays,
+    traceShadowRaysWithTemporalReuseBiased,
+    traceShadowRaysWithSpatialReuseBiased,
+    traceShadowRaysWithSpatioTemporalReuseBiased,
+    traceShadowRaysWithTemporalReuseUnbiased,
+    traceShadowRaysWithSpatialReuseUnbiased,
+    traceShadowRaysWithSpatioTemporalReuseUnbiased,
+    shadeAndResample,
+    shadeAndResampleWithTemporalReuse,
+    shadeAndResampleWithSpatialReuse,
+    shadeAndResampleWithSpatiotemporalReuse,
+};
+
 struct GPUEnvironment {
     CUcontext cuContext;
     optixu::Context optixContext;
@@ -76,38 +101,26 @@ struct GPUEnvironment {
     cudau::Kernel kernelPerformPerPixelRIS;
     CUdeviceptr plpPtr;
 
-    optixu::Pipeline pipeline;
-    optixu::Module mainModule;
-    optixu::ProgramGroup emptyMissProgram;
-    optixu::ProgramGroup setupGBuffersRayGenProgram;
-    optixu::ProgramGroup setupGBuffersHitProgramGroup;
-    optixu::ProgramGroup setupGBuffersMissProgram;
+    template <typename EntryPointType>
+    struct Pipeline {
+        optixu::Pipeline optixPipeline;
+        optixu::Module optixModule;
+        std::unordered_map<EntryPointType, optixu::ProgramGroup> entryPoints;
+        std::unordered_map<std::string, optixu::ProgramGroup> programs;
+        std::vector<optixu::ProgramGroup> callablePrograms;
+        cudau::Buffer sbt;
+        cudau::Buffer hitGroupSbt;
 
-    optixu::ProgramGroup performInitialRISRayGenProgram;
-    optixu::ProgramGroup performInitialAndTemporalRISBiasedRayGenProgram;
-    optixu::ProgramGroup performInitialAndTemporalRISUnbiasedRayGenProgram;
-    optixu::ProgramGroup performSpatialRISBiasedRayGenProgram;
-    optixu::ProgramGroup performSpatialRISUnbiasedRayGenProgram;
-    optixu::ProgramGroup shadingRayGenProgram;
+        void setEntryPoint(EntryPointType et) {
+            optixPipeline.setRayGenerationProgram(entryPoints.at(et));
+        }
+    };
 
-    optixu::ProgramGroup traceShadowRaysRayGenProgram;
-    optixu::ProgramGroup traceShadowRaysWithTemporalReuseBiasedRayGenProgram;
-    optixu::ProgramGroup traceShadowRaysWithSpatialReuseBiasedRayGenProgram;
-    optixu::ProgramGroup traceShadowRaysWithSpatioTemporalReuseBiasedRayGenProgram;
-    optixu::ProgramGroup traceShadowRaysWithTemporalReuseUnbiasedRayGenProgram;
-    optixu::ProgramGroup traceShadowRaysWithSpatialReuseUnbiasedRayGenProgram;
-    optixu::ProgramGroup traceShadowRaysWithSpatioTemporalReuseUnbiasedRayGenProgram;
-    optixu::ProgramGroup shadeAndResampleRayGenProgram;
-    optixu::ProgramGroup shadeAndResampleWithTemporalReuseRayGenProgram;
-    optixu::ProgramGroup shadeAndResampleWithSpatialReuseRayGenProgram;
-    optixu::ProgramGroup shadeAndResampleWithSpatiotemporalReuseRayGenProgram;
-
-    optixu::ProgramGroup visibilityHitProgramGroup;
-    std::vector<optixu::ProgramGroup> callablePrograms;
+    Pipeline<GBufferEntryPoint> gBuffer;
+    Pipeline<ReSTIREntryPoint> restir;
+    Pipeline<RearchitectedReSTIREntryPoint> restirRearch;
 
     optixu::Material optixDefaultMaterial;
-
-    cudau::Buffer shaderBindingTable;
 
     void initialize() {
         int32_t cuDeviceCount;
@@ -131,99 +144,210 @@ struct GPUEnvironment {
         CUDADRV_CHECK(cuModuleGetGlobal(&plpPtr, &plpSize, perPixelRISModule, "plp"));
         Assert(sizeof(shared::PipelineLaunchParameters) == plpSize, "Unexpected plp size.");
 
-        pipeline = optixContext.createPipeline();
-
-        // JP: このサンプルでは2段階のAS(1段階のインスタンシング)を使用する。
-        // EN: This sample uses two-level AS (single-level instancing).
-        pipeline.setPipelineOptions(
-            std::max({
-                shared::PrimaryRayPayloadSignature::numDwords,
-                shared::VisibilityRayPayloadSignature::numDwords
-                     }),
-            optixu::calcSumDwords<float2>(),
-            "plp", sizeof(shared::PipelineLaunchParameters),
-            false, OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_LEVEL_INSTANCING,
-            OPTIX_EXCEPTION_FLAG_STACK_OVERFLOW | OPTIX_EXCEPTION_FLAG_TRACE_DEPTH |
-            DEBUG_SELECT(OPTIX_EXCEPTION_FLAG_DEBUG, OPTIX_EXCEPTION_FLAG_NONE),
-            OPTIX_PRIMITIVE_TYPE_FLAGS_TRIANGLE);
-
-        const std::string ptx = readTxtFile(getExecutableDirectory() / "restir/ptxes/optix_kernels.ptx");
-        mainModule = pipeline.createModuleFromPTXString(
-            ptx, OPTIX_COMPILE_DEFAULT_MAX_REGISTER_COUNT,
-            DEBUG_SELECT(OPTIX_COMPILE_OPTIMIZATION_LEVEL_0, OPTIX_COMPILE_OPTIMIZATION_DEFAULT),
-            DEBUG_SELECT(OPTIX_COMPILE_DEBUG_LEVEL_FULL, OPTIX_COMPILE_DEBUG_LEVEL_NONE));
-
+        optixDefaultMaterial = optixContext.createMaterial();
         optixu::Module emptyModule;
 
-        emptyMissProgram = pipeline.createMissProgram(emptyModule, nullptr);
+        {
+            Pipeline<ReSTIREntryPoint> &pipeline = restir;
+            optixu::Pipeline &p = pipeline.optixPipeline;
+            optixu::Module &m = pipeline.optixModule;
+            p = optixContext.createPipeline();
 
-        setupGBuffersRayGenProgram = pipeline.createRayGenProgram(
-            mainModule, RT_RG_NAME_STR("setupGBuffers"));
-        setupGBuffersHitProgramGroup = pipeline.createHitProgramGroupForTriangleIS(
-            mainModule, RT_CH_NAME_STR("setupGBuffers"),
-            emptyModule, nullptr);
-        setupGBuffersMissProgram = pipeline.createMissProgram(
-            mainModule, RT_MS_NAME_STR("setupGBuffers"));
+            p.setPipelineOptions(
+                std::max({
+                    shared::VisibilityRayPayloadSignature::numDwords
+                         }),
+                optixu::calcSumDwords<float2>(),
+                "plp", sizeof(shared::PipelineLaunchParameters),
+                false, OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_LEVEL_INSTANCING,
+                OPTIX_EXCEPTION_FLAG_STACK_OVERFLOW | OPTIX_EXCEPTION_FLAG_TRACE_DEPTH |
+                DEBUG_SELECT(OPTIX_EXCEPTION_FLAG_DEBUG, OPTIX_EXCEPTION_FLAG_NONE),
+                OPTIX_PRIMITIVE_TYPE_FLAGS_TRIANGLE);
 
-        performInitialRISRayGenProgram = pipeline.createRayGenProgram(
-            mainModule, RT_RG_NAME_STR("performInitialRIS"));
-        performInitialAndTemporalRISBiasedRayGenProgram = pipeline.createRayGenProgram(
-            mainModule, RT_RG_NAME_STR("performInitialAndTemporalRISBiased"));
-        performInitialAndTemporalRISUnbiasedRayGenProgram = pipeline.createRayGenProgram(
-            mainModule, RT_RG_NAME_STR("performInitialAndTemporalRISUnbiased"));
-        performSpatialRISBiasedRayGenProgram = pipeline.createRayGenProgram(
-            mainModule, RT_RG_NAME_STR("performSpatialRISBiased"));
-        performSpatialRISUnbiasedRayGenProgram = pipeline.createRayGenProgram(
-            mainModule, RT_RG_NAME_STR("performSpatialRISUnbiased"));
-        shadingRayGenProgram = pipeline.createRayGenProgram(
-            mainModule, RT_RG_NAME_STR("shading"));
+            m = p.createModuleFromPTXString(
+                readTxtFile(getExecutableDirectory() / "restir/ptxes/optix_restir_kernels.ptx"),
+                OPTIX_COMPILE_DEFAULT_MAX_REGISTER_COUNT,
+                DEBUG_SELECT(OPTIX_COMPILE_OPTIMIZATION_LEVEL_0, OPTIX_COMPILE_OPTIMIZATION_DEFAULT),
+                DEBUG_SELECT(OPTIX_COMPILE_DEBUG_LEVEL_FULL, OPTIX_COMPILE_DEBUG_LEVEL_NONE));
 
-        traceShadowRaysRayGenProgram = pipeline.createRayGenProgram(
-            mainModule, RT_RG_NAME_STR("traceShadowRays"));
-        traceShadowRaysWithTemporalReuseBiasedRayGenProgram = pipeline.createRayGenProgram(
-            mainModule, RT_RG_NAME_STR("traceShadowRaysWithTemporalReuseBiased"));
-        traceShadowRaysWithSpatialReuseBiasedRayGenProgram = pipeline.createRayGenProgram(
-            mainModule, RT_RG_NAME_STR("traceShadowRaysWithSpatialReuseBiased"));
-        traceShadowRaysWithSpatioTemporalReuseBiasedRayGenProgram = pipeline.createRayGenProgram(
-            mainModule, RT_RG_NAME_STR("traceShadowRaysWithSpatioTemporalReuseBiased"));
-        traceShadowRaysWithTemporalReuseUnbiasedRayGenProgram = pipeline.createRayGenProgram(
-            mainModule, RT_RG_NAME_STR("traceShadowRaysWithTemporalReuseUnbiased"));
-        traceShadowRaysWithSpatialReuseUnbiasedRayGenProgram = pipeline.createRayGenProgram(
-            mainModule, RT_RG_NAME_STR("traceShadowRaysWithSpatialReuseUnbiased"));
-        traceShadowRaysWithSpatioTemporalReuseUnbiasedRayGenProgram = pipeline.createRayGenProgram(
-            mainModule, RT_RG_NAME_STR("traceShadowRaysWithSpatioTemporalReuseUnbiased"));
-        shadeAndResampleRayGenProgram = pipeline.createRayGenProgram(
-            mainModule, RT_RG_NAME_STR("shadeAndResample"));
-        shadeAndResampleWithTemporalReuseRayGenProgram = pipeline.createRayGenProgram(
-            mainModule, RT_RG_NAME_STR("shadeAndResampleWithTemporalReuse"));
-        shadeAndResampleWithSpatialReuseRayGenProgram = pipeline.createRayGenProgram(
-            mainModule, RT_RG_NAME_STR("shadeAndResampleWithSpatialReuse"));
-        shadeAndResampleWithSpatiotemporalReuseRayGenProgram = pipeline.createRayGenProgram(
-            mainModule, RT_RG_NAME_STR("shadeAndResampleWithSpatioTemporalReuse"));
+            pipeline.entryPoints[ReSTIREntryPoint::performInitialRIS] =
+                p.createRayGenProgram(m, RT_RG_NAME_STR("performInitialRIS"));
+            pipeline.entryPoints[ReSTIREntryPoint::performInitialAndTemporalRISBiased] =
+                p.createRayGenProgram(m, RT_RG_NAME_STR("performInitialAndTemporalRISBiased"));
+            pipeline.entryPoints[ReSTIREntryPoint::performInitialAndTemporalRISUnbiased] =
+                p.createRayGenProgram(m, RT_RG_NAME_STR("performInitialAndTemporalRISUnbiased"));
+            pipeline.entryPoints[ReSTIREntryPoint::performSpatialRISBiased] =
+                p.createRayGenProgram(m, RT_RG_NAME_STR("performSpatialRISBiased"));
+            pipeline.entryPoints[ReSTIREntryPoint::performSpatialRISUnbiased] =
+                p.createRayGenProgram(m, RT_RG_NAME_STR("performSpatialRISUnbiased"));
+            pipeline.entryPoints[ReSTIREntryPoint::shading] =
+                p.createRayGenProgram(m, RT_RG_NAME_STR("shading"));
 
-        visibilityHitProgramGroup = pipeline.createHitProgramGroupForTriangleIS(
-            emptyModule, nullptr,
-            mainModule, RT_AH_NAME_STR("visibility"));
+            pipeline.programs["emptyMiss"] = p.createMissProgram(emptyModule, nullptr);
+            pipeline.programs["visibility"] = p.createHitProgramGroupForTriangleIS(
+                emptyModule, nullptr,
+                m, RT_AH_NAME_STR("visibility"));
 
-        //optixu::ProgramGroup exceptionProgram = pipeline.createExceptionProgram(moduleOptiX, "__exception__print");
+            p.setNumMissRayTypes(shared::ReSTIRRayType::NumTypes);
+            p.setMissProgram(shared::ReSTIRRayType::Visibility, pipeline.programs.at("emptyMiss"));
 
-        // If an exception program is not set but exception flags are set,
-        // the default exception program will by provided by OptiX.
-        //pipeline.setExceptionProgram(exceptionProgram);
-        pipeline.setNumMissRayTypes(shared::NumRayTypes);
-        pipeline.setMissProgram(shared::RayType_Primary, setupGBuffersMissProgram);
-        pipeline.setMissProgram(shared::RayType_Visibility, emptyMissProgram);
+            p.setNumCallablePrograms(NumCallablePrograms);
+            pipeline.callablePrograms.resize(NumCallablePrograms);
+            for (int i = 0; i < NumCallablePrograms; ++i) {
+                optixu::ProgramGroup program = p.createCallableProgramGroup(
+                    m, callableProgramEntryPoints[i],
+                    emptyModule, nullptr);
+                pipeline.callablePrograms[i] = program;
+                p.setCallableProgram(i, program);
+            }
 
-        pipeline.setNumCallablePrograms(NumCallablePrograms);
-        callablePrograms.resize(NumCallablePrograms);
+            p.link(1, DEBUG_SELECT(OPTIX_COMPILE_DEBUG_LEVEL_FULL, OPTIX_COMPILE_DEBUG_LEVEL_NONE));
+
+            optixDefaultMaterial.setHitGroup(
+                shared::ReSTIRRayType::Visibility, pipeline.programs.at("visibility"));
+
+            size_t sbtSize;
+            p.generateShaderBindingTableLayout(&sbtSize);
+            pipeline.sbt.initialize(cuContext, Scene::bufferType, sbtSize, 1);
+            pipeline.sbt.setMappedMemoryPersistent(true);
+            p.setShaderBindingTable(pipeline.sbt, pipeline.sbt.getMappedPointer());
+        }
+
+        {
+            Pipeline<GBufferEntryPoint> &pipeline = gBuffer;
+            optixu::Pipeline &p = pipeline.optixPipeline;
+            optixu::Module &m = pipeline.optixModule;
+            p = optixContext.createPipeline();
+
+            p.setPipelineOptions(
+                std::max({
+                    shared::PrimaryRayPayloadSignature::numDwords
+                         }),
+                optixu::calcSumDwords<float2>(),
+                "plp", sizeof(shared::PipelineLaunchParameters),
+                false, OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_LEVEL_INSTANCING,
+                OPTIX_EXCEPTION_FLAG_STACK_OVERFLOW | OPTIX_EXCEPTION_FLAG_TRACE_DEPTH |
+                DEBUG_SELECT(OPTIX_EXCEPTION_FLAG_DEBUG, OPTIX_EXCEPTION_FLAG_NONE),
+                OPTIX_PRIMITIVE_TYPE_FLAGS_TRIANGLE);
+
+            m = p.createModuleFromPTXString(
+                readTxtFile(getExecutableDirectory() / "restir/ptxes/optix_gbuffer_kernels.ptx"),
+                OPTIX_COMPILE_DEFAULT_MAX_REGISTER_COUNT,
+                DEBUG_SELECT(OPTIX_COMPILE_OPTIMIZATION_LEVEL_0, OPTIX_COMPILE_OPTIMIZATION_DEFAULT),
+                DEBUG_SELECT(OPTIX_COMPILE_DEBUG_LEVEL_FULL, OPTIX_COMPILE_DEBUG_LEVEL_NONE));
+
+            pipeline.entryPoints[GBufferEntryPoint::setupGBuffers] = p.createRayGenProgram(
+                m, RT_RG_NAME_STR("setupGBuffers"));
+
+            pipeline.programs["hitgroup"] = p.createHitProgramGroupForTriangleIS(
+                m, RT_CH_NAME_STR("setupGBuffers"),
+                emptyModule, nullptr);
+            pipeline.programs["miss"] = p.createMissProgram(
+                m, RT_MS_NAME_STR("setupGBuffers"));
+
+            pipeline.setEntryPoint(GBufferEntryPoint::setupGBuffers);
+            p.setNumMissRayTypes(shared::GBufferRayType::NumTypes);
+            p.setMissProgram(shared::GBufferRayType::Primary, pipeline.programs.at("miss"));
+
+            p.setNumCallablePrograms(NumCallablePrograms);
+            pipeline.callablePrograms.resize(NumCallablePrograms);
+            for (int i = 0; i < NumCallablePrograms; ++i) {
+                optixu::ProgramGroup program = p.createCallableProgramGroup(
+                    m, callableProgramEntryPoints[i],
+                    emptyModule, nullptr);
+                pipeline.callablePrograms[i] = program;
+                p.setCallableProgram(i, program);
+            }
+
+            p.link(1, DEBUG_SELECT(OPTIX_COMPILE_DEBUG_LEVEL_FULL, OPTIX_COMPILE_DEBUG_LEVEL_NONE));
+
+            optixDefaultMaterial.setHitGroup(shared::GBufferRayType::Primary, pipeline.programs.at("hitgroup"));
+
+            size_t sbtSize;
+            p.generateShaderBindingTableLayout(&sbtSize);
+            pipeline.sbt.initialize(cuContext, Scene::bufferType, sbtSize, 1);
+            pipeline.sbt.setMappedMemoryPersistent(true);
+            p.setShaderBindingTable(pipeline.sbt, pipeline.sbt.getMappedPointer());
+        }
+
+        {
+            Pipeline<RearchitectedReSTIREntryPoint> &pipeline = restirRearch;
+            optixu::Pipeline &p = pipeline.optixPipeline;
+            optixu::Module &m = pipeline.optixModule;
+            p = optixContext.createPipeline();
+
+            p.setPipelineOptions(
+                std::max({
+                    shared::VisibilityRayPayloadSignature::numDwords
+                         }),
+                optixu::calcSumDwords<float2>(),
+                "plp", sizeof(shared::PipelineLaunchParameters),
+                false, OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_LEVEL_INSTANCING,
+                OPTIX_EXCEPTION_FLAG_STACK_OVERFLOW | OPTIX_EXCEPTION_FLAG_TRACE_DEPTH |
+                DEBUG_SELECT(OPTIX_EXCEPTION_FLAG_DEBUG, OPTIX_EXCEPTION_FLAG_NONE),
+                OPTIX_PRIMITIVE_TYPE_FLAGS_TRIANGLE);
+
+            m = p.createModuleFromPTXString(
+                readTxtFile(getExecutableDirectory() / "restir/ptxes/optix_restir_rearch_kernels.ptx"),
+                OPTIX_COMPILE_DEFAULT_MAX_REGISTER_COUNT,
+                DEBUG_SELECT(OPTIX_COMPILE_OPTIMIZATION_LEVEL_0, OPTIX_COMPILE_OPTIMIZATION_DEFAULT),
+                DEBUG_SELECT(OPTIX_COMPILE_DEBUG_LEVEL_FULL, OPTIX_COMPILE_DEBUG_LEVEL_NONE));
+
+            pipeline.entryPoints[RearchitectedReSTIREntryPoint::traceShadowRays] =
+                p.createRayGenProgram(m, RT_RG_NAME_STR("traceShadowRays"));
+            pipeline.entryPoints[RearchitectedReSTIREntryPoint::traceShadowRaysWithTemporalReuseBiased] =
+                p.createRayGenProgram(m, RT_RG_NAME_STR("traceShadowRaysWithTemporalReuseBiased"));
+            pipeline.entryPoints[RearchitectedReSTIREntryPoint::traceShadowRaysWithSpatialReuseBiased] =
+                p.createRayGenProgram(m, RT_RG_NAME_STR("traceShadowRaysWithSpatialReuseBiased"));
+            pipeline.entryPoints[RearchitectedReSTIREntryPoint::traceShadowRaysWithSpatioTemporalReuseBiased] =
+                p.createRayGenProgram(m, RT_RG_NAME_STR("traceShadowRaysWithSpatioTemporalReuseBiased"));
+            pipeline.entryPoints[RearchitectedReSTIREntryPoint::traceShadowRaysWithTemporalReuseUnbiased] =
+                p.createRayGenProgram(m, RT_RG_NAME_STR("traceShadowRaysWithTemporalReuseUnbiased"));
+            pipeline.entryPoints[RearchitectedReSTIREntryPoint::traceShadowRaysWithSpatialReuseUnbiased] =
+                p.createRayGenProgram(m, RT_RG_NAME_STR("traceShadowRaysWithSpatialReuseUnbiased"));
+            pipeline.entryPoints[RearchitectedReSTIREntryPoint::traceShadowRaysWithSpatioTemporalReuseUnbiased] =
+                p.createRayGenProgram(m, RT_RG_NAME_STR("traceShadowRaysWithSpatioTemporalReuseUnbiased"));
+            pipeline.entryPoints[RearchitectedReSTIREntryPoint::shadeAndResample] =
+                p.createRayGenProgram(m, RT_RG_NAME_STR("shadeAndResample"));
+            pipeline.entryPoints[RearchitectedReSTIREntryPoint::shadeAndResampleWithTemporalReuse] =
+                p.createRayGenProgram(m, RT_RG_NAME_STR("shadeAndResampleWithTemporalReuse"));
+            pipeline.entryPoints[RearchitectedReSTIREntryPoint::shadeAndResampleWithSpatialReuse] =
+                p.createRayGenProgram(m, RT_RG_NAME_STR("shadeAndResampleWithSpatialReuse"));
+            pipeline.entryPoints[RearchitectedReSTIREntryPoint::shadeAndResampleWithSpatiotemporalReuse] =
+                p.createRayGenProgram(m, RT_RG_NAME_STR("shadeAndResampleWithSpatioTemporalReuse"));
+
+            pipeline.programs["emptyMiss"] = p.createMissProgram(emptyModule, nullptr);
+            pipeline.programs["visibility"] = p.createHitProgramGroupForTriangleIS(
+                emptyModule, nullptr,
+                m, RT_AH_NAME_STR("visibility"));
+
+            p.setNumMissRayTypes(shared::ReSTIRRayType::NumTypes);
+            p.setMissProgram(shared::ReSTIRRayType::Visibility, pipeline.programs.at("emptyMiss"));
+
+            p.setNumCallablePrograms(NumCallablePrograms);
+            pipeline.callablePrograms.resize(NumCallablePrograms);
+            for (int i = 0; i < NumCallablePrograms; ++i) {
+                optixu::ProgramGroup program = p.createCallableProgramGroup(
+                    m, callableProgramEntryPoints[i],
+                    emptyModule, nullptr);
+                pipeline.callablePrograms[i] = program;
+                p.setCallableProgram(i, program);
+            }
+
+            p.link(1, DEBUG_SELECT(OPTIX_COMPILE_DEBUG_LEVEL_FULL, OPTIX_COMPILE_DEBUG_LEVEL_NONE));
+
+            optixDefaultMaterial.setHitGroup(
+                shared::ReSTIRRayType::Visibility, pipeline.programs.at("visibility"));
+
+            size_t sbtSize;
+            p.generateShaderBindingTableLayout(&sbtSize);
+            pipeline.sbt.initialize(cuContext, Scene::bufferType, sbtSize, 1);
+            pipeline.sbt.setMappedMemoryPersistent(true);
+            p.setShaderBindingTable(pipeline.sbt, pipeline.sbt.getMappedPointer());
+        }
+
         std::vector<void*> callablePointers(NumCallablePrograms);
         for (int i = 0; i < NumCallablePrograms; ++i) {
-            optixu::ProgramGroup program = pipeline.createCallableProgramGroup(
-                mainModule, callableProgramEntryPoints[i],
-                emptyModule, nullptr);
-            callablePrograms[i] = program;
-            pipeline.setCallableProgram(i, program);
-
             CUdeviceptr symbolPtr;
             size_t symbolSize;
             CUDADRV_CHECK(cuModuleGetGlobal(&symbolPtr, &symbolSize, perPixelRISModule,
@@ -241,59 +365,52 @@ struct GPUEnvironment {
             "c_callableToPointerMap"));
         CUDADRV_CHECK(cuMemcpyHtoD(callableToPointerMapPtr, callablePointers.data(),
                                    callableToPointerMapSize));
-
-        pipeline.link(2, DEBUG_SELECT(OPTIX_COMPILE_DEBUG_LEVEL_FULL, OPTIX_COMPILE_DEBUG_LEVEL_NONE));
-
-
-
-        optixDefaultMaterial = optixContext.createMaterial();
-        optixDefaultMaterial.setHitGroup(shared::RayType_Primary, setupGBuffersHitProgramGroup);
-        optixDefaultMaterial.setHitGroup(shared::RayType_Visibility, visibilityHitProgramGroup);
-
-
-
-        size_t sbtSize;
-        pipeline.generateShaderBindingTableLayout(&sbtSize);
-        shaderBindingTable.initialize(cuContext, Scene::bufferType, sbtSize, 1);
-        shaderBindingTable.setMappedMemoryPersistent(true);
-        pipeline.setShaderBindingTable(shaderBindingTable, shaderBindingTable.getMappedPointer());
     }
 
     void finalize() {
-        shaderBindingTable.finalize();
+        {
+            Pipeline<RearchitectedReSTIREntryPoint> &pipeline = restirRearch;
+            pipeline.hitGroupSbt.finalize();
+            pipeline.sbt.finalize();
+            for (int i = 0; i < NumCallablePrograms; ++i)
+                pipeline.callablePrograms[i].destroy();
+            for (auto &pair : pipeline.programs)
+                pair.second.destroy();
+            for (auto &pair : pipeline.entryPoints)
+                pair.second.destroy();
+            pipeline.optixModule.destroy();
+            pipeline.optixPipeline.destroy();
+        }
+
+        {
+            Pipeline<ReSTIREntryPoint> &pipeline = restir;
+            pipeline.hitGroupSbt.finalize();
+            pipeline.sbt.finalize();
+            for (int i = 0; i < NumCallablePrograms; ++i)
+                pipeline.callablePrograms[i].destroy();
+            for (auto &pair : pipeline.programs)
+                pair.second.destroy();
+            for (auto &pair : pipeline.entryPoints)
+                pair.second.destroy();
+            pipeline.optixModule.destroy();
+            pipeline.optixPipeline.destroy();
+        }
+
+        {
+            Pipeline<GBufferEntryPoint> &pipeline = gBuffer;
+            pipeline.hitGroupSbt.finalize();
+            pipeline.sbt.finalize();
+            for (int i = 0; i < NumCallablePrograms; ++i)
+                pipeline.callablePrograms[i].destroy();
+            for (auto &pair : pipeline.programs)
+                pair.second.destroy();
+            for (auto &pair : pipeline.entryPoints)
+                pair.second.destroy();
+            pipeline.optixModule.destroy();
+            pipeline.optixPipeline.destroy();
+        }
 
         optixDefaultMaterial.destroy();
-
-        for (int i = 0; i < NumCallablePrograms; ++i)
-            callablePrograms[i].destroy();
-        visibilityHitProgramGroup.destroy();
-
-        shadeAndResampleWithSpatiotemporalReuseRayGenProgram.destroy();
-        shadeAndResampleWithSpatialReuseRayGenProgram.destroy();
-        shadeAndResampleWithTemporalReuseRayGenProgram.destroy();
-        shadeAndResampleRayGenProgram.destroy();
-        traceShadowRaysWithSpatioTemporalReuseUnbiasedRayGenProgram.destroy();
-        traceShadowRaysWithSpatialReuseUnbiasedRayGenProgram.destroy();
-        traceShadowRaysWithTemporalReuseUnbiasedRayGenProgram.destroy();
-        traceShadowRaysWithSpatioTemporalReuseBiasedRayGenProgram.destroy();
-        traceShadowRaysWithSpatialReuseBiasedRayGenProgram.destroy();
-        traceShadowRaysWithTemporalReuseBiasedRayGenProgram.destroy();
-        traceShadowRaysRayGenProgram.destroy();
-
-        shadingRayGenProgram.destroy();
-        performSpatialRISUnbiasedRayGenProgram.destroy();
-        performSpatialRISBiasedRayGenProgram.destroy();
-        performInitialAndTemporalRISUnbiasedRayGenProgram.destroy();
-        performInitialAndTemporalRISBiasedRayGenProgram.destroy();
-        performInitialRISRayGenProgram.destroy();
-
-        setupGBuffersMissProgram.destroy();
-        setupGBuffersHitProgramGroup.destroy();
-        setupGBuffersRayGenProgram.destroy();
-        emptyMissProgram.destroy();
-        mainModule.destroy();
-
-        pipeline.destroy();
 
         CUDADRV_CHECK(cuModuleUnload(perPixelRISModule));
 
@@ -908,7 +1025,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
     gpuEnv.initialize();
 
     Scene scene;
-    scene.initialize(gpuEnv.cuContext, gpuEnv.optixContext, shared::NumRayTypes, gpuEnv.optixDefaultMaterial);
+    scene.initialize(gpuEnv.cuContext, gpuEnv.optixContext, shared::maxNumRayTypes, gpuEnv.optixDefaultMaterial);
 
     CUstream cuStream;
     CUDADRV_CHECK(cuStreamCreate(&cuStream, 0));
@@ -1379,8 +1496,26 @@ int32_t main(int32_t argc, const char* argv[]) try {
     plp.f = reinterpret_cast<shared::PerFramePipelineLaunchParameters*>(perFramePlpOnDevice);
     plp.currentReservoirIndex = 0;
 
-    gpuEnv.pipeline.setScene(scene.optixScene);
-    gpuEnv.pipeline.setHitGroupShaderBindingTable(scene.hitGroupSBT, scene.hitGroupSBT.getMappedPointer());
+    gpuEnv.gBuffer.hitGroupSbt.initialize(
+        gpuEnv.cuContext, Scene::bufferType, scene.hitGroupSbtSize, 1);
+    gpuEnv.gBuffer.hitGroupSbt.setMappedMemoryPersistent(true);
+    gpuEnv.gBuffer.optixPipeline.setScene(scene.optixScene);
+    gpuEnv.gBuffer.optixPipeline.setHitGroupShaderBindingTable(
+        gpuEnv.gBuffer.hitGroupSbt, gpuEnv.gBuffer.hitGroupSbt.getMappedPointer());
+
+    gpuEnv.restir.hitGroupSbt.initialize(
+        gpuEnv.cuContext, Scene::bufferType, scene.hitGroupSbtSize, 1);
+    gpuEnv.restir.hitGroupSbt.setMappedMemoryPersistent(true);
+    gpuEnv.restir.optixPipeline.setScene(scene.optixScene);
+    gpuEnv.restir.optixPipeline.setHitGroupShaderBindingTable(
+        gpuEnv.restir.hitGroupSbt, gpuEnv.restir.hitGroupSbt.getMappedPointer());
+
+    gpuEnv.restirRearch.hitGroupSbt.initialize(
+        gpuEnv.cuContext, Scene::bufferType, scene.hitGroupSbtSize, 1);
+    gpuEnv.restirRearch.hitGroupSbt.setMappedMemoryPersistent(true);
+    gpuEnv.restirRearch.optixPipeline.setScene(scene.optixScene);
+    gpuEnv.restirRearch.optixPipeline.setHitGroupShaderBindingTable(
+        gpuEnv.restirRearch.hitGroupSbt, gpuEnv.restirRearch.hitGroupSbt.getMappedPointer());
 
     shared::PickInfo initPickInfo = {};
     initPickInfo.hit = false;
@@ -2078,8 +2213,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
         // EN: Setup the G-buffers.
         //     Generate the G-buffers using ray trace here, but of course this can be done using rasterizer.
         curGPUTimer.setupGBuffers.start(cuStream);
-        gpuEnv.pipeline.setRayGenerationProgram(gpuEnv.setupGBuffersRayGenProgram);
-        gpuEnv.pipeline.launch(cuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);
+        gpuEnv.gBuffer.optixPipeline.launch(
+            cuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);
         curGPUTimer.setupGBuffers.stop(cuStream);
 
         if (curRenderer == Renderer::OriginalReSTIRBiased ||
@@ -2090,18 +2225,15 @@ int32_t main(int32_t argc, const char* argv[]) try {
             //     Then combine reservoirs between the current pixel and
             //     (temporally) neighboring pixel from the previous frame.
             curGPUTimer.performInitialAndTemporalRIS.start(cuStream);
+            ReSTIREntryPoint entryPoint = ReSTIREntryPoint::performInitialRIS;
             if (curRendererConfigs->enableTemporalReuse && !newSequence) {
-                if (curRenderer == Renderer::OriginalReSTIRUnbiased)
-                    gpuEnv.pipeline.setRayGenerationProgram(
-                        gpuEnv.performInitialAndTemporalRISUnbiasedRayGenProgram);
-                else
-                    gpuEnv.pipeline.setRayGenerationProgram(
-                        gpuEnv.performInitialAndTemporalRISBiasedRayGenProgram);
+                entryPoint = curRenderer == Renderer::OriginalReSTIRUnbiased ?
+                    ReSTIREntryPoint::performInitialAndTemporalRISUnbiased :
+                    ReSTIREntryPoint::performInitialAndTemporalRISBiased;
             }
-            else {
-                gpuEnv.pipeline.setRayGenerationProgram(gpuEnv.performInitialRISRayGenProgram);
-            }
-            gpuEnv.pipeline.launch(cuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);
+            gpuEnv.restir.setEntryPoint(entryPoint);
+            gpuEnv.restir.optixPipeline.launch(
+                cuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);
             curGPUTimer.performInitialAndTemporalRIS.stop(cuStream);
 
             // JP: 各ピクセルにおいて(空間的)隣接ピクセルとの間でReservoirの結合を行う。
@@ -2110,10 +2242,10 @@ int32_t main(int32_t argc, const char* argv[]) try {
             curGPUTimer.performSpatialRIS.start(cuStream);
             if (curRendererConfigs->enableSpatialReuse) {
                 int32_t numSpatialReusePasses;
-                if (curRenderer == Renderer::OriginalReSTIRUnbiased)
-                    gpuEnv.pipeline.setRayGenerationProgram(gpuEnv.performSpatialRISUnbiasedRayGenProgram);
-                else
-                    gpuEnv.pipeline.setRayGenerationProgram(gpuEnv.performSpatialRISBiasedRayGenProgram);
+                ReSTIREntryPoint entryPoint = curRenderer == Renderer::OriginalReSTIRUnbiased ?
+                    ReSTIREntryPoint::performSpatialRISUnbiased :
+                    ReSTIREntryPoint::performSpatialRISBiased;
+                gpuEnv.restir.setEntryPoint(entryPoint);
                 numSpatialReusePasses = curRendererConfigs->numSpatialReusePasses;
 
                 for (int i = 0; i < numSpatialReusePasses; ++i) {
@@ -2121,7 +2253,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
                         lastSpatialNeighborBaseIndex + curRendererConfigs->numSpatialNeighbors * i;
                     plp.spatialNeighborBaseIndex = baseIndex;
                     CUDADRV_CHECK(cuMemcpyHtoDAsync(plpOnDevice, &plp, sizeof(plp), cuStream));
-                    gpuEnv.pipeline.launch(cuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);
+                    gpuEnv.restir.optixPipeline.launch(
+                        cuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);
                     currentReservoirIndex = (currentReservoirIndex + 1) % 2;
                     plp.currentReservoirIndex = currentReservoirIndex;
                 }
@@ -2133,8 +2266,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
             // EN: Perform shading using the survived samples.
             curGPUTimer.shading.start(cuStream);
             CUDADRV_CHECK(cuMemcpyHtoDAsync(plpOnDevice, &plp, sizeof(plp), cuStream));
-            gpuEnv.pipeline.setRayGenerationProgram(gpuEnv.shadingRayGenProgram);
-            gpuEnv.pipeline.launch(cuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);
+            gpuEnv.restir.setEntryPoint(ReSTIREntryPoint::shading);
+            gpuEnv.restir.optixPipeline.launch(cuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);
             curGPUTimer.shading.stop(cuStream);
         }
         else {
@@ -2161,41 +2294,28 @@ int32_t main(int32_t argc, const char* argv[]) try {
             // JP: 新たなサンプル、Temporalサンプル、SpatiotemporalサンプルそれぞれのVisibilityを計算する。
             // EN: Compute visibility for the new sample, a temporal sample, and a spatiotemporal sample.
             curGPUTimer.traceShadowRays.start(cuStream);
-            optixu::ProgramGroup traceShadowRaysRayGenProgram;
+            RearchitectedReSTIREntryPoint traceShadowRays = RearchitectedReSTIREntryPoint::traceShadowRays;
             if (!newSequence) {
                 if (curRenderer == Renderer::RearchitectedReSTIRBiased) {
                     if (curRendererConfigs->enableTemporalReuse && curRendererConfigs->enableSpatialReuse)
-                        traceShadowRaysRayGenProgram =
-                            gpuEnv.traceShadowRaysWithSpatioTemporalReuseBiasedRayGenProgram;
+                        traceShadowRays = RearchitectedReSTIREntryPoint::traceShadowRaysWithSpatioTemporalReuseBiased;
                     else if (curRendererConfigs->enableTemporalReuse)
-                        traceShadowRaysRayGenProgram =
-                            gpuEnv.traceShadowRaysWithTemporalReuseBiasedRayGenProgram;
+                        traceShadowRays = RearchitectedReSTIREntryPoint::traceShadowRaysWithTemporalReuseBiased;
                     else if (curRendererConfigs->enableSpatialReuse)
-                        traceShadowRaysRayGenProgram =
-                            gpuEnv.traceShadowRaysWithSpatialReuseBiasedRayGenProgram;
-                    else
-                        traceShadowRaysRayGenProgram =
-                            gpuEnv.traceShadowRaysRayGenProgram;
+                        traceShadowRays = RearchitectedReSTIREntryPoint::traceShadowRaysWithSpatialReuseBiased;
                 }
                 else {
                     if (curRendererConfigs->enableTemporalReuse && curRendererConfigs->enableSpatialReuse)
-                        traceShadowRaysRayGenProgram =
-                            gpuEnv.traceShadowRaysWithSpatioTemporalReuseUnbiasedRayGenProgram;
+                        traceShadowRays = RearchitectedReSTIREntryPoint::traceShadowRaysWithSpatioTemporalReuseUnbiased;
                     else if (curRendererConfigs->enableTemporalReuse)
-                        traceShadowRaysRayGenProgram =
-                            gpuEnv.traceShadowRaysWithTemporalReuseUnbiasedRayGenProgram;
+                        traceShadowRays = RearchitectedReSTIREntryPoint::traceShadowRaysWithTemporalReuseUnbiased;
                     else if (curRendererConfigs->enableSpatialReuse)
-                        traceShadowRaysRayGenProgram =
-                            gpuEnv.traceShadowRaysWithSpatialReuseUnbiasedRayGenProgram;
-                    else
-                        traceShadowRaysRayGenProgram = gpuEnv.traceShadowRaysRayGenProgram;
+                        traceShadowRays = RearchitectedReSTIREntryPoint::traceShadowRaysWithSpatialReuseUnbiased;
                 }
             }
-            else {
-                traceShadowRaysRayGenProgram = gpuEnv.traceShadowRaysRayGenProgram;
-            }
-            gpuEnv.pipeline.setRayGenerationProgram(traceShadowRaysRayGenProgram);
-            gpuEnv.pipeline.launch(cuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);
+            gpuEnv.restirRearch.setEntryPoint(traceShadowRays);
+            gpuEnv.restirRearch.optixPipeline.launch(
+                cuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);
             curGPUTimer.traceShadowRays.stop(cuStream);
 
             // JP: それぞれのサンプルに対してシェーディングを実行、
@@ -2203,22 +2323,18 @@ int32_t main(int32_t argc, const char* argv[]) try {
             // EN: Perform shading to every sample, then resample them to select a sample
             //     reused in the next frame.
             curGPUTimer.shadeAndResample.start(cuStream);
-            optixu::ProgramGroup shadeRayGenProgram;
+            RearchitectedReSTIREntryPoint shade = RearchitectedReSTIREntryPoint::shadeAndResample;
             if (!newSequence) {
                 if (curRendererConfigs->enableTemporalReuse && curRendererConfigs->enableSpatialReuse)
-                    shadeRayGenProgram = gpuEnv.shadeAndResampleWithSpatiotemporalReuseRayGenProgram;
+                    shade = RearchitectedReSTIREntryPoint::shadeAndResampleWithSpatiotemporalReuse;
                 else if (curRendererConfigs->enableTemporalReuse)
-                    shadeRayGenProgram = gpuEnv.shadeAndResampleWithTemporalReuseRayGenProgram;
+                    shade = RearchitectedReSTIREntryPoint::shadeAndResampleWithTemporalReuse;
                 else if (curRendererConfigs->enableSpatialReuse)
-                    shadeRayGenProgram = gpuEnv.shadeAndResampleWithSpatialReuseRayGenProgram;
-                else
-                    shadeRayGenProgram = gpuEnv.shadeAndResampleRayGenProgram;
+                    shade = RearchitectedReSTIREntryPoint::shadeAndResampleWithSpatialReuse;
             }
-            else {
-                shadeRayGenProgram = gpuEnv.shadeAndResampleRayGenProgram;
-            }
-            gpuEnv.pipeline.setRayGenerationProgram(shadeRayGenProgram);
-            gpuEnv.pipeline.launch(cuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);
+            gpuEnv.restirRearch.setEntryPoint(shade);
+            gpuEnv.restirRearch.optixPipeline.launch(
+                cuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);
             curGPUTimer.shadeAndResample.stop(cuStream);
 
             ++lastSpatialNeighborBaseIndex;

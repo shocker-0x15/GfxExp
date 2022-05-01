@@ -12,7 +12,9 @@ set(
 
 set(
     OPTIX_KERNELS
-    "optix_kernels.cu"
+    "optix_gbuffer_kernels.cu"
+    "optix_restir_kernels.cu"
+    "optix_restir_rearch_kernels.cu"
 )
 
 set(

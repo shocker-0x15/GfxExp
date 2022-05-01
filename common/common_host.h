@@ -517,7 +517,7 @@ struct Scene {
 
     cudau::Buffer asScratchMem;
 
-    cudau::Buffer hitGroupSBT;
+    size_t hitGroupSbtSize;
 
     void initialize(
         CUcontext cuContext, optixu::Context optixContext,
@@ -540,7 +540,6 @@ struct Scene {
     }
 
     void finalize() {
-        hitGroupSBT.finalize();
         asScratchMem.finalize();
         iasInstanceBuffer.finalize();
         iasMem.finalize();
@@ -628,10 +627,7 @@ struct Scene {
             geomGroup->optixGas.rebuild(0, geomGroup->optixGasMem, asScratchMem);
         }
 
-        size_t hitGroupSbtSize;
         optixScene.generateShaderBindingTableLayout(&hitGroupSbtSize);
-        hitGroupSBT.initialize(cuContext, Scene::bufferType, hitGroupSbtSize, 1);
-        hitGroupSBT.setMappedMemoryPersistent(true);
 
         {
             for (int bufIdx = 0; bufIdx < 2; ++bufIdx) {

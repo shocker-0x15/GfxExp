@@ -1,4 +1,4 @@
-#define PURE_CUDA
+ï»¿#define PURE_CUDA
 #include "restir_shared.h"
 
 using namespace shared;
@@ -9,8 +9,8 @@ CUDA_DEVICE_KERNEL void performLightPreSampling() {
     uint32_t indexInSubset = linearThreadIndex % lightSubsetSize;
     PCG32RNG rng = plp.s->lightPreSamplingRngs[linearThreadIndex];
 
-    // JP: ŠÂ‹«ŒõƒeƒNƒXƒ`ƒƒ[‚ªİ’è‚³‚ê‚Ä‚¢‚éê‡‚Íˆê’è‚ÌŠm—¦‚ÅƒTƒ“ƒvƒ‹‚·‚éB
-    //     ƒ_ƒCƒo[ƒWƒFƒ“ƒX‚ğ—}‚¦‚é‚½‚ß‚ÉAƒTƒuƒZƒbƒg‚ÌÅ‰‚Æ‚»‚êˆÈŠO‚ÅŠÂ‹«Œõ‚©‚»‚êˆÈŠO‚ÌƒTƒ“ƒvƒŠƒ“ƒO‚ğ•ª‚¯‚éB
+    // JP: ç’°å¢ƒå…‰ãƒ†ã‚¯ã‚¹ãƒãƒ£ãƒ¼ãŒè¨­å®šã•ã‚Œã¦ã„ã‚‹å ´åˆã¯ä¸€å®šã®ç¢ºç‡ã§ã‚µãƒ³ãƒ—ãƒ«ã™ã‚‹ã€‚
+    //     ãƒ€ã‚¤ãƒãƒ¼ã‚¸ã‚§ãƒ³ã‚¹ã‚’æŠ‘ãˆã‚‹ãŸã‚ã«ã€ã‚µãƒ–ã‚»ãƒƒãƒˆã®æœ€åˆã¨ãã‚Œä»¥å¤–ã§ç’°å¢ƒå…‰ã‹ãã‚Œä»¥å¤–ã®ã‚µãƒ³ãƒ—ãƒªãƒ³ã‚°ã‚’åˆ†ã‘ã‚‹ã€‚
     // EN: Sample an environmental light texture with a fixed probability if it is set.
     //     Separate sampling from the environmental light and the others to
     //     the beginning of the subset and the rest to avoid divergence.
@@ -55,7 +55,7 @@ CUDA_DEVICE_KERNEL void performPerPixelRIS() {
     float2 texCoord = make_float2(gBuffer0.texCoord_x, gBuffer1.texCoord_y);
     uint32_t materialSlot = gBuffer2.materialSlot;
 
-    // JP: ƒ^ƒCƒ‹‚²‚Æ‚É‹¤’Ê‚Ìƒ‰ƒCƒgƒTƒuƒZƒbƒg‚ğ‘I‘ğ‚·‚é‚±‚Æ‚Åƒƒ‚ƒŠƒAƒNƒZƒX‚ÌƒRƒq[ƒŒƒ“ƒV[‚ğ‰ü‘P‚·‚éB
+    // JP: ã‚¿ã‚¤ãƒ«ã”ã¨ã«å…±é€šã®ãƒ©ã‚¤ãƒˆã‚µãƒ–ã‚»ãƒƒãƒˆã‚’é¸æŠã™ã‚‹ã“ã¨ã§ãƒ¡ãƒ¢ãƒªã‚¢ã‚¯ã‚»ã‚¹ã®ã‚³ãƒ’ãƒ¼ãƒ¬ãƒ³ã‚·ãƒ¼ã‚’æ”¹å–„ã™ã‚‹ã€‚
     // EN: Select a common light subset for each tile to improve memory access coherency.
     PCG32RNG rng = plp.s->rngBuffer.read(launchIndex);
     CUDA_SHARED_MEM uint32_t sm_perTileLightSubsetIndex;
@@ -87,7 +87,7 @@ CUDA_DEVICE_KERNEL void performPerPixelRIS() {
     Reservoir<LightSample> reservoir;
     reservoir.initialize();
 
-    // JP: Unshadowed Contribution‚ğƒ^[ƒQƒbƒgPDF‚Æ‚µ‚ÄStreaming RIS‚ğÀsB
+    // JP: Unshadowed Contributionã‚’ã‚¿ãƒ¼ã‚²ãƒƒãƒˆPDFã¨ã—ã¦Streaming RISã‚’å®Ÿè¡Œã€‚
     // EN: Perform streaming RIS with unshadowed contribution as the target PDF.
     float selectedTargetDensity = 0.0f;
     uint32_t numCandidates = 1 << plp.f->log2NumCandidateSamples;
@@ -95,16 +95,16 @@ CUDA_DEVICE_KERNEL void performPerPixelRIS() {
         uint32_t lightIndex = mapPrimarySampleToDiscrete(rng.getFloat0cTo1o(), lightSubsetSize);
         const PreSampledLight &preSampledLight = lightSubSet[lightIndex];
 
-        // JP: Œó•âƒTƒ“ƒvƒ‹‚ğ¶¬‚µ‚ÄAƒ^[ƒQƒbƒgPDF‚ğŒvZ‚·‚éB
-        //     ƒ^[ƒQƒbƒgPDF‚Í³‹K‰»‚³‚ê‚Ä‚¢‚È‚­‚Ä‚à—Ç‚¢B
+        // JP: å€™è£œã‚µãƒ³ãƒ—ãƒ«ã‚’ç”Ÿæˆã—ã¦ã€ã‚¿ãƒ¼ã‚²ãƒƒãƒˆPDFã‚’è¨ˆç®—ã™ã‚‹ã€‚
+        //     ã‚¿ãƒ¼ã‚²ãƒƒãƒˆPDFã¯æ­£è¦åŒ–ã•ã‚Œã¦ã„ãªãã¦ã‚‚è‰¯ã„ã€‚
         // EN: Generate a candidate sample then calculate the target PDF for it.
         //     Target PDF doesn't require to be normalized.
-        float3 cont = performDirectLighting<false>(
+        float3 cont = performDirectLighting<ReSTIRRayType, false>(
             positionInWorld, vOutLocal, shadingFrame, bsdf,
             preSampledLight.sample);
         float targetDensity = convertToWeight(cont);
 
-        // JP: Œó•âƒTƒ“ƒvƒ‹¶¬—p‚ÌPDF‚Æƒ^[ƒQƒbƒgPDF‚ÍˆÙ‚È‚é‚½‚ßƒTƒ“ƒvƒ‹‚É‚ÍƒEƒFƒCƒg‚ª‚©‚©‚éB
+        // JP: å€™è£œã‚µãƒ³ãƒ—ãƒ«ç”Ÿæˆç”¨ã®PDFã¨ã‚¿ãƒ¼ã‚²ãƒƒãƒˆPDFã¯ç•°ãªã‚‹ãŸã‚ã‚µãƒ³ãƒ—ãƒ«ã«ã¯ã‚¦ã‚§ã‚¤ãƒˆãŒã‹ã‹ã‚‹ã€‚
         // EN: The sample has a weight since the PDF to generate the candidate sample and the target PDF are
         //     different.
         float weight = targetDensity / preSampledLight.areaPDensity;
@@ -112,7 +112,7 @@ CUDA_DEVICE_KERNEL void performPerPixelRIS() {
             selectedTargetDensity = targetDensity;
     }
 
-    // JP: Œ»İ‚ÌƒTƒ“ƒvƒ‹‚ª¶‚«c‚éŠm—¦–§“x‚Ì‹t”‚Ì„’è’l‚ğŒvZ‚·‚éB
+    // JP: ç¾åœ¨ã®ã‚µãƒ³ãƒ—ãƒ«ãŒç”Ÿãæ®‹ã‚‹ç¢ºç‡å¯†åº¦ã®é€†æ•°ã®æ¨å®šå€¤ã‚’è¨ˆç®—ã™ã‚‹ã€‚
     // EN: Calculate the estimate of the reciprocal of the probability density that the current sample suvives.
     float recPDFEstimate = reservoir.getSumWeights() / (selectedTargetDensity * reservoir.getStreamLength());
     if (!isfinite(recPDFEstimate)) {

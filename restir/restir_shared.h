@@ -12,11 +12,25 @@ namespace shared {
 
 
 
-    enum RayType {
-        RayType_Primary = 0,
-        RayType_Visibility,
-        NumRayTypes
+    struct GBufferRayType {
+        enum Value {
+            Primary,
+            NumTypes
+        } value;
+
+        CUDA_DEVICE_FUNCTION constexpr GBufferRayType(Value v = Primary) : value(v) {}
     };
+
+    struct ReSTIRRayType {
+        enum Value {
+            Visibility,
+            NumTypes
+        } value;
+
+        CUDA_DEVICE_FUNCTION constexpr ReSTIRRayType(Value v = Visibility) : value(v) {}
+    };
+
+    constexpr uint32_t maxNumRayTypes = 1;
 
 
 
@@ -457,7 +471,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void sampleLight(
     lightSample->emittance = emittance;
 }
 
-template <bool withVisibility>
+template <typename RayType, bool withVisibility>
 CUDA_DEVICE_FUNCTION CUDA_INLINE float3 performDirectLighting(
     const float3 &shadingPoint, const float3 &vOutLocal, const ReferenceFrame &shadingFrame, const BSDF &bsdf,
     const shared::LightSample &lightSample) {
@@ -480,7 +494,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE float3 performDirectLighting(
             plp.f->travHandle,
             shadingPoint, shadowRayDir, 0.0f, dist * 0.9999f, 0.0f,
             0xFF, OPTIX_RAY_FLAG_NONE,
-            shared::RayType_Visibility, shared::NumRayTypes, shared::RayType_Visibility,
+            RayType::Visibility, shared::maxNumRayTypes, RayType::Visibility,
             visibility);
     }
 
@@ -496,6 +510,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE float3 performDirectLighting(
     }
 }
 
+template <typename RayType>
 CUDA_DEVICE_FUNCTION CUDA_INLINE bool evaluateVisibility(
     const float3 &shadingPoint, const shared::LightSample &lightSample) {
     float3 shadowRayDir = lightSample.atInfinity ?
@@ -512,7 +527,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool evaluateVisibility(
         plp.f->travHandle,
         shadingPoint, shadowRayDir, 0.0f, dist * 0.9999f, 0.0f,
         0xFF, OPTIX_RAY_FLAG_NONE,
-        shared::RayType_Visibility, shared::NumRayTypes, shared::RayType_Visibility,
+        RayType::Visibility, shared::maxNumRayTypes, RayType::Visibility,
         visibility);
 
     return visibility > 0.0f;
@@ -605,6 +620,55 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void computeSurfacePoint(
     else {
         (void)*hypAreaPDensity;
     }
+}
+
+
+
+struct HitPointParameter {
+    float b1, b2;
+    int32_t primIndex;
+
+    CUDA_DEVICE_FUNCTION CUDA_INLINE static HitPointParameter get() {
+        HitPointParameter ret;
+        float2 bc = optixGetTriangleBarycentrics();
+        ret.b1 = bc.x;
+        ret.b2 = bc.y;
+        ret.primIndex = optixGetPrimitiveIndex();
+        return ret;
+    }
+};
+
+struct HitGroupSBTRecordData {
+    shared::GeometryInstanceData geomInstData;
+
+    CUDA_DEVICE_FUNCTION CUDA_INLINE static const HitGroupSBTRecordData &get() {
+        return *reinterpret_cast<HitGroupSBTRecordData*>(optixGetSbtDataPointer());
+    }
+};
+
+template <bool testGeometry>
+CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNeighbor(
+    uint32_t nbBufIdx, int2 nbCoord, float dist, const float3 &normalInWorld) {
+    using namespace shared;
+    if (nbCoord.x < 0 || nbCoord.x >= plp.s->imageSize.x ||
+        nbCoord.y < 0 || nbCoord.y >= plp.s->imageSize.y)
+        return false;
+
+    GBuffer2 nbGBuffer2 = plp.s->GBuffer2[nbBufIdx].read(nbCoord);
+    if (nbGBuffer2.materialSlot == 0xFFFFFFFF)
+        return false;
+
+    if constexpr (testGeometry) {
+        GBuffer0 nbGBuffer0 = plp.s->GBuffer0[nbBufIdx].read(nbCoord);
+        GBuffer1 nbGBuffer1 = plp.s->GBuffer1[nbBufIdx].read(nbCoord);
+        float3 nbPositionInWorld = nbGBuffer0.positionInWorld;
+        float3 nbNormalInWorld = nbGBuffer1.normalInWorld;
+        float nbDist = length(plp.f->camera.position - nbPositionInWorld);
+        if (abs(nbDist - dist) / dist > 0.1f || dot(normalInWorld, nbNormalInWorld) < 0.9f)
+            return false;
+    }
+
+    return true;
 }
 
 #endif
