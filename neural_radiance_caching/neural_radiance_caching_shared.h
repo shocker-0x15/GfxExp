@@ -11,13 +11,35 @@ namespace shared {
 
 
 
-    enum RayType {
-        RayType_Primary = 0,
-        RayType_PathTraceBaseline,
-        RayType_PathTraceNRC,
-        RayType_Visibility,
-        NumRayTypes
+    struct GBufferRayType {
+        enum Value {
+            Primary,
+            NumTypes
+        } value;
+
+        CUDA_DEVICE_FUNCTION constexpr GBufferRayType(Value v = Primary) : value(v) {}
+
+        CUDA_DEVICE_FUNCTION operator uint32_t() const {
+            return static_cast<uint32_t>(value);
+        }
     };
+
+    struct PathTracingRayType {
+        enum Value {
+            Baseline,
+            NRC,
+            Visibility,
+            NumTypes
+        } value;
+
+        CUDA_DEVICE_FUNCTION constexpr PathTracingRayType(Value v = Baseline) : value(v) {}
+
+        CUDA_DEVICE_FUNCTION operator uint32_t() const {
+            return static_cast<uint32_t>(value);
+        }
+    };
+
+    constexpr uint32_t maxNumRayTypes = 3;
 
 
 
@@ -499,7 +521,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void sampleLight(
     lightSample->emittance = emittance;
 }
 
-template <bool withVisibility>
+template <typename RayType, bool withVisibility>
 CUDA_DEVICE_FUNCTION CUDA_INLINE float3 performDirectLighting(
     const float3 &shadingPoint, const float3 &vOutLocal, const ReferenceFrame &shadingFrame, const BSDF &bsdf,
     const shared::LightSample &lightSample) {
@@ -523,7 +545,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE float3 performDirectLighting(
             plp.f->travHandle,
             shadingPoint, shadowRayDir, 0.0f, dist * 0.9999f, 0.0f,
             0xFF, OPTIX_RAY_FLAG_NONE,
-            shared::RayType_Visibility, shared::NumRayTypes, shared::RayType_Visibility,
+            RayType::Visibility, shared::maxNumRayTypes, RayType::Visibility,
             visibility);
     }
 
@@ -539,6 +561,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE float3 performDirectLighting(
     }
 }
 
+template <typename RayType>
 CUDA_DEVICE_FUNCTION CUDA_INLINE bool evaluateVisibility(
     const float3 &shadingPoint, const shared::LightSample &lightSample) {
     using namespace shared;
@@ -556,7 +579,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool evaluateVisibility(
         plp.f->travHandle,
         shadingPoint, shadowRayDir, 0.0f, dist * 0.9999f, 0.0f,
         0xFF, OPTIX_RAY_FLAG_NONE,
-        shared::RayType_Visibility, shared::NumRayTypes, shared::RayType_Visibility,
+        RayType::Visibility, shared::maxNumRayTypes, RayType::Visibility,
         visibility);
 
     return visibility > 0.0f;
@@ -651,5 +674,29 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void computeSurfacePoint(
         (void)*hypAreaPDensity;
     }
 }
+
+
+
+struct HitPointParameter {
+    float b1, b2;
+    int32_t primIndex;
+
+    CUDA_DEVICE_FUNCTION CUDA_INLINE static HitPointParameter get() {
+        HitPointParameter ret;
+        float2 bc = optixGetTriangleBarycentrics();
+        ret.b1 = bc.x;
+        ret.b2 = bc.y;
+        ret.primIndex = optixGetPrimitiveIndex();
+        return ret;
+    }
+};
+
+struct HitGroupSBTRecordData {
+    shared::GeometryInstanceData geomInstData;
+
+    CUDA_DEVICE_FUNCTION CUDA_INLINE static const HitGroupSBTRecordData &get() {
+        return *reinterpret_cast<HitGroupSBTRecordData*>(optixGetSbtDataPointer());
+    }
+};
 
 #endif

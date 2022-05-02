@@ -15,26 +15,36 @@
 
 
 
+enum class GBufferEntryPoint {
+    setupGBuffers = 0,
+};
+enum class PathTracingEntryPoint {
+    pathTraceBaseline,
+};
+
 struct GPUEnvironment {
     CUcontext cuContext;
     optixu::Context optixContext;
 
-    optixu::Pipeline pipeline;
-    optixu::Module mainModule;
-    optixu::ProgramGroup emptyMissProgram;
-    optixu::ProgramGroup setupGBuffersRayGenProgram;
-    optixu::ProgramGroup setupGBuffersHitProgramGroup;
-    optixu::ProgramGroup setupGBuffersMissProgram;
+    template <typename EntryPointType>
+    struct Pipeline {
+        optixu::Pipeline optixPipeline;
+        optixu::Module optixModule;
+        std::unordered_map<EntryPointType, optixu::ProgramGroup> entryPoints;
+        std::unordered_map<std::string, optixu::ProgramGroup> programs;
+        std::vector<optixu::ProgramGroup> callablePrograms;
+        cudau::Buffer sbt;
+        cudau::Buffer hitGroupSbt;
 
-    optixu::ProgramGroup pathTraceBaselineRayGenProgram;
-    optixu::ProgramGroup pathTraceBaselineMissProgram;
-    optixu::ProgramGroup pathTraceBaselineHitProgramGroup;
-    optixu::ProgramGroup visibilityHitProgramGroup;
-    std::vector<optixu::ProgramGroup> callablePrograms;
+        void setEntryPoint(EntryPointType et) {
+            optixPipeline.setRayGenerationProgram(entryPoints.at(et));
+        }
+    };
+
+    Pipeline<GBufferEntryPoint> gBuffer;
+    Pipeline<PathTracingEntryPoint> pathTracing;
 
     optixu::Material optixDefaultMaterial;
-
-    cudau::Buffer shaderBindingTable;
 
     void initialize() {
         int32_t cuDeviceCount;
@@ -45,109 +55,169 @@ struct GPUEnvironment {
 
         optixContext = optixu::Context::create(cuContext/*, 4, DEBUG_SELECT(true, false)*/);
 
-        pipeline = optixContext.createPipeline();
-
-        // JP: このサンプルでは2段階のAS(1段階のインスタンシング)を使用する。
-        // EN: This sample uses two-level AS (single-level instancing).
-        pipeline.setPipelineOptions(
-            std::max({
-                shared::PrimaryRayPayloadSignature::numDwords,
-                shared::VisibilityRayPayloadSignature::numDwords,
-                shared::PathTraceRayPayloadSignature::numDwords
-                     }),
-            optixu::calcSumDwords<float2>(),
-            "plp", sizeof(shared::PipelineLaunchParameters),
-            false, OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_LEVEL_INSTANCING,
-            OPTIX_EXCEPTION_FLAG_STACK_OVERFLOW | OPTIX_EXCEPTION_FLAG_TRACE_DEPTH |
-            DEBUG_SELECT(OPTIX_EXCEPTION_FLAG_DEBUG, OPTIX_EXCEPTION_FLAG_NONE),
-            OPTIX_PRIMITIVE_TYPE_FLAGS_TRIANGLE);
-
-        const std::string ptx = readTxtFile(getExecutableDirectory() / "path_tracing/ptxes/optix_kernels.ptx");
-        mainModule = pipeline.createModuleFromPTXString(
-            ptx, OPTIX_COMPILE_DEFAULT_MAX_REGISTER_COUNT,
-            DEBUG_SELECT(OPTIX_COMPILE_OPTIMIZATION_LEVEL_0, OPTIX_COMPILE_OPTIMIZATION_DEFAULT),
-            DEBUG_SELECT(OPTIX_COMPILE_DEBUG_LEVEL_FULL, OPTIX_COMPILE_DEBUG_LEVEL_NONE));
-
+        optixDefaultMaterial = optixContext.createMaterial();
         optixu::Module emptyModule;
 
-        emptyMissProgram = pipeline.createMissProgram(emptyModule, nullptr);
+        {
+            Pipeline<GBufferEntryPoint> &pipeline = gBuffer;
+            optixu::Pipeline &p = pipeline.optixPipeline;
+            optixu::Module &m = pipeline.optixModule;
+            p = optixContext.createPipeline();
 
-        setupGBuffersRayGenProgram = pipeline.createRayGenProgram(
-            mainModule, RT_RG_NAME_STR("setupGBuffers"));
-        setupGBuffersHitProgramGroup = pipeline.createHitProgramGroupForTriangleIS(
-            mainModule, RT_CH_NAME_STR("setupGBuffers"),
-            emptyModule, nullptr);
-        setupGBuffersMissProgram = pipeline.createMissProgram(
-            mainModule, RT_MS_NAME_STR("setupGBuffers"));
+            p.setPipelineOptions(
+                std::max({
+                    shared::PrimaryRayPayloadSignature::numDwords
+                         }),
+                optixu::calcSumDwords<float2>(),
+                "plp", sizeof(shared::PipelineLaunchParameters),
+                false, OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_LEVEL_INSTANCING,
+                OPTIX_EXCEPTION_FLAG_STACK_OVERFLOW | OPTIX_EXCEPTION_FLAG_TRACE_DEPTH |
+                DEBUG_SELECT(OPTIX_EXCEPTION_FLAG_DEBUG, OPTIX_EXCEPTION_FLAG_NONE),
+                OPTIX_PRIMITIVE_TYPE_FLAGS_TRIANGLE);
 
-        pathTraceBaselineRayGenProgram = pipeline.createRayGenProgram(
-            mainModule, RT_RG_NAME_STR("pathTraceBaseline"));
-        pathTraceBaselineMissProgram = pipeline.createMissProgram(
-            mainModule, RT_MS_NAME_STR("pathTraceBaseline"));
-        pathTraceBaselineHitProgramGroup = pipeline.createHitProgramGroupForTriangleIS(
-            mainModule, RT_CH_NAME_STR("pathTraceBaseline"),
-            emptyModule, nullptr);
+            m = p.createModuleFromPTXString(
+                readTxtFile(getExecutableDirectory() / "path_tracing/ptxes/optix_gbuffer_kernels.ptx"),
+                OPTIX_COMPILE_DEFAULT_MAX_REGISTER_COUNT,
+                DEBUG_SELECT(OPTIX_COMPILE_OPTIMIZATION_LEVEL_0, OPTIX_COMPILE_OPTIMIZATION_DEFAULT),
+                DEBUG_SELECT(OPTIX_COMPILE_DEBUG_LEVEL_FULL, OPTIX_COMPILE_DEBUG_LEVEL_NONE));
 
-        visibilityHitProgramGroup = pipeline.createHitProgramGroupForTriangleIS(
-            emptyModule, nullptr,
-            mainModule, RT_AH_NAME_STR("visibility"));
+            pipeline.entryPoints[GBufferEntryPoint::setupGBuffers] = p.createRayGenProgram(
+                m, RT_RG_NAME_STR("setupGBuffers"));
 
-        //optixu::ProgramGroup exceptionProgram = pipeline.createExceptionProgram(moduleOptiX, "__exception__print");
-
-        // If an exception program is not set but exception flags are set,
-        // the default exception program will by provided by OptiX.
-        //pipeline.setExceptionProgram(exceptionProgram);
-        pipeline.setNumMissRayTypes(shared::NumRayTypes);
-        pipeline.setMissProgram(shared::RayType_Primary, setupGBuffersMissProgram);
-        pipeline.setMissProgram(shared::RayType_PathTrace, pathTraceBaselineMissProgram);
-        pipeline.setMissProgram(shared::RayType_Visibility, emptyMissProgram);
-
-        pipeline.setNumCallablePrograms(NumCallablePrograms);
-        callablePrograms.resize(NumCallablePrograms);
-        for (int i = 0; i < NumCallablePrograms; ++i) {
-            optixu::ProgramGroup program = pipeline.createCallableProgramGroup(
-                mainModule, callableProgramEntryPoints[i],
+            pipeline.programs["hitgroup"] = p.createHitProgramGroupForTriangleIS(
+                m, RT_CH_NAME_STR("setupGBuffers"),
                 emptyModule, nullptr);
-            callablePrograms[i] = program;
-            pipeline.setCallableProgram(i, program);
+            pipeline.programs["miss"] = p.createMissProgram(
+                m, RT_MS_NAME_STR("setupGBuffers"));
+
+            pipeline.programs["emptyHitGroup"] = p.createEmptyHitProgramGroup();
+
+            pipeline.setEntryPoint(GBufferEntryPoint::setupGBuffers);
+            p.setNumMissRayTypes(shared::GBufferRayType::NumTypes);
+            p.setMissProgram(shared::GBufferRayType::Primary, pipeline.programs.at("miss"));
+
+            p.setNumCallablePrograms(NumCallablePrograms);
+            pipeline.callablePrograms.resize(NumCallablePrograms);
+            for (int i = 0; i < NumCallablePrograms; ++i) {
+                optixu::ProgramGroup program = p.createCallableProgramGroup(
+                    m, callableProgramEntryPoints[i],
+                    emptyModule, nullptr);
+                pipeline.callablePrograms[i] = program;
+                p.setCallableProgram(i, program);
+            }
+
+            p.link(1, DEBUG_SELECT(OPTIX_COMPILE_DEBUG_LEVEL_FULL, OPTIX_COMPILE_DEBUG_LEVEL_NONE));
+
+            optixDefaultMaterial.setHitGroup(shared::GBufferRayType::Primary, pipeline.programs.at("hitgroup"));
+            for (uint32_t rayType = shared::GBufferRayType::NumTypes; rayType < shared::maxNumRayTypes; ++rayType)
+                optixDefaultMaterial.setHitGroup(rayType, pipeline.programs.at("emptyHitGroup"));
+
+            size_t sbtSize;
+            p.generateShaderBindingTableLayout(&sbtSize);
+            pipeline.sbt.initialize(cuContext, Scene::bufferType, sbtSize, 1);
+            pipeline.sbt.setMappedMemoryPersistent(true);
+            p.setShaderBindingTable(pipeline.sbt, pipeline.sbt.getMappedPointer());
         }
 
-        pipeline.link(2, DEBUG_SELECT(OPTIX_COMPILE_DEBUG_LEVEL_FULL, OPTIX_COMPILE_DEBUG_LEVEL_NONE));
+        {
+            Pipeline<PathTracingEntryPoint> &pipeline = pathTracing;
+            optixu::Pipeline &p = pipeline.optixPipeline;
+            optixu::Module &m = pipeline.optixModule;
+            p = optixContext.createPipeline();
 
+            p.setPipelineOptions(
+                std::max({
+                    shared::PathTraceRayPayloadSignature::numDwords,
+                    shared::VisibilityRayPayloadSignature::numDwords
+                         }),
+                optixu::calcSumDwords<float2>(),
+                "plp", sizeof(shared::PipelineLaunchParameters),
+                false, OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_LEVEL_INSTANCING,
+                OPTIX_EXCEPTION_FLAG_STACK_OVERFLOW | OPTIX_EXCEPTION_FLAG_TRACE_DEPTH |
+                DEBUG_SELECT(OPTIX_EXCEPTION_FLAG_DEBUG, OPTIX_EXCEPTION_FLAG_NONE),
+                OPTIX_PRIMITIVE_TYPE_FLAGS_TRIANGLE);
 
+            m = p.createModuleFromPTXString(
+                readTxtFile(getExecutableDirectory() / "path_tracing/ptxes/optix_pathtracing_kernels.ptx"),
+                OPTIX_COMPILE_DEFAULT_MAX_REGISTER_COUNT,
+                DEBUG_SELECT(OPTIX_COMPILE_OPTIMIZATION_LEVEL_0, OPTIX_COMPILE_OPTIMIZATION_DEFAULT),
+                DEBUG_SELECT(OPTIX_COMPILE_DEBUG_LEVEL_FULL, OPTIX_COMPILE_DEBUG_LEVEL_NONE));
 
-        optixDefaultMaterial = optixContext.createMaterial();
-        optixDefaultMaterial.setHitGroup(shared::RayType_Primary, setupGBuffersHitProgramGroup);
-        optixDefaultMaterial.setHitGroup(shared::RayType_PathTrace, pathTraceBaselineHitProgramGroup);
-        optixDefaultMaterial.setHitGroup(shared::RayType_Visibility, visibilityHitProgramGroup);
+            pipeline.entryPoints[PathTracingEntryPoint::pathTraceBaseline] =
+                p.createRayGenProgram(m, RT_RG_NAME_STR("pathTraceBaseline"));
 
+            pipeline.programs[RT_MS_NAME_STR("pathTraceBaseline")] = p.createMissProgram(
+                m, RT_MS_NAME_STR("pathTraceBaseline"));
+            pipeline.programs[RT_CH_NAME_STR("pathTraceBaseline")] = p.createHitProgramGroupForTriangleIS(
+                m, RT_CH_NAME_STR("pathTraceBaseline"),
+                emptyModule, nullptr);
 
+            pipeline.programs[RT_AH_NAME_STR("visibility")] = p.createHitProgramGroupForTriangleIS(
+                emptyModule, nullptr,
+                m, RT_AH_NAME_STR("visibility"));
 
-        size_t sbtSize;
-        pipeline.generateShaderBindingTableLayout(&sbtSize);
-        shaderBindingTable.initialize(cuContext, Scene::bufferType, sbtSize, 1);
-        shaderBindingTable.setMappedMemoryPersistent(true);
-        pipeline.setShaderBindingTable(shaderBindingTable, shaderBindingTable.getMappedPointer());
+            pipeline.programs["emptyMiss"] = p.createMissProgram(emptyModule, nullptr);
+
+            p.setNumMissRayTypes(shared::PathTracingRayType::NumTypes);
+            p.setMissProgram(
+                shared::PathTracingRayType::Baseline, pipeline.programs.at(RT_MS_NAME_STR("pathTraceBaseline")));
+            p.setMissProgram(shared::PathTracingRayType::Visibility, pipeline.programs.at("emptyMiss"));
+
+            p.setNumCallablePrograms(NumCallablePrograms);
+            pipeline.callablePrograms.resize(NumCallablePrograms);
+            for (int i = 0; i < NumCallablePrograms; ++i) {
+                optixu::ProgramGroup program = p.createCallableProgramGroup(
+                    m, callableProgramEntryPoints[i],
+                    emptyModule, nullptr);
+                pipeline.callablePrograms[i] = program;
+                p.setCallableProgram(i, program);
+            }
+
+            p.link(2, DEBUG_SELECT(OPTIX_COMPILE_DEBUG_LEVEL_FULL, OPTIX_COMPILE_DEBUG_LEVEL_NONE));
+
+            optixDefaultMaterial.setHitGroup(
+                shared::PathTracingRayType::Baseline, pipeline.programs.at(RT_CH_NAME_STR("pathTraceBaseline")));
+            optixDefaultMaterial.setHitGroup(
+                shared::PathTracingRayType::Visibility, pipeline.programs.at(RT_AH_NAME_STR("visibility")));
+
+            size_t sbtSize;
+            p.generateShaderBindingTableLayout(&sbtSize);
+            pipeline.sbt.initialize(cuContext, Scene::bufferType, sbtSize, 1);
+            pipeline.sbt.setMappedMemoryPersistent(true);
+            p.setShaderBindingTable(pipeline.sbt, pipeline.sbt.getMappedPointer());
+        }
     }
 
     void finalize() {
-        shaderBindingTable.finalize();
+        {
+            Pipeline<PathTracingEntryPoint> &pipeline = pathTracing;
+            pipeline.hitGroupSbt.finalize();
+            pipeline.sbt.finalize();
+            for (int i = 0; i < NumCallablePrograms; ++i)
+                pipeline.callablePrograms[i].destroy();
+            for (auto &pair : pipeline.programs)
+                pair.second.destroy();
+            for (auto &pair : pipeline.entryPoints)
+                pair.second.destroy();
+            pipeline.optixModule.destroy();
+            pipeline.optixPipeline.destroy();
+        }
+
+        {
+            Pipeline<GBufferEntryPoint> &pipeline = gBuffer;
+            pipeline.hitGroupSbt.finalize();
+            pipeline.sbt.finalize();
+            for (int i = 0; i < NumCallablePrograms; ++i)
+                pipeline.callablePrograms[i].destroy();
+            for (auto &pair : pipeline.programs)
+                pair.second.destroy();
+            for (auto &pair : pipeline.entryPoints)
+                pair.second.destroy();
+            pipeline.optixModule.destroy();
+            pipeline.optixPipeline.destroy();
+        }
 
         optixDefaultMaterial.destroy();
-
-        for (int i = 0; i < NumCallablePrograms; ++i)
-            callablePrograms[i].destroy();
-        visibilityHitProgramGroup.destroy();
-        pathTraceBaselineHitProgramGroup.destroy();
-        pathTraceBaselineMissProgram.destroy();
-        pathTraceBaselineRayGenProgram.destroy();
-        setupGBuffersMissProgram.destroy();
-        setupGBuffersHitProgramGroup.destroy();
-        setupGBuffersRayGenProgram.destroy();
-        emptyMissProgram.destroy();
-        mainModule.destroy();
-
-        pipeline.destroy();
 
         optixContext.destroy();
 
@@ -760,7 +830,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
     gpuEnv.initialize();
 
     Scene scene;
-    scene.initialize(gpuEnv.cuContext, gpuEnv.optixContext, shared::NumRayTypes, gpuEnv.optixDefaultMaterial);
+    scene.initialize(gpuEnv.cuContext, gpuEnv.optixContext, shared::maxNumRayTypes, gpuEnv.optixDefaultMaterial);
 
     CUstream cuStream;
     CUDADRV_CHECK(cuStreamCreate(&cuStream, 0));
@@ -1118,8 +1188,19 @@ int32_t main(int32_t argc, const char* argv[]) try {
     plp.s = reinterpret_cast<shared::StaticPipelineLaunchParameters*>(staticPlpOnDevice);
     plp.f = reinterpret_cast<shared::PerFramePipelineLaunchParameters*>(perFramePlpOnDevice);
 
-    gpuEnv.pipeline.setScene(scene.optixScene);
-    gpuEnv.pipeline.setHitGroupShaderBindingTable(scene.hitGroupSBT, scene.hitGroupSBT.getMappedPointer());
+    gpuEnv.gBuffer.hitGroupSbt.initialize(
+        gpuEnv.cuContext, Scene::bufferType, scene.hitGroupSbtSize, 1);
+    gpuEnv.gBuffer.hitGroupSbt.setMappedMemoryPersistent(true);
+    gpuEnv.gBuffer.optixPipeline.setScene(scene.optixScene);
+    gpuEnv.gBuffer.optixPipeline.setHitGroupShaderBindingTable(
+        gpuEnv.gBuffer.hitGroupSbt, gpuEnv.gBuffer.hitGroupSbt.getMappedPointer());
+
+    gpuEnv.pathTracing.hitGroupSbt.initialize(
+        gpuEnv.cuContext, Scene::bufferType, scene.hitGroupSbtSize, 1);
+    gpuEnv.pathTracing.hitGroupSbt.setMappedMemoryPersistent(true);
+    gpuEnv.pathTracing.optixPipeline.setScene(scene.optixScene);
+    gpuEnv.pathTracing.optixPipeline.setHitGroupShaderBindingTable(
+        gpuEnv.pathTracing.hitGroupSbt, gpuEnv.pathTracing.hitGroupSbt.getMappedPointer());
 
     shared::PickInfo initPickInfo = {};
     initPickInfo.hit = false;
@@ -1636,16 +1717,17 @@ int32_t main(int32_t argc, const char* argv[]) try {
         // EN: Setup the G-buffers.
         //     Generate the G-buffers using ray trace here, but of course this can be done using rasterizer.
         curGPUTimer.setupGBuffers.start(cuStream);
-        gpuEnv.pipeline.setRayGenerationProgram(gpuEnv.setupGBuffersRayGenProgram);
-        gpuEnv.pipeline.launch(cuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);
+        gpuEnv.gBuffer.optixPipeline.launch(
+            cuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);
         curGPUTimer.setupGBuffers.stop(cuStream);
 
         // JP: パストレーシングによるシェーディングを実行。
         // EN: Perform shading by path tracing.
         curGPUTimer.pathTrace.start(cuStream);
         CUDADRV_CHECK(cuMemcpyHtoDAsync(plpOnDevice, &plp, sizeof(plp), cuStream));
-        gpuEnv.pipeline.setRayGenerationProgram(gpuEnv.pathTraceBaselineRayGenProgram);
-        gpuEnv.pipeline.launch(cuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);
+        gpuEnv.pathTracing.setEntryPoint(PathTracingEntryPoint::pathTraceBaseline);
+        gpuEnv.pathTracing.optixPipeline.launch(
+            cuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);
         curGPUTimer.pathTrace.stop(cuStream);
 
         // JP: 結果をリニアバッファーにコピーする。(法線の正規化も行う。)

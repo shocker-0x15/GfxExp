@@ -12,7 +12,8 @@ set(
 
 set(
     OPTIX_KERNELS
-    "optix_kernels.cu"
+    "optix_gbuffer_kernels.cu"
+    "optix_pathtracing_kernels.cu"
 )
 
 set(

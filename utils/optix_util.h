@@ -31,6 +31,11 @@ EN:
 - In Visual Studio, does the CUDA property "Use Fast Math" not work for ptx compilation??
 
 変更履歴 / Update History:
+- !!BREAKING??
+  JP: - RT_DEVICE_FUNCTIONからinline属性を削除。RT_INLINEを新設。
+        __CUDACC__と__CUDA_ARCH__の使い分けを明確に。
+  EN: - Removed inline qualifier from RT_DEVICE_FUNCTION and added RT_INLINE.
+        Disambiguate usage of __CUDACC__ and __CUDA_ARCH__.
 - !!BREAKING
   JP: - getPayloads()/setPayloads(), getAttributes(), getExceptionDetails()を削除。
         ペイロードなどの値はシグネチャー型経由で取得・設定を行う。
@@ -190,7 +195,9 @@ TODO:
 #ifdef _DEBUG
 #   define OPTIXU_ENABLE_ASSERT
 #endif
-#define OPTIXU_ENABLE_RUNTIME_ERROR
+#if !defined(OPTIXU_DISABLE_RUNTIME_ERROR)
+#   define OPTIXU_ENABLE_RUNTIME_ERROR
+#endif
 
 #if defined(__CUDACC__)
 #   define RT_CALLABLE_PROGRAM extern "C" __device__

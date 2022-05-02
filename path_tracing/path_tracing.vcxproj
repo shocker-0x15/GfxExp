@@ -60,7 +60,11 @@
   </ItemGroup>
   <ItemGroup>
     <CudaCompile Include="copy_buffers.cu" />
-    <CudaCompile Include="optix_kernels.cu">
+    <CudaCompile Include="optix_gbuffer_kernels.cu">
+      <GPUDebugInfo Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</GPUDebugInfo>
+      <GenerateLineInfo Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</GenerateLineInfo>
+    </CudaCompile>
+    <CudaCompile Include="optix_pathtracing_kernels.cu">
       <GPUDebugInfo Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</GPUDebugInfo>
       <GenerateLineInfo Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</GenerateLineInfo>
     </CudaCompile>

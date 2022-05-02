@@ -19,6 +19,10 @@ namespace shared {
         } value;
 
         CUDA_DEVICE_FUNCTION constexpr GBufferRayType(Value v = Primary) : value(v) {}
+
+        CUDA_DEVICE_FUNCTION operator uint32_t() const {
+            return static_cast<uint32_t>(value);
+        }
     };
 
     struct ReSTIRRayType {
@@ -28,6 +32,10 @@ namespace shared {
         } value;
 
         CUDA_DEVICE_FUNCTION constexpr ReSTIRRayType(Value v = Visibility) : value(v) {}
+
+        CUDA_DEVICE_FUNCTION operator uint32_t() const {
+            return static_cast<uint32_t>(value);
+        }
     };
 
     constexpr uint32_t maxNumRayTypes = 1;

@@ -57,11 +57,13 @@ typedef unsigned long long CUsurfObject;
 #   include <vector>
 #   include <sstream>
 
-// JP: CUDA/OpenGL連携機能が必要な場合はOpenGLの関数宣言の取得(例: gl3w.hのinclude)と
-//     CUDA_UTIL_USE_GL_INTEROPの定義を行う。
-// EN: Obtain OpenGL function declarations (e.g. include gl3w.h) and define CUDA_UTIL_USE_GL_INTEROP
-//     if CUDA/OpenGL interoperability is required.
-#   define CUDA_UTIL_USE_GL_INTEROP
+// JP: CUDA/OpenGL連携機能が不要な場合はこのファイルをincludeするより前に
+//     CUDA_UTIL_DONT_USE_GL_INTEROPの定義を行う。
+// EN: Define CUDA_UTIL_DONT_USE_GL_INTEROP before including this file if CUDA/OpenGL interoperability
+//     is not required.
+#   if !defined(CUDA_UTIL_DONT_USE_GL_INTEROP)
+#       define CUDA_UTIL_USE_GL_INTEROP
+#   endif
 #   if defined(CUDA_UTIL_USE_GL_INTEROP)
 #       include <GL/gl3w.h>
 #       include <cudaGL.h>
