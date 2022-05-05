@@ -330,13 +330,13 @@ namespace shared {
 
 #if defined(__CUDA_ARCH__) || defined(OPTIXU_Platform_CodeCompletion)
 
-#include "../common/common_device.cuh"
-
 #if defined(PURE_CUDA)
 CUDA_CONSTANT_MEM shared::PipelineLaunchParameters plp;
 #else
 RT_PIPELINE_LAUNCH_PARAMETERS shared::PipelineLaunchParameters plp;
 #endif
+
+#include "../common/common_device.cuh"
 
 template <bool useSolidAngleSampling>
 CUDA_DEVICE_FUNCTION CUDA_INLINE void sampleLight(

@@ -1,3 +1,4 @@
+#define PURE_CUDA
 #include "restir_shared.h"
 
 CUDA_DEVICE_KERNEL void copyToLinearBuffers(

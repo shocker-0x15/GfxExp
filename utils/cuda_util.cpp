@@ -420,7 +420,7 @@ namespace cudau {
                 return CU_RES_VIEW_FORMAT_UNSIGNED_BC3;
             break;
         case cudau::ArrayElementType::BC4_UNorm:
-            if (numChannels == 4)
+            if (numChannels == 2)
                 return CU_RES_VIEW_FORMAT_UNSIGNED_BC4;
             break;
         case cudau::ArrayElementType::BC4_SNorm:
@@ -645,7 +645,6 @@ namespace cudau {
             arrayDesc.Format = CU_AD_FORMAT_UNSIGNED_INT32;
             m_stride = 4;
             m_numChannels = 2;
-            numChannels = 2;
             m_width = (m_width + 3) / 4;
             m_height = (m_height + 3) / 4;
             break;
@@ -659,7 +658,6 @@ namespace cudau {
             arrayDesc.Format = CU_AD_FORMAT_UNSIGNED_INT32;
             m_stride = 4;
             m_numChannels = 4;
-            numChannels = 4;
             m_width = (m_width + 3) / 4;
             m_height = (m_height + 3) / 4;
             break;
@@ -670,8 +668,8 @@ namespace cudau {
         arrayDesc.Width = m_width;
         arrayDesc.Height = m_height;
         arrayDesc.Depth = m_depth;
-        arrayDesc.NumChannels = numChannels;
-        m_stride *= numChannels;
+        arrayDesc.NumChannels = m_numChannels;
+        m_stride *= m_numChannels;
 
         if (m_GLTexID != 0) {
 #if defined(CUDA_UTIL_USE_GL_INTEROP)

@@ -1,3 +1,4 @@
+#define PURE_CUDA
 #include "path_tracing_shared.h"
 
 CUDA_DEVICE_KERNEL void copyToLinearBuffers(
