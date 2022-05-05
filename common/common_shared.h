@@ -453,6 +453,9 @@ CUDA_COMMON_FUNCTION CUDA_INLINE float3 safeDivide(const float3 &v0, const float
         v1.y != 0.0f ? v0.y / v1.y : 0.0f,
         v1.z != 0.0f ? v0.z / v1.z : 0.0f);
 }
+CUDA_COMMON_FUNCTION CUDA_INLINE float3 safeDivide(const float3 &v, float d) {
+    return d != 0.0f ? (v / d) : make_float3(0.0f);
+}
 CUDA_COMMON_FUNCTION CUDA_INLINE float3 &operator/=(float3 &v, float s) {
     float r = 1 / s;
     return v *= r;

@@ -17,9 +17,11 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void traceShadowRays() {
 
     uint32_t curBufIdx = plp.f->bufferIndex;
     uint32_t prevBufIdx;
-    optixu::BlockBuffer2D<Reservoir<LightSample>, 0> curReservoirs = plp.s->reservoirBuffer[plp.currentReservoirIndex];
+    optixu::BlockBuffer2D<Reservoir<LightSample>, 0> curReservoirs =
+        plp.s->reservoirBuffer[plp.currentReservoirIndex];
     optixu::BlockBuffer2D<Reservoir<LightSample>, 0> prevReservoirs;
-    optixu::NativeBlockBuffer2D<SampleVisibility> curSampleVisBuffer = plp.s->sampleVisibilityBuffer[curBufIdx];
+    optixu::NativeBlockBuffer2D<SampleVisibility> curSampleVisBuffer =
+        plp.s->sampleVisibilityBuffer[curBufIdx];
     optixu::NativeBlockBuffer2D<SampleVisibility> prevSampleVisBuffer;
     GBuffer0 gBuffer0 = plp.s->GBuffer0[curBufIdx].read(launchIndex);
     GBuffer1 gBuffer1 = plp.s->GBuffer1[curBufIdx].read(launchIndex);
@@ -90,7 +92,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void traceShadowRays() {
                 temporalSample = neighbor.getSample();
                 temporalSampleIsValid = neighbor.getSumWeights() > 0.0f;
                 if (temporalSampleIsValid)
-                    sampleVis.temporalSample = evaluateVisibility<ReSTIRRayType>(positionInWorld, temporalSample);
+                    sampleVis.temporalSample =
+                        evaluateVisibility<ReSTIRRayType>(positionInWorld, temporalSample);
             }
 
             if constexpr (useUnbiasedEstimator) {
@@ -107,11 +110,11 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void traceShadowRays() {
 
                 if (newSampleIsValid)
                     sampleVis.newSampleOnTemporal =
-                    evaluateVisibility<ReSTIRRayType>(tNbPositionInWorld, newSample);
+                        evaluateVisibility<ReSTIRRayType>(tNbPositionInWorld, newSample);
 
                 if (temporalSampleIsValid)
                     sampleVis.temporalSampleOnCurrent =
-                    evaluateVisibility<ReSTIRRayType>(positionInWorld, temporalSample);
+                        evaluateVisibility<ReSTIRRayType>(positionInWorld, temporalSample);
             }
             else {
                 (void)tNbPositionInWorld;
@@ -179,7 +182,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void traceShadowRays() {
                 spatiotemporalSampleIsValid = neighbor.getSumWeights() > 0.0f;
                 if (spatiotemporalSampleIsValid)
                     sampleVis.spatiotemporalSample =
-                    evaluateVisibility<ReSTIRRayType>(positionInWorld, spatiotemporalSample);
+                       evaluateVisibility<ReSTIRRayType>(positionInWorld, spatiotemporalSample);
             }
 
             if constexpr (useUnbiasedEstimator) {
@@ -196,11 +199,11 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void traceShadowRays() {
 
                 if (newSampleIsValid)
                     sampleVis.newSampleOnSpatiotemporal =
-                    evaluateVisibility<ReSTIRRayType>(stNbPositionInWorld, newSample);
+                        evaluateVisibility<ReSTIRRayType>(stNbPositionInWorld, newSample);
 
                 if (spatiotemporalSampleIsValid)
                     sampleVis.spatiotemporalSampleOnCurrent =
-                    evaluateVisibility<ReSTIRRayType>(positionInWorld, spatiotemporalSample);
+                        evaluateVisibility<ReSTIRRayType>(positionInWorld, spatiotemporalSample);
             }
             else {
                 (void)stNbPositionInWorld;
@@ -538,6 +541,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void shadeAndResample() {
                 LightSample lightSample = selfRes.getSample();
                 float3 cont = performDirectLighting<ReSTIRRayType, false>(
                     positionInWorld, vOutLocal, shadingFrame, bsdf, lightSample);
+                float targetDensity = convertToWeight(cont);
 
                 float misWeight;
                 if constexpr (withTemporalRIS || withSpatialRIS)
@@ -549,16 +553,14 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void shadeAndResample() {
                         selfStreamLength, lightSample, selfResInfo.targetDensity);
                 else
                     misWeight = 1.0f / selfStreamLength;
-                selectedMisWeight = misWeight;
-                float contWeight = selfStreamLength * misWeight * selfResInfo.recPDFEstimate;
-                float3 rawDirectCont = sampleVis.newSample * contWeight * cont;
 
                 float weight = selfRes.getSumWeights();
-                directCont += rawDirectCont;
+                directCont += (misWeight * selfResInfo.recPDFEstimate * selfStreamLength) * cont;
                 combinedReservoir = selfRes;
-                selectedTargetDensity = selfResInfo.targetDensity;
+                selectedTargetDensity = targetDensity;
+                selectedMisWeight = misWeight;
+                sampleVis.selectedSample = sampleVis.newSample;
             }
-            sampleVis.selectedSample = sampleVis.newSample;
             combinedStreamLength = selfStreamLength;
         }
 
@@ -587,11 +589,9 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void shadeAndResample() {
                         selfStreamLength, positionInWorld, vOutLocal, shadingFrame, bsdf,
                         tNbCoord, stNbCoord,
                         nbStreamLength, nbLightSample, neighborInfo.targetDensity);
-                    float contWeight = nbStreamLength * misWeight * neighborInfo.recPDFEstimate;
-                    float3 rawDirectCont = (sampleVis.temporalSample * contWeight) * cont;
 
                     float weight = targetDensity * neighborInfo.recPDFEstimate * nbStreamLength;
-                    directCont += rawDirectCont;
+                    directCont += (sampleVis.temporalSample * misWeight * neighborInfo.recPDFEstimate * nbStreamLength) * cont;
                     if (combinedReservoir.update(nbLightSample, weight, rng.getFloat0cTo1o())) {
                         selectedTargetDensity = targetDensity;
                         selectedMisWeight = misWeight;
@@ -627,14 +627,13 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void shadeAndResample() {
                         selfStreamLength, positionInWorld, vOutLocal, shadingFrame, bsdf,
                         tNbCoord, stNbCoord,
                         nbStreamLength, nbLightSample, neighborInfo.targetDensity);
-                    float contWeight = nbStreamLength * misWeight * neighborInfo.recPDFEstimate;
-                    float3 rawDirectCont = (sampleVis.spatiotemporalSample * contWeight) * cont;
 
                     // JP: 隣接ピクセルと現在のピクセルではターゲットPDFが異なるためサンプルはウェイトを持つ。
                     // EN: The sample has a weight since the target PDFs of the neighboring pixel and the current
                     //     are the different.
                     float weight = targetDensity * neighborInfo.recPDFEstimate * nbStreamLength;
-                    directCont += rawDirectCont;
+                    directCont +=
+                        (sampleVis.spatiotemporalSample * misWeight * neighborInfo.recPDFEstimate * nbStreamLength) * cont;
                     if (combinedReservoir.update(nbLightSample, weight, rng.getFloat0cTo1o())) {
                         selectedTargetDensity = targetDensity;
                         selectedMisWeight = misWeight;

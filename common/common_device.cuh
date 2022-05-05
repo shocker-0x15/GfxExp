@@ -745,7 +745,7 @@ DEFINE_SETUP_BSDF_CALLABLE(SimplePBR_BRDF);
 
 struct BSDF {
 #if defined(USE_HARD_CODED_BSDF_FUNCTIONS)
-    uint32_t m_data[sizeof(HARD_CODED_BSDF) / 4];
+    uint32_t m_data[(sizeof(HARD_CODED_BSDF) + 3) / 4];
 #else
     static constexpr uint32_t NumDwords = 16;
     shared::BSDFGetSurfaceParameters m_getSurfaceParameters;
