@@ -1,4 +1,4 @@
-#include "common_host.h"
+ï»¿#include "common_host.h"
 
 #include <assimp/scene.h>
 #include <assimp/Importer.hpp>
@@ -296,7 +296,7 @@ initialize(CUcontext cuContext, cudau::BufferType type, const RealType* values, 
 
     shared::RegularConstantContinuousDistribution1DTemplate<RealType>* rawDists = m_raw1DDists.map();
 
-    // JP: ‚Ü‚¸Šes‚ÉŠÖ‚·‚éDistribution1D‚ğì¬‚·‚éB
+    // JP: ã¾ãšå„è¡Œã«é–¢ã™ã‚‹Distribution1Dã‚’ä½œæˆã™ã‚‹ã€‚
     // EN: First, create Distribution1D's for every rows.
     CompensatedSum<RealType> sum(0);
     RealType* integrals = new RealType[numD2];
@@ -308,7 +308,7 @@ initialize(CUcontext cuContext, cudau::BufferType type, const RealType* values, 
         sum += integrals[i];
     }
 
-    // JP: Šes‚ÌÏ•ª’l‚ğ—p‚¢‚ÄDistribution1D‚ğì¬‚·‚éB
+    // JP: å„è¡Œã®ç©åˆ†å€¤ã‚’ç”¨ã„ã¦Distribution1Dã‚’ä½œæˆã™ã‚‹ã€‚
     // EN: create a Distribution1D using integral values of each row.
     m_top1DDist.initialize(cuContext, type, integrals, numD2);
     delete[] integrals;
@@ -481,7 +481,7 @@ void SlotFinder::setInUse(uint32_t slotIdx) {
         uint32_t binIdx = flagIdxInLayer / 32;
         uint32_t flagIdxInBin = flagIdxInLayer % 32;
 
-        // JP: Å‰º‘w‚Å‚ÍOR/AND‚Í“¯‚¶À‘Ì‚¾‚ªsetANDFlag‚ª‰Šú’lfalse‚Å‚ ‚é‚Ì‚Åİ’è‚Í1‰ñ‚«‚èB
+        // JP: æœ€ä¸‹å±¤ã§ã¯OR/ANDã¯åŒã˜å®Ÿä½“ã ãŒsetANDFlagãŒåˆæœŸå€¤falseã§ã‚ã‚‹ã®ã§è¨­å®šã¯1å›ãã‚Šã€‚
         uint32_t &ORFlagBin = m_flagBins[m_offsetsToOR_AND[2 * layer + 0] + binIdx];
         uint32_t &ANDFlagBin = m_flagBins[m_offsetsToOR_AND[2 * layer + 1] + binIdx];
         uint32_t &numUsedFlagsUnderBin = m_numUsedFlagsUnderBinList[m_offsetsToNumUsedFlags[layer] + binIdx];
@@ -490,7 +490,7 @@ void SlotFinder::setInUse(uint32_t slotIdx) {
             ANDFlagBin |= (1 << flagIdxInBin);
         ++numUsedFlagsUnderBin;
 
-        // JP: ‚±‚Ìƒrƒ“‚É—˜—p‰Â”\‚ÈƒXƒƒbƒg‚ª–³‚­‚È‚Á‚½ê‡‚ÍŸ‚ÌANDƒŒƒCƒ„[‚àƒtƒ‰ƒO‚ğ—§‚Ä‚éB
+        // JP: ã“ã®ãƒ“ãƒ³ã«åˆ©ç”¨å¯èƒ½ãªã‚¹ãƒ­ãƒƒãƒˆãŒç„¡ããªã£ãŸå ´åˆã¯æ¬¡ã®ANDãƒ¬ã‚¤ãƒ¤ãƒ¼ã‚‚ãƒ•ãƒ©ã‚°ã‚’ç«‹ã¦ã‚‹ã€‚
         uint32_t numFlagsInBin = std::min(32u, m_numFlagsInLayerList[layer] - 32 * binIdx);
         setANDFlag = popcnt(ANDFlagBin) == numFlagsInBin;
 
@@ -508,7 +508,7 @@ void SlotFinder::setNotInUse(uint32_t slotIdx) {
         uint32_t binIdx = flagIdxInLayer / 32;
         uint32_t flagIdxInBin = flagIdxInLayer % 32;
 
-        // JP: Å‰º‘w‚Å‚ÍOR/AND‚Í“¯‚¶À‘Ì‚¾‚ªresetORFlag‚ª‰Šú’lfalse‚Å‚ ‚é‚Ì‚Åİ’è‚Í1‰ñ‚«‚èB
+        // JP: æœ€ä¸‹å±¤ã§ã¯OR/ANDã¯åŒã˜å®Ÿä½“ã ãŒresetORFlagãŒåˆæœŸå€¤falseã§ã‚ã‚‹ã®ã§è¨­å®šã¯1å›ãã‚Šã€‚
         uint32_t &ORFlagBin = m_flagBins[m_offsetsToOR_AND[2 * layer + 0] + binIdx];
         uint32_t &ANDFlagBin = m_flagBins[m_offsetsToOR_AND[2 * layer + 1] + binIdx];
         uint32_t &numUsedFlagsUnderBin = m_numUsedFlagsUnderBinList[m_offsetsToNumUsedFlags[layer] + binIdx];
@@ -517,7 +517,7 @@ void SlotFinder::setNotInUse(uint32_t slotIdx) {
         ANDFlagBin &= ~(1 << flagIdxInBin);
         --numUsedFlagsUnderBin;
 
-        // JP: ‚±‚Ìƒrƒ“‚Ég—p’†ƒXƒƒbƒg‚ª–³‚­‚È‚Á‚½ê‡‚ÍŸ‚ÌORƒŒƒCƒ„[‚Ìƒtƒ‰ƒO‚ğ‰º‚°‚éB
+        // JP: ã“ã®ãƒ“ãƒ³ã«ä½¿ç”¨ä¸­ã‚¹ãƒ­ãƒƒãƒˆãŒç„¡ããªã£ãŸå ´åˆã¯æ¬¡ã®ORãƒ¬ã‚¤ãƒ¤ãƒ¼ã®ãƒ•ãƒ©ã‚°ã‚’ä¸‹ã’ã‚‹ã€‚
         uint32_t numFlagsInBin = std::min(32u, m_numFlagsInLayerList[layer] - 32 * binIdx);
         resetORFlag = ORFlagBin == 0;
 
@@ -534,11 +534,11 @@ uint32_t SlotFinder::getFirstAvailableSlot() const {
         uint32_t ANDFlagBin = m_flagBins[ANDFlagBinOffset + binIdx];
 
         if (popcnt(ANDFlagBin) != numFlagsInBin) {
-            // JP: ‚±‚Ìƒrƒ“‚É—˜—p‰Â”\‚ÈƒXƒƒbƒg‚ğ”­Œ©B
+            // JP: ã“ã®ãƒ“ãƒ³ã«åˆ©ç”¨å¯èƒ½ãªã‚¹ãƒ­ãƒƒãƒˆã‚’ç™ºè¦‹ã€‚
             binIdx = tzcnt(~ANDFlagBin) + 32 * binIdx;
         }
         else {
-            // JP: —˜—p‰Â”\‚ÈƒXƒƒbƒg‚ªŒ©‚Â‚©‚ç‚È‚©‚Á‚½B
+            // JP: åˆ©ç”¨å¯èƒ½ãªã‚¹ãƒ­ãƒƒãƒˆãŒè¦‹ã¤ã‹ã‚‰ãªã‹ã£ãŸã€‚
             return 0xFFFFFFFF;
         }
     }
@@ -556,11 +556,11 @@ uint32_t SlotFinder::getFirstUsedSlot() const {
         uint32_t ORFlagBin = m_flagBins[ORFlagBinOffset + binIdx];
 
         if (ORFlagBin != 0) {
-            // JP: ‚±‚Ìƒrƒ“‚Ég—p’†‚ÌƒXƒƒbƒg‚ğ”­Œ©B
+            // JP: ã“ã®ãƒ“ãƒ³ã«ä½¿ç”¨ä¸­ã®ã‚¹ãƒ­ãƒƒãƒˆã‚’ç™ºè¦‹ã€‚
             binIdx = tzcnt(ORFlagBin) + 32 * binIdx;
         }
         else {
-            // JP: g—p’†ƒXƒƒbƒg‚ªŒ©‚Â‚©‚ç‚È‚©‚Á‚½B
+            // JP: ä½¿ç”¨ä¸­ã‚¹ãƒ­ãƒƒãƒˆãŒè¦‹ã¤ã‹ã‚‰ãªã‹ã£ãŸã€‚
             return 0xFFFFFFFF;
         }
     }
@@ -581,7 +581,7 @@ uint32_t SlotFinder::find_nthUsedSlot(uint32_t n) const {
         for (int binIdx = startBinIdx; binIdx < static_cast<int32_t>(numFlagBinsInLayer); ++binIdx) {
             uint32_t numUsedFlagsUnderBin = m_numUsedFlagsUnderBinList[numUsedFlagsOffset + binIdx];
 
-            // JP: Œ»İ‚Ìƒrƒ“‚Ì”z‰º‚ÉƒCƒ“ƒfƒbƒNƒXn‚Ìg—p’†ƒXƒƒbƒg‚ª‚ ‚éB
+            // JP: ç¾åœ¨ã®ãƒ“ãƒ³ã®é…ä¸‹ã«ã‚¤ãƒ³ãƒ‡ãƒƒã‚¯ã‚¹nã®ä½¿ç”¨ä¸­ã‚¹ãƒ­ãƒƒãƒˆãŒã‚ã‚‹ã€‚
             if (accNumUsed + numUsedFlagsUnderBin > n) {
                 startBinIdx = 32 * binIdx;
                 if (layer == 0) {
@@ -1555,22 +1555,18 @@ static GeometryInstance* createGeometryInstance(
 
     GeometryInstance* geomInst = new GeometryInstance();
 
-    std::vector<float> emitterImportances(triangles.size(), 0.0f);
-    // JP: –ÊÏ‚É”ä—á‚µ‚Ä”­ŒõƒvƒŠƒ~ƒeƒBƒu‚ğƒTƒ“ƒvƒŠƒ“ƒO‚Å‚«‚é‚æ‚¤ƒCƒ“ƒ|[ƒ^ƒ“ƒX‚ğŒvZ‚·‚éB
-    // EN: Calculate importance values to make it possible to sample an emitter primitive based on its area.
-    for (int triIdx = 0; triIdx < emitterImportances.size(); ++triIdx) {
+    cudau::TextureSampler sampler;
+    sampler.setXyFilterMode(cudau::TextureFilterMode::Point);
+    sampler.setMipMapFilterMode(cudau::TextureFilterMode::Point);
+    sampler.setReadMode(cudau::TextureReadMode::ElementType);
+
+    for (int triIdx = 0; triIdx < triangles.size(); ++triIdx) {
         const shared::Triangle &tri = triangles[triIdx];
         const shared::Vertex (&vs)[3] = {
             vertices[tri.index0],
             vertices[tri.index1],
             vertices[tri.index2],
         };
-        if (mat->texEmittance) {
-            float area = 0.5f * length(cross(vs[2].position - vs[0].position,
-                                             vs[1].position - vs[0].position));
-            Assert(area >= 0.0f, "Area must be positive.");
-            emitterImportances[triIdx] = area;
-        }
         geomInst->aabb
             .unify(vertices[0].position)
             .unify(vertices[1].position)
@@ -1580,15 +1576,25 @@ static GeometryInstance* createGeometryInstance(
     geomInst->mat = mat;
     geomInst->vertexBuffer.initialize(cuContext, Scene::bufferType, vertices);
     geomInst->triangleBuffer.initialize(cuContext, Scene::bufferType, triangles);
-    geomInst->emitterPrimDist.initialize(cuContext, Scene::bufferType,
-                                         emitterImportances.data(), emitterImportances.size());
+    geomInst->emitterPrimDistTex = 0;
+    uint2 probTexDims = make_uint2(0, 0);
+    if (mat->emittance) {
+        uint32_t numTriangles = static_cast<uint32_t>(triangles.size());
+        probTexDims = shared::computeProbabilityTextureDimentions(numTriangles);
+        uint32_t numMipLevels = nextPowOf2Exponent(probTexDims.x) + 1;
+        geomInst->emitterPrimDist.initialize2D(
+            cuContext, cudau::ArrayElementType::Float32, 1,
+            cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable,
+            probTexDims.x, probTexDims.y, numMipLevels);
+        geomInst->emitterPrimDistTex = sampler.createTextureObject(geomInst->emitterPrimDist);
+    }
     geomInst->geomInstSlot = scene->geomInstSlotFinder.getFirstAvailableSlot();
     scene->geomInstSlotFinder.setInUse(geomInst->geomInstSlot);
 
     shared::GeometryInstanceData geomInstData = {};
     geomInstData.vertexBuffer = geomInst->vertexBuffer.getDevicePointer();
     geomInstData.triangleBuffer = geomInst->triangleBuffer.getDevicePointer();
-    geomInst->emitterPrimDist.getDeviceType(&geomInstData.emitterPrimDist);
+    geomInstData.emitterPrimDist.setTexObject(geomInst->emitterPrimDistTex, probTexDims);
     geomInstData.materialSlot = mat->materialSlot;
     geomInstData.geomInstSlot = geomInst->geomInstSlot;
     geomInstDataOnHost[geomInst->geomInstSlot] = geomInstData;
@@ -1614,7 +1620,7 @@ static GeometryGroup* createGeometryGroup(
     for (auto it = geomInsts.cbegin(); it != geomInsts.cend(); ++it) {
         const GeometryInstance* geomInst = *it;
         geomGroup->optixGas.addChild(geomInst->optixGeomInst);
-        if (geomInst->mat->texEmittance)
+        if (geomInst->mat->emittance)
             geomGroup->numEmitterPrimitives += geomInst->triangleBuffer.numElements();
         geomGroup->aabb.unify(geomInst->aabb);
     }
@@ -1715,7 +1721,7 @@ void createTriangleMeshes(
                 immSpecularColor = float3(color[0], color[1], color[2]);
             }
 
-            // JP: ‹É’[‚É‰s‚¢ƒXƒyƒLƒ…ƒ‰[‚É‚·‚é‚ÆNEE‚ÅŠñ—^‚ªˆêØƒTƒ“ƒvƒ‹‚Å‚«‚È‚­‚È‚Á‚Ä‚µ‚Ü‚¤B
+            // JP: æ¥µç«¯ã«é‹­ã„ã‚¹ãƒšã‚­ãƒ¥ãƒ©ãƒ¼ã«ã™ã‚‹ã¨NEEã§å¯„ä¸ãŒä¸€åˆ‡ã‚µãƒ³ãƒ—ãƒ«ã§ããªããªã£ã¦ã—ã¾ã†ã€‚
             // EN: Exteremely sharp specular makes it impossible to sample a contribution with NEE.
             if (aiMat->Get(AI_MATKEY_SHININESS, &immSmoothness, nullptr) != aiReturn_SUCCESS)
                 immSmoothness = 0.0f;
@@ -1770,9 +1776,9 @@ void createTriangleMeshes(
             }
         }
         else {
-            // JP: diffuseƒeƒNƒXƒ`ƒƒ[‚Æ‚µ‚Äƒx[ƒXƒJƒ‰[ + •s“§–¾“x
-            //     specularƒeƒNƒXƒ`ƒƒ[‚Æ‚µ‚ÄƒIƒNƒ‹[ƒWƒ‡ƒ“Aƒ‰ƒtƒlƒXAƒƒ^ƒŠƒbƒN
-            //     ‚ªŠi”[‚³‚ê‚Ä‚¢‚é‚Æ‰¼’è‚µ‚Ä‚¢‚éB
+            // JP: diffuseãƒ†ã‚¯ã‚¹ãƒãƒ£ãƒ¼ã¨ã—ã¦ãƒ™ãƒ¼ã‚¹ã‚«ãƒ©ãƒ¼ + ä¸é€æ˜åº¦
+            //     specularãƒ†ã‚¯ã‚¹ãƒãƒ£ãƒ¼ã¨ã—ã¦ã‚ªã‚¯ãƒ«ãƒ¼ã‚¸ãƒ§ãƒ³ã€ãƒ©ãƒ•ãƒã‚¹ã€ãƒ¡ã‚¿ãƒªãƒƒã‚¯
+            //     ãŒæ ¼ç´ã•ã‚Œã¦ã„ã‚‹ã¨ä»®å®šã—ã¦ã„ã‚‹ã€‚
             // EN: We assume diffuse texture as base color + opacity,
             //     specular texture as occlusion, roughness, metallic.
             mat = createSimplePBRMaterial(
@@ -2023,22 +2029,20 @@ Instance* createInstance(
     transform.decompose(&scale, nullptr, nullptr);
     float uniformScale = scale.x;
 
-    // JP: ŠeƒWƒIƒƒgƒŠƒCƒ“ƒXƒ^ƒ“ƒX‚ÌŒõŒ¹ƒTƒ“ƒvƒŠƒ“ƒO‚ÉŠÖ‚í‚éƒCƒ“ƒ|[ƒ^ƒ“ƒX‚Í
-    //     ƒvƒŠƒ~ƒeƒBƒu‚ÌƒCƒ“ƒ|[ƒ^ƒ“ƒX‚Ì‡Œv’l‚Æ‚·‚éB
+    // JP: å„ã‚¸ã‚ªãƒ¡ãƒˆãƒªã‚¤ãƒ³ã‚¹ã‚¿ãƒ³ã‚¹ã®å…‰æºã‚µãƒ³ãƒ—ãƒªãƒ³ã‚°ã«é–¢ã‚ã‚‹ã‚¤ãƒ³ãƒãƒ¼ã‚¿ãƒ³ã‚¹ã¯
+    //     ãƒ—ãƒªãƒŸãƒ†ã‚£ãƒ–ã®ã‚¤ãƒ³ãƒãƒ¼ã‚¿ãƒ³ã‚¹ã®åˆè¨ˆå€¤ã¨ã™ã‚‹ã€‚
     // EN: Use the sum of importance values of primitives as each geometry instances's importance
     //     for sampling a light source
     std::vector<uint32_t> geomInstSlots;
-    std::vector<float> lightImportances;
-    float sumLightImportances = 0.0f;
+    bool hasEmitterGeomInsts = false;
     for (auto it = geomGroup->geomInsts.cbegin(); it != geomGroup->geomInsts.cend(); ++it) {
         const GeometryInstance* geomInst = *it;
         geomInstSlots.push_back(geomInst->geomInstSlot);
-        float lightImportance = uniformScale * geomInst->emitterPrimDist.getIntengral();
-        lightImportances.push_back(lightImportance);
-        sumLightImportances += lightImportance;
+        if (geomInst->mat->emittance)
+            hasEmitterGeomInsts = true;
     }
 
-    if (sumLightImportances > 0.0f &&
+    if (hasEmitterGeomInsts &&
         (std::fabs(scale.y - uniformScale) / uniformScale >= 0.001f ||
          std::fabs(scale.z - uniformScale) / uniformScale >= 0.001f ||
          uniformScale <= 0.0f)) {
@@ -2046,11 +2050,26 @@ Instance* createInstance(
                  scale.x, scale.y, scale.z);
     }
 
+    cudau::TextureSampler sampler;
+    sampler.setXyFilterMode(cudau::TextureFilterMode::Point);
+    sampler.setMipMapFilterMode(cudau::TextureFilterMode::Point);
+    sampler.setReadMode(cudau::TextureReadMode::ElementType);
+
     Instance* inst = new Instance();
     inst->geomGroup = geomGroup;
     inst->geomInstSlots.initialize(cuContext, Scene::bufferType, geomInstSlots);
-    inst->lightGeomInstDist.initialize(cuContext, Scene::bufferType,
-                                       lightImportances.data(), lightImportances.size());
+    inst->lightGeomInstDistTex = 0;
+    uint2 probTexDims = make_uint2(0, 0);
+    if (hasEmitterGeomInsts) {
+        uint32_t numGeomInsts = static_cast<uint32_t>(geomInstSlots.size());
+        probTexDims = shared::computeProbabilityTextureDimentions(numGeomInsts);
+        uint32_t numMipLevels = nextPowOf2Exponent(probTexDims.x) + 1;
+        inst->lightGeomInstDist.initialize2D(
+            cuContext, cudau::ArrayElementType::Float32, 1,
+            cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable,
+            probTexDims.x, probTexDims.y, numMipLevels);
+        inst->lightGeomInstDistTex = sampler.createTextureObject(inst->lightGeomInstDist);
+    }
     inst->instSlot = scene->instSlotFinder.getFirstAvailableSlot();
     scene->instSlotFinder.setInUse(inst->instSlot);
 
@@ -2060,7 +2079,7 @@ Instance* createInstance(
     instData.normalMatrix = transpose(inverse(transform.getUpperLeftMatrix()));
     instData.geomInstSlots = inst->geomInstSlots.getDevicePointer();
     instData.numGeomInsts = inst->geomInstSlots.numElements();
-    inst->lightGeomInstDist.getDeviceType(&instData.lightGeomInstDist);
+    instData.lightGeomInstDist.setTexObject(inst->lightGeomInstDistTex, probTexDims);
     instDataOnHost[inst->instSlot] = instData;
 
     inst->optixInst = scene->optixScene.createInstance();

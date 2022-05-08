@@ -306,6 +306,22 @@ CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator+(const int2 &v0, const uint2 &v1
 CUDA_COMMON_FUNCTION CUDA_INLINE int2 operator*(const int2 &v0, const int2 &v1) {
     return make_int2(v0.x * v1.x, v0.y * v1.y);
 }
+CUDA_COMMON_FUNCTION CUDA_INLINE int2 operator*(uint32_t s, const int2 &v) {
+    return make_int2(s * v.x, s * v.y);
+}
+CUDA_COMMON_FUNCTION CUDA_INLINE int2 operator*(const int2 &v, uint32_t s) {
+    return make_int2(s * v.x, s * v.y);
+}
+CUDA_COMMON_FUNCTION CUDA_INLINE int2 &operator*=(int2 &v0, const int2 &v1) {
+    v0.x *= v1.x;
+    v0.y *= v1.y;
+    return v0;
+}
+CUDA_COMMON_FUNCTION CUDA_INLINE int2 &operator*=(int2 &v, uint32_t s) {
+    v.x *= s;
+    v.y *= s;
+    return v;
+}
 CUDA_COMMON_FUNCTION CUDA_INLINE int2 operator/(const int2 &v0, const int2 &v1) {
     return make_int2(v0.x / v1.x, v0.y / v1.y);
 }
@@ -328,11 +344,37 @@ CUDA_COMMON_FUNCTION CUDA_INLINE bool operator!=(const uint2 &v0, const int2 &v1
 CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator+(const uint2 &v0, const uint2 &v1) {
     return make_uint2(v0.x + v1.x, v0.y + v1.y);
 }
+CUDA_COMMON_FUNCTION CUDA_INLINE uint2 &operator+=(uint2 &v, uint32_t s) {
+    v.x += s;
+    v.y += s;
+    return v;
+}
 CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator-(const uint2 &v, uint32_t s) {
     return make_uint2(v.x - s, v.y - s);
 }
+CUDA_COMMON_FUNCTION CUDA_INLINE uint2 &operator-=(uint2 &v, uint32_t s) {
+    v.x -= s;
+    v.y -= s;
+    return v;
+}
 CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator*(const uint2 &v0, const uint2 &v1) {
     return make_uint2(v0.x * v1.x, v0.y * v1.y);
+}
+CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator*(float s, const uint2 &v) {
+    return make_uint2(s * v.x, s * v.y);
+}
+CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator*(const uint2 &v, float s) {
+    return make_uint2(s * v.x, s * v.y);
+}
+CUDA_COMMON_FUNCTION CUDA_INLINE uint2 &operator*=(uint2 &v0, const uint2 &v1) {
+    v0.x *= v1.x;
+    v0.y *= v1.y;
+    return v0;
+}
+CUDA_COMMON_FUNCTION CUDA_INLINE uint2 &operator*=(uint2 &v, uint32_t s) {
+    v.x *= s;
+    v.y *= s;
+    return v;
 }
 CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator/(const uint2 &v0, const uint2 &v1) {
     return make_uint2(v0.x / v1.x, v0.y / v1.y);
@@ -340,18 +382,43 @@ CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator/(const uint2 &v0, const uint2 &v
 CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator/(const uint2 &v0, const int2 &v1) {
     return make_uint2(v0.x / v1.x, v0.y / v1.y);
 }
+CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator/(const uint2 &v, uint32_t s) {
+    return make_uint2(v.x / s, v.y / s);
+}
+CUDA_COMMON_FUNCTION CUDA_INLINE uint2 &operator/=(uint2 &v, uint32_t s) {
+    v.x /= s;
+    v.y /= s;
+    return v;
+}
 CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator%(const uint2 &v0, const uint2 &v1) {
     return make_uint2(v0.x % v1.x, v0.y % v1.y);
 }
-CUDA_COMMON_FUNCTION CUDA_INLINE uint2 &operator+=(uint2 &v, uint32_t s) {
-    v.x += s;
-    v.x += s;
+CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator<<(const uint2 &v, uint32_t s) {
+    return make_uint2(v.x << s, v.y << s);
+}
+CUDA_COMMON_FUNCTION CUDA_INLINE uint2 &operator<<=(uint2 &v, uint32_t s) {
+    v = v << s;
     return v;
 }
-CUDA_COMMON_FUNCTION CUDA_INLINE uint2 &operator-=(uint2 &v, uint32_t s) {
-    v.x -= s;
-    v.x -= s;
+CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator>>(const uint2 &v, uint32_t s) {
+    return make_uint2(v.x >> s, v.y >> s);
+}
+CUDA_COMMON_FUNCTION CUDA_INLINE uint2 &operator>>=(uint2 &v, uint32_t s) {
+    v = v >> s;
     return v;
+}
+
+CUDA_COMMON_FUNCTION CUDA_INLINE uint2 min(const uint2 &v0, const uint2 &v1) {
+#if !defined(__CUDA_ARCH__)
+    using std::min;
+#endif
+    return make_uint2(min(v0.x, v1.x), min(v0.y, v1.y));
+}
+CUDA_COMMON_FUNCTION CUDA_INLINE uint2 max(const uint2 &v0, const uint2 &v1) {
+#if !defined(__CUDA_ARCH__)
+    using std::max;
+#endif
+    return make_uint2(max(v0.x, v1.x), max(v0.y, v1.y));
 }
 
 CUDA_COMMON_FUNCTION CUDA_INLINE float2 make_float2(float v) {
@@ -384,6 +451,10 @@ CUDA_COMMON_FUNCTION CUDA_INLINE float2 operator*(const float2 &v, float s) {
 CUDA_COMMON_FUNCTION CUDA_INLINE float2 operator/(const float2 &v, float s) {
     float r = 1 / s;
     return r * v;
+}
+CUDA_COMMON_FUNCTION CUDA_INLINE float2 &operator/=(float2 &v, float s) {
+    v = v / s;
+    return v;
 }
 
 CUDA_COMMON_FUNCTION CUDA_INLINE float3 make_float3(float v) {
@@ -1705,6 +1776,137 @@ namespace shared {
 
 
 
+    CUDA_COMMON_FUNCTION CUDA_INLINE uint2 computeProbabilityTextureDimentions(uint32_t maxNumElems) {
+#if !defined(__CUDA_ARCH__)
+        using std::max;
+#endif
+        uint2 dims = make_uint2(max(nextPowerOf2(maxNumElems), 2u), 1u);
+        while ((dims.x != dims.y) && (dims.x != 2 * dims.y)) {
+            dims.x /= 2;
+            dims.y *= 2;
+        }
+        return dims;
+    }
+
+    CUDA_COMMON_FUNCTION CUDA_INLINE uint2 compute2DFrom1D(const uint2 &dims, uint32_t index1D) {
+        return make_uint2(index1D % dims.x, index1D / dims.x);
+    }
+
+    class ProbabilityTexture {
+        CUtexObject m_cuTexObj;
+        uint2 m_maxDims;
+        uint2 m_dims;
+
+    public:
+        CUDA_COMMON_FUNCTION void setTexObject(CUtexObject texObj, uint2 maxDims) {
+            m_cuTexObj = texObj;
+            m_maxDims = maxDims;
+        }
+
+        CUDA_COMMON_FUNCTION void setDimensions(const uint2 &dims) {
+            m_dims = dims;
+        }
+
+        CUDA_COMMON_FUNCTION uint2 getDimensions() const {
+            return m_dims;
+        }
+
+        CUDA_COMMON_FUNCTION uint32_t calcNumMipLevels() const {
+            return nextPowOf2Exponent(m_dims.x) + 1;
+        }
+        CUDA_COMMON_FUNCTION uint32_t calcMaxNumMipLevels() const {
+            return nextPowOf2Exponent(m_maxDims.x) + 1;
+        }
+
+        CUDA_COMMON_FUNCTION uint2 compute2DFrom1D(uint32_t index1D) const {
+            return make_uint2(index1D % m_dims.x, index1D / m_dims.x);
+        }
+        CUDA_COMMON_FUNCTION uint32_t compute1DFrom2D(const uint2 &index2D) const {
+            return index2D.y * m_dims.x + index2D.x;
+        }
+
+#if defined(__CUDA_ARCH__) || defined(OPTIXU_Platform_CodeCompletion)
+        CUDA_DEVICE_FUNCTION uint32_t sample(float u, float* prob, float* remapped = nullptr) const {
+            Assert(u >= 0 && u < 1, "\"u\": %g must be in range [0, 1).", u);
+            uint2 index2D = make_uint2(0, 0);
+            uint32_t numMipLevels = calcNumMipLevels();
+            *prob = 1;
+            float2 recCurActualDims;
+            {
+                uint2 curActualDims = make_uint2(2, m_maxDims.x > m_maxDims.y ? 1 : 2);
+                curActualDims <<= calcMaxNumMipLevels() - numMipLevels;
+                recCurActualDims = make_float2(1.0f / curActualDims.x, 1.0f / curActualDims.y);
+            }
+            uint2 curDims = make_uint2(2, m_dims.x > m_dims.y ? 1 : 2);
+            for (uint32_t mipLevel = numMipLevels - 2; mipLevel != UINT32_MAX; --mipLevel) {
+                index2D = 2 * index2D;
+                float2 tc = make_float2(index2D.x + 0.5f, index2D.y + 0.5f);
+                float2 ll = tc + make_float2(0, 1);
+                float2 lr = tc + make_float2(1, 1);
+                float2 ur = tc + make_float2(1, 0);
+                float2 ul = tc + make_float2(0, 0);
+                float2 nll = ll * recCurActualDims;
+                float2 nlr = lr * recCurActualDims;
+                float2 nur = ur * recCurActualDims;
+                float2 nul = ul * recCurActualDims;
+                float4 neighbors;
+                neighbors.x = ll.y < curDims.y ?
+                    tex2DLod<float>(m_cuTexObj, nll.x, nll.y, mipLevel) : 0.0f;
+                neighbors.y = (lr.x < curDims.x && lr.y < curDims.y) ?
+                    tex2DLod<float>(m_cuTexObj, nlr.x, nlr.y, mipLevel) : 0.0f;
+                neighbors.z = ur.x < curDims.x ?
+                    tex2DLod<float>(m_cuTexObj, nur.x, nur.y, mipLevel) : 0.0f;
+                neighbors.w = tex2DLod<float>(m_cuTexObj, nul.x, nul.y, mipLevel);
+                float sumProbs = neighbors.x + neighbors.y + neighbors.z + neighbors.w;
+                u *= sumProbs;
+                float accProb = 0;
+                float stepProb;
+                if ((accProb + neighbors.x) > u) {
+                    stepProb = neighbors.x;
+                    index2D.y += 1;
+                }
+                else {
+                    accProb += neighbors.x;
+                    if ((accProb + neighbors.y) > u) {
+                        stepProb = neighbors.y;
+                        u -= accProb;
+                        index2D.x += 1;
+                        index2D.y += 1;
+                    }
+                    else {
+                        accProb += neighbors.y;
+                        if ((accProb + neighbors.z) > u) {
+                            stepProb = neighbors.z;
+                            u -= accProb;
+                            index2D.x += 1;
+                        }
+                        else {
+                            accProb += neighbors.z;
+                            stepProb = neighbors.w;
+                            u -= accProb;
+                        }
+                    }
+                }
+                *prob *= stepProb / sumProbs;
+                u /= stepProb;
+                recCurActualDims /= 2.0f;
+                curDims *= 2;
+            }
+            if (remapped)
+                *remapped = u;
+            return compute1DFrom2D(index2D);
+        }
+
+        CUDA_DEVICE_FUNCTION float integral() const {
+            if (m_cuTexObj == 0)
+                return 0.0f;
+            return tex2DLod<float>(m_cuTexObj, 0.5f, 0.5f, calcNumMipLevels() - 1);
+        }
+#endif
+    };
+
+
+
     // Reference:
     // Long-Period Hash Functions for Procedural Texturing
     // combined permutation table of the hash function of period 739,024 = lcm(11, 13, 16, 17, 19)
@@ -1989,7 +2191,7 @@ namespace shared {
     struct GeometryInstanceData {
         const Vertex* vertexBuffer;
         const Triangle* triangleBuffer;
-        DiscreteDistribution1D emitterPrimDist;
+        ProbabilityTexture emitterPrimDist;
         uint32_t materialSlot;
         uint32_t geomInstSlot;
     };
@@ -2001,6 +2203,6 @@ namespace shared {
 
         const uint32_t* geomInstSlots;
         uint32_t numGeomInsts;
-        DiscreteDistribution1D lightGeomInstDist;
+        ProbabilityTexture lightGeomInstDist;
     };
 }

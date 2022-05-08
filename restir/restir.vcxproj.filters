@@ -31,6 +31,9 @@
     <Filter Include="non-essentials\shaders">
       <UniqueIdentifier>{c4348e78-4505-4f28-8060-ff087ab24c80}</UniqueIdentifier>
     </Filter>
+    <Filter Include="non-essentials\GPU kernels">
+      <UniqueIdentifier>{4a6279dc-dcc0-4803-84d5-d57bee6a7742}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="restir_main.cpp" />
@@ -170,6 +173,9 @@
     <CudaCompile Include="per_pixel_ris.cu" />
     <CudaCompile Include="optix_gbuffer_kernels.cu" />
     <CudaCompile Include="optix_restir_rearch_kernels.cu" />
+    <CudaCompile Include="..\common\gpu_kernels\compute_prob_texture.cu">
+      <Filter>non-essentials\GPU kernels</Filter>
+    </CudaCompile>
   </ItemGroup>
   <ItemGroup>
     <CopyFileToFolders Include="..\ext\prebuilt\bin\assimp-vc143-mt.dll">

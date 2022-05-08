@@ -59,6 +59,7 @@
     <ClInclude Include="restir_shared.h" />
   </ItemGroup>
   <ItemGroup>
+    <CudaCompile Include="..\common\gpu_kernels\compute_prob_texture.cu" />
     <CudaCompile Include="copy_buffers.cu" />
     <CudaCompile Include="optix_gbuffer_kernels.cu">
       <GPUDebugInfo Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</GPUDebugInfo>

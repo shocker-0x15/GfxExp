@@ -22,7 +22,7 @@ You can load a 3D model for example by downloading from the internet.
     -begin-pos -5 7 -4.8 -begin-pitch -30 -end-pos 5 7 -4.8 -end-pitch -30 -freq 5 -inst rectlight3
     -begin-pos 5 7 4.8 -begin-pitch 30 -end-pos -5 7 4.8 -end-pitch 30 -freq 5 -inst rectlight3
 
-JP: このプログラムはReGIR (Reservoir-based Grid? Importance Resampling) [1]の実装例です。
+JP: このプログラムはReGIR (Reservoir-based Grid Importance Resampling) [1]の実装例です。
     ReGIRでは、ReSTIR [2]と同様にStreaming RISを用いて大量の発光プリミティブからの効率的なサンプリングが可能となります。
     ReSTIRとは異なり、セカンダリー以降の光源サンプリングにも対応するため、Reservoirをワールド空間のグリッドに記録し、
     2段階のStreaming RISを行います。

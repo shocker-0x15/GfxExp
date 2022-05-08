@@ -207,7 +207,7 @@ namespace shared {
 
         const MaterialData* materialDataBuffer;
         const GeometryInstanceData* geometryInstanceDataBuffer;
-        DiscreteDistribution1D lightInstDist;
+        ProbabilityTexture lightInstDist;
         RegularConstantContinuousDistribution2D envLightImportanceMap;
         CUtexObject envLightTexture;
 

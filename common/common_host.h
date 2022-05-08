@@ -395,7 +395,8 @@ struct GeometryInstance {
 
     cudau::TypedBuffer<shared::Vertex> vertexBuffer;
     cudau::TypedBuffer<shared::Triangle> triangleBuffer;
-    DiscreteDistribution1D emitterPrimDist;
+    cudau::Array emitterPrimDist;
+    CUtexObject emitterPrimDistTex;
     uint32_t geomInstSlot;
     optixu::GeometryInstance optixGeomInst;
     AABB aabb;
@@ -422,7 +423,8 @@ struct Instance {
     const GeometryGroup* geomGroup;
 
     cudau::TypedBuffer<uint32_t> geomInstSlots;
-    DiscreteDistribution1D lightGeomInstDist;
+    cudau::Array lightGeomInstDist;
+    CUtexObject lightGeomInstDistTex;
     uint32_t instSlot;
     optixu::Instance optixInst;
 };
@@ -511,6 +513,10 @@ struct Scene {
     std::vector<InstanceController*> instControllers;
     AABB initialSceneAabb;
 
+    cudau::Array lightInstDistArray;
+    CUtexObject lightInstDistTex;
+    uint2 lightInstDistTexDims;
+
     optixu::InstanceAccelerationStructure ias;
     cudau::Buffer iasMem;
     cudau::TypedBuffer<OptixInstance> iasInstanceBuffer;
@@ -537,9 +543,26 @@ struct Scene {
         instDataBuffer[1].initialize(cuContext, Scene::bufferType, maxNumInstances);
 
         ias = optixScene.createInstanceAccelerationStructure();
+
+        cudau::TextureSampler sampler;
+        sampler.setXyFilterMode(cudau::TextureFilterMode::Point);
+        sampler.setMipMapFilterMode(cudau::TextureFilterMode::Point);
+        sampler.setReadMode(cudau::TextureReadMode::ElementType);
+
+        lightInstDistTexDims = shared::computeProbabilityTextureDimentions(maxNumInstances);
+        uint32_t numMipLevels = nextPowOf2Exponent(lightInstDistTexDims.x) + 1;
+        lightInstDistArray.initialize2D(
+            cuContext, cudau::ArrayElementType::Float32, 1,
+            cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable,
+            lightInstDistTexDims.x, lightInstDistTexDims.y, numMipLevels);
+        lightInstDistTex = sampler.createTextureObject(lightInstDistArray);
     }
 
     void finalize() {
+        if (lightInstDistTex)
+            CUDADRV_CHECK(cuTexObjectDestroy(lightInstDistTex));
+        lightInstDistArray.finalize();
+
         asScratchMem.finalize();
         iasInstanceBuffer.finalize();
         iasMem.finalize();
@@ -552,6 +575,8 @@ struct Scene {
         for (int i = insts.size() - 1; i >= 0; --i) {
             Instance* inst = insts[i];
             inst->optixInst.destroy();
+            if (inst->lightGeomInstDistTex)
+                CUDADRV_CHECK(cuTexObjectDestroy(inst->lightGeomInstDistTex));
             inst->lightGeomInstDist.finalize();
         }
         for (int i = geomGroups.size() - 1; i >= 0; --i) {
@@ -561,6 +586,8 @@ struct Scene {
         for (int i = geomInsts.size() - 1; i >= 0; --i) {
             GeometryInstance* geomInst = geomInsts[i];
             geomInst->optixGeomInst.destroy();
+            if (geomInst->emitterPrimDistTex)
+                CUDADRV_CHECK(cuTexObjectDestroy(geomInst->emitterPrimDistTex));
             geomInst->emitterPrimDist.finalize();
             geomInst->triangleBuffer.finalize();
             geomInst->vertexBuffer.finalize();
@@ -590,10 +617,6 @@ struct Scene {
         instDataBuffer[0].unmap();
         geomInstDataBuffer.unmap();
         materialDataBuffer.unmap();
-
-        CUDADRV_CHECK(cuMemcpyDtoD(instDataBuffer[1].getCUdeviceptr(),
-                                   instDataBuffer[0].getCUdeviceptr(),
-                                   instDataBuffer[1].sizeInBytes()));
     }
 
     void setupASes(CUcontext cuContext) {

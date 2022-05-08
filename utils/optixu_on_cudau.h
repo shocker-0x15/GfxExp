@@ -3,6 +3,17 @@
 #include "cuda_util.h"
 #include "optix_util.h"
 
+#if defined(OPTIXU_Platform_CodeCompletion)
+struct int2;
+struct uint2;
+
+enum cudaSurfaceBoundaryMode {
+    cudaBoundaryModeZero = 0,
+    cudaBoundaryModeClamp,
+    cudaBoundaryModeTrap,
+};
+#endif
+
 namespace optixu {
     template <typename T, typename... Ts>
     inline constexpr bool is_any_v = std::disjunction_v<std::is_same<T, Ts>...>;
@@ -33,9 +44,9 @@ namespace optixu {
         }
 
 #if defined(__CUDA_ARCH__) || defined(OPTIXU_Platform_CodeCompletion)
-        RT_DEVICE_FUNCTION T read(uint2 idx) const {
+        RT_DEVICE_FUNCTION T read(uint2 idx, cudaSurfaceBoundaryMode boundaryMode = cudaBoundaryModeTrap) const {
             if constexpr (isNativeType) {
-                return surf2Dread<T>(m_surfObject, idx.x * sizeof(T), idx.y);
+                return surf2Dread<T>(m_surfObject, idx.x * sizeof(T), idx.y, boundaryMode);
             }
             else {
                 if constexpr (sizeof(T) == 4) {
@@ -44,7 +55,7 @@ namespace optixu {
                         uint32_t uiValue;
                         RT_DEVICE_FUNCTION U() {}
                     } u;
-                    u.uiValue = surf2Dread<uint32_t>(m_surfObject, idx.x * sizeof(uint32_t), idx.y);
+                    u.uiValue = surf2Dread<uint32_t>(m_surfObject, idx.x * sizeof(uint32_t), idx.y, boundaryMode);
                     return u.targetType;
                 }
                 if constexpr (sizeof(T) == 8) {
@@ -53,7 +64,7 @@ namespace optixu {
                         uint2 uiValue;
                         RT_DEVICE_FUNCTION U() {}
                     } u;
-                    u.uiValue = surf2Dread<uint2>(m_surfObject, idx.x * sizeof(uint2), idx.y);
+                    u.uiValue = surf2Dread<uint2>(m_surfObject, idx.x * sizeof(uint2), idx.y, boundaryMode);
                     return u.targetType;
                 }
                 if constexpr (sizeof(T) == 12) {
@@ -62,7 +73,7 @@ namespace optixu {
                         uint3 uiValue;
                         RT_DEVICE_FUNCTION U() {}
                     } u;
-                    u.uiValue = surf2Dread<uint3>(m_surfObject, idx.x * sizeof(uint3), idx.y);
+                    u.uiValue = surf2Dread<uint3>(m_surfObject, idx.x * sizeof(uint3), idx.y, boundaryMode);
                     return u.targetType;
                 }
                 if constexpr (sizeof(T) == 16) {
@@ -71,15 +82,15 @@ namespace optixu {
                         uint4 uiValue;
                         RT_DEVICE_FUNCTION U() {}
                     } u;
-                    u.uiValue = surf2Dread<uint4>(m_surfObject, idx.x * sizeof(uint4), idx.y);
+                    u.uiValue = surf2Dread<uint4>(m_surfObject, idx.x * sizeof(uint4), idx.y, boundaryMode);
                     return u.targetType;
                 }
             }
             return T();
         }
-        RT_DEVICE_FUNCTION void write(uint2 idx, const T &value) const {
+        RT_DEVICE_FUNCTION void write(uint2 idx, const T &value, cudaSurfaceBoundaryMode boundaryMode = cudaBoundaryModeTrap) const {
             if constexpr (isNativeType) {
-                surf2Dwrite(value, m_surfObject, idx.x * sizeof(T), idx.y);
+                surf2Dwrite(value, m_surfObject, idx.x * sizeof(T), idx.y, boundaryMode);
             }
             else {
                 if constexpr (sizeof(T) == 4) {
@@ -89,7 +100,7 @@ namespace optixu {
                         RT_DEVICE_FUNCTION U() {}
                     } u;
                     u.targetType = value;
-                    surf2Dwrite(u.uiValue, m_surfObject, idx.x * sizeof(uint32_t), idx.y);
+                    surf2Dwrite(u.uiValue, m_surfObject, idx.x * sizeof(uint32_t), idx.y, boundaryMode);
                 }
                 if constexpr (sizeof(T) == 8) {
                     union U {
@@ -98,7 +109,7 @@ namespace optixu {
                         RT_DEVICE_FUNCTION U() {}
                     } u;
                     u.targetType = value;
-                    surf2Dwrite(u.uiValue, m_surfObject, idx.x * sizeof(uint2), idx.y);
+                    surf2Dwrite(u.uiValue, m_surfObject, idx.x * sizeof(uint2), idx.y, boundaryMode);
                 }
                 if constexpr (sizeof(T) == 12) {
                     union U {
@@ -107,7 +118,7 @@ namespace optixu {
                         RT_DEVICE_FUNCTION U() {}
                     } u;
                     u.targetType = value;
-                    surf2Dwrite(u.uiValue, m_surfObject, idx.x * sizeof(uint3), idx.y);
+                    surf2Dwrite(u.uiValue, m_surfObject, idx.x * sizeof(uint3), idx.y, boundaryMode);
                 }
                 if constexpr (sizeof(T) == 16) {
                     union U {
@@ -116,24 +127,24 @@ namespace optixu {
                         RT_DEVICE_FUNCTION U() {}
                     } u;
                     u.targetType = value;
-                    surf2Dwrite(u.uiValue, m_surfObject, idx.x * sizeof(uint4), idx.y);
+                    surf2Dwrite(u.uiValue, m_surfObject, idx.x * sizeof(uint4), idx.y, boundaryMode);
                 }
             }
         }
         template <uint32_t comp, typename U>
-        RT_DEVICE_FUNCTION void writeComp(uint2 idx, U value) const {
-            surf2Dwrite(value, m_surfObject, idx.x * sizeof(T) + comp * sizeof(U), idx.y);
+        RT_DEVICE_FUNCTION void writeComp(uint2 idx, U value, cudaSurfaceBoundaryMode boundaryMode = cudaBoundaryModeTrap) const {
+            surf2Dwrite(value, m_surfObject, idx.x * sizeof(T) + comp * sizeof(U), idx.y, boundaryMode);
         }
 
-        RT_DEVICE_FUNCTION T read(int2 idx) const {
-            return read(make_uint2(idx.x, idx.y));
+        RT_DEVICE_FUNCTION T read(int2 idx, cudaSurfaceBoundaryMode boundaryMode = cudaBoundaryModeTrap) const {
+            return read(make_uint2(idx.x, idx.y), boundaryMode);
         }
-        RT_DEVICE_FUNCTION void write(int2 idx, const T &value) const {
-            write(make_uint2(idx.x, idx.y), value);
+        RT_DEVICE_FUNCTION void write(int2 idx, const T &value, cudaSurfaceBoundaryMode boundaryMode = cudaBoundaryModeTrap) const {
+            write(make_uint2(idx.x, idx.y), value, boundaryMode);
         }
         template <uint32_t comp, typename U>
-        RT_DEVICE_FUNCTION void writeComp(int2 idx, U value) const {
-            writeComp<comp>(make_uint2(idx.x, idx.y), value);
+        RT_DEVICE_FUNCTION void writeComp(int2 idx, U value, cudaSurfaceBoundaryMode boundaryMode = cudaBoundaryModeTrap) const {
+            writeComp<comp>(make_uint2(idx.x, idx.y), value, boundaryMode);
         }
 #endif
     };

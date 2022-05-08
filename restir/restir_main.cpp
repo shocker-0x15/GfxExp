@@ -96,6 +96,16 @@ struct GPUEnvironment {
     CUcontext cuContext;
     optixu::Context optixContext;
 
+    struct ComputeProbTex {
+        CUmodule cudaModule;
+        cudau::Kernel computeFirstMip;
+        cudau::Kernel computeTriangleProbabilities;
+        cudau::Kernel computeGeomInstProbabilities;
+        cudau::Kernel computeInstProbabilities;
+        cudau::Kernel computeMip;
+        cudau::Kernel test;
+    } computeProbTex;
+
     CUmodule perPixelRISModule;
     cudau::Kernel kernelPerformLightPreSampling;
     cudau::Kernel kernelPerformPerPixelRIS;
@@ -130,6 +140,22 @@ struct GPUEnvironment {
         CUDADRV_CHECK(cuCtxSetCurrent(cuContext));
 
         optixContext = optixu::Context::create(cuContext/*, 4, DEBUG_SELECT(true, false)*/);
+
+        CUDADRV_CHECK(cuModuleLoad(
+            &computeProbTex.cudaModule,
+            (getExecutableDirectory() / "restir/ptxes/compute_prob_texture.ptx").string().c_str()));
+        computeProbTex.computeFirstMip =
+            cudau::Kernel(computeProbTex.cudaModule, "computeProbabilityTextureFirstMip", cudau::dim3(32), 0);
+        computeProbTex.computeTriangleProbabilities =
+            cudau::Kernel(computeProbTex.cudaModule, "computeTriangleProbabilities", cudau::dim3(32), 0);
+        computeProbTex.computeGeomInstProbabilities =
+            cudau::Kernel(computeProbTex.cudaModule, "computeGeomInstProbabilities", cudau::dim3(32), 0);
+        computeProbTex.computeInstProbabilities =
+            cudau::Kernel(computeProbTex.cudaModule, "computeInstProbabilities", cudau::dim3(32), 0);
+        computeProbTex.computeMip =
+            cudau::Kernel(computeProbTex.cudaModule, "computeProbabilityTextureMip", cudau::dim3(8, 8), 0);
+        computeProbTex.test =
+            cudau::Kernel(computeProbTex.cudaModule, "testProbabilityTexture", cudau::dim3(32), 0);
 
         CUDADRV_CHECK(cuModuleLoad(
             &perPixelRISModule,
@@ -1096,18 +1122,11 @@ int32_t main(int32_t argc, const char* argv[]) try {
     scene.setupASes(gpuEnv.cuContext);
     CUDADRV_CHECK(cuStreamSynchronize(0));
 
-    // JP: 各インスタンスの重要度から光源インスタンスをサンプルするための分布を計算する。
-    // EN: Compute a distribution to sample a light source instance from the importance value of each instance.
     uint32_t totalNumEmitterPrimitives = 0;
-    std::vector<float> lightImportances(scene.insts.size());
     for (int i = 0; i < scene.insts.size(); ++i) {
         const Instance* inst = scene.insts[i];
-        lightImportances[i] = inst->lightGeomInstDist.getIntengral();
         totalNumEmitterPrimitives += inst->geomGroup->numEmitterPrimitives;
     }
-    DiscreteDistribution1D lightInstDist;
-    lightInstDist.initialize(gpuEnv.cuContext, Scene::bufferType,
-                             lightImportances.data(), lightImportances.size());
     hpprintf("%u emitter primitives\n", totalNumEmitterPrimitives);
 
     // JP: 環境光テクスチャーを読み込んで、サンプルするためのCDFを計算する。
@@ -1118,7 +1137,119 @@ int32_t main(int32_t argc, const char* argv[]) try {
     if (!g_envLightTexturePath.empty())
         loadEnvironmentalTexture(g_envLightTexturePath, gpuEnv.cuContext,
                                  &envLightArray, &envLightTexture, &envLightImportanceMap);
-    Assert(lightInstDist.getIntengral() > 0 || !g_envLightTexturePath.empty(), "No lights!");
+
+    for (int geomInstIdx = 0; geomInstIdx < scene.geomInsts.size(); ++geomInstIdx) {
+        const GeometryInstance* geomInst = scene.geomInsts[geomInstIdx];
+        if (geomInst->emitterPrimDistTex == 0)
+            continue;
+        shared::GeometryInstanceData* geomInstData =
+            scene.geomInstDataBuffer.getDevicePointerAt(geomInst->geomInstSlot);
+        uint32_t numTriangles = geomInst->triangleBuffer.numElements();
+        uint2 dims = shared::computeProbabilityTextureDimentions(numTriangles);
+        uint32_t numMipLevels = nextPowOf2Exponent(dims.x) + 1;
+        gpuEnv.computeProbTex.computeTriangleProbabilities(
+            cuStream, gpuEnv.computeProbTex.computeTriangleProbabilities.calcGridDim(dims.x * dims.y),
+            geomInstData, numTriangles,
+            scene.materialDataBuffer.getDevicePointer(),
+            geomInst->emitterPrimDist.getSurfaceObject(0));
+        //hpprintf("%5u: %4u tris\n", geomInstIdx, numTriangles);
+        //CUDADRV_CHECK(cuStreamSynchronize(cuStream));
+    }
+
+    for (int geomInstIdx = 0; geomInstIdx < scene.geomInsts.size(); ++geomInstIdx) {
+        const GeometryInstance* geomInst = scene.geomInsts[geomInstIdx];
+        if (geomInst->emitterPrimDistTex == 0)
+            continue;
+        shared::GeometryInstanceData* geomInstData =
+            scene.geomInstDataBuffer.getDevicePointerAt(geomInst->geomInstSlot);
+        uint32_t numTriangles = geomInst->triangleBuffer.numElements();
+        uint2 curDims = shared::computeProbabilityTextureDimentions(numTriangles);
+        uint32_t numMipLevels = nextPowOf2Exponent(curDims.x) + 1;
+        for (int dstMipLevel = 1; dstMipLevel < numMipLevels; ++dstMipLevel) {
+            curDims = (curDims + uint2(1, 1)) / 2;
+            gpuEnv.computeProbTex.computeMip(
+                cuStream, gpuEnv.computeProbTex.computeMip.calcGridDim(curDims.x, curDims.y),
+                &geomInstData->emitterPrimDist, dstMipLevel,
+                geomInst->emitterPrimDist.getSurfaceObject(dstMipLevel - 1),
+                geomInst->emitterPrimDist.getSurfaceObject(dstMipLevel));
+            //hpprintf("%5u-%u: %3u x %3u\n", geomInstIdx, dstMipLevel, curDims.x, curDims.y);
+        }
+        //CUDADRV_CHECK(cuStreamSynchronize(cuStream));
+    }
+
+    //{
+    //    CUDADRV_CHECK(cuStreamSynchronize(cuStream));
+    //    for (int geomInstIdx = 0; geomInstIdx < scene.geomInsts.size(); ++geomInstIdx) {
+    //        GeometryInstance* geomInst = scene.geomInsts[geomInstIdx];
+    //        if (geomInst->emitterPrimDistTex == 0)
+    //            continue;
+    //        shared::GeometryInstanceData* geomInstData =
+    //            scene.geomInstDataBuffer.getDevicePointerAt(geomInst->geomInstSlot);
+    //        uint32_t numTriangles = geomInst->triangleBuffer.numElements();
+    //        uint2 curDims = shared::computeProbabilityTextureDimentions(numTriangles);
+    //        uint32_t numMipLevels = nextPowOf2Exponent(curDims.x) + 1;
+    //        auto values = geomInst->emitterPrimDist.map<float>(numMipLevels - 1);
+    //        hpprintf("%5u: %g\n", geomInstIdx, values[0]);
+    //        geomInst->emitterPrimDist.unmap(numMipLevels - 1);
+    //    }
+    //}
+
+    for (int instIdx = 0; instIdx < scene.insts.size(); ++instIdx) {
+        const Instance* inst = scene.insts[instIdx];
+        if (inst->lightGeomInstDistTex == 0)
+            continue;
+        shared::InstanceData* instData = scene.instDataBuffer[0].getDevicePointerAt(inst->instSlot);
+        uint32_t numGeomInsts = inst->geomGroup->geomInsts.size();
+        uint2 dims = shared::computeProbabilityTextureDimentions(numGeomInsts);
+        uint32_t numMipLevels = nextPowOf2Exponent(dims.x) + 1;
+        gpuEnv.computeProbTex.computeGeomInstProbabilities(
+            cuStream, gpuEnv.computeProbTex.computeGeomInstProbabilities.calcGridDim(dims.x * dims.y),
+            instData, instIdx, numGeomInsts,
+            scene.geomInstDataBuffer.getDevicePointer(),
+            inst->lightGeomInstDist.getSurfaceObject(0));
+        //hpprintf("%5u: %4u geomInsts\n", instIdx, numGeomInsts);
+        //CUDADRV_CHECK(cuStreamSynchronize(cuStream));
+    }
+
+    for (int instIdx = 0; instIdx < scene.insts.size(); ++instIdx) {
+        const Instance* inst = scene.insts[instIdx];
+        if (inst->lightGeomInstDistTex == 0)
+            continue;
+        shared::InstanceData* instData = scene.instDataBuffer[0].getDevicePointerAt(inst->instSlot);
+        uint32_t numGeomInsts = inst->geomGroup->geomInsts.size();
+        uint2 curDims = shared::computeProbabilityTextureDimentions(numGeomInsts);
+        uint32_t numMipLevels = nextPowOf2Exponent(curDims.x) + 1;
+        for (int dstMipLevel = 1; dstMipLevel < numMipLevels; ++dstMipLevel) {
+            curDims = (curDims + uint2(1, 1)) / 2;
+            gpuEnv.computeProbTex.computeMip(
+                cuStream, gpuEnv.computeProbTex.computeMip.calcGridDim(curDims.x, curDims.y),
+                &instData->lightGeomInstDist, dstMipLevel,
+                inst->lightGeomInstDist.getSurfaceObject(dstMipLevel - 1),
+                inst->lightGeomInstDist.getSurfaceObject(dstMipLevel));
+            //hpprintf("%5u-%u: %3u x %3u\n", instIdx, dstMipLevel, curDims.x, curDims.y);
+        }
+        //CUDADRV_CHECK(cuStreamSynchronize(cuStream));
+    }
+
+    {
+        CUDADRV_CHECK(cuStreamSynchronize(cuStream));
+        for (int instIdx = 0; instIdx < scene.insts.size(); ++instIdx) {
+            Instance* inst = scene.insts[instIdx];
+            if (inst->lightGeomInstDistTex == 0)
+                continue;
+            uint32_t numGeomInsts = inst->geomGroup->geomInsts.size();
+            uint2 curDims = shared::computeProbabilityTextureDimentions(numGeomInsts);
+            uint32_t numMipLevels = nextPowOf2Exponent(curDims.x) + 1;
+            auto values = inst->lightGeomInstDist.map<float>(numMipLevels - 1);
+            hpprintf("%5u: %g\n", instIdx, values[0]);
+            inst->lightGeomInstDist.unmap(numMipLevels - 1);
+        }
+    }
+
+    CUDADRV_CHECK(cuMemcpyDtoDAsync(
+        scene.instDataBuffer[1].getCUdeviceptr(), scene.instDataBuffer[0].getCUdeviceptr(),
+        scene.instDataBuffer[1].sizeInBytes(), cuStream));
+    CUDADRV_CHECK(cuStreamSynchronize(cuStream));
 
     // END: Setup a scene.
     // ----------------------------------------------------------------
@@ -1466,7 +1597,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
     staticPlp.spatialNeighborDeltas = spatialNeighborDeltas.getDevicePointer();
     staticPlp.materialDataBuffer = scene.materialDataBuffer.getDevicePointer();
     staticPlp.geometryInstanceDataBuffer = scene.geomInstDataBuffer.getDevicePointer();
-    lightInstDist.getDeviceType(&staticPlp.lightInstDist);
     envLightImportanceMap.getDeviceType(&staticPlp.envLightImportanceMap);
     staticPlp.envLightTexture = envLightTexture;
     staticPlp.beautyAccumBuffer = beautyAccumBuffer.getSurfaceObject(0);
@@ -1539,6 +1669,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
     struct GPUTimer {
         cudau::Timer frame;
         cudau::Timer update;
+        cudau::Timer computePDFTexture;
         cudau::Timer setupGBuffers;
         cudau::Timer performInitialAndTemporalRIS;
         cudau::Timer performSpatialRIS;
@@ -1552,6 +1683,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         void initialize(CUcontext context) {
             frame.initialize(context);
             update.initialize(context);
+            computePDFTexture.initialize(context);
             setupGBuffers.initialize(context);
 
             performInitialAndTemporalRIS.initialize(context);
@@ -1578,6 +1710,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
             performPerPixelRIS.finalize();
 
             setupGBuffers.finalize();
+            computePDFTexture.finalize();
             update.finalize();
             frame.finalize();
         }
@@ -2064,6 +2197,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
             static MovingAverageTime cudaFrameTime;
             static MovingAverageTime updateTime;
+            static MovingAverageTime computePDFTextureTime;
             static MovingAverageTime setupGBuffersTime;
 
             static MovingAverageTime performInitialAndTemporalRISTime;
@@ -2079,6 +2213,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
             cudaFrameTime.append(curGPUTimer.frame.report());
             updateTime.append(curGPUTimer.update.report());
+            computePDFTextureTime.append(curGPUTimer.computePDFTexture.report());
             setupGBuffersTime.append(curGPUTimer.setupGBuffers.report());
             denoiseTime.append(curGPUTimer.denoise.report());
 
@@ -2098,6 +2233,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
             //ImGui::SetNextItemWidth(100.0f);
             ImGui::Text("CUDA/OptiX GPU %.3f [ms]:", cudaFrameTime.getAverage());
             ImGui::Text("  Update: %.3f [ms]", updateTime.getAverage());
+            ImGui::Text("  Compute PDF Texture: %.3f [ms]", computePDFTextureTime.getAverage());
             ImGui::Text("  Setup G-Buffers: %.3f [ms]", setupGBuffersTime.getAverage());
             if (curRenderer == Renderer::OriginalReSTIRBiased ||
                 curRenderer == Renderer::OriginalReSTIRUnbiased) {
@@ -2130,8 +2266,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
         // JP: 各インスタンスのトランスフォームを更新する。
         // EN: Update the transform of each instance.
+        cudau::TypedBuffer<shared::InstanceData> &curInstDataBuffer = scene.instDataBuffer[bufferIndex];
         if (animate || lastFrameWasAnimated) {
-            cudau::TypedBuffer<shared::InstanceData> &curInstDataBuffer = scene.instDataBuffer[bufferIndex];
             shared::InstanceData* instDataBufferOnHost = curInstDataBuffer.map();
             for (int i = 0; i < scene.instControllers.size(); ++i) {
                 InstanceController* controller = scene.instControllers[i];
@@ -2158,6 +2294,44 @@ int32_t main(int32_t argc, const char* argv[]) try {
                 cuStream, scene.iasInstanceBuffer, scene.iasMem, scene.asScratchMem);
         curGPUTimer.update.stop(cuStream);
 
+        // JP:
+        // EN:
+        curGPUTimer.computePDFTexture.start(cuStream);
+        {
+            CUdeviceptr probTeXAddr =
+                staticPlpOnDevice + offsetof(shared::StaticPipelineLaunchParameters, lightInstDist);
+
+            shared::ProbabilityTexture lightInstDist;
+            lightInstDist.setTexObject(scene.lightInstDistTex, scene.lightInstDistTexDims);
+            CUDADRV_CHECK(cuMemcpyHtoDAsync(
+                probTeXAddr, &lightInstDist, sizeof(lightInstDist), cuStream));
+
+            uint32_t numInsts = scene.insts.size();
+            uint2 dims = shared::computeProbabilityTextureDimentions(numInsts);
+            uint32_t numMipLevels = nextPowOf2Exponent(dims.x) + 1;
+            gpuEnv.computeProbTex.computeInstProbabilities(
+                cuStream, gpuEnv.computeProbTex.computeInstProbabilities.calcGridDim(dims.x * dims.y),
+                probTeXAddr, numInsts,
+                curInstDataBuffer.getDevicePointer(),
+                scene.lightInstDistArray.getSurfaceObject(0));
+
+            uint2 curDims = dims;
+            for (int dstMipLevel = 1; dstMipLevel < numMipLevels; ++dstMipLevel) {
+                curDims = (curDims + uint2(1, 1)) / 2;
+                gpuEnv.computeProbTex.computeMip(
+                    cuStream, gpuEnv.computeProbTex.computeMip.calcGridDim(curDims.x, curDims.y),
+                    probTeXAddr, dstMipLevel,
+                    scene.lightInstDistArray.getSurfaceObject(dstMipLevel - 1),
+                    scene.lightInstDistArray.getSurfaceObject(dstMipLevel));
+            }
+
+            //CUDADRV_CHECK(cuStreamSynchronize(cuStream));
+            //auto values = scene.lightInstDistArray.map<float>(numMipLevels - 1);
+            //hpprintf("%g\n", values[0]);
+            //scene.lightInstDistArray.unmap(numMipLevels - 1);
+        }
+        curGPUTimer.computePDFTexture.stop(cuStream);
+
         bool newSequence = resized || frameIndex == 0 || resetAccumulation;
         bool firstAccumFrame =
             animate || !enableAccumulation || cameraIsActuallyMoving || newSequence;
@@ -2170,7 +2344,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
         perFramePlp.numAccumFrames = numAccumFrames;
         perFramePlp.frameIndex = frameIndex;
-        perFramePlp.instanceDataBuffer = scene.instDataBuffer[bufferIndex].getDevicePointer();
+        perFramePlp.instanceDataBuffer = curInstDataBuffer.getDevicePointer();
         perFramePlp.envLightPowerCoeff = std::pow(10.0f, log10EnvLightPowerCoeff);
         perFramePlp.envLightRotation = envLightRotation;
         perFramePlp.spatialNeighborRadius = curRendererConfigs->spatialNeighborRadius;
@@ -2501,7 +2675,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
     if (envLightTexture)
         cuTexObjectDestroy(envLightTexture);
     envLightArray.finalize();
-    lightInstDist.finalize();
 
     finalizeTextureCaches();
 
