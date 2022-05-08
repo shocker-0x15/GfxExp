@@ -68,22 +68,19 @@ initialize(CUcontext cuContext, cudau::BufferType type, const RealType* values, 
     }
 
 #if defined(USE_WALKER_ALIAS_METHOD)
-    m_PMF.initialize(cuContext, type, m_numValues);
+    m_weights.initialize(cuContext, type, m_numValues);
     m_aliasTable.initialize(cuContext, type, m_numValues);
     m_valueMaps.initialize(cuContext, type, m_numValues);
 
-    RealType* PMF = m_PMF.map();
-    std::memcpy(PMF, values, sizeof(RealType) * m_numValues);
+    RealType* weights = m_weights.map();
+    std::memcpy(weights, values, sizeof(RealType) * m_numValues);
+    m_weights.unmap();
 
     CompensatedSum<RealType> sum(0);
     for (uint32_t i = 0; i < m_numValues; ++i)
         sum += values[i];
     RealType avgWeight = sum / m_numValues;
     m_integral = sum;
-
-    for (uint32_t i = 0; i < m_numValues; ++i)
-        PMF[i] /= m_integral;
-    m_PMF.unmap();
 
     struct IndexAndWeight {
         uint32_t index;
@@ -147,27 +144,23 @@ initialize(CUcontext cuContext, cudau::BufferType type, const RealType* values, 
     m_valueMaps.unmap();
     m_aliasTable.unmap();
 #else
-    m_PMF.initialize(cuContext, type, m_numValues);
-    m_CDF.initialize(cuContext, type, m_numValues + 1);
+    m_weights.initialize(cuContext, type, m_numValues);
+    m_CDF.initialize(cuContext, type, m_numValues);
 
-    RealType* PMF = m_PMF.map();
+    RealType* weights = m_weights.map();
+    std::memcpy(weights, values, sizeof(RealType) * m_numValues);
+    m_weights.unmap();
+
     RealType* CDF = m_CDF.map();
-    std::memcpy(PMF, values, sizeof(RealType) * m_numValues);
 
     CompensatedSum<RealType> sum(0);
     for (uint32_t i = 0; i < m_numValues; ++i) {
         CDF[i] = sum;
-        sum += PMF[i];
+        sum += values[i];
     }
     m_integral = sum;
-    for (uint32_t i = 0; i < m_numValues; ++i) {
-        PMF[i] /= m_integral;
-        CDF[i] /= m_integral;
-    }
-    CDF[m_numValues] = 1.0f;
 
     m_CDF.unmap();
-    m_PMF.unmap();
 #endif
 }
 

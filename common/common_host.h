@@ -42,7 +42,7 @@ std::string readTxtFile(const std::filesystem::path& filepath);
 
 template <typename RealType>
 class DiscreteDistribution1DTemplate {
-    cudau::TypedBuffer<RealType> m_PMF;
+    cudau::TypedBuffer<RealType> m_weights;
 #if defined(USE_WALKER_ALIAS_METHOD)
     cudau::TypedBuffer<shared::AliasTableEntry<RealType>> m_aliasTable;
     cudau::TypedBuffer<shared::AliasValueMap<RealType>> m_valueMaps;
@@ -56,21 +56,21 @@ public:
     void initialize(CUcontext cuContext, cudau::BufferType type, const RealType* values, size_t numValues);
     void finalize() {
 #if defined(USE_WALKER_ALIAS_METHOD)
-        if (m_valueMaps.isInitialized() && m_aliasTable.isInitialized() && m_PMF.isInitialized()) {
+        if (m_valueMaps.isInitialized() && m_aliasTable.isInitialized() && m_weights.isInitialized()) {
             m_valueMaps.finalize();
             m_aliasTable.finalize();
-            m_PMF.finalize();
+            m_weights.finalize();
         }
 #else
-        if (m_CDF.isInitialized() && m_PMF.isInitialized()) {
+        if (m_CDF.isInitialized() && m_weights.isInitialized()) {
             m_CDF.finalize();
-            m_PMF.finalize();
+            m_weights.finalize();
         }
 #endif
     }
 
     DiscreteDistribution1DTemplate &operator=(DiscreteDistribution1DTemplate &&v) {
-        m_PMF = std::move(v.m_PMF);
+        m_weights = std::move(v.m_weights);
 #if defined(USE_WALKER_ALIAS_METHOD)
         m_aliasTable = std::move(v.m_aliasTable);
         m_valueMaps = std::move(v.m_valueMaps);
@@ -89,13 +89,13 @@ public:
     void getDeviceType(shared::DiscreteDistribution1DTemplate<RealType>* instance) const {
 #if defined(USE_WALKER_ALIAS_METHOD)
         new (instance) shared::DiscreteDistribution1DTemplate<RealType>(
-            m_PMF.isInitialized() ? m_PMF.getDevicePointer() : nullptr,
+            m_weights.isInitialized() ? m_weights.getDevicePointer() : nullptr,
             m_aliasTable.isInitialized() ? m_aliasTable.getDevicePointer() : nullptr,
             m_valueMaps.isInitialized() ? m_valueMaps.getDevicePointer() : nullptr,
             m_integral, m_numValues);
 #else
         new (instance) shared::DiscreteDistribution1DTemplate<RealType>(
-            m_PMF.isInitialized() ? m_PMF.getDevicePointer() : nullptr,
+            m_weights.isInitialized() ? m_weights.getDevicePointer() : nullptr,
             m_CDF.isInitialized() ? m_CDF.getDevicePointer() : nullptr,
             m_integral, m_numValues);
 #endif

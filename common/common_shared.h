@@ -1587,7 +1587,7 @@ namespace shared {
 
     template <typename RealType>
     class DiscreteDistribution1DTemplate {
-        const RealType* m_PMF;
+        const RealType* m_weights;
 #if defined(USE_WALKER_ALIAS_METHOD)
         const AliasTableEntry<RealType>* m_aliasTable;
         const AliasValueMap<RealType>* m_valueMaps;
@@ -1600,53 +1600,35 @@ namespace shared {
     public:
 #if defined(USE_WALKER_ALIAS_METHOD)
         DiscreteDistribution1DTemplate(
-            const RealType* PMF, const AliasTableEntry<RealType>* aliasTable, const AliasValueMap<RealType>* valueMaps,
+            const RealType* weights, const AliasTableEntry<RealType>* aliasTable, const AliasValueMap<RealType>* valueMaps,
             RealType integral, uint32_t numValues) :
-            m_PMF(PMF), m_aliasTable(aliasTable), m_valueMaps(valueMaps),
+            m_weights(weights), m_aliasTable(aliasTable), m_valueMaps(valueMaps),
             m_integral(integral), m_numValues(numValues) {}
 #else
         DiscreteDistribution1DTemplate(
-            const RealType* PMF, const RealType* CDF, RealType integral, uint32_t numValues) :
-            m_PMF(PMF), m_CDF(CDF), m_integral(integral), m_numValues(numValues) {}
+            const RealType* weights, const RealType* CDF, RealType integral, uint32_t numValues) :
+            m_weights(weights), m_CDF(CDF), m_integral(integral), m_numValues(numValues) {}
 #endif
 
         CUDA_COMMON_FUNCTION DiscreteDistribution1DTemplate() {}
 
-        CUDA_COMMON_FUNCTION uint32_t sample(RealType u, RealType* prob) const {
-            Assert(u >= 0 && u < 1, "\"u\": %g must be in range [0, 1).", u);
-#if defined(USE_WALKER_ALIAS_METHOD)
-            uint32_t idx = mapPrimarySampleToDiscrete(u, m_numValues, &u);
-            const AliasTableEntry<RealType> &entry = m_aliasTable[idx];
-            if (u >= entry.probToPickFirst)
-                idx = entry.secondIndex;
-#else
-            int idx = 0;
-            for (int d = nextPowerOf2(m_numValues) >> 1; d >= 1; d >>= 1) {
-                if (idx + d >= m_numValues)
-                    continue;
-                if (m_CDF[idx + d] <= u)
-                    idx += d;
-            }
-#endif
-            Assert(idx < m_numValues, "Invalid Index!: %d", idx);
-            *prob = m_PMF[idx];
-            return idx;
-        }
-
-        CUDA_COMMON_FUNCTION uint32_t sample(RealType u, RealType* prob, RealType* remapped) const {
+        CUDA_COMMON_FUNCTION uint32_t sample(RealType u, RealType* prob, RealType* remapped = nullptr) const {
             Assert(u >= 0 && u < 1, "\"u\": %g must be in range [0, 1).", u);
 #if defined(USE_WALKER_ALIAS_METHOD)
             uint32_t idx = mapPrimarySampleToDiscrete(u, m_numValues, &u);
             const AliasTableEntry<RealType> &entry = m_aliasTable[idx];
             const AliasValueMap<RealType> &valueMap = m_valueMaps[idx];
             if (u < entry.probToPickFirst) {
-                *remapped = valueMap.scaleForFirst * u;
+                if (remapped)
+                    *remapped = valueMap.scaleForFirst * u;
             }
             else {
                 idx = entry.secondIndex;
-                *remapped = valueMap.scaleForSecond * u + valueMap.offsetForSecond;
+                if (remapped)
+                    *remapped = valueMap.scaleForSecond * u + valueMap.offsetForSecond;
             }
 #else
+            u *= m_integral;
             int idx = 0;
             for (int d = nextPowerOf2(m_numValues) >> 1; d >= 1; d >>= 1) {
                 if (idx + d >= m_numValues)
@@ -1654,18 +1636,24 @@ namespace shared {
                 if (m_CDF[idx + d] <= u)
                     idx += d;
             }
-            Assert(idx >= 0 && idx < m_numValues, "Invalid Index!: %d", idx);
-            *remapped = (u - m_CDF[idx]) / (m_CDF[idx + 1] - m_CDF[idx]);
+            Assert(idx < m_numValues, "Invalid Index!: %d", idx);
+            if (remapped) {
+                RealType lCDF = m_CDF[idx];
+                RealType rCDF = m_integral;
+                if (idx < m_numValues - 1)
+                    rCDF = m_CDF[idx + 1];
+                *remapped = (u - lCDF) / (rCDF - lCDF);
+                Assert(isfinite(*remapped), "Remapped value is not a finite value %g.",
+                       *remapped);
+            }
 #endif
-            *prob = m_PMF[idx];
-            Assert(isfinite(*remapped), "Remapped value is not a finite value %g.",
-                   *remapped);
+            *prob = m_weights[idx] / m_integral;
             return idx;
         }
 
         CUDA_COMMON_FUNCTION RealType evaluatePMF(uint32_t idx) const {
             Assert(idx < m_numValues, "\"idx\" is out of range [0, %u)", m_numValues);
-            return m_PMF[idx];
+            return m_weights[idx] / m_integral;
         }
 
         CUDA_COMMON_FUNCTION RealType integral() const { return m_integral; }
