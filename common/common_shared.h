@@ -1794,35 +1794,40 @@ namespace shared {
 
     class ProbabilityTexture {
         CUtexObject m_cuTexObj;
-        uint2 m_maxDims;
-        uint2 m_dims;
+        unsigned int m_maxDimX : 16;
+        unsigned int m_maxDimY : 16;
+        unsigned int m_dimX : 16;
+        unsigned int m_dimY : 16;
+        float m_integral;
 
     public:
         CUDA_COMMON_FUNCTION void setTexObject(CUtexObject texObj, uint2 maxDims) {
             m_cuTexObj = texObj;
-            m_maxDims = maxDims;
+            m_maxDimX = maxDims.x;
+            m_maxDimY = maxDims.y;
         }
 
         CUDA_COMMON_FUNCTION void setDimensions(const uint2 &dims) {
-            m_dims = dims;
+            m_dimX = dims.x;
+            m_dimY = dims.y;
         }
 
         CUDA_COMMON_FUNCTION uint2 getDimensions() const {
-            return m_dims;
+            return make_uint2(m_dimX, m_dimY);
         }
 
         CUDA_COMMON_FUNCTION uint32_t calcNumMipLevels() const {
-            return nextPowOf2Exponent(m_dims.x) + 1;
+            return nextPowOf2Exponent(m_dimX) + 1;
         }
         CUDA_COMMON_FUNCTION uint32_t calcMaxNumMipLevels() const {
-            return nextPowOf2Exponent(m_maxDims.x) + 1;
+            return nextPowOf2Exponent(m_maxDimX) + 1;
         }
 
         CUDA_COMMON_FUNCTION uint2 compute2DFrom1D(uint32_t index1D) const {
-            return make_uint2(index1D % m_dims.x, index1D / m_dims.x);
+            return make_uint2(index1D % m_dimX, index1D / m_dimX);
         }
         CUDA_COMMON_FUNCTION uint32_t compute1DFrom2D(const uint2 &index2D) const {
-            return index2D.y * m_dims.x + index2D.x;
+            return index2D.y * m_dimX + index2D.x;
         }
 
 #if defined(__CUDA_ARCH__) || defined(OPTIXU_Platform_CodeCompletion)
@@ -1833,11 +1838,11 @@ namespace shared {
             *prob = 1;
             float2 recCurActualDims;
             {
-                uint2 curActualDims = make_uint2(2, m_maxDims.x > m_maxDims.y ? 1 : 2);
+                uint2 curActualDims = make_uint2(2, m_maxDimX > m_maxDimY ? 1 : 2);
                 curActualDims <<= calcMaxNumMipLevels() - numMipLevels;
                 recCurActualDims = make_float2(1.0f / curActualDims.x, 1.0f / curActualDims.y);
             }
-            uint2 curDims = make_uint2(2, m_dims.x > m_dims.y ? 1 : 2);
+            uint2 curDims = make_uint2(2, m_dimX > m_dimY ? 1 : 2);
             for (uint32_t mipLevel = numMipLevels - 2; mipLevel != UINT32_MAX; --mipLevel) {
                 index2D = 2 * index2D;
                 float2 tc = make_float2(index2D.x + 0.5f, index2D.y + 0.5f);
@@ -1900,7 +1905,11 @@ namespace shared {
         CUDA_DEVICE_FUNCTION float integral() const {
             if (m_cuTexObj == 0)
                 return 0.0f;
-            return tex2DLod<float>(m_cuTexObj, 0.5f, 0.5f, calcNumMipLevels() - 1);
+            return m_integral;
+        }
+
+        CUDA_DEVICE_FUNCTION void setIntegral(float v) {
+            m_integral = v;
         }
 #endif
     };

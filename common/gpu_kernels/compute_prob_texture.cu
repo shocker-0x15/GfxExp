@@ -91,7 +91,7 @@ CUDA_DEVICE_KERNEL void computeInstProbabilities(
 }
 
 CUDA_DEVICE_KERNEL void computeProbabilityTextureMip(
-    const ProbabilityTexture* probTex, uint32_t dstMipLevel,
+    ProbabilityTexture* probTex, uint32_t dstMipLevel,
     optixu::NativeBlockBuffer2D<float> srcMip,
     optixu::NativeBlockBuffer2D<float> dstMip) {
     uint32_t numMipLevels = probTex->calcNumMipLevels();
@@ -111,8 +111,11 @@ CUDA_DEVICE_KERNEL void computeProbabilityTextureMip(
     sum += (ur.x < srcDims.x && ur.y < srcDims.y) ? srcMip.read(ur) : 0.0f;
     sum += (ll.x < srcDims.x && ll.y < srcDims.y) ? srcMip.read(ll) : 0.0f;
     sum += (lr.x < srcDims.x && lr.y < srcDims.y) ? srcMip.read(lr) : 0.0f;
-    if (globalIndex.x < dstDims.x && globalIndex.y < dstDims.y)
+    if (globalIndex.x < dstDims.x && globalIndex.y < dstDims.y) {
         dstMip.write(globalIndex, sum);
+        if (dstMipLevel == numMipLevels - 1)
+            probTex->setIntegral(sum);
+    }
 }
 
 CUDA_DEVICE_KERNEL void testProbabilityTexture(

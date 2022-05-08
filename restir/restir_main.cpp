@@ -2326,6 +2326,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
             }
 
             //CUDADRV_CHECK(cuStreamSynchronize(cuStream));
+            //CUDADRV_CHECK(cuMemcpyDtoH(&lightInstDist, probTeXAddr, sizeof(lightInstDist)));
             //auto values = scene.lightInstDistArray.map<float>(numMipLevels - 1);
             //hpprintf("%g\n", values[0]);
             //scene.lightInstDistArray.unmap(numMipLevels - 1);
