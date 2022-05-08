@@ -1,4 +1,4 @@
-#pragma once
+ï»¿#pragma once
 
 #include "common_shared.h"
 
@@ -484,13 +484,23 @@ struct InstanceController {
     }
 };
 
-// TODO: ƒV[ƒ““Ç‚Ýž‚ÝŽü‚è‚ð‚à‚Á‚ÆãY—í‚É‚·‚éB
+// TODO: ã‚·ãƒ¼ãƒ³ã¾ã‚ã‚Šç¶ºéº—ã«ã—ãŸã„ã€‚
 struct Scene {
     static constexpr cudau::BufferType bufferType = cudau::BufferType::Device;
 
     static constexpr uint32_t maxNumMaterials = 1024;
     static constexpr uint32_t maxNumGeometryInstances = 65536;
     static constexpr uint32_t maxNumInstances = 16384;
+
+    struct ComputeProbTex {
+        CUmodule cudaModule;
+        cudau::Kernel computeFirstMip;
+        cudau::Kernel computeTriangleProbabilities;
+        cudau::Kernel computeGeomInstProbabilities;
+        cudau::Kernel computeInstProbabilities;
+        cudau::Kernel computeMip;
+        cudau::Kernel test;
+    } computeProbTex;
 
     optixu::Scene optixScene;
     uint32_t numRayTypes;
@@ -526,8 +536,24 @@ struct Scene {
     size_t hitGroupSbtSize;
 
     void initialize(
-        CUcontext cuContext, optixu::Context optixContext,
+        const std::filesystem::path &ptxDir, CUcontext cuContext, optixu::Context optixContext,
         uint32_t _numRayTypes, optixu::Material material) {
+        CUDADRV_CHECK(cuModuleLoad(
+            &computeProbTex.cudaModule,
+            (ptxDir / "compute_prob_texture.ptx").string().c_str()));
+        computeProbTex.computeFirstMip =
+            cudau::Kernel(computeProbTex.cudaModule, "computeProbabilityTextureFirstMip", cudau::dim3(32), 0);
+        computeProbTex.computeTriangleProbabilities =
+            cudau::Kernel(computeProbTex.cudaModule, "computeTriangleProbabilities", cudau::dim3(32), 0);
+        computeProbTex.computeGeomInstProbabilities =
+            cudau::Kernel(computeProbTex.cudaModule, "computeGeomInstProbabilities", cudau::dim3(32), 0);
+        computeProbTex.computeInstProbabilities =
+            cudau::Kernel(computeProbTex.cudaModule, "computeInstProbabilities", cudau::dim3(32), 0);
+        computeProbTex.computeMip =
+            cudau::Kernel(computeProbTex.cudaModule, "computeProbabilityTextureMip", cudau::dim3(8, 8), 0);
+        computeProbTex.test =
+            cudau::Kernel(computeProbTex.cudaModule, "testProbabilityTexture", cudau::dim3(32), 0);
+
         optixScene = optixContext.createScene();
         numRayTypes = _numRayTypes;
 
@@ -606,6 +632,8 @@ struct Scene {
         materialSlotFinder.finalize();
 
         optixScene.destroy();
+
+        CUDADRV_CHECK(cuModuleUnload(computeProbTex.cudaModule));
     }
 
     void map() {
@@ -661,7 +689,7 @@ struct Scene {
                     Instance* inst = controller->inst;
                     shared::InstanceData &instData = instDataBufferOnHost[inst->instSlot];
                     controller->update(instDataBufferOnHost, 0.0f);
-                    // TODO: ‚Ü‚Æ‚ß‚Ä‘—‚éB
+                    // TODO: ã¾ã¨ã‚ã¦é€ã‚‹ã€‚
                     CUDADRV_CHECK(cuMemcpyHtoDAsync(curInstDataBuffer.getCUdeviceptrAt(inst->instSlot),
                                                     &instData, sizeof(instData), 0));
                 }
@@ -670,6 +698,157 @@ struct Scene {
         }
 
         ias.rebuild(0, iasInstanceBuffer, iasMem, asScratchMem);
+    }
+
+    void setupLightGeomDistributions() {
+        CUstream cuStream = 0;
+
+        for (int geomInstIdx = 0; geomInstIdx < geomInsts.size(); ++geomInstIdx) {
+            const GeometryInstance* geomInst = geomInsts[geomInstIdx];
+            if (geomInst->emitterPrimDistTex == 0)
+                continue;
+            shared::GeometryInstanceData* geomInstData =
+                geomInstDataBuffer.getDevicePointerAt(geomInst->geomInstSlot);
+            uint32_t numTriangles = geomInst->triangleBuffer.numElements();
+            uint2 dims = shared::computeProbabilityTextureDimentions(numTriangles);
+            uint32_t numMipLevels = nextPowOf2Exponent(dims.x) + 1;
+            computeProbTex.computeTriangleProbabilities(
+                cuStream, computeProbTex.computeTriangleProbabilities.calcGridDim(dims.x * dims.y),
+                geomInstData, numTriangles,
+                materialDataBuffer.getDevicePointer(),
+                geomInst->emitterPrimDist.getSurfaceObject(0));
+            //hpprintf("%5u: %4u tris\n", geomInstIdx, numTriangles);
+            //CUDADRV_CHECK(cuStreamSynchronize(cuStream));
+        }
+
+        for (int geomInstIdx = 0; geomInstIdx < geomInsts.size(); ++geomInstIdx) {
+            const GeometryInstance* geomInst = geomInsts[geomInstIdx];
+            if (geomInst->emitterPrimDistTex == 0)
+                continue;
+            shared::GeometryInstanceData* geomInstData =
+                geomInstDataBuffer.getDevicePointerAt(geomInst->geomInstSlot);
+            uint32_t numTriangles = geomInst->triangleBuffer.numElements();
+            uint2 curDims = shared::computeProbabilityTextureDimentions(numTriangles);
+            uint32_t numMipLevels = nextPowOf2Exponent(curDims.x) + 1;
+            for (int dstMipLevel = 1; dstMipLevel < numMipLevels; ++dstMipLevel) {
+                curDims = (curDims + uint2(1, 1)) / 2;
+                computeProbTex.computeMip(
+                    cuStream, computeProbTex.computeMip.calcGridDim(curDims.x, curDims.y),
+                    &geomInstData->emitterPrimDist, dstMipLevel,
+                    geomInst->emitterPrimDist.getSurfaceObject(dstMipLevel - 1),
+                    geomInst->emitterPrimDist.getSurfaceObject(dstMipLevel));
+                //hpprintf("%5u-%u: %3u x %3u\n", geomInstIdx, dstMipLevel, curDims.x, curDims.y);
+            }
+            //CUDADRV_CHECK(cuStreamSynchronize(cuStream));
+        }
+
+        //{
+        //    CUDADRV_CHECK(cuStreamSynchronize(cuStream));
+        //    for (int geomInstIdx = 0; geomInstIdx < geomInsts.size(); ++geomInstIdx) {
+        //        GeometryInstance* geomInst = geomInsts[geomInstIdx];
+        //        if (geomInst->emitterPrimDistTex == 0)
+        //            continue;
+        //        shared::GeometryInstanceData* geomInstData =
+        //            geomInstDataBuffer.getDevicePointerAt(geomInst->geomInstSlot);
+        //        uint32_t numTriangles = geomInst->triangleBuffer.numElements();
+        //        uint2 curDims = shared::computeProbabilityTextureDimentions(numTriangles);
+        //        uint32_t numMipLevels = nextPowOf2Exponent(curDims.x) + 1;
+        //        auto values = geomInst->emitterPrimDist.map<float>(numMipLevels - 1);
+        //        hpprintf("%5u: %g\n", geomInstIdx, values[0]);
+        //        geomInst->emitterPrimDist.unmap(numMipLevels - 1);
+        //    }
+        //}
+
+        for (int instIdx = 0; instIdx < insts.size(); ++instIdx) {
+            const Instance* inst = insts[instIdx];
+            if (inst->lightGeomInstDistTex == 0)
+                continue;
+            shared::InstanceData* instData = instDataBuffer[0].getDevicePointerAt(inst->instSlot);
+            uint32_t numGeomInsts = inst->geomGroup->geomInsts.size();
+            uint2 dims = shared::computeProbabilityTextureDimentions(numGeomInsts);
+            uint32_t numMipLevels = nextPowOf2Exponent(dims.x) + 1;
+            computeProbTex.computeGeomInstProbabilities(
+                cuStream, computeProbTex.computeGeomInstProbabilities.calcGridDim(dims.x * dims.y),
+                instData, instIdx, numGeomInsts,
+                geomInstDataBuffer.getDevicePointer(),
+                inst->lightGeomInstDist.getSurfaceObject(0));
+            //hpprintf("%5u: %4u geomInsts\n", instIdx, numGeomInsts);
+            //CUDADRV_CHECK(cuStreamSynchronize(cuStream));
+        }
+
+        for (int instIdx = 0; instIdx < insts.size(); ++instIdx) {
+            const Instance* inst = insts[instIdx];
+            if (inst->lightGeomInstDistTex == 0)
+                continue;
+            shared::InstanceData* instData = instDataBuffer[0].getDevicePointerAt(inst->instSlot);
+            uint32_t numGeomInsts = inst->geomGroup->geomInsts.size();
+            uint2 curDims = shared::computeProbabilityTextureDimentions(numGeomInsts);
+            uint32_t numMipLevels = nextPowOf2Exponent(curDims.x) + 1;
+            for (int dstMipLevel = 1; dstMipLevel < numMipLevels; ++dstMipLevel) {
+                curDims = (curDims + uint2(1, 1)) / 2;
+                computeProbTex.computeMip(
+                    cuStream, computeProbTex.computeMip.calcGridDim(curDims.x, curDims.y),
+                    &instData->lightGeomInstDist, dstMipLevel,
+                    inst->lightGeomInstDist.getSurfaceObject(dstMipLevel - 1),
+                    inst->lightGeomInstDist.getSurfaceObject(dstMipLevel));
+                //hpprintf("%5u-%u: %3u x %3u\n", instIdx, dstMipLevel, curDims.x, curDims.y);
+            }
+            //CUDADRV_CHECK(cuStreamSynchronize(cuStream));
+        }
+
+        {
+            CUDADRV_CHECK(cuStreamSynchronize(cuStream));
+            for (int instIdx = 0; instIdx < insts.size(); ++instIdx) {
+                Instance* inst = insts[instIdx];
+                if (inst->lightGeomInstDistTex == 0)
+                    continue;
+                uint32_t numGeomInsts = inst->geomGroup->geomInsts.size();
+                uint2 curDims = shared::computeProbabilityTextureDimentions(numGeomInsts);
+                uint32_t numMipLevels = nextPowOf2Exponent(curDims.x) + 1;
+                auto values = inst->lightGeomInstDist.map<float>(numMipLevels - 1);
+                hpprintf("%5u: %g\n", instIdx, values[0]);
+                inst->lightGeomInstDist.unmap(numMipLevels - 1);
+            }
+        }
+
+        CUDADRV_CHECK(cuMemcpyDtoDAsync(
+            instDataBuffer[1].getCUdeviceptr(), instDataBuffer[0].getCUdeviceptr(),
+            instDataBuffer[1].sizeInBytes(), cuStream));
+
+        CUDADRV_CHECK(cuStreamSynchronize(cuStream));
+    }
+
+    void setupLightInstDistribtion(
+        CUstream cuStream, CUdeviceptr probTexAddr, uint32_t instBufferIndex) {
+        shared::ProbabilityTexture lightInstDist;
+        lightInstDist.setTexObject(lightInstDistTex, lightInstDistTexDims);
+        CUDADRV_CHECK(cuMemcpyHtoDAsync(
+            probTexAddr, &lightInstDist, sizeof(lightInstDist), cuStream));
+
+        uint32_t numInsts = insts.size();
+        uint2 dims = shared::computeProbabilityTextureDimentions(numInsts);
+        uint32_t numMipLevels = nextPowOf2Exponent(dims.x) + 1;
+        computeProbTex.computeInstProbabilities(
+            cuStream, computeProbTex.computeInstProbabilities.calcGridDim(dims.x * dims.y),
+            probTexAddr, numInsts,
+            instDataBuffer[instBufferIndex].getDevicePointer(),
+            lightInstDistArray.getSurfaceObject(0));
+
+        uint2 curDims = dims;
+        for (int dstMipLevel = 1; dstMipLevel < numMipLevels; ++dstMipLevel) {
+            curDims = (curDims + uint2(1, 1)) / 2;
+            computeProbTex.computeMip(
+                cuStream, computeProbTex.computeMip.calcGridDim(curDims.x, curDims.y),
+                probTexAddr, dstMipLevel,
+                lightInstDistArray.getSurfaceObject(dstMipLevel - 1),
+                lightInstDistArray.getSurfaceObject(dstMipLevel));
+        }
+
+        //CUDADRV_CHECK(cuStreamSynchronize(cuStream));
+        //CUDADRV_CHECK(cuMemcpyDtoH(&lightInstDist, probTeXAddr, sizeof(lightInstDist)));
+        //auto values = lightInstDistArray.map<float>(numMipLevels - 1);
+        //hpprintf("%g\n", values[0]);
+        //lightInstDistArray.unmap(numMipLevels - 1);
     }
 };
 

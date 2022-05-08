@@ -118,6 +118,8 @@ CUDA_DEVICE_KERNEL void computeProbabilityTextureMip(
     }
 }
 
+
+
 CUDA_DEVICE_KERNEL void testProbabilityTexture(
     const ProbabilityTexture* probTex, PCG32RNG* rngs, uint32_t numThreads,
     uint32_t* histogram) {
