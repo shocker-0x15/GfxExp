@@ -61,6 +61,7 @@ std::string readTxtFile(const std::filesystem::path& filepath) {
 template <typename RealType>
 void DiscreteDistribution1DTemplate<RealType>::
 initialize(CUcontext cuContext, cudau::BufferType type, const RealType* values, size_t numValues) {
+    Assert(!m_isInitialized, "Already initialized!");
     m_numValues = static_cast<uint32_t>(numValues);
     if (m_numValues == 0) {
         m_integral = 0.0f;
@@ -71,6 +72,11 @@ initialize(CUcontext cuContext, cudau::BufferType type, const RealType* values, 
     m_weights.initialize(cuContext, type, m_numValues);
     m_aliasTable.initialize(cuContext, type, m_numValues);
     m_valueMaps.initialize(cuContext, type, m_numValues);
+
+    if (values == nullptr) {
+        m_integral = 0.0f;
+        return;
+    }
 
     RealType* weights = m_weights.map();
     std::memcpy(weights, values, sizeof(RealType) * m_numValues);
@@ -147,6 +153,11 @@ initialize(CUcontext cuContext, cudau::BufferType type, const RealType* values, 
     m_weights.initialize(cuContext, type, m_numValues);
     m_CDF.initialize(cuContext, type, m_numValues);
 
+    if (values == nullptr) {
+        m_integral = 0.0f;
+        return;
+    }
+
     RealType* weights = m_weights.map();
     std::memcpy(weights, values, sizeof(RealType) * m_numValues);
     m_weights.unmap();
@@ -162,6 +173,8 @@ initialize(CUcontext cuContext, cudau::BufferType type, const RealType* values, 
 
     m_CDF.unmap();
 #endif
+
+    m_isInitialized = true;
 }
 
 template class DiscreteDistribution1DTemplate<float>;
@@ -171,6 +184,7 @@ template class DiscreteDistribution1DTemplate<float>;
 template <typename RealType>
 void RegularConstantContinuousDistribution1DTemplate<RealType>::
 initialize(CUcontext cuContext, cudau::BufferType type, const RealType* values, size_t numValues) {
+    Assert(!m_isInitialized, "Already initialized!");
     m_numValues = static_cast<uint32_t>(numValues);
 #if defined(USE_WALKER_ALIAS_METHOD)
     m_PDF.initialize(cuContext, type, m_numValues);
@@ -275,6 +289,8 @@ initialize(CUcontext cuContext, cudau::BufferType type, const RealType* values, 
     m_CDF.unmap();
     m_PDF.unmap();
 #endif
+
+    m_isInitialized = true;
 }
 
 template class RegularConstantContinuousDistribution1DTemplate<float>;
@@ -284,6 +300,7 @@ template class RegularConstantContinuousDistribution1DTemplate<float>;
 template <typename RealType>
 void RegularConstantContinuousDistribution2DTemplate<RealType>::
 initialize(CUcontext cuContext, cudau::BufferType type, const RealType* values, size_t numD1, size_t numD2) {
+    Assert(!m_isInitialized, "Already initialized!");
     m_1DDists = new RegularConstantContinuousDistribution1DTemplate<RealType>[numD2];
     m_raw1DDists.initialize(cuContext, type, static_cast<uint32_t>(numD2));
 
@@ -309,9 +326,31 @@ initialize(CUcontext cuContext, cudau::BufferType type, const RealType* values, 
     Assert(std::isfinite(m_top1DDist.getIntegral()), "invalid integral value.");
 
     m_raw1DDists.unmap();
+
+    m_isInitialized = true;
 }
 
 template class RegularConstantContinuousDistribution2DTemplate<float>;
+
+
+
+void ProbabilityTexture::initialize(CUcontext cuContext, size_t numValues) {
+    Assert(!m_isInitialized, "Already initialized!");
+    cudau::TextureSampler sampler;
+    sampler.setXyFilterMode(cudau::TextureFilterMode::Point);
+    sampler.setMipMapFilterMode(cudau::TextureFilterMode::Point);
+    sampler.setReadMode(cudau::TextureReadMode::ElementType);
+
+    uint2 dims = shared::computeProbabilityTextureDimentions(numValues);
+    uint32_t numMipLevels = nextPowOf2Exponent(dims.x) + 1;
+    m_cuArray.initialize2D(
+        cuContext, cudau::ArrayElementType::Float32, 1,
+        cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable,
+        dims.x, dims.y, numMipLevels);
+    m_cuTexObj = sampler.createTextureObject(m_cuArray);
+
+    m_isInitialized = true;
+}
 
 
 
@@ -1548,11 +1587,6 @@ static GeometryInstance* createGeometryInstance(
 
     GeometryInstance* geomInst = new GeometryInstance();
 
-    cudau::TextureSampler sampler;
-    sampler.setXyFilterMode(cudau::TextureFilterMode::Point);
-    sampler.setMipMapFilterMode(cudau::TextureFilterMode::Point);
-    sampler.setReadMode(cudau::TextureReadMode::ElementType);
-
     for (int triIdx = 0; triIdx < triangles.size(); ++triIdx) {
         const shared::Triangle &tri = triangles[triIdx];
         const shared::Vertex (&vs)[3] = {
@@ -1569,17 +1603,8 @@ static GeometryInstance* createGeometryInstance(
     geomInst->mat = mat;
     geomInst->vertexBuffer.initialize(cuContext, Scene::bufferType, vertices);
     geomInst->triangleBuffer.initialize(cuContext, Scene::bufferType, triangles);
-    geomInst->emitterPrimDistTex = 0;
-    uint2 probTexDims = make_uint2(0, 0);
     if (mat->emittance) {
-        uint32_t numTriangles = static_cast<uint32_t>(triangles.size());
-        probTexDims = shared::computeProbabilityTextureDimentions(numTriangles);
-        uint32_t numMipLevels = nextPowOf2Exponent(probTexDims.x) + 1;
-        geomInst->emitterPrimDist.initialize2D(
-            cuContext, cudau::ArrayElementType::Float32, 1,
-            cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable,
-            probTexDims.x, probTexDims.y, numMipLevels);
-        geomInst->emitterPrimDistTex = sampler.createTextureObject(geomInst->emitterPrimDist);
+        geomInst->emitterPrimDist.initialize(cuContext, triangles.size());
     }
     geomInst->geomInstSlot = scene->geomInstSlotFinder.getFirstAvailableSlot();
     scene->geomInstSlotFinder.setInUse(geomInst->geomInstSlot);
@@ -1587,7 +1612,7 @@ static GeometryInstance* createGeometryInstance(
     shared::GeometryInstanceData geomInstData = {};
     geomInstData.vertexBuffer = geomInst->vertexBuffer.getDevicePointer();
     geomInstData.triangleBuffer = geomInst->triangleBuffer.getDevicePointer();
-    geomInstData.emitterPrimDist.setTexObject(geomInst->emitterPrimDistTex, probTexDims);
+    geomInst->emitterPrimDist.getDeviceType(&geomInstData.emitterPrimDist);
     geomInstData.materialSlot = mat->materialSlot;
     geomInstData.geomInstSlot = geomInst->geomInstSlot;
     geomInstDataOnHost[geomInst->geomInstSlot] = geomInstData;
@@ -2043,25 +2068,11 @@ Instance* createInstance(
                  scale.x, scale.y, scale.z);
     }
 
-    cudau::TextureSampler sampler;
-    sampler.setXyFilterMode(cudau::TextureFilterMode::Point);
-    sampler.setMipMapFilterMode(cudau::TextureFilterMode::Point);
-    sampler.setReadMode(cudau::TextureReadMode::ElementType);
-
     Instance* inst = new Instance();
     inst->geomGroup = geomGroup;
     inst->geomInstSlots.initialize(cuContext, Scene::bufferType, geomInstSlots);
-    inst->lightGeomInstDistTex = 0;
-    uint2 probTexDims = make_uint2(0, 0);
     if (hasEmitterGeomInsts) {
-        uint32_t numGeomInsts = static_cast<uint32_t>(geomInstSlots.size());
-        probTexDims = shared::computeProbabilityTextureDimentions(numGeomInsts);
-        uint32_t numMipLevels = nextPowOf2Exponent(probTexDims.x) + 1;
-        inst->lightGeomInstDist.initialize2D(
-            cuContext, cudau::ArrayElementType::Float32, 1,
-            cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable,
-            probTexDims.x, probTexDims.y, numMipLevels);
-        inst->lightGeomInstDistTex = sampler.createTextureObject(inst->lightGeomInstDist);
+        inst->lightGeomInstDist.initialize(cuContext, geomInstSlots.size());
     }
     inst->instSlot = scene->instSlotFinder.getFirstAvailableSlot();
     scene->instSlotFinder.setInUse(inst->instSlot);
@@ -2072,7 +2083,7 @@ Instance* createInstance(
     instData.normalMatrix = transpose(inverse(transform.getUpperLeftMatrix()));
     instData.geomInstSlots = inst->geomInstSlots.getDevicePointer();
     instData.numGeomInsts = inst->geomInstSlots.numElements();
-    instData.lightGeomInstDist.setTexObject(inst->lightGeomInstDistTex, probTexDims);
+    inst->lightGeomInstDist.getDeviceType(&instData.lightGeomInstDist);
     instDataOnHost[inst->instSlot] = instData;
 
     inst->optixInst = scene->optixScene.createInstance();

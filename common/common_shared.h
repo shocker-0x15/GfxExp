@@ -1439,6 +1439,8 @@ struct AABB {
 #define HARD_CODED_BSDF DiffuseAndSpecularBRDF
 //#define HARD_CODED_BSDF SimplePBR_BRDF
 
+#define USE_PROBABILITY_TEXTURE 1
+
 // Use Walker's alias method with initialization by Vose's algorithm
 #define USE_WALKER_ALIAS_METHOD
 
@@ -1902,6 +1904,13 @@ namespace shared {
 #endif
     };
 
+    using LightDistribution =
+#if USE_PROBABILITY_TEXTURE
+        ProbabilityTexture;
+#else
+        DiscreteDistribution1D;
+#endif
+
 
 
     // Reference:
@@ -2188,7 +2197,7 @@ namespace shared {
     struct GeometryInstanceData {
         const Vertex* vertexBuffer;
         const Triangle* triangleBuffer;
-        ProbabilityTexture emitterPrimDist;
+        LightDistribution emitterPrimDist;
         uint32_t materialSlot;
         uint32_t geomInstSlot;
     };
@@ -2200,6 +2209,6 @@ namespace shared {
 
         const uint32_t* geomInstSlots;
         uint32_t numGeomInsts;
-        ProbabilityTexture lightGeomInstDist;
+        LightDistribution lightGeomInstDist;
     };
 }

@@ -173,7 +173,7 @@
     <CudaCompile Include="per_pixel_ris.cu" />
     <CudaCompile Include="optix_gbuffer_kernels.cu" />
     <CudaCompile Include="optix_restir_rearch_kernels.cu" />
-    <CudaCompile Include="..\common\gpu_kernels\compute_prob_texture.cu">
+    <CudaCompile Include="..\common\gpu_kernels\compute_light_probs.cu">
       <Filter>non-essentials\GPU kernels</Filter>
     </CudaCompile>
   </ItemGroup>

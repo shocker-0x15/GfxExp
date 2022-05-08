@@ -51,10 +51,14 @@ class DiscreteDistribution1DTemplate {
 #endif
     RealType m_integral;
     uint32_t m_numValues;
+    unsigned int m_isInitialized : 1;
 
 public:
+    DiscreteDistribution1DTemplate() : m_isInitialized(false) {}
     void initialize(CUcontext cuContext, cudau::BufferType type, const RealType* values, size_t numValues);
     void finalize() {
+        if (!m_isInitialized)
+            return;
 #if defined(USE_WALKER_ALIAS_METHOD)
         if (m_valueMaps.isInitialized() && m_aliasTable.isInitialized() && m_weights.isInitialized()) {
             m_valueMaps.finalize();
@@ -86,6 +90,8 @@ public:
         return m_integral;
     }
 
+    bool isInitialized() const { return m_isInitialized; }
+
     void getDeviceType(shared::DiscreteDistribution1DTemplate<RealType>* instance) const {
 #if defined(USE_WALKER_ALIAS_METHOD)
         new (instance) shared::DiscreteDistribution1DTemplate<RealType>(
@@ -115,10 +121,15 @@ class RegularConstantContinuousDistribution1DTemplate {
 #endif
     RealType m_integral;
     uint32_t m_numValues;
+    unsigned int m_isInitialized : 1;
 
 public:
+    RegularConstantContinuousDistribution1DTemplate() : m_isInitialized(false) {}
+
     void initialize(CUcontext cuContext, cudau::BufferType type, const RealType* values, size_t numValues);
     void finalize(CUcontext cuContext) {
+        if (!m_isInitialized)
+            return;
 #if defined(USE_WALKER_ALIAS_METHOD)
         if (m_valueMaps.isInitialized() && m_aliasTable.isInitialized() && m_PDF.isInitialized()) {
             m_valueMaps.finalize();
@@ -149,6 +160,8 @@ public:
     RealType getIntegral() const { return m_integral; }
     uint32_t getNumValues() const { return m_numValues; }
 
+    bool isInitialized() const { return m_isInitialized; }
+
     void getDeviceType(shared::RegularConstantContinuousDistribution1DTemplate<RealType>* instance) const {
 #if defined(USE_WALKER_ALIAS_METHOD)
         new (instance) shared::RegularConstantContinuousDistribution1DTemplate<RealType>(
@@ -168,9 +181,10 @@ class RegularConstantContinuousDistribution2DTemplate {
     cudau::TypedBuffer<shared::RegularConstantContinuousDistribution1DTemplate<RealType>> m_raw1DDists;
     RegularConstantContinuousDistribution1DTemplate<RealType>* m_1DDists;
     RegularConstantContinuousDistribution1DTemplate<RealType> m_top1DDist;
+    unsigned int m_isInitialized : 1;
 
 public:
-    RegularConstantContinuousDistribution2DTemplate() : m_1DDists(nullptr) {}
+    RegularConstantContinuousDistribution2DTemplate() : m_1DDists(nullptr), m_isInitialized(false) {}
 
     RegularConstantContinuousDistribution2DTemplate &operator=(RegularConstantContinuousDistribution2DTemplate &&v) {
         m_raw1DDists = std::move(v.m_raw1DDists);
@@ -181,6 +195,9 @@ public:
 
     void initialize(CUcontext cuContext, cudau::BufferType type, const RealType* values, size_t numD1, size_t numD2);
     void finalize(CUcontext cuContext) {
+        if (!m_isInitialized)
+            return;
+
         m_top1DDist.finalize(cuContext);
 
         for (int i = m_top1DDist.getNumValues() - 1; i >= 0; --i) {
@@ -192,7 +209,7 @@ public:
         m_1DDists = nullptr;
     }
 
-    bool isInitialized() const { return m_1DDists != nullptr; }
+    bool isInitialized() const { return m_isInitialized; }
 
     void getDeviceType(shared::RegularConstantContinuousDistribution2DTemplate<RealType>* instance) const {
         shared::RegularConstantContinuousDistribution1DTemplate<RealType> top1DDist;
@@ -207,6 +224,42 @@ public:
 using DiscreteDistribution1D = DiscreteDistribution1DTemplate<float>;
 using RegularConstantContinuousDistribution1D = RegularConstantContinuousDistribution1DTemplate<float>;
 using RegularConstantContinuousDistribution2D = RegularConstantContinuousDistribution2DTemplate<float>;
+
+
+
+class ProbabilityTexture {
+    cudau::Array m_cuArray;
+    CUtexObject m_cuTexObj;
+    unsigned int m_isInitialized : 1;
+
+public:
+    ProbabilityTexture() : m_cuTexObj(0), m_isInitialized(false) {}
+
+    void initialize(CUcontext cuContext, size_t numValues);
+    void finalize() {
+        if (!m_isInitialized)
+            return;
+        CUDADRV_CHECK(cuTexObjectDestroy(m_cuTexObj));
+        m_cuArray.finalize();
+    }
+
+    bool isInitialized() const { return m_isInitialized; }
+
+    CUsurfObject getSurfaceObject(uint32_t mipLevel) const {
+        return m_cuArray.getSurfaceObject(mipLevel);
+    }
+
+    void getDeviceType(shared::ProbabilityTexture* probTex) const {
+        probTex->setTexObject(m_cuTexObj, uint2(m_cuArray.getWidth(), m_cuArray.getHeight()));
+    }
+};
+
+using LightDistribution =
+#if USE_PROBABILITY_TEXTURE
+    ProbabilityTexture;
+#else
+    DiscreteDistribution1D;
+#endif
 
 
 
@@ -395,8 +448,7 @@ struct GeometryInstance {
 
     cudau::TypedBuffer<shared::Vertex> vertexBuffer;
     cudau::TypedBuffer<shared::Triangle> triangleBuffer;
-    cudau::Array emitterPrimDist;
-    CUtexObject emitterPrimDistTex;
+    LightDistribution emitterPrimDist;
     uint32_t geomInstSlot;
     optixu::GeometryInstance optixGeomInst;
     AABB aabb;
@@ -423,8 +475,7 @@ struct Instance {
     const GeometryGroup* geomGroup;
 
     cudau::TypedBuffer<uint32_t> geomInstSlots;
-    cudau::Array lightGeomInstDist;
-    CUtexObject lightGeomInstDistTex;
+    LightDistribution lightGeomInstDist;
     uint32_t instSlot;
     optixu::Instance optixInst;
 };
@@ -523,9 +574,7 @@ struct Scene {
     std::vector<InstanceController*> instControllers;
     AABB initialSceneAabb;
 
-    cudau::Array lightInstDistArray;
-    CUtexObject lightInstDistTex;
-    uint2 lightInstDistTexDims;
+    LightDistribution lightInstDist;
 
     optixu::InstanceAccelerationStructure ias;
     cudau::Buffer iasMem;
@@ -540,7 +589,7 @@ struct Scene {
         uint32_t _numRayTypes, optixu::Material material) {
         CUDADRV_CHECK(cuModuleLoad(
             &computeProbTex.cudaModule,
-            (ptxDir / "compute_prob_texture.ptx").string().c_str()));
+            (ptxDir / "compute_light_probs.ptx").string().c_str()));
         computeProbTex.computeFirstMip =
             cudau::Kernel(computeProbTex.cudaModule, "computeProbabilityTextureFirstMip", cudau::dim3(32), 0);
         computeProbTex.computeTriangleProbabilities =
@@ -570,24 +619,11 @@ struct Scene {
 
         ias = optixScene.createInstanceAccelerationStructure();
 
-        cudau::TextureSampler sampler;
-        sampler.setXyFilterMode(cudau::TextureFilterMode::Point);
-        sampler.setMipMapFilterMode(cudau::TextureFilterMode::Point);
-        sampler.setReadMode(cudau::TextureReadMode::ElementType);
-
-        lightInstDistTexDims = shared::computeProbabilityTextureDimentions(maxNumInstances);
-        uint32_t numMipLevels = nextPowOf2Exponent(lightInstDistTexDims.x) + 1;
-        lightInstDistArray.initialize2D(
-            cuContext, cudau::ArrayElementType::Float32, 1,
-            cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable,
-            lightInstDistTexDims.x, lightInstDistTexDims.y, numMipLevels);
-        lightInstDistTex = sampler.createTextureObject(lightInstDistArray);
+        lightInstDist.initialize(cuContext, maxNumInstances);
     }
 
     void finalize() {
-        if (lightInstDistTex)
-            CUDADRV_CHECK(cuTexObjectDestroy(lightInstDistTex));
-        lightInstDistArray.finalize();
+        lightInstDist.finalize();
 
         asScratchMem.finalize();
         iasInstanceBuffer.finalize();
@@ -601,8 +637,7 @@ struct Scene {
         for (int i = insts.size() - 1; i >= 0; --i) {
             Instance* inst = insts[i];
             inst->optixInst.destroy();
-            if (inst->lightGeomInstDistTex)
-                CUDADRV_CHECK(cuTexObjectDestroy(inst->lightGeomInstDistTex));
+            inst->lightGeomInstDist.finalize();
             inst->lightGeomInstDist.finalize();
         }
         for (int i = geomGroups.size() - 1; i >= 0; --i) {
@@ -612,8 +647,7 @@ struct Scene {
         for (int i = geomInsts.size() - 1; i >= 0; --i) {
             GeometryInstance* geomInst = geomInsts[i];
             geomInst->optixGeomInst.destroy();
-            if (geomInst->emitterPrimDistTex)
-                CUDADRV_CHECK(cuTexObjectDestroy(geomInst->emitterPrimDistTex));
+            geomInst->emitterPrimDist.finalize();
             geomInst->emitterPrimDist.finalize();
             geomInst->triangleBuffer.finalize();
             geomInst->vertexBuffer.finalize();
@@ -705,7 +739,7 @@ struct Scene {
 
         for (int geomInstIdx = 0; geomInstIdx < geomInsts.size(); ++geomInstIdx) {
             const GeometryInstance* geomInst = geomInsts[geomInstIdx];
-            if (geomInst->emitterPrimDistTex == 0)
+            if (!geomInst->emitterPrimDist.isInitialized())
                 continue;
             shared::GeometryInstanceData* geomInstData =
                 geomInstDataBuffer.getDevicePointerAt(geomInst->geomInstSlot);
@@ -723,7 +757,7 @@ struct Scene {
 
         for (int geomInstIdx = 0; geomInstIdx < geomInsts.size(); ++geomInstIdx) {
             const GeometryInstance* geomInst = geomInsts[geomInstIdx];
-            if (geomInst->emitterPrimDistTex == 0)
+            if (!geomInst->emitterPrimDist.isInitialized())
                 continue;
             shared::GeometryInstanceData* geomInstData =
                 geomInstDataBuffer.getDevicePointerAt(geomInst->geomInstSlot);
@@ -761,7 +795,7 @@ struct Scene {
 
         for (int instIdx = 0; instIdx < insts.size(); ++instIdx) {
             const Instance* inst = insts[instIdx];
-            if (inst->lightGeomInstDistTex == 0)
+            if (!inst->lightGeomInstDist.isInitialized())
                 continue;
             shared::InstanceData* instData = instDataBuffer[0].getDevicePointerAt(inst->instSlot);
             uint32_t numGeomInsts = inst->geomGroup->geomInsts.size();
@@ -778,7 +812,7 @@ struct Scene {
 
         for (int instIdx = 0; instIdx < insts.size(); ++instIdx) {
             const Instance* inst = insts[instIdx];
-            if (inst->lightGeomInstDistTex == 0)
+            if (!inst->lightGeomInstDist.isInitialized())
                 continue;
             shared::InstanceData* instData = instDataBuffer[0].getDevicePointerAt(inst->instSlot);
             uint32_t numGeomInsts = inst->geomGroup->geomInsts.size();
@@ -796,20 +830,20 @@ struct Scene {
             //CUDADRV_CHECK(cuStreamSynchronize(cuStream));
         }
 
-        {
-            CUDADRV_CHECK(cuStreamSynchronize(cuStream));
-            for (int instIdx = 0; instIdx < insts.size(); ++instIdx) {
-                Instance* inst = insts[instIdx];
-                if (inst->lightGeomInstDistTex == 0)
-                    continue;
-                uint32_t numGeomInsts = inst->geomGroup->geomInsts.size();
-                uint2 curDims = shared::computeProbabilityTextureDimentions(numGeomInsts);
-                uint32_t numMipLevels = nextPowOf2Exponent(curDims.x) + 1;
-                auto values = inst->lightGeomInstDist.map<float>(numMipLevels - 1);
-                hpprintf("%5u: %g\n", instIdx, values[0]);
-                inst->lightGeomInstDist.unmap(numMipLevels - 1);
-            }
-        }
+        //{
+        //    CUDADRV_CHECK(cuStreamSynchronize(cuStream));
+        //    for (int instIdx = 0; instIdx < insts.size(); ++instIdx) {
+        //        Instance* inst = insts[instIdx];
+        //        if (inst->lightGeomInstDistTex == 0)
+        //            continue;
+        //        uint32_t numGeomInsts = inst->geomGroup->geomInsts.size();
+        //        uint2 curDims = shared::computeProbabilityTextureDimentions(numGeomInsts);
+        //        uint32_t numMipLevels = nextPowOf2Exponent(curDims.x) + 1;
+        //        auto values = inst->lightGeomInstDist.map<float>(numMipLevels - 1);
+        //        hpprintf("%5u: %g\n", instIdx, values[0]);
+        //        inst->lightGeomInstDist.unmap(numMipLevels - 1);
+        //    }
+        //}
 
         CUDADRV_CHECK(cuMemcpyDtoDAsync(
             instDataBuffer[1].getCUdeviceptr(), instDataBuffer[0].getCUdeviceptr(),
@@ -820,10 +854,10 @@ struct Scene {
 
     void setupLightInstDistribtion(
         CUstream cuStream, CUdeviceptr probTexAddr, uint32_t instBufferIndex) {
-        shared::ProbabilityTexture lightInstDist;
-        lightInstDist.setTexObject(lightInstDistTex, lightInstDistTexDims);
+        shared::ProbabilityTexture dLightInstDist;
+        lightInstDist.getDeviceType(&dLightInstDist);
         CUDADRV_CHECK(cuMemcpyHtoDAsync(
-            probTexAddr, &lightInstDist, sizeof(lightInstDist), cuStream));
+            probTexAddr, &dLightInstDist, sizeof(dLightInstDist), cuStream));
 
         uint32_t numInsts = insts.size();
         uint2 dims = shared::computeProbabilityTextureDimentions(numInsts);
@@ -832,7 +866,7 @@ struct Scene {
             cuStream, computeProbTex.computeInstProbabilities.calcGridDim(dims.x * dims.y),
             probTexAddr, numInsts,
             instDataBuffer[instBufferIndex].getDevicePointer(),
-            lightInstDistArray.getSurfaceObject(0));
+            lightInstDist.getSurfaceObject(0));
 
         uint2 curDims = dims;
         for (int dstMipLevel = 1; dstMipLevel < numMipLevels; ++dstMipLevel) {
@@ -840,8 +874,8 @@ struct Scene {
             computeProbTex.computeMip(
                 cuStream, computeProbTex.computeMip.calcGridDim(curDims.x, curDims.y),
                 probTexAddr, dstMipLevel,
-                lightInstDistArray.getSurfaceObject(dstMipLevel - 1),
-                lightInstDistArray.getSurfaceObject(dstMipLevel));
+                lightInstDist.getSurfaceObject(dstMipLevel - 1),
+                lightInstDist.getSurfaceObject(dstMipLevel));
         }
 
         //CUDADRV_CHECK(cuStreamSynchronize(cuStream));
