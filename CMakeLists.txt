@@ -38,7 +38,7 @@ file(
 )
 list(
     FILTER COMMON_SOURCES INCLUDE REGEX
-    ".*\.(h|hpp|cuh|c|cc|cpp|vert|frag)$")
+    ".*\.(h|hpp|cuh|c|cc|cpp|cu|vert|frag)$")
 list(
     FILTER COMMON_SOURCES EXCLUDE REGEX
     "ext/prebuilt/.*")
@@ -91,8 +91,26 @@ set(
 # Called from the sub directories
 function(set_common_sources)
     file(
+        GLOB_RECURSE COMMON_CUDA_KERNELS
+        "../common/gpu_kernels/*")
+    file(
         GLOB_RECURSE COMMON_SHADERS
         "../common/shaders/*")
+
+    nvcuda_compile_ptx(
+        SOURCES ${COMMON_CUDA_KERNELS}
+        DEPENDENCIES ${GPU_KERNEL_DEPENDENCIES}
+        TARGET_PATH "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${CMAKE_CFG_INTDIR}/${TARGET_NAME}/ptxes"
+        GENERATED_FILES CUDA_PTXES
+        NVCC_OPTIONS
+        "$<$<CONFIG:Debug>:-G>"
+        "--gpu-architecture=compute_52"
+        "-std=c++17"
+        "-cudart" "shared"
+        "--use_fast_math"
+        "--relocatable-device-code=true"
+        "-I${OPTIX_INCLUDE_DIR}"
+    )
 
     copy_files(
         SOURCES ${COMMON_SHADERS}
@@ -128,6 +146,9 @@ function(set_common_sources)
     source_group(
         "non-essentials/utils" REGULAR_EXPRESSION
         "../utils/.*$")
+    source_group(
+        "non-essentials/GPU kernels" REGULAR_EXPRESSION
+        "../common/gpu_kernels/.*")
     source_group(
         "non-essentials/shaders" REGULAR_EXPRESSION
         "../common/shaders/.*")
@@ -180,6 +201,13 @@ option(TCNN_BUILD_BENCHMARK "Build tiny-cuda-nn example benchmark?" OFF)
 option(TCNN_BUILD_EXAMPLES "Build tiny-cuda-nn example applications?" OFF)
 add_subdirectory(ext/tiny-cuda-nn)
 set_project_group("External" "ext/tiny-cuda-nn")
+
+# CUBd
+option(CUBD_BUILD_SAMPLES "Build sample projects for cubd." OFF)
+option(CUBD_BUILD_DYNAMIC_LIB "Build dynamic-link cubd library." OFF)
+option(CUBD_BUILD_STATIC_LIB "Build static-link cubd library." ON)
+add_subdirectory(ext/cubd)
+set_project_group("External" "ext/cubd")
 
 add_library(fakelib INTERFACE)
 target_compile_definitions(

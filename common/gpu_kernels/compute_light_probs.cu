@@ -17,78 +17,154 @@ CUDA_DEVICE_KERNEL void computeProbabilityTextureFirstMip(
         dstMip.write(idx2D, value);
 }
 
-CUDA_DEVICE_KERNEL void computeTriangleProbabilities(
+
+
+CUDA_DEVICE_FUNCTION CUDA_INLINE float computeTriangleImportance(
+    GeometryInstanceData* geomInst, uint32_t triIndex,
+    const MaterialData* materialDataBuffer) {
+    const MaterialData &mat = materialDataBuffer[geomInst->materialSlot];
+    const Triangle &tri = geomInst->triangleBuffer[triIndex];
+    const Vertex (&v)[3] = {
+        geomInst->vertexBuffer[tri.index0],
+        geomInst->vertexBuffer[tri.index1],
+        geomInst->vertexBuffer[tri.index2]
+    };
+
+    float3 normal = cross(v[1].position - v[0].position, v[2].position - v[0].position);
+    float area = length(normal);
+
+    // TODO: もっと正確な推定の実装。テクスチャー空間中の面積に応じてMIPレベルを選択する？
+    float3 emittanceEstimate = make_float3(0.0f, 0.0f, 0.0f);
+    emittanceEstimate += getXYZ(tex2DLod<float4>(mat.emittance, v[0].texCoord.x, v[0].texCoord.y, 0));
+    emittanceEstimate += getXYZ(tex2DLod<float4>(mat.emittance, v[1].texCoord.x, v[1].texCoord.y, 0));
+    emittanceEstimate += getXYZ(tex2DLod<float4>(mat.emittance, v[2].texCoord.x, v[2].texCoord.y, 0));
+    emittanceEstimate /= 3;
+
+    float importance = sRGB_calcLuminance(emittanceEstimate) * area;
+    return importance;
+}
+
+CUDA_DEVICE_KERNEL void computeTriangleProbTexture(
     GeometryInstanceData* geomInst, uint32_t numTriangles,
     const MaterialData* materialDataBuffer,
     optixu::NativeBlockBuffer2D<float> dstMip) {
+#if USE_PROBABILITY_TEXTURE
     uint32_t linearIndex = blockDim.x * blockIdx.x + threadIdx.x;
     uint2 dims = computeProbabilityTextureDimentions(numTriangles);
     if (linearIndex == 0)
         geomInst->emitterPrimDist.setDimensions(dims);
     uint2 idx2D = compute2DFrom1D(dims, linearIndex);
     float importance = 0.0f;
-    if (linearIndex < numTriangles) {
-        const MaterialData &mat = materialDataBuffer[geomInst->materialSlot];
-        const Triangle &tri = geomInst->triangleBuffer[linearIndex];
-        const Vertex (&v)[3] = {
-            geomInst->vertexBuffer[tri.index0],
-            geomInst->vertexBuffer[tri.index1],
-            geomInst->vertexBuffer[tri.index2]
-        };
-
-        float3 normal = cross(v[1].position - v[0].position, v[2].position - v[0].position);
-        float area = length(normal);
-
-        // TODO: もっと正確な推定の実装。テクスチャー空間中の面積に応じてMIPレベルを選択する？
-        float3 emittanceEstimate = make_float3(0.0f, 0.0f, 0.0f);
-        emittanceEstimate += getXYZ(tex2DLod<float4>(mat.emittance, v[0].texCoord.x, v[0].texCoord.y, 0));
-        emittanceEstimate += getXYZ(tex2DLod<float4>(mat.emittance, v[1].texCoord.x, v[1].texCoord.y, 0));
-        emittanceEstimate += getXYZ(tex2DLod<float4>(mat.emittance, v[2].texCoord.x, v[2].texCoord.y, 0));
-        emittanceEstimate /= 3;
-
-        importance = sRGB_calcLuminance(emittanceEstimate) * area;
-    }
+    if (linearIndex < numTriangles)
+        importance = computeTriangleImportance(geomInst, linearIndex, materialDataBuffer);
     if (idx2D.x < dims.x && idx2D.y < dims.y)
         dstMip.write(idx2D, importance);
+#endif
 }
 
-CUDA_DEVICE_KERNEL void computeGeomInstProbabilities(
+CUDA_DEVICE_KERNEL void computeTriangleProbBuffer(
+    GeometryInstanceData* geomInst, uint32_t numTriangles,
+    const MaterialData* materialDataBuffer) {
+#if !USE_PROBABILITY_TEXTURE
+    uint32_t linearIndex = blockDim.x * blockIdx.x + threadIdx.x;
+    if (linearIndex == 0)
+        geomInst->emitterPrimDist.setNumValues(numTriangles);
+    if (linearIndex < numTriangles) {
+        float importance = computeTriangleImportance(geomInst, linearIndex, materialDataBuffer);
+        geomInst->emitterPrimDist.setWeightAt(linearIndex, importance);
+    }
+#endif
+}
+
+
+
+CUDA_DEVICE_FUNCTION CUDA_INLINE float computeGeomInstImportance(
+    InstanceData* inst,
+    const GeometryInstanceData* geometryInstanceDataBuffer, uint32_t geomInstIndex) {
+    uint32_t slot = inst->geomInstSlots[geomInstIndex];
+    const GeometryInstanceData &geomInst = geometryInstanceDataBuffer[slot];
+    float importance = geomInst.emitterPrimDist.integral();
+    return importance;
+}
+
+CUDA_DEVICE_KERNEL void computeGeomInstProbTexture(
     InstanceData* inst, uint32_t instIdx, uint32_t numGeomInsts,
     const GeometryInstanceData* geometryInstanceDataBuffer,
     optixu::NativeBlockBuffer2D<float> dstMip) {
+#if USE_PROBABILITY_TEXTURE
     uint32_t linearIndex = blockDim.x * blockIdx.x + threadIdx.x;
     uint2 dims = computeProbabilityTextureDimentions(numGeomInsts);
     if (linearIndex == 0)
         inst->lightGeomInstDist.setDimensions(dims);
     uint2 idx2D = compute2DFrom1D(dims, linearIndex);
     float importance = 0.0f;
-    if (linearIndex < numGeomInsts) {
-        uint32_t slot = inst->geomInstSlots[linearIndex];
-        const GeometryInstanceData &geomInst = geometryInstanceDataBuffer[slot];
-        importance = geomInst.emitterPrimDist.integral();
-        //printf("%5u-%5u: %g\n", instIdx, slot, importance);
-    }
+    if (linearIndex < numGeomInsts)
+        importance = computeGeomInstImportance(inst, geometryInstanceDataBuffer, linearIndex);
     if (idx2D.x < dims.x && idx2D.y < dims.y)
         dstMip.write(idx2D, importance);
+#endif
 }
 
-CUDA_DEVICE_KERNEL void computeInstProbabilities(
+CUDA_DEVICE_KERNEL void computeGeomInstProbBuffer(
+    InstanceData* inst, uint32_t instIdx, uint32_t numGeomInsts,
+    const GeometryInstanceData* geometryInstanceDataBuffer) {
+#if !USE_PROBABILITY_TEXTURE
+    uint32_t linearIndex = blockDim.x * blockIdx.x + threadIdx.x;
+    if (linearIndex == 0)
+        inst->lightGeomInstDist.setNumValues(numGeomInsts);
+    if (linearIndex < numGeomInsts) {
+        float importance = computeGeomInstImportance(inst, geometryInstanceDataBuffer, linearIndex);
+        inst->lightGeomInstDist.setWeightAt(linearIndex, importance);
+    }
+#endif
+}
+
+
+
+// TODO: instSlot?
+CUDA_DEVICE_FUNCTION CUDA_INLINE float computeInstImportance(
+    const InstanceData* instanceDataBuffer, uint32_t instIndex) {
+    const InstanceData &inst = instanceDataBuffer[instIndex];
+    float3 scale;
+    inst.transform.decompose(&scale, nullptr, nullptr);
+    float uniformScale = scale.x;
+    float importance = inst.lightGeomInstDist.integral();
+    return importance;
+}
+
+CUDA_DEVICE_KERNEL void computeInstProbTexture(
     ProbabilityTexture* lightInstDist, uint32_t numInsts,
     const InstanceData* instanceDataBuffer,
     optixu::NativeBlockBuffer2D<float> dstMip) {
+#if USE_PROBABILITY_TEXTURE
     uint32_t linearIndex = blockDim.x * blockIdx.x + threadIdx.x;
     uint2 dims = computeProbabilityTextureDimentions(numInsts);
     if (linearIndex == 0)
         lightInstDist->setDimensions(dims);
     uint2 idx2D = compute2DFrom1D(dims, linearIndex);
     float importance = 0.0f;
-    if (linearIndex < numInsts) {
-        const InstanceData &inst = instanceDataBuffer[linearIndex];
-        importance = inst.lightGeomInstDist.integral();
-    }
+    if (linearIndex < numInsts)
+        importance = computeInstImportance(instanceDataBuffer, linearIndex);
     if (idx2D.x < dims.x && idx2D.y < dims.y)
         dstMip.write(idx2D, importance);
+#endif
 }
+
+CUDA_DEVICE_KERNEL void computeInstProbBuffer(
+    DiscreteDistribution1D* lightInstDist, uint32_t numInsts,
+    const InstanceData* instanceDataBuffer) {
+#if !USE_PROBABILITY_TEXTURE
+    uint32_t linearIndex = blockDim.x * blockIdx.x + threadIdx.x;
+    if (linearIndex == 0)
+        lightInstDist->setNumValues(numInsts);
+    if (linearIndex < numInsts) {
+        float importance = computeInstImportance(instanceDataBuffer, linearIndex);
+        lightInstDist->setWeightAt(linearIndex, importance);
+    }
+#endif
+}
+
+
 
 CUDA_DEVICE_KERNEL void computeProbabilityTextureMip(
     ProbabilityTexture* probTex, uint32_t dstMipLevel,
@@ -116,6 +192,14 @@ CUDA_DEVICE_KERNEL void computeProbabilityTextureMip(
         if (dstMipLevel == numMipLevels - 1)
             probTex->setIntegral(sum);
     }
+}
+
+CUDA_DEVICE_KERNEL void finalizeDiscreteDistribution1D(
+    DiscreteDistribution1D* lightInstDist) {
+#if !defined(USE_WALKER_ALIAS_METHOD)
+    if (threadIdx.x == 0)
+        lightInstDist->finalize();
+#endif
 }
 
 

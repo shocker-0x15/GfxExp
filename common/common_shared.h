@@ -1439,10 +1439,10 @@ struct AABB {
 #define HARD_CODED_BSDF DiffuseAndSpecularBRDF
 //#define HARD_CODED_BSDF SimplePBR_BRDF
 
-#define USE_PROBABILITY_TEXTURE 1
+#define USE_PROBABILITY_TEXTURE 0
 
 // Use Walker's alias method with initialization by Vose's algorithm
-#define USE_WALKER_ALIAS_METHOD
+//#define USE_WALKER_ALIAS_METHOD
 
 #define PROCESS_DYNAMIC_FUNCTIONS \
     PROCESS_DYNAMIC_FUNCTION(readModifiedNormalFromNormalMap), \
@@ -1589,12 +1589,12 @@ namespace shared {
 
     template <typename RealType>
     class DiscreteDistribution1DTemplate {
-        const RealType* m_weights;
+        RealType* m_weights;
 #if defined(USE_WALKER_ALIAS_METHOD)
         const AliasTableEntry<RealType>* m_aliasTable;
         const AliasValueMap<RealType>* m_valueMaps;
 #else
-        const RealType* m_CDF;
+        RealType* m_CDF;
 #endif
         RealType m_integral;
         uint32_t m_numValues;
@@ -1602,13 +1602,13 @@ namespace shared {
     public:
 #if defined(USE_WALKER_ALIAS_METHOD)
         DiscreteDistribution1DTemplate(
-            const RealType* weights, const AliasTableEntry<RealType>* aliasTable, const AliasValueMap<RealType>* valueMaps,
+            RealType* weights, AliasTableEntry<RealType>* aliasTable, AliasValueMap<RealType>* valueMaps,
             RealType integral, uint32_t numValues) :
             m_weights(weights), m_aliasTable(aliasTable), m_valueMaps(valueMaps),
             m_integral(integral), m_numValues(numValues) {}
 #else
         DiscreteDistribution1DTemplate(
-            const RealType* weights, const RealType* CDF, RealType integral, uint32_t numValues) :
+            RealType* weights, RealType* CDF, RealType integral, uint32_t numValues) :
             m_weights(weights), m_CDF(CDF), m_integral(integral), m_numValues(numValues) {}
 #endif
 
@@ -1638,7 +1638,8 @@ namespace shared {
                 if (m_CDF[idx + d] <= u)
                     idx += d;
             }
-            Assert(idx < m_numValues, "Invalid Index!: %d", idx);
+            Assert(idx < m_numValues, "Invalid Index!: %u >= %u, u: %g, integ: %g",
+                   idx, m_numValues, u, m_integral);
             if (remapped) {
                 RealType lCDF = m_CDF[idx];
                 RealType rCDF = m_integral;
@@ -1661,6 +1662,23 @@ namespace shared {
         CUDA_COMMON_FUNCTION RealType integral() const { return m_integral; }
 
         CUDA_COMMON_FUNCTION uint32_t numValues() const { return m_numValues; }
+
+        CUDA_COMMON_FUNCTION uint32_t setNumValues(uint32_t numValues) {
+            m_numValues = numValues;
+        }
+
+#if defined(__CUDA_ARCH__) || defined(OPTIXU_Platform_CodeCompletion)
+        CUDA_DEVICE_FUNCTION uint32_t setWeightAt(uint32_t index, RealType value) {
+            m_weights[index] = value;
+        }
+
+#   if !defined(USE_WALKER_ALIAS_METHOD)
+        CUDA_DEVICE_FUNCTION void finalize() {
+            uint32_t lastIndex = m_numValues - 1;
+            m_integral = m_CDF[lastIndex] + m_weights[lastIndex];
+        }
+#   endif
+#endif
     };
 
     using DiscreteDistribution1D = DiscreteDistribution1DTemplate<float>;
@@ -1820,6 +1838,12 @@ namespace shared {
             return index2D.y * m_dimX + index2D.x;
         }
 
+        CUDA_COMMON_FUNCTION float integral() const {
+            if (m_cuTexObj == 0)
+                return 0.0f;
+            return m_integral;
+        }
+
 #if defined(__CUDA_ARCH__) || defined(OPTIXU_Platform_CodeCompletion)
         CUDA_DEVICE_FUNCTION uint32_t sample(float u, float* prob, float* remapped = nullptr) const {
             Assert(u >= 0 && u < 1, "\"u\": %g must be in range [0, 1).", u);
@@ -1890,12 +1914,6 @@ namespace shared {
             if (remapped)
                 *remapped = u;
             return compute1DFrom2D(index2D);
-        }
-
-        CUDA_DEVICE_FUNCTION float integral() const {
-            if (m_cuTexObj == 0)
-                return 0.0f;
-            return m_integral;
         }
 
         CUDA_DEVICE_FUNCTION void setIntegral(float v) {

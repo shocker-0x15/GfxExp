@@ -75,6 +75,7 @@ initialize(CUcontext cuContext, cudau::BufferType type, const RealType* values, 
 
     if (values == nullptr) {
         m_integral = 0.0f;
+        m_isInitialized = true;
         return;
     }
 
@@ -155,6 +156,7 @@ initialize(CUcontext cuContext, cudau::BufferType type, const RealType* values, 
 
     if (values == nullptr) {
         m_integral = 0.0f;
+        m_isInitialized = true;
         return;
     }
 
@@ -1604,7 +1606,11 @@ static GeometryInstance* createGeometryInstance(
     geomInst->vertexBuffer.initialize(cuContext, Scene::bufferType, vertices);
     geomInst->triangleBuffer.initialize(cuContext, Scene::bufferType, triangles);
     if (mat->emittance) {
+#if USE_PROBABILITY_TEXTURE
         geomInst->emitterPrimDist.initialize(cuContext, triangles.size());
+#else
+        geomInst->emitterPrimDist.initialize(cuContext, Scene::bufferType, nullptr, triangles.size());
+#endif
     }
     geomInst->geomInstSlot = scene->geomInstSlotFinder.getFirstAvailableSlot();
     scene->geomInstSlotFinder.setInUse(geomInst->geomInstSlot);
@@ -2072,7 +2078,11 @@ Instance* createInstance(
     inst->geomGroup = geomGroup;
     inst->geomInstSlots.initialize(cuContext, Scene::bufferType, geomInstSlots);
     if (hasEmitterGeomInsts) {
+#if USE_PROBABILITY_TEXTURE
         inst->lightGeomInstDist.initialize(cuContext, geomInstSlots.size());
+#else
+        inst->lightGeomInstDist.initialize(cuContext, Scene::bufferType, nullptr, geomInstSlots.size());
+#endif
     }
     inst->instSlot = scene->instSlotFinder.getFirstAvailableSlot();
     scene->instSlotFinder.setInUse(inst->instSlot);

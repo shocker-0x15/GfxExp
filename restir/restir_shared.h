@@ -302,6 +302,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void sampleLight(
     const float3 &shadingPoint,
     float ul, bool sampleEnvLight, float u0, float u1,
     shared::LightSample* lightSample, float* areaPDensity) {
+    using namespace shared;
     CUtexObject texEmittance = 0;
     float3 emittance = make_float3(0.0f, 0.0f, 0.0f);
     float2 texCoord;
@@ -345,6 +346,13 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void sampleLight(
         uint32_t instIndex = plp.s->lightInstDist.sample(ul, &instProb, &uGeomInst);
         lightProb *= instProb;
         const InstanceData &inst = plp.f->instanceDataBuffer[instIndex];
+        if (instProb == 0.0f) {
+            *areaPDensity = 0.0f;
+            return;
+        }
+        //Assert(inst.lightGeomInstDist.integral() > 0.0f,
+        //       "Non-emissive inst %u, prob %g, u: %g(0x%08x).", instIndex, instProb, ul, *(uint32_t*)&ul);
+
 
         // JP: 次にサンプルしたインスタンスに属するジオメトリインスタンスをサンプルする。
         // EN: Next, sample a geometry instance which belongs to the sampled instance.
@@ -354,6 +362,12 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void sampleLight(
         uint32_t geomInstIndex = inst.geomInstSlots[geomInstIndexInInst];
         lightProb *= geomInstProb;
         const GeometryInstanceData &geomInst = plp.s->geometryInstanceDataBuffer[geomInstIndex];
+        if (geomInstProb == 0.0f) {
+            *areaPDensity = 0.0f;
+            return;
+        }
+        //Assert(geomInst.emitterPrimDist.integral() > 0.0f,
+        //       "Non-emissive geom inst %u, prob %g, u: %g.", geomInstIndex, geomInstProb, uGeomInst);
 
         // JP: 最後に、サンプルしたジオメトリインスタンスに属するプリミティブをサンプルする。
         // EN: Finally, sample a primitive which belongs to the sampled geometry instance.
@@ -483,6 +497,7 @@ template <typename RayType, bool withVisibility>
 CUDA_DEVICE_FUNCTION CUDA_INLINE float3 performDirectLighting(
     const float3 &shadingPoint, const float3 &vOutLocal, const ReferenceFrame &shadingFrame, const BSDF &bsdf,
     const shared::LightSample &lightSample) {
+    using namespace shared;
     float3 shadowRayDir = lightSample.atInfinity ?
         lightSample.position :
         (lightSample.position - shadingPoint);
@@ -521,6 +536,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE float3 performDirectLighting(
 template <typename RayType>
 CUDA_DEVICE_FUNCTION CUDA_INLINE bool evaluateVisibility(
     const float3 &shadingPoint, const shared::LightSample &lightSample) {
+    using namespace shared;
     float3 shadowRayDir = lightSample.atInfinity ?
         lightSample.position :
         (lightSample.position - shadingPoint);
@@ -550,6 +566,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void computeSurfacePoint(
     float3* positionInWorld, float3* shadingNormalInWorld, float3* texCoord0DirInWorld,
     float3* geometricNormalInWorld, float2* texCoord,
     float* hypAreaPDensity) {
+    using namespace shared;
     const Triangle &tri = geomInst.triangleBuffer[primIndex];
     const Vertex &v0 = geomInst.vertexBuffer[tri.index0];
     const Vertex &v1 = geomInst.vertexBuffer[tri.index1];

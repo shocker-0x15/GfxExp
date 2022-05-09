@@ -10,3 +10,6 @@
 [submodule "ext/tinyexr"]
 	path = ext/tinyexr
 	url = https://github.com/syoyo/tinyexr.git
+[submodule "ext/cubd"]
+	path = ext/cubd
+	url = https://github.com/shocker-0x15/CUBd.git
