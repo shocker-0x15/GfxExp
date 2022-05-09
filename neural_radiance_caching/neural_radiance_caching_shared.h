@@ -235,7 +235,7 @@ namespace shared {
 
         const MaterialData* materialDataBuffer;
         const GeometryInstanceData* geometryInstanceDataBuffer;
-        DiscreteDistribution1D lightInstDist;
+        LightDistribution lightInstDist;
         RegularConstantContinuousDistribution2D envLightImportanceMap;
         CUtexObject envLightTexture;
 
@@ -387,6 +387,13 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void sampleLight(
         uint32_t instIndex = plp.s->lightInstDist.sample(ul, &instProb, &uGeomInst);
         lightProb *= instProb;
         const InstanceData &inst = plp.f->instanceDataBuffer[instIndex];
+        if (instProb == 0.0f) {
+            *areaPDensity = 0.0f;
+            return;
+        }
+        //Assert(inst.lightGeomInstDist.integral() > 0.0f,
+        //       "Non-emissive inst %u, prob %g, u: %g(0x%08x).", instIndex, instProb, ul, *(uint32_t*)&ul);
+
 
         // JP: 次にサンプルしたインスタンスに属するジオメトリインスタンスをサンプルする。
         // EN: Next, sample a geometry instance which belongs to the sampled instance.
@@ -396,6 +403,12 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void sampleLight(
         uint32_t geomInstIndex = inst.geomInstSlots[geomInstIndexInInst];
         lightProb *= geomInstProb;
         const GeometryInstanceData &geomInst = plp.s->geometryInstanceDataBuffer[geomInstIndex];
+        if (geomInstProb == 0.0f) {
+            *areaPDensity = 0.0f;
+            return;
+        }
+        //Assert(geomInst.emitterPrimDist.integral() > 0.0f,
+        //       "Non-emissive geom inst %u, prob %g, u: %g.", geomInstIndex, geomInstProb, uGeomInst);
 
         // JP: 最後に、サンプルしたジオメトリインスタンスに属するプリミティブをサンプルする。
         // EN: Finally, sample a primitive which belongs to the sampled geometry instance.
@@ -641,8 +654,13 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void computeSurfacePoint(
         float lightProb = 1.0f;
         if (plp.s->envLightTexture && plp.f->enableEnvLight)
             lightProb *= (1 - probToSampleEnvLight);
-        lightProb *= inst.lightGeomInstDist.integral() / plp.s->lightInstDist.integral();
-        lightProb *= geomInst.emitterPrimDist.integral() / inst.lightGeomInstDist.integral();
+        float instImportance = inst.lightGeomInstDist.integral();
+        lightProb *= instImportance / plp.s->lightInstDist.integral();
+        lightProb *= geomInst.emitterPrimDist.integral() / instImportance;
+        if (!isfinite(lightProb)) {
+            *hypAreaPDensity = 0.0f;
+            return;
+        }
         lightProb *= geomInst.emitterPrimDist.evaluatePMF(primIndex);
         if constexpr (useSolidAngleSampling) {
             // TODO: ? compute in the local coordinates.
@@ -669,6 +687,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void computeSurfacePoint(
         else {
             *hypAreaPDensity = lightProb / area;
         }
+        Assert(isfinite(*hypAreaPDensity), "hypP: %g, area: %g", *hypAreaPDensity, area);
     }
     else {
         (void)*hypAreaPDensity;

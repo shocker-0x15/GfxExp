@@ -23,7 +23,7 @@ ReSTIR enables efficient sampling from a massive amount of emitter primitives at
   - [x] Diffuse + Glossy BRDF
   - [x] Environmental Light
   - [x] Unbiased RIS Estimator with MIS weights
-  - [ ] (WIP) Implement the improved ReSTIR algorithm:\
+  - [x] Implement the improved ReSTIR algorithm:\
         "Rearchitecting Spatiotemporal Resampling for Production"\
         https://research.nvidia.com/publication/2021-07_Rearchitecting-Spatiotemporal-Resampling
 
@@ -75,9 +75,9 @@ Programs here use [OptiX Utility](https://github.com/shocker-0x15/OptiX_Utility)
 現状以下の環境で動作を確認しています。\
 I've confirmed that the program runs correctly in the following environment.
 
-* Windows 10 (21H2) & Visual Studio Community 2022 (17.1.3)
+* Windows 10 (21H2) & Visual Studio Community 2022 (17.1.6)
 * Core i9-9900K, 32GB, RTX 3080 10GB
-* NVIDIA Driver 512.15
+* NVIDIA Driver 512.59
 
 動作させるにあたっては以下のライブラリが必要です。\
 It requires the following libraries.

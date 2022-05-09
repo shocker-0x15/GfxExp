@@ -830,7 +830,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
     gpuEnv.initialize();
 
     Scene scene;
-    scene.initialize(gpuEnv.cuContext, gpuEnv.optixContext, shared::maxNumRayTypes, gpuEnv.optixDefaultMaterial);
+    scene.initialize(
+        getExecutableDirectory() / "path_tracing/ptxes",
+        gpuEnv.cuContext, gpuEnv.optixContext, shared::maxNumRayTypes, gpuEnv.optixDefaultMaterial);
 
     CUstream cuStream;
     CUDADRV_CHECK(cuStreamCreate(&cuStream, 0));
@@ -901,18 +903,11 @@ int32_t main(int32_t argc, const char* argv[]) try {
     scene.setupASes(gpuEnv.cuContext);
     CUDADRV_CHECK(cuStreamSynchronize(0));
 
-    // JP: 各インスタンスの重要度から光源インスタンスをサンプルするための分布を計算する。
-    // EN: Compute a distribution to sample a light source instance from the importance value of each instance.
     uint32_t totalNumEmitterPrimitives = 0;
-    std::vector<float> lightImportances(scene.insts.size());
     for (int i = 0; i < scene.insts.size(); ++i) {
         const Instance* inst = scene.insts[i];
-        lightImportances[i] = inst->lightGeomInstDist.getIntengral();
         totalNumEmitterPrimitives += inst->geomGroup->numEmitterPrimitives;
     }
-    DiscreteDistribution1D lightInstDist;
-    lightInstDist.initialize(gpuEnv.cuContext, Scene::bufferType,
-                             lightImportances.data(), lightImportances.size());
     hpprintf("%u emitter primitives\n", totalNumEmitterPrimitives);
 
     // JP: 環境光テクスチャーを読み込んで、サンプルするためのCDFを計算する。
@@ -923,7 +918,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
     if (!g_envLightTexturePath.empty())
         loadEnvironmentalTexture(g_envLightTexturePath, gpuEnv.cuContext,
                                  &envLightArray, &envLightTexture, &envLightImportanceMap);
-    Assert(lightInstDist.getIntengral() > 0 || !g_envLightTexturePath.empty(), "No lights!");
+
+    scene.setupLightGeomDistributions();
 
     // END: Setup a scene.
     // ----------------------------------------------------------------
@@ -1158,7 +1154,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
         staticPlp.materialDataBuffer = scene.materialDataBuffer.getDevicePointer();
         staticPlp.geometryInstanceDataBuffer = scene.geomInstDataBuffer.getDevicePointer();
-        lightInstDist.getDeviceType(&staticPlp.lightInstDist);
         envLightImportanceMap.getDeviceType(&staticPlp.envLightImportanceMap);
         staticPlp.envLightTexture = envLightTexture;
 
@@ -1224,6 +1219,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
     struct GPUTimer {
         cudau::Timer frame;
         cudau::Timer update;
+        cudau::Timer computePDFTexture;
         cudau::Timer setupGBuffers;
         cudau::Timer pathTrace;
         cudau::Timer denoise;
@@ -1231,6 +1227,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         void initialize(CUcontext context) {
             frame.initialize(context);
             update.initialize(context);
+            computePDFTexture.initialize(context);
             setupGBuffers.initialize(context);
             pathTrace.initialize(context);
             denoise.initialize(context);
@@ -1239,6 +1236,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
             denoise.finalize();
             pathTrace.finalize();
             setupGBuffers.finalize();
+            computePDFTexture.finalize();
             update.finalize();
             frame.finalize();
         }
@@ -1619,12 +1617,14 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
             static MovingAverageTime cudaFrameTime;
             static MovingAverageTime updateTime;
+            static MovingAverageTime computePDFTextureTime;
             static MovingAverageTime setupGBuffersTime;
             static MovingAverageTime pathTraceTime;
             static MovingAverageTime denoiseTime;
 
             cudaFrameTime.append(curGPUTimer.frame.report());
             updateTime.append(curGPUTimer.update.report());
+            computePDFTextureTime.append(curGPUTimer.computePDFTexture.report());
             setupGBuffersTime.append(curGPUTimer.setupGBuffers.report());
             pathTraceTime.append(curGPUTimer.pathTrace.report());
             denoiseTime.append(curGPUTimer.denoise.report());
@@ -1632,8 +1632,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
             //ImGui::SetNextItemWidth(100.0f);
             ImGui::Text("CUDA/OptiX GPU %.3f [ms]:", cudaFrameTime.getAverage());
             ImGui::Text("  Update: %.3f [ms]", updateTime.getAverage());
-            ImGui::Text("  setupGBuffers: %.3f [ms]", setupGBuffersTime.getAverage());
-            ImGui::Text("  pathTrace: %.3f [ms]", pathTraceTime.getAverage());
+            ImGui::Text("  Compute PDF Texture: %.3f [ms]", computePDFTextureTime.getAverage());
+            ImGui::Text("  Setup G-Buffers: %.3f [ms]", setupGBuffersTime.getAverage());
+            ImGui::Text("  Path Trace: %.3f [ms]", pathTraceTime.getAverage());
             if (bufferTypeToDisplay == shared::BufferToDisplay::DenoisedBeauty)
                 ImGui::Text("  Denoise: %.3f [ms]", denoiseTime.getAverage());
 
@@ -1679,6 +1680,16 @@ int32_t main(int32_t argc, const char* argv[]) try {
             perFramePlp.travHandle = scene.ias.rebuild(
                 cuStream, scene.iasInstanceBuffer, scene.iasMem, scene.asScratchMem);
         curGPUTimer.update.stop(cuStream);
+
+        // JP: 光源となるインスタンスのProbability Textureを計算する。
+        // EN: Compute the probability texture for light instances.
+        curGPUTimer.computePDFTexture.start(cuStream);
+        {
+            CUdeviceptr probTexAddr =
+                staticPlpOnDevice + offsetof(shared::StaticPipelineLaunchParameters, lightInstDist);
+            scene.setupLightInstDistribtion(cuStream, probTexAddr, bufferIndex);
+        }
+        curGPUTimer.computePDFTexture.stop(cuStream);
 
         bool newSequence = resized || frameIndex == 0 || resetAccumulation;
         bool firstAccumFrame =
@@ -1885,7 +1896,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
     if (envLightTexture)
         cuTexObjectDestroy(envLightTexture);
     envLightArray.finalize();
-    lightInstDist.finalize();
 
     finalizeTextureCaches();
 

@@ -69,6 +69,12 @@ list(
 list(
     FILTER COMMON_SOURCES EXCLUDE REGEX
     "ext/tiny-cuda-nn/.*")
+list(
+    FILTER COMMON_SOURCES EXCLUDE REGEX
+    "ext/cubd/.*(cpp|cu)$")
+list(
+    FILTER COMMON_SOURCES EXCLUDE REGEX
+    "ext/cubd/cuda_util.*$")
 file(
     GLOB IMGUI_BACKEND_SOURCES
     "ext/imgui/backends/imgui_impl_glfw*"
@@ -141,6 +147,9 @@ function(set_common_sources)
         "non-essentials/ext/tinyexr/miniz" REGULAR_EXPRESSION
         "../ext/tinyexr/deps/miniz/[^/]*\.(h|hpp|c|cpp)$")
     source_group(
+        "non-essentials/ext/cubd" REGULAR_EXPRESSION
+        "../ext/cubd/[^/]*\.h$")
+    source_group(
         "non-essentials/ext" REGULAR_EXPRESSION
         "../ext/[^/]*\.(h|hpp|c|cc|cpp)$")
     source_group(
@@ -212,6 +221,7 @@ set_project_group("External" "ext/cubd")
 add_library(fakelib INTERFACE)
 target_compile_definitions(
     fakelib INTERFACE
+    "USE_CUBD_LIB"
     "$<$<CONFIG:Debug>:_DEBUG=1>"
 )
 target_compile_options(
@@ -219,6 +229,10 @@ target_compile_options(
     # if (compilerID == MSVC && compilerLanguage != CUDA) set(/MP);
     "$<$<AND:$<C_COMPILER_ID:MSVC>,$<NOT:$<COMPILE_LANGUAGE:CUDA>>>:/MP>"
     "$<$<AND:$<CXX_COMPILER_ID:MSVC>,$<NOT:$<COMPILE_LANGUAGE:CUDA>>>:/MP>"
+)
+target_link_libraries(
+    fakelib INTERFACE
+    libcubd_static
 )
 
 add_subdirectory(path_tracing)

@@ -1655,6 +1655,8 @@ namespace shared {
         }
 
         CUDA_COMMON_FUNCTION RealType evaluatePMF(uint32_t idx) const {
+            if (!m_weights || m_integral == 0.0f)
+                return 0.0f;
             Assert(idx < m_numValues, "\"idx\" is out of range [0, %u)", m_numValues);
             return m_weights[idx] / m_integral;
         }
@@ -1839,7 +1841,7 @@ namespace shared {
         }
 
         CUDA_COMMON_FUNCTION float integral() const {
-            if (m_cuTexObj == 0)
+            if (m_cuTexObj == 0 || m_integral == 0.0f)
                 return 0.0f;
             return m_integral;
         }

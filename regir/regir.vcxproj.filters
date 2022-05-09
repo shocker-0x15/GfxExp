@@ -31,6 +31,9 @@
     <Filter Include="non-essentials\shaders">
       <UniqueIdentifier>{9396e15c-4c70-439f-b90a-3a06a3f1daff}</UniqueIdentifier>
     </Filter>
+    <Filter Include="non-essentials\GPU kernels">
+      <UniqueIdentifier>{e9e755c2-747d-4067-9a35-9a3c87ea550b}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="regir_main.cpp" />
@@ -169,6 +172,9 @@
     <CudaCompile Include="copy_buffers.cu" />
     <CudaCompile Include="build_cell_reservoirs.cu" />
     <CudaCompile Include="optix_gbuffer_kernels.cu" />
+    <CudaCompile Include="..\common\gpu_kernels\compute_light_probs.cu">
+      <Filter>non-essentials\GPU kernels</Filter>
+    </CudaCompile>
   </ItemGroup>
   <ItemGroup>
     <CopyFileToFolders Include="..\ext\prebuilt\bin\assimp-vc143-mt.dll">

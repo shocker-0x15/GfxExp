@@ -188,28 +188,27 @@ namespace shared {
     
     struct StaticPipelineLaunchParameters {
         int2 imageSize;
-        int2 numTiles;
-
-        // only for rearchitected ver.
-        PCG32RNG* lightPreSamplingRngs;
-        PreSampledLight* preSampledLights;
-
         optixu::NativeBlockBuffer2D<PCG32RNG> rngBuffer;
 
         optixu::NativeBlockBuffer2D<GBuffer0> GBuffer0[2];
         optixu::NativeBlockBuffer2D<GBuffer1> GBuffer1[2];
         optixu::NativeBlockBuffer2D<GBuffer2> GBuffer2[2];
 
-        optixu::BlockBuffer2D<Reservoir<LightSample>, 0> reservoirBuffer[2];
-        optixu::NativeBlockBuffer2D<ReservoirInfo> reservoirInfoBuffer[2];
-        optixu::NativeBlockBuffer2D<SampleVisibility> sampleVisibilityBuffer[2];
-        const float2* spatialNeighborDeltas; // only for rearchitected ver.
-
         const MaterialData* materialDataBuffer;
         const GeometryInstanceData* geometryInstanceDataBuffer;
         LightDistribution lightInstDist;
         RegularConstantContinuousDistribution2D envLightImportanceMap;
         CUtexObject envLightTexture;
+
+        // only for rearchitected ver.
+        int2 numTiles;
+        PCG32RNG* lightPreSamplingRngs;
+        PreSampledLight* preSampledLights;
+
+        optixu::BlockBuffer2D<Reservoir<LightSample>, 0> reservoirBuffer[2];
+        optixu::NativeBlockBuffer2D<ReservoirInfo> reservoirInfoBuffer[2];
+        optixu::NativeBlockBuffer2D<SampleVisibility> sampleVisibilityBuffer[2];
+        const float2* spatialNeighborDeltas; // only for rearchitected ver.
 
         optixu::NativeBlockBuffer2D<float4> beautyAccumBuffer;
         optixu::NativeBlockBuffer2D<float4> albedoAccumBuffer;
@@ -613,8 +612,13 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void computeSurfacePoint(
         float lightProb = 1.0f;
         if (plp.s->envLightTexture && plp.f->enableEnvLight)
             lightProb *= (1 - probToSampleEnvLight);
-        lightProb *= inst.lightGeomInstDist.integral() / plp.s->lightInstDist.integral();
-        lightProb *= geomInst.emitterPrimDist.integral() / inst.lightGeomInstDist.integral();
+        float instImportance = inst.lightGeomInstDist.integral();
+        lightProb *= instImportance / plp.s->lightInstDist.integral();
+        lightProb *= geomInst.emitterPrimDist.integral() / instImportance;
+        if (!isfinite(lightProb)) {
+            *hypAreaPDensity = 0.0f;
+            return;
+        }
         lightProb *= geomInst.emitterPrimDist.evaluatePMF(primIndex);
         if constexpr (useSolidAngleSampling) {
             // TODO: ? compute in the local coordinates.
@@ -641,6 +645,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void computeSurfacePoint(
         else {
             *hypAreaPDensity = lightProb / area;
         }
+        Assert(isfinite(*hypAreaPDensity), "hypP: %g, area: %g", *hypAreaPDensity, area);
     }
     else {
         (void)*hypAreaPDensity;

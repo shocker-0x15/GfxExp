@@ -46,6 +46,9 @@
     <Filter Include="non-essentials\ext\tinyexr\miniz">
       <UniqueIdentifier>{7a7f3879-e89a-4af6-b5e9-f51ab13dcb28}</UniqueIdentifier>
     </Filter>
+    <Filter Include="non-essentials\GPU kernels">
+      <UniqueIdentifier>{ed09cee5-d028-4565-acb0-82d38fc227e5}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="neural_radiance_caching_main.cpp" />
@@ -333,6 +336,9 @@
     <CudaCompile Include="kernels.cu" />
     <CudaCompile Include="network_interface.cu" />
     <CudaCompile Include="optix_gbuffer_kernels.cu" />
+    <CudaCompile Include="..\common\gpu_kernels\compute_light_probs.cu">
+      <Filter>non-essentials\GPU kernels</Filter>
+    </CudaCompile>
   </ItemGroup>
   <ItemGroup>
     <CopyFileToFolders Include="..\common\shaders\drawOptiXResult.frag">

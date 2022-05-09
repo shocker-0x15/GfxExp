@@ -33,7 +33,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE float computeTriangleImportance(
     float3 normal = cross(v[1].position - v[0].position, v[2].position - v[0].position);
     float area = length(normal);
 
-    // TODO: もっと正確な推定の実装。テクスチャー空間中の面積に応じてMIPレベルを選択する？
+    // TODO: もっと正確な、少なくとも保守的な推定の実装。テクスチャー空間中の面積に応じてMIPレベルを選択する？
     float3 emittanceEstimate = make_float3(0.0f, 0.0f, 0.0f);
     emittanceEstimate += getXYZ(tex2DLod<float4>(mat.emittance, v[0].texCoord.x, v[0].texCoord.y, 0));
     emittanceEstimate += getXYZ(tex2DLod<float4>(mat.emittance, v[1].texCoord.x, v[1].texCoord.y, 0));
@@ -41,6 +41,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE float computeTriangleImportance(
     emittanceEstimate /= 3;
 
     float importance = sRGB_calcLuminance(emittanceEstimate) * area;
+    Assert(isfinite(importance), "imp: %g, area", importance, area);
     return importance;
 }
 

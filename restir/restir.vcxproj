@@ -138,6 +138,9 @@
     <TargetName>restir</TargetName>
     <ExternalIncludePath>$(SolutionDir)ext\tinyexr;$(SolutionDir)ext\tinyexr\deps\miniz;$(SolutionDir)ext\gl3w\include;$(SolutionDir)ext\glfw\include;$(SolutionDir)ext\imgui;$(SolutionDir)ext\prebuilt\include;C:\ProgramData\NVIDIA Corporation\OptiX SDK 7.4.0\include;$(ExternalIncludePath)</ExternalIncludePath>
   </PropertyGroup>
+  <PropertyGroup Label="Vcpkg">
+    <VcpkgEnabled>false</VcpkgEnabled>
+  </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>

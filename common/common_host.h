@@ -55,7 +55,7 @@ class DiscreteDistribution1DTemplate {
     unsigned int m_isInitialized : 1;
 
 public:
-    DiscreteDistribution1DTemplate() : m_isInitialized(false) {}
+    DiscreteDistribution1DTemplate() : m_isInitialized(false), m_integral(0.0f) {}
     void initialize(CUcontext cuContext, cudau::BufferType type, const RealType* values, size_t numValues);
     void finalize() {
         if (!m_isInitialized)

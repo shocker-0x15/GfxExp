@@ -1442,33 +1442,39 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
 
     shared::StaticPipelineLaunchParameters staticPlp = {};
-    staticPlp.imageSize = int2(renderTargetSizeX, renderTargetSizeY);
-    staticPlp.numTiles = int2((renderTargetSizeX + shared::tileSizeX - 1) / shared::tileSizeX,
-                              (renderTargetSizeY + shared::tileSizeY - 1) / shared::tileSizeY);
-    staticPlp.lightPreSamplingRngs = lightPreSamplingRngs.getDevicePointer();
-    staticPlp.preSampledLights = preSampledLights.getDevicePointer();
-    staticPlp.rngBuffer = rngBuffer.getSurfaceObject(0);
-    staticPlp.GBuffer0[0] = gBuffer0[0].getSurfaceObject(0);
-    staticPlp.GBuffer0[1] = gBuffer0[1].getSurfaceObject(0);
-    staticPlp.GBuffer1[0] = gBuffer1[0].getSurfaceObject(0);
-    staticPlp.GBuffer1[1] = gBuffer1[1].getSurfaceObject(0);
-    staticPlp.GBuffer2[0] = gBuffer2[0].getSurfaceObject(0);
-    staticPlp.GBuffer2[1] = gBuffer2[1].getSurfaceObject(0);
-    staticPlp.reservoirBuffer[0] = reservoirBuffer[0].getBlockBuffer2D();
-    staticPlp.reservoirBuffer[1] = reservoirBuffer[1].getBlockBuffer2D();
-    staticPlp.reservoirInfoBuffer[0] = reservoirInfoBuffer[0].getSurfaceObject(0);
-    staticPlp.reservoirInfoBuffer[1] = reservoirInfoBuffer[1].getSurfaceObject(0);
-    staticPlp.sampleVisibilityBuffer[0] = sampleVisibilityBuffer[0].getSurfaceObject(0);
-    staticPlp.sampleVisibilityBuffer[1] = sampleVisibilityBuffer[1].getSurfaceObject(0);
-    staticPlp.spatialNeighborDeltas = spatialNeighborDeltas.getDevicePointer();
-    staticPlp.materialDataBuffer = scene.materialDataBuffer.getDevicePointer();
-    staticPlp.geometryInstanceDataBuffer = scene.geomInstDataBuffer.getDevicePointer();
-    envLightImportanceMap.getDeviceType(&staticPlp.envLightImportanceMap);
-    staticPlp.envLightTexture = envLightTexture;
-    staticPlp.beautyAccumBuffer = beautyAccumBuffer.getSurfaceObject(0);
-    staticPlp.albedoAccumBuffer = albedoAccumBuffer.getSurfaceObject(0);
-    staticPlp.normalAccumBuffer = normalAccumBuffer.getSurfaceObject(0);
+    {
+        staticPlp.imageSize = int2(renderTargetSizeX, renderTargetSizeY);
+        staticPlp.rngBuffer = rngBuffer.getSurfaceObject(0);
 
+        staticPlp.GBuffer0[0] = gBuffer0[0].getSurfaceObject(0);
+        staticPlp.GBuffer0[1] = gBuffer0[1].getSurfaceObject(0);
+        staticPlp.GBuffer1[0] = gBuffer1[0].getSurfaceObject(0);
+        staticPlp.GBuffer1[1] = gBuffer1[1].getSurfaceObject(0);
+        staticPlp.GBuffer2[0] = gBuffer2[0].getSurfaceObject(0);
+        staticPlp.GBuffer2[1] = gBuffer2[1].getSurfaceObject(0);
+
+        staticPlp.materialDataBuffer = scene.materialDataBuffer.getDevicePointer();
+        staticPlp.geometryInstanceDataBuffer = scene.geomInstDataBuffer.getDevicePointer();
+        envLightImportanceMap.getDeviceType(&staticPlp.envLightImportanceMap);
+        staticPlp.envLightTexture = envLightTexture;
+
+        staticPlp.numTiles = int2((renderTargetSizeX + shared::tileSizeX - 1) / shared::tileSizeX,
+                                  (renderTargetSizeY + shared::tileSizeY - 1) / shared::tileSizeY);
+        staticPlp.lightPreSamplingRngs = lightPreSamplingRngs.getDevicePointer();
+        staticPlp.preSampledLights = preSampledLights.getDevicePointer();
+
+        staticPlp.reservoirBuffer[0] = reservoirBuffer[0].getBlockBuffer2D();
+        staticPlp.reservoirBuffer[1] = reservoirBuffer[1].getBlockBuffer2D();
+        staticPlp.reservoirInfoBuffer[0] = reservoirInfoBuffer[0].getSurfaceObject(0);
+        staticPlp.reservoirInfoBuffer[1] = reservoirInfoBuffer[1].getSurfaceObject(0);
+        staticPlp.sampleVisibilityBuffer[0] = sampleVisibilityBuffer[0].getSurfaceObject(0);
+        staticPlp.sampleVisibilityBuffer[1] = sampleVisibilityBuffer[1].getSurfaceObject(0);
+        staticPlp.spatialNeighborDeltas = spatialNeighborDeltas.getDevicePointer();
+
+        staticPlp.beautyAccumBuffer = beautyAccumBuffer.getSurfaceObject(0);
+        staticPlp.albedoAccumBuffer = albedoAccumBuffer.getSurfaceObject(0);
+        staticPlp.normalAccumBuffer = normalAccumBuffer.getSurfaceObject(0);
+    }
     CUdeviceptr staticPlpOnDevice;
     CUDADRV_CHECK(cuMemAlloc(&staticPlpOnDevice, sizeof(staticPlp)));
     CUDADRV_CHECK(cuMemcpyHtoD(staticPlpOnDevice, &staticPlp, sizeof(staticPlp)));

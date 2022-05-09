@@ -59,6 +59,7 @@
     <ClInclude Include="regir_shared.h" />
   </ItemGroup>
   <ItemGroup>
+    <CudaCompile Include="..\common\gpu_kernels\compute_light_probs.cu" />
     <CudaCompile Include="build_cell_reservoirs.cu" />
     <CudaCompile Include="copy_buffers.cu" />
     <CudaCompile Include="optix_gbuffer_kernels.cu">
@@ -133,19 +134,22 @@
     <TargetName>regir</TargetName>
     <ExternalIncludePath>$(SolutionDir)ext\tinyexr;$(SolutionDir)ext\tinyexr\deps\miniz;$(SolutionDir)ext\gl3w\include;$(SolutionDir)ext\glfw\include;$(SolutionDir)ext\imgui;$(SolutionDir)ext\prebuilt\include;C:\ProgramData\NVIDIA Corporation\OptiX SDK 7.4.0\include;$(ExternalIncludePath)</ExternalIncludePath>
   </PropertyGroup>
+  <PropertyGroup Label="Vcpkg">
+    <VcpkgEnabled>false</VcpkgEnabled>
+  </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
       <ConformanceMode>true</ConformanceMode>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
-      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;_MBCS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>USE_CUBD_LIB;_CRT_SECURE_NO_WARNINGS;_MBCS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <SDLCheck>true</SDLCheck>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
-      <AdditionalDependencies>$(SolutionDir)ext\prebuilt\lib\assimp-vc143-mt.lib;cuda.lib;cudart_static.lib;glfw3.lib;opengl32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(SolutionDir)ext\prebuilt\lib\assimp-vc143-mt.lib;cuda.lib;cudart_static.lib;glfw3.lib;opengl32.lib;$(SolutionDir)ext\prebuilt\lib\libcubd_staticd.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <IgnoreSpecificDefaultLibraries>msvcrt.lib</IgnoreSpecificDefaultLibraries>
     </Link>
     <PostBuildEvent>
@@ -177,7 +181,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <ConformanceMode>true</ConformanceMode>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
-      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;_MBCS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>USE_CUBD_LIB;_CRT_SECURE_NO_WARNINGS;_MBCS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <SDLCheck>true</SDLCheck>
     </ClCompile>
@@ -185,7 +189,7 @@
       <SubSystem>Console</SubSystem>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
-      <AdditionalDependencies>$(SolutionDir)ext\prebuilt\lib\assimp-vc143-mt.lib;cuda.lib;cudart_static.lib;glfw3.lib;opengl32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(SolutionDir)ext\prebuilt\lib\assimp-vc143-mt.lib;cuda.lib;cudart_static.lib;glfw3.lib;opengl32.lib;$(SolutionDir)ext\prebuilt\lib\libcubd_static.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PostBuildEvent>
       <Command>

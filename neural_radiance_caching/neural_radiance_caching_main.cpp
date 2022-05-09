@@ -997,7 +997,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
     gpuEnv.initialize();
 
     Scene scene;
-    scene.initialize(gpuEnv.cuContext, gpuEnv.optixContext, shared::maxNumRayTypes, gpuEnv.optixDefaultMaterial);
+    scene.initialize(
+        getExecutableDirectory() / "neural_radiance_caching/ptxes",
+        gpuEnv.cuContext, gpuEnv.optixContext, shared::maxNumRayTypes, gpuEnv.optixDefaultMaterial);
 
     CUstream cuStream;
     CUDADRV_CHECK(cuStreamCreate(&cuStream, 0));
@@ -1066,18 +1068,11 @@ int32_t main(int32_t argc, const char* argv[]) try {
     scene.setupASes(gpuEnv.cuContext);
     CUDADRV_CHECK(cuStreamSynchronize(0));
 
-    // JP: 各インスタンスの重要度から光源インスタンスをサンプルするための分布を計算する。
-    // EN: Compute a distribution to sample a light source instance from the importance value of each instance.
     uint32_t totalNumEmitterPrimitives = 0;
-    std::vector<float> lightImportances(scene.insts.size());
     for (int i = 0; i < scene.insts.size(); ++i) {
         const Instance* inst = scene.insts[i];
-        lightImportances[i] = inst->lightGeomInstDist.getIntengral();
         totalNumEmitterPrimitives += inst->geomGroup->numEmitterPrimitives;
     }
-    DiscreteDistribution1D lightInstDist;
-    lightInstDist.initialize(gpuEnv.cuContext, Scene::bufferType,
-                             lightImportances.data(), lightImportances.size());
     hpprintf("%u emitter primitives\n", totalNumEmitterPrimitives);
 
     // JP: 環境光テクスチャーを読み込んで、サンプルするためのCDFを計算する。
@@ -1088,7 +1083,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
     if (!g_envLightTexturePath.empty())
         loadEnvironmentalTexture(g_envLightTexturePath, gpuEnv.cuContext,
                                  &envLightArray, &envLightTexture, &envLightImportanceMap);
-    Assert(lightInstDist.getIntengral() > 0 || !g_envLightTexturePath.empty(), "No lights!");
+
+    scene.setupLightGeomDistributions();
 
     CUdeviceptr sceneAABBOnDevice;
     CUDADRV_CHECK(cuMemAlloc(&sceneAABBOnDevice, sizeof(AABB)));
@@ -1421,7 +1417,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
         staticPlp.materialDataBuffer = scene.materialDataBuffer.getDevicePointer();
         staticPlp.geometryInstanceDataBuffer = scene.geomInstDataBuffer.getDevicePointer();
-        lightInstDist.getDeviceType(&staticPlp.lightInstDist);
         envLightImportanceMap.getDeviceType(&staticPlp.envLightImportanceMap);
         staticPlp.envLightTexture = envLightTexture;
 
@@ -1510,6 +1505,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
     struct GPUTimer {
         cudau::Timer frame;
         cudau::Timer update;
+        cudau::Timer computePDFTexture;
         cudau::Timer setupGBuffers;
         cudau::Timer preprocessNRC;
         cudau::Timer pathTrace;
@@ -1524,6 +1520,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         void initialize(CUcontext context) {
             frame.initialize(context);
             update.initialize(context);
+            computePDFTexture.initialize(context);
             setupGBuffers.initialize(context);
             preprocessNRC.initialize(context);
             pathTrace.initialize(context);
@@ -1546,6 +1543,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
             pathTrace.finalize();
             preprocessNRC.finalize();
             setupGBuffers.finalize();
+            computePDFTexture.finalize();
             update.finalize();
             frame.finalize();
         }
@@ -2051,6 +2049,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
             static MovingAverageTime cudaFrameTime;
             static MovingAverageTime updateTime;
+            static MovingAverageTime computePDFTextureTime;
             static MovingAverageTime setupGBuffersTime;
             static MovingAverageTime preprocessNRCTime;
             static MovingAverageTime pathTraceTime;
@@ -2064,6 +2063,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
             cudaFrameTime.append(curGPUTimer.frame.report());
             updateTime.append(curGPUTimer.update.report());
+            computePDFTextureTime.append(curGPUTimer.computePDFTexture.report());
             setupGBuffersTime.append(curGPUTimer.setupGBuffers.report());
             preprocessNRCTime.append(curGPUTimer.preprocessNRC.report());
             pathTraceTime.append(curGPUTimer.pathTrace.report());
@@ -2078,6 +2078,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
             //ImGui::SetNextItemWidth(100.0f);
             ImGui::Text("CUDA/OptiX GPU %.3f [ms]:", cudaFrameTime.getAverage());
             ImGui::Text("  update: %.3f [ms]", updateTime.getAverage());
+            ImGui::Text("  compute PDF Texture: %.3f [ms]", computePDFTextureTime.getAverage());
             ImGui::Text("  setup G-buffers: %.3f [ms]", setupGBuffersTime.getAverage());
             ImGui::Text("  pre-process NRC: %.3f [ms]", preprocessNRCTime.getAverage());
             ImGui::Text("  pathTrace: %.3f [ms]", pathTraceTime.getAverage());
@@ -2134,6 +2135,16 @@ int32_t main(int32_t argc, const char* argv[]) try {
             perFramePlp.travHandle = scene.ias.rebuild(
                 cuStream, scene.iasInstanceBuffer, scene.iasMem, scene.asScratchMem);
         curGPUTimer.update.stop(cuStream);
+
+        // JP: 光源となるインスタンスのProbability Textureを計算する。
+        // EN: Compute the probability texture for light instances.
+        curGPUTimer.computePDFTexture.start(cuStream);
+        {
+            CUdeviceptr probTexAddr =
+                staticPlpOnDevice + offsetof(shared::StaticPipelineLaunchParameters, lightInstDist);
+            scene.setupLightInstDistribtion(cuStream, probTexAddr, bufferIndex);
+        }
+        curGPUTimer.computePDFTexture.stop(cuStream);
 
         bool newSequence = resized || frameIndex == 0 || resetAccumulation;
         bool firstAccumFrame =
@@ -2472,7 +2483,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
     if (envLightTexture)
         cuTexObjectDestroy(envLightTexture);
     envLightArray.finalize();
-    lightInstDist.finalize();
 
     finalizeTextureCaches();
 
