@@ -238,6 +238,8 @@ struct GPUEnvironment {
                 p.createRayGenProgram(m, RT_RG_NAME_STR("pathTraceBaseline"));
             pipeline.entryPoints[PathTracingEntryPoint::NRC] =
                 p.createRayGenProgram(m, RT_RG_NAME_STR("pathTraceNRC"));
+            pipeline.entryPoints[PathTracingEntryPoint::visualizePrediction] =
+                p.createRayGenProgram(m, RT_RG_NAME_STR("visualizePrediction"));
 
             pipeline.programs[RT_MS_NAME_STR("pathTraceBaseline")] = p.createMissProgram(
                 m, RT_MS_NAME_STR("pathTraceBaseline"));
