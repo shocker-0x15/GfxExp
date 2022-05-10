@@ -1,5 +1,5 @@
 #define PURE_CUDA
-#include "path_tracing_shared.h"
+#include "../regir_shared.h"
 
 CUDA_DEVICE_KERNEL void copyToLinearBuffers(
     optixu::NativeBlockBuffer2D<float4> colorAccumBuffer,
@@ -28,10 +28,54 @@ CUDA_DEVICE_KERNEL void copyToLinearBuffers(
     linearMotionVectorBuffer[linearIndex] = make_float2(motionVector.x, motionVector.y);
 }
 
+CUDA_DEVICE_FUNCTION CUDA_INLINE uint32_t calcCellLinearIndex(
+    const float3 &gridOrigin, const float3 &gridCellSize, const uint3 &gridDimension,
+    const float3 &positionInWorld) {
+    float3 relPos = positionInWorld - gridOrigin;
+    uint32_t ix = min(max(static_cast<uint32_t>(relPos.x / gridCellSize.x), 0u),
+                      gridDimension.x - 1);
+    uint32_t iy = min(max(static_cast<uint32_t>(relPos.y / gridCellSize.y), 0u),
+                      gridDimension.y - 1);
+    uint32_t iz = min(max(static_cast<uint32_t>(relPos.z / gridCellSize.z), 0u),
+                      gridDimension.z - 1);
+    return iz * gridDimension.x * gridDimension.y
+        + iy * gridDimension.x
+        + ix;
+}
 
+template <typename T>
+CUDA_DEVICE_FUNCTION CUDA_INLINE uint32_t getFNV1Hash32(const T &x) {
+    static const uint32_t FNV_OFFSET_BASIS_32 = 2166136261U;
+    //static const uint64_t FNV_OFFSET_BASIS_64 = 14695981039346656037U;
+
+    static const uint32_t FNV_PRIME_32 = 16777619U;
+    //static const uint64_t FNV_PRIME_64 = 1099511628211LLU;
+
+    uint32_t hash = FNV_OFFSET_BASIS_32;
+    auto bytes = reinterpret_cast<const uint8_t*>(&x);
+    for (int i = 0; i < sizeof(T); ++i)
+        hash = (FNV_PRIME_32 * hash) ^ (bytes[i]);
+
+    return hash;
+}
+
+CUDA_DEVICE_FUNCTION CUDA_INLINE float3 calcCellColor(
+    const float3 &gridOrigin, const float3 &gridCellSize, const uint3 &gridDimension,
+    const float3 &positionInWorld) {
+    uint32_t cellLinearIndex = calcCellLinearIndex(gridOrigin, gridCellSize, gridDimension, positionInWorld);
+
+    uint32_t hash = getFNV1Hash32(cellLinearIndex);
+    shared::PCG32RNG rng;
+    rng.setState((static_cast<uint64_t>(hash) << 32) | 3018421212);
+
+    return HSVtoRGB(rng.getFloat0cTo1o(),
+                    0.5f + 0.5f * rng.getFloat0cTo1o(),
+                    0.5f + 0.5f * rng.getFloat0cTo1o());
+}
 
 CUDA_DEVICE_KERNEL void visualizeToOutputBuffer(
-    optixu::NativeBlockBuffer2D<shared::GBuffer0> gBuffer0,
+    optixu::NativeBlockBuffer2D<shared::GBuffer0> gBuffer0, uint32_t visualizeCell,
+    float3 gridOrigin, float3 gridCellSize, uint3 gridDimension,
     void* linearBuffer,
     shared::BufferToDisplay bufferTypeToDisplay,
     float motionVectorOffset, float motionVectorScale,
@@ -50,6 +94,13 @@ CUDA_DEVICE_KERNEL void visualizeToOutputBuffer(
     case shared::BufferToDisplay::DenoisedBeauty: {
         auto typedLinearBuffer = reinterpret_cast<const float4*>(linearBuffer);
         value = typedLinearBuffer[linearIndex];
+        if (visualizeCell) {
+            shared::GBuffer0 gb0 = gBuffer0.read(launchIndex);
+            float3 cellColor = calcCellColor(gridOrigin, gridCellSize, gridDimension, gb0.positionInWorld);
+            value.x *= cellColor.x;
+            value.y *= cellColor.y;
+            value.z *= cellColor.z;
+        }
         break;
     }
     case shared::BufferToDisplay::Albedo: {

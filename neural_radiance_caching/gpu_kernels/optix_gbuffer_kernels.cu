@@ -1,4 +1,4 @@
-#include "regir_shared.h"
+#include "../neural_radiance_caching_shared.h"
 
 using namespace shared;
 
@@ -9,9 +9,6 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(setupGBuffers)() {
     float jx = 0.5f;
     float jy = 0.5f;
     if (plp.f->enableJittering) {
-        // JP: ジッターをかけると現状の実装ではUnbiased要件を満たさないかもしれない。要検討。
-        // EN: Jittering may break the requirements for unbiasedness with the current implementation.
-        //     Need more consideration.
         PCG32RNG rng = plp.s->rngBuffer.read(launchIndex);
         jx = rng.getFloat0cTo1o();
         jy = rng.getFloat0cTo1o();
@@ -167,7 +164,6 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
             emittance = make_float3(texValue);
         }
         pickInfo->emittance = emittance;
-        pickInfo->cellLinearIndex = calcCellLinearIndex(positionInWorld);
     }
 }
 

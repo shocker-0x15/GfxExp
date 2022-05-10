@@ -1,4 +1,4 @@
-#include "path_tracing_shared.h"
+#include "../regir_shared.h"
 
 using namespace shared;
 
@@ -167,6 +167,7 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
             emittance = make_float3(texValue);
         }
         pickInfo->emittance = emittance;
+        pickInfo->cellLinearIndex = calcCellLinearIndex(positionInWorld);
     }
 }
 

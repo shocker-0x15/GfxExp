@@ -6,14 +6,14 @@ file(
 
 set(
     CUDA_KERNELS
-    "copy_buffers.cu"
-    "build_cell_reservoirs.cu"
+    "gpu_kernels/copy_buffers.cu"
+    "gpu_kernels/build_cell_reservoirs.cu"
 )
 
 set(
     OPTIX_KERNELS
-    "optix_gbuffer_kernels.cu"
-    "optix_pathtracing_kernels.cu"
+    "gpu_kernels/optix_gbuffer_kernels.cu"
+    "gpu_kernels/optix_pathtracing_kernels.cu"
 )
 
 set(
@@ -64,7 +64,7 @@ source_group(
     "${CMAKE_CURRENT_SOURCE_DIR}/[^/]*\.(h|hpp|c|cpp)$")
 source_group(
     "essentials/GPU kernels" REGULAR_EXPRESSION
-    "${CMAKE_CURRENT_SOURCE_DIR}/[^/]*\.(cu)$")
+    "${CMAKE_CURRENT_SOURCE_DIR}/gpu_kernels/[^/]*\.(cu)$")
 
 add_executable(
     "${TARGET_NAME}"

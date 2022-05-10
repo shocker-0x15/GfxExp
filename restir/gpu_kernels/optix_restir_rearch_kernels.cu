@@ -1,4 +1,4 @@
-﻿#include "restir_shared.h"
+﻿#include "../restir_shared.h"
 
 using namespace shared;
 

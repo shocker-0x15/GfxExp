@@ -49,6 +49,9 @@
     <Filter Include="non-essentials\GPU kernels">
       <UniqueIdentifier>{ed09cee5-d028-4565-acb0-82d38fc227e5}</UniqueIdentifier>
     </Filter>
+    <Filter Include="GPU kernels">
+      <UniqueIdentifier>{bc61929d-86c2-4963-be42-7b343b9be4c2}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="neural_radiance_caching_main.cpp" />
@@ -331,13 +334,21 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <CudaCompile Include="optix_pathtracing_kernels.cu" />
-    <CudaCompile Include="copy_buffers.cu" />
-    <CudaCompile Include="kernels.cu" />
     <CudaCompile Include="network_interface.cu" />
-    <CudaCompile Include="optix_gbuffer_kernels.cu" />
     <CudaCompile Include="..\common\gpu_kernels\compute_light_probs.cu">
       <Filter>non-essentials\GPU kernels</Filter>
+    </CudaCompile>
+    <CudaCompile Include="gpu_kernels\copy_buffers.cu">
+      <Filter>GPU kernels</Filter>
+    </CudaCompile>
+    <CudaCompile Include="gpu_kernels\kernels.cu">
+      <Filter>GPU kernels</Filter>
+    </CudaCompile>
+    <CudaCompile Include="gpu_kernels\optix_gbuffer_kernels.cu">
+      <Filter>GPU kernels</Filter>
+    </CudaCompile>
+    <CudaCompile Include="gpu_kernels\optix_pathtracing_kernels.cu">
+      <Filter>GPU kernels</Filter>
     </CudaCompile>
   </ItemGroup>
   <ItemGroup>

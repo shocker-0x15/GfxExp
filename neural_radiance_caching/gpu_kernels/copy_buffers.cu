@@ -1,5 +1,5 @@
 #define PURE_CUDA
-#include "neural_radiance_caching_shared.h"
+#include "../neural_radiance_caching_shared.h"
 
 using namespace shared;
 

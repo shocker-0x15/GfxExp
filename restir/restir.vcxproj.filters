@@ -34,6 +34,9 @@
     <Filter Include="non-essentials\GPU kernels">
       <UniqueIdentifier>{4a6279dc-dcc0-4803-84d5-d57bee6a7742}</UniqueIdentifier>
     </Filter>
+    <Filter Include="GPU kernels">
+      <UniqueIdentifier>{a8ccd26d-b0a6-47bc-bed6-439a9c38a5ba}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="restir_main.cpp" />
@@ -168,13 +171,23 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <CudaCompile Include="optix_restir_kernels.cu" />
-    <CudaCompile Include="copy_buffers.cu" />
-    <CudaCompile Include="per_pixel_ris.cu" />
-    <CudaCompile Include="optix_gbuffer_kernels.cu" />
-    <CudaCompile Include="optix_restir_rearch_kernels.cu" />
     <CudaCompile Include="..\common\gpu_kernels\compute_light_probs.cu">
       <Filter>non-essentials\GPU kernels</Filter>
+    </CudaCompile>
+    <CudaCompile Include="gpu_kernels\copy_buffers.cu">
+      <Filter>GPU kernels</Filter>
+    </CudaCompile>
+    <CudaCompile Include="gpu_kernels\optix_gbuffer_kernels.cu">
+      <Filter>GPU kernels</Filter>
+    </CudaCompile>
+    <CudaCompile Include="gpu_kernels\optix_restir_kernels.cu">
+      <Filter>GPU kernels</Filter>
+    </CudaCompile>
+    <CudaCompile Include="gpu_kernels\optix_restir_rearch_kernels.cu">
+      <Filter>GPU kernels</Filter>
+    </CudaCompile>
+    <CudaCompile Include="gpu_kernels\per_pixel_ris.cu">
+      <Filter>GPU kernels</Filter>
     </CudaCompile>
   </ItemGroup>
   <ItemGroup>

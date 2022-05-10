@@ -34,6 +34,9 @@
     <Filter Include="non-essentials\GPU kernels">
       <UniqueIdentifier>{e9e755c2-747d-4067-9a35-9a3c87ea550b}</UniqueIdentifier>
     </Filter>
+    <Filter Include="GPU kernels">
+      <UniqueIdentifier>{df9df799-0f8b-45b8-a591-ee9d8a6a5761}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="regir_main.cpp" />
@@ -168,12 +171,20 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <CudaCompile Include="optix_pathtracing_kernels.cu" />
-    <CudaCompile Include="copy_buffers.cu" />
-    <CudaCompile Include="build_cell_reservoirs.cu" />
-    <CudaCompile Include="optix_gbuffer_kernels.cu" />
     <CudaCompile Include="..\common\gpu_kernels\compute_light_probs.cu">
       <Filter>non-essentials\GPU kernels</Filter>
+    </CudaCompile>
+    <CudaCompile Include="gpu_kernels\build_cell_reservoirs.cu">
+      <Filter>GPU kernels</Filter>
+    </CudaCompile>
+    <CudaCompile Include="gpu_kernels\copy_buffers.cu">
+      <Filter>GPU kernels</Filter>
+    </CudaCompile>
+    <CudaCompile Include="gpu_kernels\optix_gbuffer_kernels.cu">
+      <Filter>GPU kernels</Filter>
+    </CudaCompile>
+    <CudaCompile Include="gpu_kernels\optix_pathtracing_kernels.cu">
+      <Filter>GPU kernels</Filter>
     </CudaCompile>
   </ItemGroup>
   <ItemGroup>

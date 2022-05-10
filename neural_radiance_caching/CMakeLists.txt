@@ -6,14 +6,14 @@ file(
 
 set(
     CUDA_KERNELS
-    "kernels.cu"
-    "copy_buffers.cu"
+    "gpu_kernels/kernels.cu"
+    "gpu_kernels/copy_buffers.cu"
 )
 
 set(
     OPTIX_KERNELS
-    "optix_gbuffer_kernels.cu"
-    "optix_pathtracing_kernels.cu"
+    "gpu_kernels/optix_gbuffer_kernels.cu"
+    "gpu_kernels/optix_pathtracing_kernels.cu"
 )
 
 set(
@@ -72,7 +72,7 @@ source_group(
     ${CUDA_SOURCES})
 source_group(
     "essentials/GPU kernels" REGULAR_EXPRESSION
-    "${CMAKE_CURRENT_SOURCE_DIR}/[^/]*\.(cu)$")
+    "${CMAKE_CURRENT_SOURCE_DIR}/gpu_kernels/[^/]*\.(cu)$")
 
 list(GET CMAKE_CUDA_ARCHITECTURES 0 MIN_GPU_ARCH)
 list(APPEND DEFINITIONS -DTCNN_MIN_GPU_ARCH=${MIN_GPU_ARCH})

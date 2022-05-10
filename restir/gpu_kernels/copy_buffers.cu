@@ -1,5 +1,5 @@
 #define PURE_CUDA
-#include "restir_shared.h"
+#include "../restir_shared.h"
 
 CUDA_DEVICE_KERNEL void copyToLinearBuffers(
     optixu::NativeBlockBuffer2D<float4> colorAccumBuffer,

@@ -60,20 +60,20 @@
   </ItemGroup>
   <ItemGroup>
     <CudaCompile Include="..\common\gpu_kernels\compute_light_probs.cu" />
-    <CudaCompile Include="copy_buffers.cu" />
-    <CudaCompile Include="optix_gbuffer_kernels.cu">
+    <CudaCompile Include="gpu_kernels\copy_buffers.cu" />
+    <CudaCompile Include="gpu_kernels\optix_gbuffer_kernels.cu">
       <GPUDebugInfo Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</GPUDebugInfo>
       <GenerateLineInfo Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</GenerateLineInfo>
     </CudaCompile>
-    <CudaCompile Include="optix_restir_kernels.cu">
+    <CudaCompile Include="gpu_kernels\optix_restir_kernels.cu">
       <GPUDebugInfo Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</GPUDebugInfo>
       <GenerateLineInfo Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</GenerateLineInfo>
     </CudaCompile>
-    <CudaCompile Include="optix_restir_rearch_kernels.cu">
+    <CudaCompile Include="gpu_kernels\optix_restir_rearch_kernels.cu">
       <GPUDebugInfo Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</GPUDebugInfo>
       <GenerateLineInfo Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</GenerateLineInfo>
     </CudaCompile>
-    <CudaCompile Include="per_pixel_ris.cu" />
+    <CudaCompile Include="gpu_kernels\per_pixel_ris.cu" />
   </ItemGroup>
   <ItemGroup>
     <CopyFileToFolders Include="..\ext\prebuilt\bin\assimp-vc143-mt.dll">

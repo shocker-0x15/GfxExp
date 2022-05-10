@@ -1,5 +1,5 @@
 ﻿#define PURE_CUDA
-#include "regir_shared.h"
+#include "../regir_shared.h"
 
 using namespace shared;
 
