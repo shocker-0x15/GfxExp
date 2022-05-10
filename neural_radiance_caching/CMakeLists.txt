@@ -6,7 +6,7 @@ file(
 
 set(
     CUDA_KERNELS
-    "gpu_kernels/kernels.cu"
+    "gpu_kernels/nrc_setup_kernels.cu"
     "gpu_kernels/copy_buffers.cu"
 )
 
