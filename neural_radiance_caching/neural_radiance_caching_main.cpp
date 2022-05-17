@@ -131,7 +131,7 @@ struct GPUEnvironment {
 
         CUDADRV_CHECK(cuModuleLoad(
             &cudaModule,
-            (getExecutableDirectory() / "neural_radiance_caching/ptxes/kernels.ptx").string().c_str()));
+            (getExecutableDirectory() / "neural_radiance_caching/ptxes/nrc_setup_kernels.ptx").string().c_str()));
         kernelPreprocessNRC =
             cudau::Kernel(cudaModule, "preprocessNRC", cudau::dim3(32), 0);
         kernelAccumulateInferredRadianceValues =

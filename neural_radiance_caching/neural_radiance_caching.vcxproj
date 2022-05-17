@@ -131,7 +131,7 @@
       <GPUDebugInfo Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</GPUDebugInfo>
       <GenerateLineInfo Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</GenerateLineInfo>
     </CudaCompile>
-    <CudaCompile Include="gpu_kernels\kernels.cu" />
+    <CudaCompile Include="gpu_kernels\nrc_setup_kernels.cu" />
   </ItemGroup>
   <ItemGroup>
     <CopyFileToFolders Include="..\common\shaders\drawOptiXResult.frag">

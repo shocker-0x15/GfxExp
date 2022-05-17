@@ -341,7 +341,7 @@
     <CudaCompile Include="gpu_kernels\copy_buffers.cu">
       <Filter>GPU kernels</Filter>
     </CudaCompile>
-    <CudaCompile Include="gpu_kernels\kernels.cu">
+    <CudaCompile Include="gpu_kernels\nrc_setup_kernels.cu">
       <Filter>GPU kernels</Filter>
     </CudaCompile>
     <CudaCompile Include="gpu_kernels\optix_gbuffer_kernels.cu">
