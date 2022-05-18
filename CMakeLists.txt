@@ -194,6 +194,41 @@ endfunction()
 # END: JP: CMakeLists.txtのあるサブディレクトリ内のターゲット全てにフォルダーを設定する。
 # ----------------------------------------------------------------
 
+
+
+# ----------------------------------------------------------------
+# JP: インストールされているGPUの中から最小のCUDAアーキテクチャーを特定し、デフォルトのターゲットアーキテクチャーとする。
+
+# adapted from https://stackoverflow.com/a/69353718
+include(FindCUDA/select_compute_arch)
+CUDA_DETECT_INSTALLED_GPUS(INSTALLED_GPU_CCS_1)
+# JP: 前後のスペース削除。
+string(STRIP "${INSTALLED_GPU_CCS_1}" INSTALLED_GPU_CCS_2)
+# スペース区切りをセミコロン区切りに。
+string(REPLACE " " ";" INSTALLED_GPU_CCS_3 "${INSTALLED_GPU_CCS_2}")
+# 小数点の削除。
+string(REPLACE "." "" CUDA_ARCH_LIST "${INSTALLED_GPU_CCS_3}")
+set(CMAKE_CUDA_ARCHITECTURES ${CUDA_ARCH_LIST})
+
+# Remove unsupported architectures
+list(REMOVE_ITEM CMAKE_CUDA_ARCHITECTURES "86+PTX")
+
+list(SORT CMAKE_CUDA_ARCHITECTURES COMPARE NATURAL ORDER ASCENDING)
+list(GET CMAKE_CUDA_ARCHITECTURES 0 MIN_GPU_ARCH)
+
+set(TARGET_CUDA_ARCH ${MIN_GPU_ARCH} CACHE STRING "Target CUDA architecture")
+set_property(
+    CACHE TARGET_CUDA_ARCH PROPERTY STRINGS
+    70 75 80 86)
+
+# tiny-cuda-nnがターゲットアーキテクチャーを使うように環境変数を設定する。
+set(ENV{TCNN_CUDA_ARCHITECTURES} ${TARGET_CUDA_ARCH})
+
+# END: JP: インストールされているGPUの中から最小のCUDAアーキテクチャーを特定し、デフォルトのターゲットアーキテクチャーとする。
+# ----------------------------------------------------------------
+
+
+
 # Assimp
 option(ASSIMP_BUILD_ASSIMP_TOOLS "If the supplementary tools for Assimp are built in addition to the library." OFF)
 option(ASSIMP_BUILD_SAMPLES "If the official samples are built as well (needs Glut)." OFF)
