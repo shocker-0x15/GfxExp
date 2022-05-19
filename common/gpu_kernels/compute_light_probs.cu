@@ -49,32 +49,36 @@ CUDA_DEVICE_KERNEL void computeTriangleProbTexture(
     GeometryInstanceData* geomInst, uint32_t numTriangles,
     const MaterialData* materialDataBuffer,
     optixu::NativeBlockBuffer2D<float> dstMip) {
+    if constexpr (USE_PROBABILITY_TEXTURE) {
+        uint32_t linearIndex = blockDim.x * blockIdx.x + threadIdx.x;
+        uint2 dims = computeProbabilityTextureDimentions(numTriangles);
 #if USE_PROBABILITY_TEXTURE
-    uint32_t linearIndex = blockDim.x * blockIdx.x + threadIdx.x;
-    uint2 dims = computeProbabilityTextureDimentions(numTriangles);
-    if (linearIndex == 0)
-        geomInst->emitterPrimDist.setDimensions(dims);
-    uint2 idx2D = compute2DFrom1D(dims, linearIndex);
-    float importance = 0.0f;
-    if (linearIndex < numTriangles)
-        importance = computeTriangleImportance(geomInst, linearIndex, materialDataBuffer);
-    if (idx2D.x < dims.x && idx2D.y < dims.y)
-        dstMip.write(idx2D, importance);
+        if (linearIndex == 0)
+            geomInst->emitterPrimDist.setDimensions(dims);
 #endif
+        uint2 idx2D = compute2DFrom1D(dims, linearIndex);
+        float importance = 0.0f;
+        if (linearIndex < numTriangles)
+            importance = computeTriangleImportance(geomInst, linearIndex, materialDataBuffer);
+        if (idx2D.x < dims.x && idx2D.y < dims.y)
+            dstMip.write(idx2D, importance);
+    }
 }
 
 CUDA_DEVICE_KERNEL void computeTriangleProbBuffer(
     GeometryInstanceData* geomInst, uint32_t numTriangles,
     const MaterialData* materialDataBuffer) {
+    if constexpr (!USE_PROBABILITY_TEXTURE) {
+        uint32_t linearIndex = blockDim.x * blockIdx.x + threadIdx.x;
 #if !USE_PROBABILITY_TEXTURE
-    uint32_t linearIndex = blockDim.x * blockIdx.x + threadIdx.x;
-    if (linearIndex == 0)
-        geomInst->emitterPrimDist.setNumValues(numTriangles);
-    if (linearIndex < numTriangles) {
-        float importance = computeTriangleImportance(geomInst, linearIndex, materialDataBuffer);
-        geomInst->emitterPrimDist.setWeightAt(linearIndex, importance);
-    }
+        if (linearIndex == 0)
+            geomInst->emitterPrimDist.setNumValues(numTriangles);
 #endif
+        if (linearIndex < numTriangles) {
+            float importance = computeTriangleImportance(geomInst, linearIndex, materialDataBuffer);
+            geomInst->emitterPrimDist.setWeightAt(linearIndex, importance);
+        }
+    }
 }
 
 
@@ -92,32 +96,36 @@ CUDA_DEVICE_KERNEL void computeGeomInstProbTexture(
     InstanceData* inst, uint32_t instIdx, uint32_t numGeomInsts,
     const GeometryInstanceData* geometryInstanceDataBuffer,
     optixu::NativeBlockBuffer2D<float> dstMip) {
+    if constexpr (USE_PROBABILITY_TEXTURE) {
+        uint32_t linearIndex = blockDim.x * blockIdx.x + threadIdx.x;
+        uint2 dims = computeProbabilityTextureDimentions(numGeomInsts);
 #if USE_PROBABILITY_TEXTURE
-    uint32_t linearIndex = blockDim.x * blockIdx.x + threadIdx.x;
-    uint2 dims = computeProbabilityTextureDimentions(numGeomInsts);
-    if (linearIndex == 0)
-        inst->lightGeomInstDist.setDimensions(dims);
-    uint2 idx2D = compute2DFrom1D(dims, linearIndex);
-    float importance = 0.0f;
-    if (linearIndex < numGeomInsts)
-        importance = computeGeomInstImportance(inst, geometryInstanceDataBuffer, linearIndex);
-    if (idx2D.x < dims.x && idx2D.y < dims.y)
-        dstMip.write(idx2D, importance);
+        if (linearIndex == 0)
+            inst->lightGeomInstDist.setDimensions(dims);
 #endif
+        uint2 idx2D = compute2DFrom1D(dims, linearIndex);
+        float importance = 0.0f;
+        if (linearIndex < numGeomInsts)
+            importance = computeGeomInstImportance(inst, geometryInstanceDataBuffer, linearIndex);
+        if (idx2D.x < dims.x && idx2D.y < dims.y)
+            dstMip.write(idx2D, importance);
+    }
 }
 
 CUDA_DEVICE_KERNEL void computeGeomInstProbBuffer(
     InstanceData* inst, uint32_t instIdx, uint32_t numGeomInsts,
     const GeometryInstanceData* geometryInstanceDataBuffer) {
+    if constexpr (!USE_PROBABILITY_TEXTURE) {
+        uint32_t linearIndex = blockDim.x * blockIdx.x + threadIdx.x;
 #if !USE_PROBABILITY_TEXTURE
-    uint32_t linearIndex = blockDim.x * blockIdx.x + threadIdx.x;
-    if (linearIndex == 0)
-        inst->lightGeomInstDist.setNumValues(numGeomInsts);
-    if (linearIndex < numGeomInsts) {
-        float importance = computeGeomInstImportance(inst, geometryInstanceDataBuffer, linearIndex);
-        inst->lightGeomInstDist.setWeightAt(linearIndex, importance);
-    }
+        if (linearIndex == 0)
+            inst->lightGeomInstDist.setNumValues(numGeomInsts);
 #endif
+        if (linearIndex < numGeomInsts) {
+            float importance = computeGeomInstImportance(inst, geometryInstanceDataBuffer, linearIndex);
+            inst->lightGeomInstDist.setWeightAt(linearIndex, importance);
+        }
+    }
 }
 
 
@@ -129,7 +137,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE float computeInstImportance(
     float3 scale;
     inst.transform.decompose(&scale, nullptr, nullptr);
     float uniformScale = scale.x;
-    float importance = inst.lightGeomInstDist.integral();
+    float importance = uniformScale * inst.lightGeomInstDist.integral();
     return importance;
 }
 
@@ -137,32 +145,32 @@ CUDA_DEVICE_KERNEL void computeInstProbTexture(
     ProbabilityTexture* lightInstDist, uint32_t numInsts,
     const InstanceData* instanceDataBuffer,
     optixu::NativeBlockBuffer2D<float> dstMip) {
-#if USE_PROBABILITY_TEXTURE
-    uint32_t linearIndex = blockDim.x * blockIdx.x + threadIdx.x;
-    uint2 dims = computeProbabilityTextureDimentions(numInsts);
-    if (linearIndex == 0)
-        lightInstDist->setDimensions(dims);
-    uint2 idx2D = compute2DFrom1D(dims, linearIndex);
-    float importance = 0.0f;
-    if (linearIndex < numInsts)
-        importance = computeInstImportance(instanceDataBuffer, linearIndex);
-    if (idx2D.x < dims.x && idx2D.y < dims.y)
-        dstMip.write(idx2D, importance);
-#endif
+    if constexpr (USE_PROBABILITY_TEXTURE) {
+        uint32_t linearIndex = blockDim.x * blockIdx.x + threadIdx.x;
+        uint2 dims = computeProbabilityTextureDimentions(numInsts);
+        if (linearIndex == 0)
+            lightInstDist->setDimensions(dims);
+        uint2 idx2D = compute2DFrom1D(dims, linearIndex);
+        float importance = 0.0f;
+        if (linearIndex < numInsts)
+            importance = computeInstImportance(instanceDataBuffer, linearIndex);
+        if (idx2D.x < dims.x && idx2D.y < dims.y)
+            dstMip.write(idx2D, importance);
+    }
 }
 
 CUDA_DEVICE_KERNEL void computeInstProbBuffer(
     DiscreteDistribution1D* lightInstDist, uint32_t numInsts,
     const InstanceData* instanceDataBuffer) {
-#if !USE_PROBABILITY_TEXTURE
-    uint32_t linearIndex = blockDim.x * blockIdx.x + threadIdx.x;
-    if (linearIndex == 0)
-        lightInstDist->setNumValues(numInsts);
-    if (linearIndex < numInsts) {
-        float importance = computeInstImportance(instanceDataBuffer, linearIndex);
-        lightInstDist->setWeightAt(linearIndex, importance);
+    if constexpr (!USE_PROBABILITY_TEXTURE) {
+        uint32_t linearIndex = blockDim.x * blockIdx.x + threadIdx.x;
+        if (linearIndex == 0)
+            lightInstDist->setNumValues(numInsts);
+        if (linearIndex < numInsts) {
+            float importance = computeInstImportance(instanceDataBuffer, linearIndex);
+            lightInstDist->setWeightAt(linearIndex, importance);
+        }
     }
-#endif
 }
 
 
