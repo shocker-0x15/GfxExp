@@ -47,7 +47,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE float3 sampleIntensity(
             contribute to the cell.
             Always evaluate the cosine term as 1 for the unknown case.
         */
-        bool cellIsInValidHalfSpace = lpCos > minSquaredDistance;
+        bool cellIsInValidHalfSpace = lpCos > minSquaredDistance || lightSample->atInfinity;
         bool cellIsInInvalidHalfSpace = lpCos < -minSquaredDistance;
         if (cellIsInValidHalfSpace)
             lpCos = perpDistance / dist;
