@@ -3,28 +3,61 @@
 
 using namespace shared;
 
-// TODO: セルの中央だけのサンプリングだと、セルの中央が光源の裏側に回ってしまっている場合に、
-//       寄与の可能性のあるサンプルを棄却してしまう。代表点をランダムに決定するなどで解決できそうだが、
-//       PDFが毎回変わるのでそれを考慮する必要あり？
 CUDA_DEVICE_FUNCTION CUDA_INLINE float3 sampleIntensity(
-    const float3 &shadingPoint, float minSquaredDistance,
+    const float3 &cellCenter, const float3 &halfCellSize, float minSquaredDistance,
     float uLight, bool sampleEnvLight, float uPos0, float uPos1,
     LightSample* lightSample, float* probDensity) {
     sampleLight<false>(
-        shadingPoint,
+        cellCenter,
         uLight, sampleEnvLight, uPos0, uPos1,
         lightSample, probDensity);
 
-    float3 shadowRayDir = lightSample->atInfinity ?
-        lightSample->position :
-        (lightSample->position - shadingPoint);
-    float dist2 = sqLength(shadowRayDir);
-    float dist = std::sqrt(dist2);
-    shadowRayDir /= dist;
+    float dist2 = minSquaredDistance;
+    float lpCos = 1;
+    bool isOutsideCell =
+        lightSample->atInfinity ||
+        lightSample->position.x < cellCenter.x - halfCellSize.x ||
+        lightSample->position.x > cellCenter.x + halfCellSize.x ||
+        lightSample->position.y < cellCenter.y - halfCellSize.y ||
+        lightSample->position.y > cellCenter.y + halfCellSize.y ||
+        lightSample->position.z < cellCenter.z - halfCellSize.z ||
+        lightSample->position.z > cellCenter.z + halfCellSize.z;
+    if (isOutsideCell) {
+        float3 shadowRayDir = lightSample->atInfinity ?
+            lightSample->position :
+            (lightSample->position - cellCenter);
+        // JP: 光源点を含む平面への垂直距離を求める。
+        // EN: Calculate the perpendicular distance to a plane on which the light point is.
+        float perpDistance = dot(-shadowRayDir, lightSample->normal);
 
-    float lpCos = dot(-shadowRayDir, lightSample->normal);
+        dist2 = sqLength(shadowRayDir);
+        float dist = std::sqrt(dist2);
 
-    if (lpCos > 0) {
+        /*
+        JP: セルを囲むバウンディングスフィアが「光源点を含む平面が法線側につくる半空間」に完全に
+            含まれる場合は通常どおりcos項と距離を計算する。
+            逆に「法線と反対側の半空間」に完全に含まれる場合は、サンプルした光源点がセルに寄与することは
+            ありえないのでcos項をゼロとして評価する。
+            どちらとも言えない場合はcos項は常に1として評価する。
+        EN: Calculate the cosine term and the distance as usual when the bounding sphere for the cell
+            is completely encompassed in "the half-space spanned for the normal direction side of the plane
+            on which the light point is".
+            Contrary, when the sphere is completely encompassed in "the half-space for the opposite side of
+            the normal", evaluate the cosine term as zero since the sampled light point will never
+            contribute to the cell.
+            Always evaluate the cosine term as 1 for the unknown case.
+        */
+        bool cellIsInValidHalfSpace = lpCos > minSquaredDistance;
+        bool cellIsInInvalidHalfSpace = lpCos < -minSquaredDistance;
+        if (cellIsInValidHalfSpace)
+            lpCos = perpDistance / dist;
+        else if (cellIsInInvalidHalfSpace)
+            lpCos = 0.0f;
+        else
+            ;// Unknown case
+    }
+
+    if (lpCos > 0.0f) {
         float3 Le = lightSample->emittance / Pi;
         float3 ret = Le * (lpCos / dist2);
         return ret;
@@ -53,6 +86,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void buildCellReservoirsAndTemporalReuse(uint32
         (ix + 0.5f) * plp.s->gridCellSize.x,
         (iy + 0.5f) * plp.s->gridCellSize.y,
         (iz + 0.5f) * plp.s->gridCellSize.z);
+    const float3 halfCellSize = 0.5f * plp.s->gridCellSize;
     const float minSquaredDistance = sqLength(0.5f * plp.s->gridCellSize);
 
     uint32_t bufferIndex = plp.f->bufferIndex;
@@ -110,7 +144,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void buildCellReservoirsAndTemporalReuse(uint32
         LightSample lightSample;
         float areaPDensity;
         float3 cont = sampleIntensity(
-            cellCenter, minSquaredDistance,
+            cellCenter, halfCellSize, minSquaredDistance,
             uLight, sampleEnvLight, rng.getFloat0cTo1o(), rng.getFloat0cTo1o(),
             &lightSample, &areaPDensity);
         areaPDensity *= probToSampleCurLightType;
