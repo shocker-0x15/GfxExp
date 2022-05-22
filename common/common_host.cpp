@@ -1628,7 +1628,7 @@ static GeometryInstance* createGeometryInstance(
     geomInst->optixGeomInst.setTriangleBuffer(geomInst->triangleBuffer);
     geomInst->optixGeomInst.setNumMaterials(1, optixu::BufferView());
     geomInst->optixGeomInst.setMaterial(0, 0, scene->optixDefaultMaterial);
-    geomInst->optixGeomInst.setUserData(geomInstData);
+    geomInst->optixGeomInst.setUserData(geomInst->geomInstSlot);
 
     return geomInst;
 }
@@ -2091,8 +2091,8 @@ Instance* createInstance(
     instData.transform = transform;
     instData.prevTransform = transform;
     instData.normalMatrix = transpose(inverse(transform.getUpperLeftMatrix()));
+    instData.uniformScale = uniformScale;
     instData.geomInstSlots = inst->geomInstSlots.getDevicePointer();
-    instData.numGeomInsts = inst->geomInstSlots.numElements();
     inst->lightGeomInstDist.getDeviceType(&instData.lightGeomInstDist);
     instDataOnHost[inst->instSlot] = instData;
 

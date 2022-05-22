@@ -579,7 +579,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void computeSurfacePoint(
 
     // JP: ヒットポイントのローカル座標中の各値を計算する。
     // EN: Compute hit point properties in the local coordinates.
-    float3 position = b0 * v0.position + b1 * v1.position + b2 * v2.position;
+    float3 position = b0 * p[0] + b1 * p[1] + b2 * p[2];
     float3 shadingNormal = b0 * v0.normal + b1 * v1.normal + b2 * v2.normal;
     float3 texCoord0Dir = b0 * v0.texCoord0Dir + b1 * v1.texCoord0Dir + b2 * v2.texCoord0Dir;
     float3 geometricNormal = cross(p[1] - p[0], p[2] - p[0]);
@@ -613,7 +613,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void computeSurfacePoint(
         if (plp.s->envLightTexture && plp.f->enableEnvLight)
             lightProb *= (1 - probToSampleEnvLight);
         float instImportance = inst.lightGeomInstDist.integral();
-        lightProb *= instImportance / plp.s->lightInstDist.integral();
+        lightProb *= (pow2(inst.uniformScale) * instImportance) / plp.s->lightInstDist.integral();
         lightProb *= geomInst.emitterPrimDist.integral() / instImportance;
         if (!isfinite(lightProb)) {
             *hypAreaPDensity = 0.0f;
@@ -669,7 +669,7 @@ struct HitPointParameter {
 };
 
 struct HitGroupSBTRecordData {
-    shared::GeometryInstanceData geomInstData;
+    uint32_t geomInstSlot;
 
     CUDA_DEVICE_FUNCTION CUDA_INLINE static const HitGroupSBTRecordData &get() {
         return *reinterpret_cast<HitGroupSBTRecordData*>(optixGetSbtDataPointer());

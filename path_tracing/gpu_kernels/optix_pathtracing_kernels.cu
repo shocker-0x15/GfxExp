@@ -204,7 +204,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_rayGen_generic() {
 CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_closestHit_generic() {
     auto sbtr = HitGroupSBTRecordData::get();
     const InstanceData &inst = plp.f->instanceDataBuffer[optixGetInstanceId()];
-    const GeometryInstanceData &geomInst = sbtr.geomInstData;
+    const GeometryInstanceData &geomInst = plp.s->geometryInstanceDataBuffer[sbtr.geomInstSlot];
 
     PathTraceWriteOnlyPayload* woPayload;
     PathTraceReadWritePayload* rwPayload;

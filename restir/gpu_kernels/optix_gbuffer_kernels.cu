@@ -93,7 +93,7 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
 
     auto sbtr = HitGroupSBTRecordData::get();
     const InstanceData &inst = plp.f->instanceDataBuffer[optixGetInstanceId()];
-    const GeometryInstanceData &geomInst = sbtr.geomInstData;
+    const GeometryInstanceData &geomInst = plp.s->geometryInstanceDataBuffer[sbtr.geomInstSlot];
 
     HitPointParams* hitPointParams;
     PickInfo* pickInfo;

@@ -539,10 +539,15 @@ struct InstanceController {
         Matrix4x4 tMatM2W = transpose(matM2W);
         inst->optixInst.setTransform(reinterpret_cast<const float*>(&tMatM2W));
 
+        float3 scale;
+        matM2W.decompose(&scale, nullptr, nullptr);
+        float uniformScale = scale.x;
+
         shared::InstanceData &instData = instDataBuffer[inst->instSlot];
         instData.prevTransform = prevMatM2W;
         instData.transform = matM2W;
         instData.normalMatrix = nMatM2W;
+        instData.uniformScale = uniformScale;
     }
 };
 

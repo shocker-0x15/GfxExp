@@ -137,7 +137,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE float computeInstImportance(
     float3 scale;
     inst.transform.decompose(&scale, nullptr, nullptr);
     float uniformScale = scale.x;
-    float importance = uniformScale * inst.lightGeomInstDist.integral();
+    float importance = pow2(uniformScale) * inst.lightGeomInstDist.integral();
     return importance;
 }
 

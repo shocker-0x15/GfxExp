@@ -2226,9 +2226,9 @@ namespace shared {
         Matrix4x4 transform;
         Matrix4x4 prevTransform;
         Matrix3x3 normalMatrix;
+        float uniformScale;
 
         const uint32_t* geomInstSlots;
-        uint32_t numGeomInsts;
         LightDistribution lightGeomInstDist;
     };
 }
