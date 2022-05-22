@@ -19,7 +19,7 @@ enum class GBufferEntryPoint {
     setupGBuffers = 0,
 };
 enum class PathTracingEntryPoint {
-    pathTraceBaseline,
+    pathTrace,
 };
 
 struct GPUEnvironment {
@@ -143,13 +143,13 @@ struct GPUEnvironment {
                 DEBUG_SELECT(OPTIX_COMPILE_OPTIMIZATION_LEVEL_0, OPTIX_COMPILE_OPTIMIZATION_DEFAULT),
                 DEBUG_SELECT(OPTIX_COMPILE_DEBUG_LEVEL_FULL, OPTIX_COMPILE_DEBUG_LEVEL_NONE));
 
-            pipeline.entryPoints[PathTracingEntryPoint::pathTraceBaseline] =
-                p.createRayGenProgram(m, RT_RG_NAME_STR("pathTraceBaseline"));
+            pipeline.entryPoints[PathTracingEntryPoint::pathTrace] =
+                p.createRayGenProgram(m, RT_RG_NAME_STR("pathTrace"));
 
-            pipeline.programs[RT_MS_NAME_STR("pathTraceBaseline")] = p.createMissProgram(
-                m, RT_MS_NAME_STR("pathTraceBaseline"));
-            pipeline.programs[RT_CH_NAME_STR("pathTraceBaseline")] = p.createHitProgramGroupForTriangleIS(
-                m, RT_CH_NAME_STR("pathTraceBaseline"),
+            pipeline.programs[RT_MS_NAME_STR("pathTrace")] = p.createMissProgram(
+                m, RT_MS_NAME_STR("pathTrace"));
+            pipeline.programs[RT_CH_NAME_STR("pathTrace")] = p.createHitProgramGroupForTriangleIS(
+                m, RT_CH_NAME_STR("pathTrace"),
                 emptyModule, nullptr);
 
             pipeline.programs[RT_AH_NAME_STR("visibility")] = p.createHitProgramGroupForTriangleIS(
@@ -160,7 +160,7 @@ struct GPUEnvironment {
 
             p.setNumMissRayTypes(shared::PathTracingRayType::NumTypes);
             p.setMissProgram(
-                shared::PathTracingRayType::Baseline, pipeline.programs.at(RT_MS_NAME_STR("pathTraceBaseline")));
+                shared::PathTracingRayType::Baseline, pipeline.programs.at(RT_MS_NAME_STR("pathTrace")));
             p.setMissProgram(shared::PathTracingRayType::Visibility, pipeline.programs.at("emptyMiss"));
 
             p.setNumCallablePrograms(NumCallablePrograms);
@@ -176,7 +176,7 @@ struct GPUEnvironment {
             p.link(1, DEBUG_SELECT(OPTIX_COMPILE_DEBUG_LEVEL_FULL, OPTIX_COMPILE_DEBUG_LEVEL_NONE));
 
             optixDefaultMaterial.setHitGroup(
-                shared::PathTracingRayType::Baseline, pipeline.programs.at(RT_CH_NAME_STR("pathTraceBaseline")));
+                shared::PathTracingRayType::Baseline, pipeline.programs.at(RT_CH_NAME_STR("pathTrace")));
             optixDefaultMaterial.setHitGroup(
                 shared::PathTracingRayType::Visibility, pipeline.programs.at(RT_AH_NAME_STR("visibility")));
 
@@ -1736,7 +1736,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         // EN: Perform shading by path tracing.
         curGPUTimer.pathTrace.start(cuStream);
         CUDADRV_CHECK(cuMemcpyHtoDAsync(plpOnDevice, &plp, sizeof(plp), cuStream));
-        gpuEnv.pathTracing.setEntryPoint(PathTracingEntryPoint::pathTraceBaseline);
+        gpuEnv.pathTracing.setEntryPoint(PathTracingEntryPoint::pathTrace);
         gpuEnv.pathTracing.optixPipeline.launch(
             cuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);
         curGPUTimer.pathTrace.stop(cuStream);

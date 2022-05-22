@@ -69,7 +69,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE float3 performNextEventEstimation(
     return ret;
 }
 
-CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_rayGen_generic() {
+CUDA_DEVICE_KERNEL void RT_RG_NAME(pathTrace)() {
     uint2 launchIndex = make_uint2(optixGetLaunchIndex().x, optixGetLaunchIndex().y);
 
     uint32_t bufIdx = plp.f->bufferIndex;
@@ -268,7 +268,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_rayGen_generic() {
     plp.s->beautyAccumBuffer.write(launchIndex, make_float4(colorResult, 1.0f));
 }
 
-CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_closestHit_generic() {
+CUDA_DEVICE_KERNEL void RT_CH_NAME(pathTrace)() {
     auto sbtr = HitGroupSBTRecordData::get();
     uint32_t instSlot = optixGetInstanceId();
     uint32_t geomInstSlot = sbtr.geomInstSlot;
@@ -276,15 +276,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_closestHit_generic() {
     PathTraceRayPayloadSignature::set(&instSlot, &geomInstSlot, &hp);
 }
 
-CUDA_DEVICE_KERNEL void RT_RG_NAME(pathTraceBaseline)() {
-    pathTrace_rayGen_generic();
-}
-
-CUDA_DEVICE_KERNEL void RT_CH_NAME(pathTraceBaseline)() {
-    pathTrace_closestHit_generic();
-}
-
-CUDA_DEVICE_KERNEL void RT_MS_NAME(pathTraceBaseline)() {
+CUDA_DEVICE_KERNEL void RT_MS_NAME(pathTrace)() {
     constexpr uint32_t instSlot = 0xFFFFFFFF;
     PathTraceRayPayloadSignature::set(&instSlot, nullptr, nullptr);
 }
