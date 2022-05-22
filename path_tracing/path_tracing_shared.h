@@ -107,24 +107,6 @@ namespace shared {
     };
 
 
-
-    struct PathTraceWriteOnlyPayload {
-        float3 nextOrigin;
-        float3 nextDirection;
-    };
-
-    struct PathTraceReadWritePayload {
-        PCG32RNG rng;
-        float initImportance;
-        float3 alpha;
-        float3 contribution;
-        float prevDirPDensity;
-        unsigned int maxLengthTerminate : 1;
-        unsigned int terminate : 1;
-        unsigned int pathLength : 6;
-    };
-
-    
     
     struct StaticPipelineLaunchParameters {
         int2 imageSize;
@@ -195,10 +177,26 @@ namespace shared {
 
 
 
+    struct HitPointParameter {
+        float b1, b2;
+        int32_t primIndex;
+
+#if defined(__CUDA_ARCH__) || defined(OPTIXU_Platform_CodeCompletion)
+        CUDA_DEVICE_FUNCTION CUDA_INLINE static HitPointParameter get() {
+            HitPointParameter ret;
+            float2 bc = optixGetTriangleBarycentrics();
+            ret.b1 = bc.x;
+            ret.b2 = bc.y;
+            ret.primIndex = optixGetPrimitiveIndex();
+            return ret;
+        }
+#endif
+    };
+
     using PrimaryRayPayloadSignature =
         optixu::PayloadSignature<shared::HitPointParams*, shared::PickInfo*>;
     using PathTraceRayPayloadSignature =
-        optixu::PayloadSignature<shared::PathTraceWriteOnlyPayload*, shared::PathTraceReadWritePayload*>;
+        optixu::PayloadSignature<uint32_t, uint32_t, HitPointParameter>;
     using VisibilityRayPayloadSignature =
         optixu::PayloadSignature<float>;
 }
@@ -490,9 +488,12 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void computeSurfacePoint(
     const Vertex &v1 = geomInst.vertexBuffer[tri.index1];
     const Vertex &v2 = geomInst.vertexBuffer[tri.index2];
     const float3 p[3] = {
-        optixTransformPointFromObjectToWorldSpace(v0.position),
-        optixTransformPointFromObjectToWorldSpace(v1.position),
-        optixTransformPointFromObjectToWorldSpace(v2.position),
+        //optixTransformPointFromObjectToWorldSpace(v0.position),
+        //optixTransformPointFromObjectToWorldSpace(v1.position),
+        //optixTransformPointFromObjectToWorldSpace(v2.position),
+        inst.transform * v0.position,
+        inst.transform * v1.position,
+        inst.transform * v2.position,
     };
     float b0 = 1 - (b1 + b2);
 
@@ -511,9 +512,13 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void computeSurfacePoint(
 
     // JP: ローカル座標中の値をワールド座標中の値へと変換する。
     // EN: Convert the local properties to ones in world coordinates.
-    *positionInWorld = optixTransformPointFromObjectToWorldSpace(position);
-    *shadingNormalInWorld = normalize(optixTransformNormalFromObjectToWorldSpace(shadingNormal));
-    *texCoord0DirInWorld = normalize(optixTransformVectorFromObjectToWorldSpace(texCoord0Dir));
+    //*positionInWorld = optixTransformPointFromObjectToWorldSpace(position);
+    //*shadingNormalInWorld = normalize(optixTransformNormalFromObjectToWorldSpace(shadingNormal));
+    //*texCoord0DirInWorld = normalize(optixTransformVectorFromObjectToWorldSpace(texCoord0Dir));
+    *positionInWorld = inst.transform * position;
+    *shadingNormalInWorld = normalize(inst.normalMatrix * shadingNormal);
+    Matrix3x3 vecXfm = inst.transform.getUpperLeftMatrix();
+    *texCoord0DirInWorld = normalize(vecXfm * texCoord0Dir);
     *geometricNormalInWorld = normalize(geometricNormal);
     if (!allFinite(*shadingNormalInWorld)) {
         *shadingNormalInWorld = make_float3(0, 0, 1);
@@ -572,20 +577,6 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void computeSurfacePoint(
 }
 
 
-
-struct HitPointParameter {
-    float b1, b2;
-    int32_t primIndex;
-
-    CUDA_DEVICE_FUNCTION CUDA_INLINE static HitPointParameter get() {
-        HitPointParameter ret;
-        float2 bc = optixGetTriangleBarycentrics();
-        ret.b1 = bc.x;
-        ret.b2 = bc.y;
-        ret.primIndex = optixGetPrimitiveIndex();
-        return ret;
-    }
-};
 
 struct HitGroupSBTRecordData {
     uint32_t geomInstSlot;

@@ -77,110 +77,174 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_rayGen_generic() {
     GBuffer1 gBuffer1 = plp.s->GBuffer1[bufIdx].read(launchIndex);
     GBuffer2 gBuffer2 = plp.s->GBuffer2[bufIdx].read(launchIndex);
 
-    float3 positionInWorld = gBuffer0.positionInWorld;
-    float3 shadingNormalInWorld = gBuffer1.normalInWorld;
     float2 texCoord = make_float2(gBuffer0.texCoord_x, gBuffer1.texCoord_y);
     uint32_t materialSlot = gBuffer2.materialSlot;
 
-    const PerspectiveCamera &camera = plp.f->camera;
-
     bool useEnvLight = plp.s->envLightTexture && plp.f->enableEnvLight;
-    float3 contribution = make_float3(0.001f, 0.001f, 0.001f);
+    float3 contribution = make_float3(0.0f, 0.0f, 0.0f);
     if (materialSlot != 0xFFFFFFFF) {
+        const PerspectiveCamera &camera = plp.f->camera;
+
         float3 alpha = make_float3(1.0f);
         float initImportance = sRGB_calcLuminance(alpha);
         PCG32RNG rng = plp.s->rngBuffer.read(launchIndex);
 
-        // JP: 最初の交点におけるシェーディング。
-        // EN: Shading on the first hit.
-        float3 vIn;
-        float dirPDensity;
-        {
-            const MaterialData &mat = plp.s->materialDataBuffer[materialSlot];
+        float3 positionInWorld = gBuffer0.positionInWorld;
+        ReferenceFrame shadingFrame(gBuffer1.normalInWorld);
+        // TODO?: Use true geometric normal.
+        float3 geometricNormalInWorld = shadingFrame.normal;
 
-            // TODO?: Use true geometric normal.
-            float3 geometricNormalInWorld = shadingNormalInWorld;
+        float3 vOutLocal;
+        {
             float3 vOut = normalize(camera.position - positionInWorld);
             float frontHit = dot(vOut, geometricNormalInWorld) >= 0.0f ? 1.0f : -1.0f;
-
-            ReferenceFrame shadingFrame(shadingNormalInWorld);
             positionInWorld = offsetRayOriginNaive(positionInWorld, frontHit * geometricNormalInWorld);
-            float3 vOutLocal = shadingFrame.toLocal(vOut);
+            vOutLocal = shadingFrame.toLocal(vOut);
+        }
 
-            // JP: 光源を直接見ている場合の寄与を蓄積。
-            // EN: Accumulate the contribution from a light source directly seeing.
-            contribution = make_float3(0.0f);
+        if constexpr (useImplicitLightSampling) {
+            // Implicit Light Sampling
+            const MaterialData &mat = plp.s->materialDataBuffer[materialSlot];
             if (vOutLocal.z > 0 && mat.emittance) {
                 float4 texValue = tex2DLod<float4>(mat.emittance, texCoord.x, texCoord.y, 0.0f);
                 float3 emittance = make_float3(texValue);
                 contribution += alpha * emittance / Pi;
             }
+        }
+
+        // Path extension loop
+        uint32_t pathLength = 1;
+        while (true) {
+            const MaterialData &mat = plp.s->materialDataBuffer[materialSlot];
 
             BSDF bsdf;
             bsdf.setup(mat, texCoord);
 
-            // Next event estimation (explicit light sampling) on the first hit.
-            contribution += alpha * performNextEventEstimation(
-                positionInWorld, vOutLocal, shadingFrame, bsdf, rng);
+            if constexpr (useExplicitLightSampling) {
+                // Next Event Estimation (Explicit Light Sampling)
+                contribution += alpha * performNextEventEstimation(
+                    positionInWorld, vOutLocal, shadingFrame, bsdf, rng);
+            }
 
-            // generate a next ray.
+            if constexpr (!useImplicitLightSampling) {
+                if (pathLength + 1 >= plp.f->maxPathLength)
+                    break;
+            }
+
+            // sample a next ray.
             float3 vInLocal;
+            float dirPDensity;
             alpha *= bsdf.sampleThroughput(
                 vOutLocal, rng.getFloat0cTo1o(), rng.getFloat0cTo1o(),
                 &vInLocal, &dirPDensity);
-            vIn = shadingFrame.fromLocal(vInLocal);
-        }
-
-        // Path extension loop
-        PathTraceWriteOnlyPayload woPayload = {};
-        PathTraceWriteOnlyPayload* woPayloadPtr = &woPayload;
-        PathTraceReadWritePayload rwPayload = {};
-        PathTraceReadWritePayload* rwPayloadPtr = &rwPayload;
-        rwPayload.rng = rng;
-        rwPayload.initImportance = initImportance;
-        rwPayload.alpha = alpha;
-        rwPayload.prevDirPDensity = dirPDensity;
-        rwPayload.contribution = contribution;
-        rwPayload.pathLength = 1;
-        float3 rayOrg = positionInWorld;
-        float3 rayDir = vIn;
-        while (true) {
-            bool isValidSampling = rwPayload.prevDirPDensity > 0.0f && isfinite(rwPayload.prevDirPDensity);
-            if (!isValidSampling)
+            if (dirPDensity <= 0.0f || !isfinite(dirPDensity))
                 break;
-
-            ++rwPayload.pathLength;
-            if (rwPayload.pathLength >= plp.f->maxPathLength)
-                rwPayload.maxLengthTerminate = true;
-            rwPayload.terminate = true;
-            // JP: 経路長制限に到達したときに、implicit light samplingを使わない場合はClosest-hit program内
-            //     で行うことが無いので終了する。
-            // EN: Nothing to do in the closest-hit program when reaching the path length limit
-            //     in the case implicit light sampling is unused.
             if constexpr (!useImplicitLightSampling) {
-                if (rwPayload.maxLengthTerminate)
-                    break;
                 // Russian roulette
-                float continueProb = std::fmin(sRGB_calcLuminance(rwPayload.alpha) / rwPayload.initImportance, 1.0f);
-                if (rwPayload.rng.getFloat0cTo1o() >= continueProb)
+                float continueProb = std::fmin(sRGB_calcLuminance(alpha) / initImportance, 1.0f);
+                if (rng.getFloat0cTo1o() >= continueProb)
                     break;
-                rwPayload.alpha /= continueProb;
+                alpha /= continueProb;
             }
+            float3 vIn = shadingFrame.fromLocal(vInLocal);
+            ++pathLength;
 
+            float3 rayOrg = positionInWorld;
+            uint32_t instSlot;
+            uint32_t geomInstSlot;
+            HitPointParameter hp;
             constexpr PathTracingRayType pathTraceRayType = PathTracingRayType::Baseline;
             optixu::trace<PathTraceRayPayloadSignature>(
-                plp.f->travHandle, rayOrg, rayDir,
+                plp.f->travHandle, rayOrg, vIn,
                 0.0f, FLT_MAX, 0.0f, 0xFF, OPTIX_RAY_FLAG_NONE,
                 pathTraceRayType, maxNumRayTypes, pathTraceRayType,
-                woPayloadPtr, rwPayloadPtr);
-            if (rwPayload.terminate)
-                break;
-            rayOrg = woPayload.nextOrigin;
-            rayDir = woPayload.nextDirection;
-        }
-        contribution = rwPayload.contribution;
+                instSlot, geomInstSlot, hp);
 
-        plp.s->rngBuffer.write(launchIndex, rwPayload.rng);
+            if (instSlot != 0xFFFFFFFF) {
+                const InstanceData &inst = plp.f->instanceDataBuffer[instSlot];
+                const GeometryInstanceData &geomInst = plp.s->geometryInstanceDataBuffer[geomInstSlot];
+                materialSlot = geomInst.materialSlot;
+
+                float3 shadingNormalInWorld;
+                float3 texCoord0DirInWorld;
+                float hypAreaPDensity;
+                computeSurfacePoint<useMultipleImportanceSampling, useSolidAngleSampling>(
+                    inst, geomInst, hp.primIndex, hp.b1, hp.b2,
+                    rayOrg,
+                    &positionInWorld, &shadingNormalInWorld, &texCoord0DirInWorld,
+                    &geometricNormalInWorld, &texCoord, &hypAreaPDensity);
+                if constexpr (!useMultipleImportanceSampling)
+                    (void)hypAreaPDensity;
+
+                shadingFrame = ReferenceFrame(shadingNormalInWorld, texCoord0DirInWorld);
+                float3 modLocalNormal = mat.readModifiedNormal(mat.normal, texCoord, mat.normalDimension);
+                if (plp.f->enableBumpMapping)
+                    applyBumpMapping(modLocalNormal, &shadingFrame);
+
+                float3 vOut = -vIn;
+                float frontHit = dot(vOut, geometricNormalInWorld) >= 0.0f ? 1.0f : -1.0f;
+                positionInWorld = offsetRayOrigin(positionInWorld, frontHit * geometricNormalInWorld);
+                vOutLocal = shadingFrame.toLocal(vOut);
+
+                if constexpr (useImplicitLightSampling) {
+                    // Implicit Light Sampling
+                    const MaterialData &mat = plp.s->materialDataBuffer[materialSlot];
+                    if (vOutLocal.z > 0 && mat.emittance) {
+                        float4 texValue = tex2DLod<float4>(mat.emittance, texCoord.x, texCoord.y, 0.0f);
+                        float3 emittance = make_float3(texValue);
+                        float misWeight = 1.0f;
+                        if constexpr (useMultipleImportanceSampling) {
+                            float dist2 = squaredDistance(rayOrg, positionInWorld);
+                            float lightPDensity = hypAreaPDensity * dist2 / vOutLocal.z;
+                            float bsdfPDensity = dirPDensity;
+                            misWeight = pow2(bsdfPDensity) / (pow2(bsdfPDensity) + pow2(lightPDensity));
+                        }
+                        contribution += alpha * emittance * (misWeight / Pi);
+                    }
+
+                    // Russian roulette
+                    float continueProb = std::fmin(sRGB_calcLuminance(alpha) / initImportance, 1.0f);
+                    if (rng.getFloat0cTo1o() >= continueProb || pathLength >= plp.f->maxPathLength)
+                        break;
+                    alpha /= continueProb;
+                }
+            }
+            else {
+                // JP: 無限遠光源のImplicit Light Sampling。
+                // EN: Implicit light sampling for the infinitely distant light.
+                if constexpr (useImplicitLightSampling) {
+                    if (!plp.s->envLightTexture || !plp.f->enableEnvLight)
+                        break;
+
+                    float posPhi, theta;
+                    toPolarYUp(vIn, &posPhi, &theta);
+
+                    float phi = posPhi + plp.f->envLightRotation;
+                    phi = phi - floorf(phi / (2 * Pi)) * 2 * Pi;
+                    float2 texCoord = make_float2(phi / (2 * Pi), theta / Pi);
+
+                    // Implicit Light Sampling
+                    float4 texValue = tex2DLod<float4>(plp.s->envLightTexture, texCoord.x, texCoord.y, 0.0f);
+                    float3 luminance = plp.f->envLightPowerCoeff * make_float3(texValue);
+                    float misWeight = 1.0f;
+                    if constexpr (useMultipleImportanceSampling) {
+                        if (pathLength > 1) {
+                            float uvPDF = plp.s->envLightImportanceMap.evaluatePDF(texCoord.x, texCoord.y);
+                            float hypAreaPDensity = uvPDF / (2 * Pi * Pi * std::sin(theta));
+                            float lightPDensity =
+                                (plp.s->lightInstDist.integral() > 0.0f ? probToSampleEnvLight : 1.0f) *
+                                hypAreaPDensity;
+                            float bsdfPDensity = dirPDensity;
+                            misWeight = pow2(bsdfPDensity) / (pow2(bsdfPDensity) + pow2(lightPDensity));
+                        }
+                    }
+                    contribution += alpha * luminance * misWeight;
+                }
+                break;
+            }
+        }
+
+        plp.s->rngBuffer.write(launchIndex, rng);
     }
     else {
         // JP: 環境光源を直接見ている場合の寄与を蓄積。
@@ -190,6 +254,9 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_rayGen_generic() {
             float4 texValue = tex2DLod<float4>(plp.s->envLightTexture, u, v, 0.0f);
             float3 luminance = plp.f->envLightPowerCoeff * make_float3(texValue);
             contribution = luminance;
+        }
+        else {
+            contribution = make_float3(0.001f, 0.001f, 0.001f);
         }
     }
 
@@ -203,84 +270,10 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_rayGen_generic() {
 
 CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_closestHit_generic() {
     auto sbtr = HitGroupSBTRecordData::get();
-    const InstanceData &inst = plp.f->instanceDataBuffer[optixGetInstanceId()];
-    const GeometryInstanceData &geomInst = plp.s->geometryInstanceDataBuffer[sbtr.geomInstSlot];
-
-    PathTraceWriteOnlyPayload* woPayload;
-    PathTraceReadWritePayload* rwPayload;
-    PathTraceRayPayloadSignature::get(&woPayload, &rwPayload);
-    PCG32RNG &rng = rwPayload->rng;
-
-    const float3 rayOrigin = optixGetWorldRayOrigin();
-
+    uint32_t instSlot = optixGetInstanceId();
+    uint32_t geomInstSlot = sbtr.geomInstSlot;
     auto hp = HitPointParameter::get();
-    float3 positionInWorld;
-    float3 shadingNormalInWorld;
-    float3 texCoord0DirInWorld;
-    float3 geometricNormalInWorld;
-    float2 texCoord;
-    float hypAreaPDensity;
-    computeSurfacePoint<useMultipleImportanceSampling, useSolidAngleSampling>(
-        inst, geomInst, hp.primIndex, hp.b1, hp.b2,
-        rayOrigin,
-        &positionInWorld, &shadingNormalInWorld, &texCoord0DirInWorld,
-        &geometricNormalInWorld, &texCoord, &hypAreaPDensity);
-    if constexpr (!useMultipleImportanceSampling)
-        (void)hypAreaPDensity;
-
-    const MaterialData &mat = plp.s->materialDataBuffer[geomInst.materialSlot];
-
-    float3 vOut = normalize(-optixGetWorldRayDirection());
-    float frontHit = dot(vOut, geometricNormalInWorld) >= 0.0f ? 1.0f : -1.0f;
-
-    ReferenceFrame shadingFrame(shadingNormalInWorld, texCoord0DirInWorld);
-    float3 modLocalNormal = mat.readModifiedNormal(mat.normal, texCoord, mat.normalDimension);
-    if (plp.f->enableBumpMapping)
-        applyBumpMapping(modLocalNormal, &shadingFrame);
-    positionInWorld = offsetRayOrigin(positionInWorld, frontHit * geometricNormalInWorld);
-    float3 vOutLocal = shadingFrame.toLocal(vOut);
-
-    if constexpr (useImplicitLightSampling) {
-        // Implicit Light Sampling
-        if (vOutLocal.z > 0 && mat.emittance) {
-            float4 texValue = tex2DLod<float4>(mat.emittance, texCoord.x, texCoord.y, 0.0f);
-            float3 emittance = make_float3(texValue);
-            float misWeight = 1.0f;
-            if constexpr (useMultipleImportanceSampling) {
-                float dist2 = squaredDistance(rayOrigin, positionInWorld);
-                float lightPDensity = hypAreaPDensity * dist2 / vOutLocal.z;
-                float bsdfPDensity = rwPayload->prevDirPDensity;
-                misWeight = pow2(bsdfPDensity) / (pow2(bsdfPDensity) + pow2(lightPDensity));
-            }
-            rwPayload->contribution += rwPayload->alpha * emittance * (misWeight / Pi);
-        }
-
-        // Russian roulette
-        float continueProb = std::fmin(sRGB_calcLuminance(rwPayload->alpha) / rwPayload->initImportance, 1.0f);
-        if (rng.getFloat0cTo1o() >= continueProb || rwPayload->maxLengthTerminate)
-            return;
-        rwPayload->alpha /= continueProb;
-    }
-
-    BSDF bsdf;
-    bsdf.setup(mat, texCoord);
-
-    // Next Event Estimation (Explicit Light Sampling)
-    rwPayload->contribution += rwPayload->alpha * performNextEventEstimation(
-        positionInWorld, vOutLocal, shadingFrame, bsdf, rng);
-
-    // generate a next ray.
-    float3 vInLocal;
-    float dirPDensity;
-    rwPayload->alpha *= bsdf.sampleThroughput(
-        vOutLocal, rng.getFloat0cTo1o(), rng.getFloat0cTo1o(),
-        &vInLocal, &dirPDensity);
-    float3 vIn = shadingFrame.fromLocal(vInLocal);
-
-    woPayload->nextOrigin = positionInWorld;
-    woPayload->nextDirection = vIn;
-    rwPayload->prevDirPDensity = dirPDensity;
-    rwPayload->terminate = false;
+    PathTraceRayPayloadSignature::set(&instSlot, &geomInstSlot, &hp);
 }
 
 CUDA_DEVICE_KERNEL void RT_RG_NAME(pathTraceBaseline)() {
@@ -292,34 +285,6 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(pathTraceBaseline)() {
 }
 
 CUDA_DEVICE_KERNEL void RT_MS_NAME(pathTraceBaseline)() {
-    if constexpr (useImplicitLightSampling) {
-        if (!plp.s->envLightTexture || !plp.f->enableEnvLight)
-            return;
-
-        PathTraceReadWritePayload* rwPayload;
-        PathTraceRayPayloadSignature::get(nullptr, &rwPayload);
-
-        float3 rayDir = normalize(optixGetWorldRayDirection());
-        float posPhi, theta;
-        toPolarYUp(rayDir, &posPhi, &theta);
-
-        float phi = posPhi + plp.f->envLightRotation;
-        phi = phi - floorf(phi / (2 * Pi)) * 2 * Pi;
-        float2 texCoord = make_float2(phi / (2 * Pi), theta / Pi);
-
-        // Implicit Light Sampling
-        float4 texValue = tex2DLod<float4>(plp.s->envLightTexture, texCoord.x, texCoord.y, 0.0f);
-        float3 luminance = plp.f->envLightPowerCoeff * make_float3(texValue);
-        float misWeight = 1.0f;
-        if constexpr (useMultipleImportanceSampling) {
-            float uvPDF = plp.s->envLightImportanceMap.evaluatePDF(texCoord.x, texCoord.y);
-            float hypAreaPDensity = uvPDF / (2 * Pi * Pi * std::sin(theta));
-            float lightPDensity =
-                (plp.s->lightInstDist.integral() > 0.0f ? probToSampleEnvLight : 1.0f) *
-                hypAreaPDensity;
-            float bsdfPDensity = rwPayload->prevDirPDensity;
-            misWeight = pow2(bsdfPDensity) / (pow2(bsdfPDensity) + pow2(lightPDensity));
-        }
-        rwPayload->contribution += rwPayload->alpha * luminance * misWeight;
-    }
+    constexpr uint32_t instSlot = 0xFFFFFFFF;
+    PathTraceRayPayloadSignature::set(&instSlot, nullptr, nullptr);
 }

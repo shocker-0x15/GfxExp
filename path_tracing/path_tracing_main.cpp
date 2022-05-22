@@ -173,7 +173,7 @@ struct GPUEnvironment {
                 p.setCallableProgram(i, program);
             }
 
-            p.link(2, DEBUG_SELECT(OPTIX_COMPILE_DEBUG_LEVEL_FULL, OPTIX_COMPILE_DEBUG_LEVEL_NONE));
+            p.link(1, DEBUG_SELECT(OPTIX_COMPILE_DEBUG_LEVEL_FULL, OPTIX_COMPILE_DEBUG_LEVEL_NONE));
 
             optixDefaultMaterial.setHitGroup(
                 shared::PathTracingRayType::Baseline, pipeline.programs.at(RT_CH_NAME_STR("pathTraceBaseline")));
