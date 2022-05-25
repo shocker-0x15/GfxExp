@@ -4,6 +4,8 @@
 
 #define pixelprintf(idx, px, py, fmt, ...) \
     do { if (idx.x == px && idx.y == py) printf(fmt, ##__VA_ARGS__); } while (0)
+#define mouseprintf(fmt, ...) \
+    do { if (make_uint2(optixGetLaunchIndex()) == plp.f->mousePosition) printf(fmt, ##__VA_ARGS__); } while (0)
 #define vector2Arg(v) v.x, v.y
 #define vector3Arg(v) v.x, v.y, v.z
 #define vector4Arg(v) v.x, v.y, v.z, v.w

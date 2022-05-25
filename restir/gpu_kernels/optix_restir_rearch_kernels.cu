@@ -572,7 +572,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void shadeAndResample() {
                 // JP: 際限なく過去フレームで得たサンプルがウェイトを増やさないように、
                 //     前フレームのストリーム長を、現在フレームのReservoirに対して20倍までに制限する。
                 // EN: Limit the stream length of the previous frame by 20 times of that of the current frame
-                //     in order to avoid a sample obtained in the past getting a unlimited weight.
+                //     in order to avoid a sample obtained in the past getting an unlimited weight.
                 uint32_t nbStreamLength = min(neighbor.getStreamLength(), maxPrevStreamLength);
                 if (neighborInfo.recPDFEstimate > 0.0f) {
                     // JP: 隣接ピクセルが持つ候補サンプルの「現在の」ピクセルにおける確率密度を計算する。
@@ -610,7 +610,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void shadeAndResample() {
                 // JP: 際限なく過去フレームで得たサンプルがウェイトを増やさないように、
                 //     前フレームのストリーム長を、現在フレームのReservoirに対して20倍までに制限する。
                 // EN: Limit the stream length of the previous frame by 20 times of that of the current frame
-                //     in order to avoid a sample obtained in the past getting a unlimited weight.
+                //     in order to avoid a sample obtained in the past getting an unlimited weight.
                 uint32_t nbStreamLength = min(neighbor.getStreamLength(), maxPrevStreamLength);
                 if (neighborInfo.recPDFEstimate > 0.0f) {
                     // JP: 隣接ピクセルが持つ候補サンプルの「現在の」ピクセルにおける確率密度を計算する。
@@ -648,7 +648,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void shadeAndResample() {
         contribution += directCont;
 
         // JP: 現在のサンプルが生き残る確率密度の逆数の推定値を計算する。
-        // EN: Calculate the estimate of the reciprocal of the probability density that the current sample suvives.
+        // EN: Calculate the estimate of the reciprocal of the probability density that the current sample survives.
         float recPDFEstimate = selectedMisWeight * combinedReservoir.getSumWeights() / selectedTargetDensity;
         if (!isfinite(recPDFEstimate) || (plp.f->reuseVisibility && !sampleVis.selectedSample)) {
             recPDFEstimate = 0.0f;

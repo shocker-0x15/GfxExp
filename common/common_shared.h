@@ -329,6 +329,9 @@ CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator/(const int2 &v0, const uint2 &v1
     return make_uint2(v0.x / v1.x, v0.y / v1.y);
 }
 
+CUDA_COMMON_FUNCTION CUDA_INLINE uint2 make_uint2(const uint3 &v) {
+    return make_uint2(v.x, v.y);
+}
 CUDA_COMMON_FUNCTION CUDA_INLINE bool operator==(const uint2 &v0, const uint2 &v1) {
     return v0.x == v1.x && v0.y == v1.y;
 }
