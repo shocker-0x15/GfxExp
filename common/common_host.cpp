@@ -1597,9 +1597,9 @@ static GeometryInstance* createGeometryInstance(
             vertices[tri.index2],
         };
         geomInst->aabb
-            .unify(vertices[0].position)
-            .unify(vertices[1].position)
-            .unify(vertices[2].position);
+            .unify(vs[0].position)
+            .unify(vs[1].position)
+            .unify(vs[2].position);
     }
 
     geomInst->mat = mat;
