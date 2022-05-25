@@ -113,7 +113,7 @@ CUDA_DEVICE_KERNEL void performPerPixelRIS() {
     }
 
     // JP: 現在のサンプルが生き残る確率密度の逆数の推定値を計算する。
-    // EN: Calculate the estimate of the reciprocal of the probability density that the current sample suvives.
+    // EN: Calculate the estimate of the reciprocal of the probability density that the current sample survives.
     float recPDFEstimate = reservoir.getSumWeights() / (selectedTargetDensity * reservoir.getStreamLength());
     if (!isfinite(recPDFEstimate)) {
         recPDFEstimate = 0.0f;

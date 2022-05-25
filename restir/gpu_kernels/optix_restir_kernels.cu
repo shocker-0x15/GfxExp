@@ -108,7 +108,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void performInitialAndTemporalRIS() {
     }
 
     // JP: 現在のサンプルが生き残る確率密度の逆数の推定値を計算する。
-    // EN: Calculate the estimate of the reciprocal of the probability density that the current sample suvives.
+    // EN: Calculate the estimate of the reciprocal of the probability density that the current sample survives.
     float recPDFEstimate = reservoir.getSumWeights() / (selectedTargetDensity * reservoir.getStreamLength());
     if (!isfinite(recPDFEstimate)) {
         recPDFEstimate = 0.0f;
@@ -167,7 +167,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void performInitialAndTemporalRIS() {
             // JP: 際限なく過去フレームで得たサンプルがウェイトを増やさないように、
             //     前フレームのストリーム長を、現在フレームのReservoirに対して20倍までに制限する。
             // EN: Limit the stream length of the previous frame by 20 times of that of the current frame
-            //     in order to avoid a sample obtained in the past getting a unlimited weight.
+            //     in order to avoid a sample obtained in the past getting an unlimited weight.
             uint32_t nbStreamLength = min(neighbor.getStreamLength(), maxPrevStreamLength);
             float weight = targetDensity * neighborInfo.recPDFEstimate * nbStreamLength;
             if (reservoir.update(nbLightSample, weight, rng.getFloat0cTo1o())) {
@@ -267,7 +267,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void performInitialAndTemporalRIS() {
         }
 
         // JP: 現在のサンプルが生き残る確率密度の逆数の推定値を計算する。
-        // EN: Calculate the estimate of the reciprocal of the probability density that the current sample suvives.
+        // EN: Calculate the estimate of the reciprocal of the probability density that the current sample survives.
         recPDFEstimate = weightForEstimate * reservoir.getSumWeights() / selectedTargetDensity;
         if (!isfinite(recPDFEstimate)) {
             recPDFEstimate = 0.0f;
@@ -534,7 +534,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void performSpatialRIS() {
     }
 
     // JP: 現在のサンプルが生き残る確率密度の逆数の推定値を計算する。
-    // EN: Calculate the estimate of the reciprocal of the probability density that the current sample suvives.
+    // EN: Calculate the estimate of the reciprocal of the probability density that the current sample survives.
     ReservoirInfo reservoirInfo;
     reservoirInfo.recPDFEstimate = weightForEstimate * combinedReservoir.getSumWeights() / selectedTargetDensity;
     reservoirInfo.targetDensity = selectedTargetDensity;

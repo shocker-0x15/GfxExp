@@ -163,7 +163,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void buildCellReservoirsAndTemporalReuse(uint32
     }
 
     // JP: 現在のサンプルが生き残る確率密度の逆数の推定値を計算する。
-    // EN: Calculate the estimate of the reciprocal of the probability density that the current sample suvives.
+    // EN: Calculate the estimate of the reciprocal of the probability density that the current sample survives.
     float recPDFEstimate = reservoir.getSumWeights() / (selectedTargetPDensity * reservoir.getStreamLength());
     if (!isfinite(recPDFEstimate)) {
         recPDFEstimate = 0.0f;
@@ -189,7 +189,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void buildCellReservoirsAndTemporalReuse(uint32
         // JP: 際限なく過去フレームで得たサンプルがウェイトを増やさないように、
         //     前フレームのストリーム長を、現在フレームのReservoirに対して20倍までに制限する。
         // EN: Limit the stream length of the previous frame by 20 times of that of the current frame
-        //     in order to avoid a sample obtained in the past getting a unlimited weight.
+        //     in order to avoid a sample obtained in the past getting an unlimited weight.
         // TODO: 光源アニメーションがある場合には前フレームと今のフレームでターゲットPDFが異なるので
         //       ウェイトを調整するべき？
         const Reservoir<LightSample> &prevReservoir = prevReservoirs[linearThreadIndex];
@@ -205,7 +205,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void buildCellReservoirsAndTemporalReuse(uint32
         reservoir.setStreamLength(combinedStreamLength);
 
         // JP: 現在のサンプルが生き残る確率密度の逆数の推定値を計算する。
-        // EN: Calculate the estimate of the reciprocal of the probability density that the current sample suvives.
+        // EN: Calculate the estimate of the reciprocal of the probability density that the current sample survives.
         float weightForEstimate = 1.0f / reservoir.getStreamLength();
         recPDFEstimate = weightForEstimate * reservoir.getSumWeights() / selectedTargetPDensity;
         if (!isfinite(recPDFEstimate)) {
