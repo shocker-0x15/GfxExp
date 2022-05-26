@@ -4,9 +4,6 @@
 #include "optix_util.h"
 
 #if defined(OPTIXU_Platform_CodeCompletion)
-struct int2;
-struct uint2;
-
 enum cudaSurfaceBoundaryMode {
     cudaBoundaryModeZero = 0,
     cudaBoundaryModeClamp,
