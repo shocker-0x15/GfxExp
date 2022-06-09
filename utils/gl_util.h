@@ -1,6 +1,6 @@
-/*
+﻿/*
 
-   Copyright 2021 Shin Watanabe
+   Copyright 2022 Shin Watanabe
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -45,6 +45,7 @@
 #include <string>
 #include <sstream>
 #include <stdexcept>
+#include <filesystem>
 #include "GL/gl3w.h"
 
 
@@ -541,6 +542,16 @@ namespace glu {
                 return static_cast<GLenum>(value);
             }
         };
+
+        struct PreProcessorDefinition {
+            std::string name;
+            std::string value;
+
+            PreProcessorDefinition(const std::string &_name) :
+                name(_name) {}
+            PreProcessorDefinition(const std::string &_name, const std::string &_value) :
+                name(_name), value(_value) {}
+        };
     private:
         GLuint m_handle;
 
@@ -559,6 +570,7 @@ namespace glu {
         Shader &operator=(Shader &&b);
 
         void initialize(Type type, const std::string &source);
+        void initialize(Type type, const std::filesystem::path &filePath);
         void finalize();
 
         GLuint getHandle() const {
@@ -587,6 +599,9 @@ namespace glu {
         GraphicsProgram &operator=(GraphicsProgram &&b);
 
         void initializeVSPS(const std::string &vertexSource, const std::string &fragmentSource);
+        void initializeVSPS(const std::string &glslHead,
+                            const std::filesystem::path &vertexSourcePath,
+                            const std::filesystem::path &fragmentSourcePath);
         void finalize();
 
         GLuint getHandle() const {
@@ -614,6 +629,7 @@ namespace glu {
         ComputeProgram &operator=(ComputeProgram &&b);
 
         void initialize(const std::string &source);
+        void initialize(const std::filesystem::path &filePath);
         void finalize();
 
         GLuint getHandle() const {

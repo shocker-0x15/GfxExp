@@ -122,8 +122,9 @@ namespace cudau {
         return *this;
     }
     
-    void Buffer::initialize(CUcontext context, BufferType type,
-                            uint32_t numElements, uint32_t stride, uint32_t glBufferID) {
+    void Buffer::initialize(
+        CUcontext context, BufferType type,
+        uint32_t numElements, uint32_t stride, uint32_t glBufferID) {
         if (m_initialized)
             throw std::runtime_error("Buffer is already initialized.");
 
@@ -137,7 +138,8 @@ namespace cudau {
             CUdevice currentDevice;
             int32_t isDisplayDevice;
             CUDADRV_CHECK(cuCtxGetDevice(&currentDevice));
-            CUDADRV_CHECK(cuDeviceGetAttribute(&isDisplayDevice, CU_DEVICE_ATTRIBUTE_KERNEL_EXEC_TIMEOUT, currentDevice));
+            CUDADRV_CHECK(cuDeviceGetAttribute(
+                &isDisplayDevice, CU_DEVICE_ATTRIBUTE_KERNEL_EXEC_TIMEOUT, currentDevice));
             if (!isDisplayDevice)
                 throw std::runtime_error("GL Interop is only available on the display device.");
         }
@@ -160,13 +162,16 @@ namespace cudau {
         }
         else  if (m_type == BufferType::GL_Interop) {
 #if defined(CUDA_UTIL_USE_GL_INTEROP)
-            CUDADRV_CHECK(cuGraphicsGLRegisterBuffer(&m_cudaGfxResource, m_GLBufferID, CU_GRAPHICS_REGISTER_FLAGS_NONE));
+            CUDADRV_CHECK(cuGraphicsGLRegisterBuffer(
+                &m_cudaGfxResource, m_GLBufferID, CU_GRAPHICS_REGISTER_FLAGS_NONE));
 #else
-            throw std::runtime_error("Enable \"CUDA_UTIL_USE_GL_INTEROP\" at the top of the header if you use CUDA/OpenGL interoperability.");
+            throw std::runtime_error(
+                "Disable \"CUDA_UTIL_DONT_USE_GL_INTEROP\" if you use CUDA/OpenGL interoperability.");
 #endif
         }
         else if (m_type == BufferType::ZeroCopy) {
-            CUDADRV_CHECK(cuMemHostAlloc(&m_hostPointer, size, CU_MEMHOSTALLOC_PORTABLE | CU_MEMHOSTALLOC_DEVICEMAP));
+            CUDADRV_CHECK(cuMemHostAlloc(
+                &m_hostPointer, size, CU_MEMHOSTALLOC_PORTABLE | CU_MEMHOSTALLOC_DEVICEMAP));
             CUDADRV_CHECK(cuMemHostGetDevicePointer(&m_devicePointer, m_hostPointer, 0));
         }
         else { // m_type == BufferType::Managed
@@ -374,19 +379,6 @@ namespace cudau {
 
 
 
-    static bool isBCFormat(ArrayElementType elemType) {
-        return (elemType == cudau::ArrayElementType::BC1_UNorm ||
-                elemType == cudau::ArrayElementType::BC2_UNorm ||
-                elemType == cudau::ArrayElementType::BC3_UNorm ||
-                elemType == cudau::ArrayElementType::BC4_UNorm ||
-                elemType == cudau::ArrayElementType::BC4_SNorm ||
-                elemType == cudau::ArrayElementType::BC5_UNorm ||
-                elemType == cudau::ArrayElementType::BC5_SNorm ||
-                elemType == cudau::ArrayElementType::BC6H_UF16 ||
-                elemType == cudau::ArrayElementType::BC6H_SF16 ||
-                elemType == cudau::ArrayElementType::BC7_UNorm);
-    }
-
     static CUresourceViewFormat getResourceViewFormat(ArrayElementType elemType, uint32_t numChannels) {
 #define CUDA_UTIL_EXPR0(arrayEnum, BaseType, BitWidth) \
     case cudau::ArrayElementType::arrayEnum ## BitWidth: \
@@ -481,6 +473,7 @@ namespace cudau {
             CUDA_UTIL_EXPR1(R, 1);
             CUDA_UTIL_EXPR1(RG, 2);
             CUDA_UTIL_EXPR1(RGBA, 4);
+            CUDA_UTIL_EXPR0(GL_SRGB8_ALPHA8, UInt8, 4);
         default:
             CUDAUAssert_ShouldNotBeCalled();
             break;
@@ -565,9 +558,10 @@ namespace cudau {
         return *this;
     }
     
-    void Array::initialize(CUcontext context, ArrayElementType elemType, uint32_t numChannels,
-                           uint32_t width, uint32_t height, uint32_t depth, uint32_t numMipmapLevels,
-                           bool surfaceLoadStore, bool useTextureGather, bool cubemap, bool layered, uint32_t glTexID) {
+    void Array::initialize(
+        CUcontext context, ArrayElementType elemType, uint32_t numChannels,
+        uint32_t width, uint32_t height, uint32_t depth, uint32_t numMipmapLevels,
+        bool surfaceLoadStore, bool useTextureGather, bool cubemap, bool layered, uint32_t glTexID) {
         if (m_initialized)
             throw std::runtime_error("Array is already initialized.");
         if (numChannels != 1 && numChannels != 2 && numChannels != 4)
@@ -645,8 +639,6 @@ namespace cudau {
             arrayDesc.Format = CU_AD_FORMAT_UNSIGNED_INT32;
             m_stride = 4;
             m_numChannels = 2;
-            m_width = (m_width + 3) / 4;
-            m_height = (m_height + 3) / 4;
             break;
         case cudau::ArrayElementType::BC2_UNorm:
         case cudau::ArrayElementType::BC3_UNorm:
@@ -658,31 +650,39 @@ namespace cudau {
             arrayDesc.Format = CU_AD_FORMAT_UNSIGNED_INT32;
             m_stride = 4;
             m_numChannels = 4;
-            m_width = (m_width + 3) / 4;
-            m_height = (m_height + 3) / 4;
             break;
         default:
             CUDAUAssert_ShouldNotBeCalled();
             break;
         }
-        arrayDesc.Width = m_width;
-        arrayDesc.Height = m_height;
+        if (isBCFormat(m_elemType)) {
+            arrayDesc.Width = (m_width + 3) / 4;
+            arrayDesc.Height = (m_height + 3) / 4;
+        }
+        else {
+            arrayDesc.Width = m_width;
+            arrayDesc.Height = m_height;
+        }
         arrayDesc.Depth = m_depth;
         arrayDesc.NumChannels = m_numChannels;
         m_stride *= m_numChannels;
 
         if (m_GLTexID != 0) {
 #if defined(CUDA_UTIL_USE_GL_INTEROP)
-            uint32_t flags = ((surfaceLoadStore ? CU_GRAPHICS_REGISTER_FLAGS_SURFACE_LDST : CU_GRAPHICS_REGISTER_FLAGS_READ_ONLY) |
-                              (useTextureGather ? CU_GRAPHICS_REGISTER_FLAGS_TEXTURE_GATHER : 0));
+            uint32_t flags = (
+                (surfaceLoadStore ?
+                 CU_GRAPHICS_REGISTER_FLAGS_SURFACE_LDST : CU_GRAPHICS_REGISTER_FLAGS_READ_ONLY) |
+                (useTextureGather ?
+                 CU_GRAPHICS_REGISTER_FLAGS_TEXTURE_GATHER : 0));
             CUDADRV_CHECK(cuGraphicsGLRegisterImage(&m_cudaGfxResource, glTexID, GL_TEXTURE_2D, flags));
 #else
-            throw std::runtime_error("Enable \"CUDA_UTIL_USE_GL_INTEROP\" at the top of the header if you use CUDA/OpenGL interoperability.");
+            throw std::runtime_error(
+                "Disable \"CUDA_UTIL_DONT_USE_GL_INTEROP\" if you use CUDA/OpenGL interoperability.");
 #endif
         }
         else {
             if (m_numMipmapLevels > 1)
-                CUDADRV_CHECK(cuMipmappedArrayCreate(&m_mipmappedArray, &arrayDesc, numMipmapLevels));
+                CUDADRV_CHECK(cuMipmappedArrayCreate(&m_mipmappedArray, &arrayDesc, m_numMipmapLevels));
             else
                 CUDADRV_CHECK(cuArray3DCreate(&m_array, &arrayDesc));
         }
@@ -766,14 +766,22 @@ namespace cudau {
             return;
 
         Array newArray;
-        newArray.initialize(m_cuContext, m_elemType, m_numChannels, width, height, m_depth, m_numMipmapLevels,
-                            m_surfaceLoadStore, m_useTextureGather, m_cubemap, m_layered, 0);
+        newArray.initialize(
+            m_cuContext, m_elemType, m_numChannels, width, height, m_depth, m_numMipmapLevels,
+            m_surfaceLoadStore, m_useTextureGather, m_cubemap, m_layered, 0);
 
-        size_t sizePerRow = std::min(m_width, width) * static_cast<size_t>(m_stride);
+        uint32_t copyWidth = std::max(std::min(m_width, width), 1u);
+        uint32_t copyHeight = std::max(std::min(m_height, height), 1u);
+        if (isBCFormat(m_elemType)) {
+            copyWidth = (copyWidth + 3) / 4;
+            copyHeight = (copyHeight + 3) / 4;
+        }
+
+        size_t sizePerRow = copyWidth * static_cast<size_t>(m_stride);
 
         CUDA_MEMCPY3D params = {};
         params.WidthInBytes = sizePerRow;
-        params.Height = std::max<size_t>(1, std::min(m_height, height));
+        params.Height = copyHeight;
         params.Depth = std::max<size_t>(1, m_depth);
 
         params.srcMemoryType = CU_MEMORYTYPE_ARRAY;
@@ -806,7 +814,8 @@ namespace cudau {
         CUDADRV_CHECK(cuCtxSetCurrent(m_cuContext));
 
         CUDADRV_CHECK(cuGraphicsMapResources(1, &m_cudaGfxResource, stream));
-        CUDADRV_CHECK(cuGraphicsSubResourceGetMappedArray(&m_mappedArrays[mipmapLevel], m_cudaGfxResource, 0, mipmapLevel));
+        CUDADRV_CHECK(cuGraphicsSubResourceGetMappedArray(
+            &m_mappedArrays[mipmapLevel], m_cudaGfxResource, 0, mipmapLevel));
     }
 
     void Array::endCUDAAccess(CUstream stream, uint32_t mipmapLevel) {
@@ -844,17 +853,31 @@ namespace cudau {
         if (m_numMipmapLevels > 1 && m_GLTexID == 0)
             CUDADRV_CHECK(cuMipmappedArrayGetLevel(&m_mappedArrays[mipmapLevel], m_mipmappedArray, mipmapLevel));
 
-        uint32_t width = std::max<uint32_t>(1, m_width >> mipmapLevel);
-        uint32_t height = std::max<uint32_t>(1, m_height >> mipmapLevel);
         uint32_t depth = std::max<uint32_t>(1, m_depth);
-        size_t sizePerRow = width * static_cast<size_t>(m_stride);
-        size_t size = depth * height * sizePerRow;
-        m_mappedPointers[mipmapLevel] = allocHostMem(size);
+
+        uint32_t deviceBw;
+        uint32_t deviceBh;
+        computeDimensionsOfLevel<CUDA_UTIL_TEX_DIM_WORKAROUND>(mipmapLevel, &deviceBw, &deviceBh);
+        size_t deviceSizePerRow = deviceBw * static_cast<size_t>(m_stride);
+        size_t deviceSize = depth * deviceBh * deviceSizePerRow;
+
+#if CUDA_UTIL_TEX_DIM_WORKAROUND
+        uint32_t hostBw;
+        uint32_t hostBh;
+        computeDimensionsOfLevel<false>(mipmapLevel, &hostBw, &hostBh);
+        size_t hostSizePerRow = hostBw * m_stride;
+        size_t hostSize = depth * hostBh * hostSizePerRow;
+#else
+        size_t hostSizePerRow = deviceSizePerRow;
+        uint32_t hostBh = deviceBh;
+#endif
+
+        m_mappedPointers[mipmapLevel] = allocHostMem(hostSize);
         m_mapFlag = flag;
 
         CUDA_MEMCPY3D params = {};
-        params.WidthInBytes = sizePerRow;
-        params.Height = height;
+        params.WidthInBytes = deviceSizePerRow;
+        params.Height = deviceBh;
         params.Depth = depth;
 
         params.srcMemoryType = CU_MEMORYTYPE_ARRAY;
@@ -866,8 +889,8 @@ namespace cudau {
 
         params.dstMemoryType = CU_MEMORYTYPE_HOST;
         params.dstHost = m_mappedPointers[mipmapLevel];
-        params.dstPitch = sizePerRow;
-        params.dstHeight = height;
+        params.dstPitch = hostSizePerRow;
+        params.dstHeight = hostBh;
         params.dstXInBytes = 0;
         params.dstY = 0;
         params.dstZ = 0;
@@ -891,20 +914,32 @@ namespace cudau {
 
         CUDADRV_CHECK(cuCtxSetCurrent(m_cuContext));
 
-        uint32_t width = std::max<uint32_t>(1, m_width >> mipmapLevel);
-        uint32_t height = std::max<uint32_t>(1, m_height >> mipmapLevel);
+        uint32_t deviceBw;
+        uint32_t deviceBh;
+        computeDimensionsOfLevel<CUDA_UTIL_TEX_DIM_WORKAROUND>(mipmapLevel, &deviceBw, &deviceBh);
         uint32_t depth = std::max<uint32_t>(1, m_depth);
-        size_t sizePerRow = width * static_cast<size_t>(m_stride);
+        size_t deviceSizePerRow = deviceBw * static_cast<size_t>(m_stride);
+
+#if CUDA_UTIL_TEX_DIM_WORKAROUND
+        uint32_t hostBw;
+        uint32_t hostBh;
+        computeDimensionsOfLevel<false>(mipmapLevel, &hostBw, &hostBh);
+        size_t hostSizePerRow = hostBw * m_stride;
+        size_t hostSize = depth * hostBh * hostSizePerRow;
+#else
+        size_t hostSizePerRow = deviceSizePerRow;
+        uint32_t hostBh = deviceBh;
+#endif
 
         CUDA_MEMCPY3D params = {};
-        params.WidthInBytes = sizePerRow;
-        params.Height = height;
+        params.WidthInBytes = deviceSizePerRow;
+        params.Height = deviceBh;
         params.Depth = depth;
 
         params.srcMemoryType = CU_MEMORYTYPE_HOST;
         params.srcHost = m_mappedPointers[mipmapLevel];
-        params.srcPitch = sizePerRow;
-        params.srcHeight = height;
+        params.srcPitch = hostSizePerRow;
+        params.srcHeight = hostBh;
         params.srcXInBytes = 0;
         params.srcY = 0;
         params.srcZ = 0;
@@ -926,10 +961,16 @@ namespace cudau {
 
     CUDA_RESOURCE_VIEW_DESC Array::getResourceViewDesc() const {
         CUDA_RESOURCE_VIEW_DESC ret = {};
-        bool isBC = isBCFormat(m_elemType);
+        uint32_t width;
+        uint32_t height;
+        computeDimensionsOfLevel<CUDA_UTIL_TEX_DIM_WORKAROUND>(0, &width, &height);
+        if (isBCFormat(m_elemType)) {
+            width *= 4;
+            height *= 4;
+        }
         ret.format = getResourceViewFormat(m_elemType, m_numChannels);
-        ret.width = (isBC ? 4 : 1) * m_width;
-        ret.height = (isBC ? 4 : 1) * m_height;
+        ret.width = width;
+        ret.height = height;
         ret.depth = m_depth;
         ret.firstMipmapLevel = 0;
         ret.lastMipmapLevel = m_numMipmapLevels - 1;

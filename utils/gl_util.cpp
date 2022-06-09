@@ -1,6 +1,6 @@
-/*
+ï»¿/*
 
-   Copyright 2021 Shin Watanabe
+   Copyright 2022 Shin Watanabe
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -26,14 +26,17 @@
 #   undef max
 #endif
 
+#include <fstream>
 #include <algorithm>
+#include <set>
+#include <regex>
 
 namespace glu {
 #ifdef GLUPlatform_Windows_MSVC
     void devPrintf(const char* fmt, ...) {
         va_list args;
         va_start(args, fmt);
-        char str[1024];
+        char str[4096];
         vsprintf_s(str, fmt, args);
         va_end(args);
         OutputDebugString(str);
@@ -350,15 +353,17 @@ namespace glu {
     }
 
     void Texture2D::transferImage(GLenum format, GLenum type, const void* data, uint32_t mipLevel) const {
-        glTextureSubImage2D(m_handle, mipLevel,
-                            0, 0, std::max(m_width >> mipLevel, 1u), std::max(m_height >> mipLevel, 1u),
-                            format, type, data);
+        glTextureSubImage2D(
+            m_handle, mipLevel,
+            0, 0, std::max(m_width >> mipLevel, 1u), std::max(m_height >> mipLevel, 1u),
+            format, type, data);
     }
 
     void Texture2D::transferCompressedImage(const void* data, size_t size, uint32_t mipLevel) const {
-        glCompressedTextureSubImage2D(m_handle, mipLevel,
-                                      0, 0, std::max(m_width >> mipLevel, 1u), std::max(m_height >> mipLevel, 1u),
-                                      m_format, static_cast<GLsizei>(size), data);
+        glCompressedTextureSubImage2D(
+            m_handle, mipLevel,
+            0, 0, std::max(m_width >> mipLevel, 1u), std::max(m_height >> mipLevel, 1u),
+            m_format, static_cast<GLsizei>(size), data);
     }
 
 
@@ -503,7 +508,8 @@ namespace glu {
         return *this;
     }
 
-    void FrameBuffer::initialize(uint32_t width, uint32_t height, uint32_t multiBufferingFactor,
+    void FrameBuffer::initialize(
+        uint32_t width, uint32_t height, uint32_t multiBufferingFactor,
                                  const GLenum* internalFormats, uint32_t colorIsMultiBuffered,
                                  uint32_t numColorAttachments,
                                  const GLenum* depthInternalFormat, bool depthIsMultiBuffered) {
@@ -525,7 +531,7 @@ namespace glu {
         if (depthInternalFormat)
             m_depthRenderTargetTextures = new Texture2D[m_multiBufferingFactor];
 
-        // JP: ƒeƒNƒXƒ`ƒƒ[Œo—R‚ÅƒŒƒ“ƒ_[ƒ^[ƒQƒbƒg‚ğ‰Šú‰»‚·‚éB
+        // JP: ãƒ†ã‚¯ã‚¹ãƒãƒ£ãƒ¼çµŒç”±ã§ãƒ¬ãƒ³ãƒ€ãƒ¼ã‚¿ãƒ¼ã‚²ãƒƒãƒˆã‚’åˆæœŸåŒ–ã™ã‚‹ã€‚
         for (uint32_t i = 0; i < m_numColorAttachments; ++i) {
             m_renderTargetIDs[i] = GL_COLOR_ATTACHMENT0 + i;
             Texture2D &rt = m_renderTargetTextures[m_multiBufferingFactor * i + 0];
@@ -533,7 +539,7 @@ namespace glu {
             glNamedFramebufferTexture(m_handles[0], m_renderTargetIDs[i], rt.getHandle(), 0);
         }
 
-        // JP: ƒfƒvƒXƒŒƒ“ƒ_[ƒ^[ƒQƒbƒg‚Ì‰Šú‰»B
+        // JP: ãƒ‡ãƒ—ã‚¹ãƒ¬ãƒ³ãƒ€ãƒ¼ã‚¿ãƒ¼ã‚²ãƒƒãƒˆã®åˆæœŸåŒ–ã€‚
         if (depthInternalFormat) {
             Texture2D &rt = m_depthRenderTargetTextures[0];
             rt.initialize(*depthInternalFormat, m_width, m_height, 1);
@@ -543,7 +549,7 @@ namespace glu {
         checkStatus(m_handles[0], Target::ReadDraw);
 
         for (uint32_t fbIdx = 1; fbIdx < m_multiBufferingFactor; ++fbIdx) {
-            // JP: ƒeƒNƒXƒ`ƒƒ[Œo—R‚ÅƒŒƒ“ƒ_[ƒ^[ƒQƒbƒg‚ğ‰Šú‰»‚·‚éB
+            // JP: ãƒ†ã‚¯ã‚¹ãƒãƒ£ãƒ¼çµŒç”±ã§ãƒ¬ãƒ³ãƒ€ãƒ¼ã‚¿ãƒ¼ã‚²ãƒƒãƒˆã‚’åˆæœŸåŒ–ã™ã‚‹ã€‚
             for (uint32_t i = 0; i < m_numColorAttachments; ++i) {
                 bool multiBuffered = (m_colorIsMultiBuffered >> i) & 0b1;
                 Texture2D &rt = m_renderTargetTextures[m_multiBufferingFactor * i + (multiBuffered ? fbIdx : 0)];
@@ -552,7 +558,7 @@ namespace glu {
                 glNamedFramebufferTexture(m_handles[fbIdx], m_renderTargetIDs[i], rt.getHandle(), 0);
             }
 
-            // JP: ƒfƒvƒXƒŒƒ“ƒ_[ƒ^[ƒQƒbƒg‚Ì‰Šú‰»B
+            // JP: ãƒ‡ãƒ—ã‚¹ãƒ¬ãƒ³ãƒ€ãƒ¼ã‚¿ãƒ¼ã‚²ãƒƒãƒˆã®åˆæœŸåŒ–ã€‚
             if (depthInternalFormat) {
                 Texture2D &rt = m_depthRenderTargetTextures[m_depthIsMultiBuffered ? fbIdx : 0];
                 if (m_depthIsMultiBuffered)
@@ -604,6 +610,124 @@ namespace glu {
     }
 
 
+
+    static std::string includeFile(
+        const std::filesystem::path &filePath,
+        const std::set<std::filesystem::path> &includeDirs,
+        std::set<std::filesystem::path> &includedFiles) {
+        using std::filesystem::path;
+
+        static std::regex regexPragmaOnce(R"regex(^ *# *pragma *once *\r?\n)regex");
+        static std::regex regexInclude(R"regex(^ *# *include "(.*)"\r?\n)regex");
+
+        if (includedFiles.contains(filePath.lexically_normal()))
+            return std::string("");
+
+        const auto readFile = [](const std::filesystem::path &filepath) {
+            std::ifstream ifs;
+            ifs.open(filepath, std::ios::in);
+            throwRuntimeError(!ifs.fail(), "failed to open %s", filepath.string().c_str());
+
+            std::stringstream sstream;
+            sstream << ifs.rdbuf();
+
+            return std::move(sstream.str());
+        };
+
+        path depDir = filePath.parent_path();
+        std::string source = readFile(filePath);
+
+        // JP: BOMã‚’å‰Šé™¤ã€‚
+        if (static_cast<uint8_t>(source[0]) == 0xEF &&
+            static_cast<uint8_t>(source[1]) == 0xBB &&
+            static_cast<uint8_t>(source[2]) == 0xBF)
+            source = source.substr(3);
+
+        std::smatch regexResult;
+        if (std::regex_search(source, regexResult, regexPragmaOnce)) {
+            includedFiles.insert(filePath.lexically_normal());
+            source.replace(regexResult.position(), regexResult.length(), "");
+        }
+
+        while (std::regex_search(source, regexResult, regexInclude)) {
+            bool fileFound = false;
+            std::string incFile = regexResult[1].str();
+            path depFilePath = depDir / incFile;
+            if (std::filesystem::exists(depFilePath) &&
+                !std::filesystem::is_directory(depFilePath)) {
+                fileFound = true;
+            }
+            else {
+                for (const path &incDir : includeDirs) {
+                    depFilePath = depDir / incFile;
+                    if (std::filesystem::exists(depFilePath) &&
+                        !std::filesystem::is_directory(depFilePath)) {
+                        fileFound = true;
+                        break;
+                    }
+                }
+            }
+
+            // TODO: includeè‡ªä½“ã®ãƒ—ãƒªãƒ—ãƒ­ã‚»ãƒƒã‚µãƒ¼å®šç¾©ã«ã‚ˆã‚‹åˆ†å²ï¼Ÿ
+            std::string depSource = includeFile(
+                depFilePath,
+                includeDirs, includedFiles);
+            source.replace(regexResult.position(), regexResult.length(), depSource + "\n");
+        }
+
+        return source;
+    }
+
+    static std::string resolveShaderSource(
+        Shader::Type shaderType,
+        const std::filesystem::path &filePath,
+        const std::vector<std::filesystem::path> &includeDirs = {},
+        const std::vector<Shader::PreProcessorDefinition> &preDefinedMacros = {}) {
+        using std::filesystem::path;
+
+        std::string source;
+
+        // JP: ã‚ã‚‰ã‚†ã‚‹ã‚·ã‚§ãƒ¼ãƒ€ãƒ¼ã«é–¢ã—ã¦__GLSL__ã‚’å®šç¾©ã™ã‚‹ã€‚
+        source += "#define _GLSL_ 1\n";
+
+        // JP: ã‚·ã‚§ãƒ¼ãƒ€ãƒ¼ç¨®åˆ¥ã«å¿œã˜ã¦ç•°ãªã‚‹å®šç¾©ã‚’è¡Œã†ã€‚
+        if (shaderType == Shader::Type::Vertex)
+            source += "#define _GLSL_VERTEX_SHADER_ 1\n";
+        else if (shaderType == Shader::Type::Geometry)
+            source += "#define _GLSL_GEOMETRY_SHADER_ 1\n";
+        else if (shaderType == Shader::Type::TessControl)
+            source += "#define _GLSL_TESS_CONTROL_SHADER_ 1\n";
+        else if (shaderType == Shader::Type::TessEvaluation)
+            source += "#define _GLSL_TESS_EVALUATION_SHADER_ 1\n";
+        else if (shaderType == Shader::Type::Fragment)
+            source += "#define _GLSL_FRAGMENT_SHADER_ 1\n";
+        else if (shaderType == Shader::Type::Compute)
+            source += "#define _GLSL_COMPUTE_SHADER_ 1\n";
+
+        // JP: ãƒ¦ãƒ¼ã‚¶ãƒ¼ã‹ã‚‰æ¸¡ã•ã‚ŒãŸå®šç¾©ã‚’è¿½åŠ ã™ã‚‹ã€‚
+        for (const Shader::PreProcessorDefinition &def : preDefinedMacros) {
+            if (def.value.empty())
+                source += "#define " + def.name + " " + def.value + "\n";
+            else
+                source += "#define " + def.name + "\n";
+        }
+
+        // JP: ãƒ¦ãƒ¼ã‚¶ãƒ¼ã‹ã‚‰æ¸¡ã•ã‚ŒãŸã‚¤ãƒ³ã‚¯ãƒ«ãƒ¼ãƒ‰ãƒ‡ã‚£ãƒ¬ã‚¯ãƒˆãƒªã‚’è¨­å®šã™ã‚‹ã€‚
+        std::set<path> incDirs;
+        for (const path &p : includeDirs) {
+            throwRuntimeError(
+                std::filesystem::is_directory(p),
+                "This is not a directory: %s", p.string().c_str());
+            incDirs.insert(p.lexically_normal());
+        }
+
+        std::set<path> includedFiles;
+        source += includeFile(
+            filePath.lexically_normal(),
+            incDirs, includedFiles);
+
+        return std::move(source);
+    }
 
     static GLuint compileShader(Shader::Type type, const std::string &source) {
         GLuint handle;
@@ -686,6 +810,11 @@ namespace glu {
         m_initialized = true;
     }
 
+    void Shader::initialize(Type type, const std::filesystem::path &filePath) {
+        std::string source = resolveShaderSource(type, filePath);
+        initialize(type, source);
+    }
+
     void Shader::finalize() {
         if (!m_initialized)
             return;
@@ -764,6 +893,16 @@ namespace glu {
         m_initialized = true;
     }
 
+    void GraphicsProgram::initializeVSPS(const std::string &glslHead,
+                                         const std::filesystem::path &vertexSourcePath,
+                                         const std::filesystem::path &fragmentSourcePath) {
+        std::string vsSource = glslHead + "\n" +
+            resolveShaderSource(Shader::Type::Vertex, vertexSourcePath);
+        std::string fsSource = glslHead + "\n" +
+            resolveShaderSource(Shader::Type::Fragment, fragmentSourcePath);
+        initializeVSPS(vsSource, fsSource);
+    }
+
     void GraphicsProgram::finalize() {
         if (!m_initialized)
             return;
@@ -839,6 +978,11 @@ namespace glu {
         validateProgram(m_handle);
 
         m_initialized = true;
+    }
+
+    void ComputeProgram::initialize(const std::filesystem::path &filePath) {
+        std::string csSource = resolveShaderSource(Shader::Type::Compute, filePath);
+        initialize(csSource);
     }
 
     void ComputeProgram::finalize() {

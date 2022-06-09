@@ -71,6 +71,8 @@ typedef unsigned long long CUsurfObject;
 #       include <cudaGL.h>
 #   endif
 
+#   define CUDA_UTIL_TEX_DIM_WORKAROUND 1
+
 #   undef min
 #   undef max
 #   undef near
@@ -170,22 +172,28 @@ namespace cudau {
     }
 
     template <typename... ArgTypes>
-    void callKernel(CUstream stream, CUfunction kernel, const dim3 &gridDim, const dim3 &blockDim, uint32_t sharedMemSize,
-                    ArgTypes&&... args) {
+    void callKernel(
+        CUstream stream, CUfunction kernel,
+        const dim3 &gridDim, const dim3 &blockDim, uint32_t sharedMemSize,
+        ArgTypes&&... args) {
         if constexpr (sizeof...(args) > 0) {
             ConstVoidPtr argPointers[sizeof...(args)];
             addArgPointer(argPointers, std::forward<ArgTypes>(args)...);
 
-            CUDADRV_CHECK(cuLaunchKernel(kernel,
-                                         gridDim.x, gridDim.y, gridDim.z,
-                                         blockDim.x, blockDim.y, blockDim.z,
-                                         sharedMemSize, stream, const_cast<void**>(argPointers), nullptr));
+            CUDADRV_CHECK(cuLaunchKernel(
+                kernel,
+                gridDim.x, gridDim.y, gridDim.z,
+                blockDim.x, blockDim.y, blockDim.z,
+                sharedMemSize, stream,
+                const_cast<void**>(argPointers), nullptr));
         }
         else {
-            CUDADRV_CHECK(cuLaunchKernel(kernel,
-                                         gridDim.x, gridDim.y, gridDim.z,
-                                         blockDim.x, blockDim.y, blockDim.z,
-                                         sharedMemSize, stream, nullptr, nullptr));
+            CUDADRV_CHECK(cuLaunchKernel(
+                kernel,
+                gridDim.x, gridDim.y, gridDim.z,
+                blockDim.x, blockDim.y, blockDim.z,
+                sharedMemSize, stream,
+                nullptr, nullptr));
         }
     }
 
@@ -357,7 +365,8 @@ namespace cudau {
             (void)context;
             (void)stride;
             (void)glBufferID;
-            throw std::runtime_error("Enable \"CUDA_UTIL_USE_GL_INTEROP\" at the top of this file if you use CUDA/OpenGL interoperability.");
+            throw std::runtime_error(
+                "Disable \"CUDA_UTIL_DONT_USE_GL_INTEROP\" if you use CUDA/OpenGL interoperability.");
 #endif
         }
         void finalize();
@@ -514,7 +523,8 @@ namespace cudau {
         void resize(int32_t numElements, const T &value, CUstream stream = 0) {
             std::vector<T> values(numElements, value);
             Buffer::resize(numElements, sizeof(T), stream);
-            CUDADRV_CHECK(cuMemcpyHtoDAsync(Buffer::getCUdeviceptr(), values.data(), values.size() * sizeof(T), stream));
+            CUDADRV_CHECK(cuMemcpyHtoDAsync(
+                Buffer::getCUdeviceptr(), values.data(), values.size() * sizeof(T), stream));
         }
 
         T* getDevicePointer() const {
@@ -604,6 +614,19 @@ namespace cudau {
 #   if defined(CUDA_UTIL_USE_GL_INTEROP)
     void getArrayElementFormat(GLenum internalFormat, ArrayElementType* elemType, uint32_t* numChannels);
 #   endif
+
+    inline bool isBCFormat(ArrayElementType elemType) {
+        return (elemType == cudau::ArrayElementType::BC1_UNorm ||
+                elemType == cudau::ArrayElementType::BC2_UNorm ||
+                elemType == cudau::ArrayElementType::BC3_UNorm ||
+                elemType == cudau::ArrayElementType::BC4_UNorm ||
+                elemType == cudau::ArrayElementType::BC4_SNorm ||
+                elemType == cudau::ArrayElementType::BC5_UNorm ||
+                elemType == cudau::ArrayElementType::BC5_SNorm ||
+                elemType == cudau::ArrayElementType::BC6H_UF16 ||
+                elemType == cudau::ArrayElementType::BC6H_SF16 ||
+                elemType == cudau::ArrayElementType::BC7_UNorm);
+    }
     
     class Array {
         CUcontext m_cuContext;
@@ -639,9 +662,35 @@ namespace cudau {
         Array(const Array &) = delete;
         Array &operator=(const Array &) = delete;
 
-        void initialize(CUcontext context, ArrayElementType elemType, uint32_t numChannels,
-                        uint32_t width, uint32_t height, uint32_t depth, uint32_t numMipmapLevels,
-                        bool writable, bool useTextureGather, bool cubemap, bool layered, uint32_t glTexID);
+        void initialize(
+            CUcontext context, ArrayElementType elemType, uint32_t numChannels,
+            uint32_t width, uint32_t height, uint32_t depth, uint32_t numMipmapLevels,
+            bool writable, bool useTextureGather, bool cubemap, bool layered, uint32_t glTexID);
+
+        template <bool forDevice>
+        void computeDimensionsOfLevel(uint32_t mipmapLevel, uint32_t* width, uint32_t* height) const {
+            *width = m_width;
+            *height = m_height;
+
+            // JP: CUDAはNon-Power-of-twoテクスチャーを使えるが、MIPMAPに関して計算がおかしい気がする。
+            //     本当は常に下の手順でいきたい。
+            if constexpr (forDevice) {
+                if (isBCFormat(m_elemType)) {
+                    *width = (*width + 3) / 4;
+                    *height = (*height + 3) / 4;
+                }
+                *width = std::max<uint32_t>(1, *width >> mipmapLevel);
+                *height = std::max<uint32_t>(1, *height >> mipmapLevel);
+            }
+            else {
+                *width = std::max<uint32_t>(1, *width >> mipmapLevel);
+                *height = std::max<uint32_t>(1, *height >> mipmapLevel);
+                if (isBCFormat(m_elemType)) {
+                    *width = (*width + 3) / 4;
+                    *height = (*height + 3) / 4;
+                }
+            }
+        }
 
     public:
         Array();
@@ -650,28 +699,35 @@ namespace cudau {
         Array(Array &&b);
         Array &operator=(Array &&b);
 
-        void initialize1D(CUcontext context, ArrayElementType elemType, uint32_t numChannels,
-                          ArraySurface surfaceLoadStore,
-                          uint32_t length, uint32_t numMipmapLevels) {
-            initialize(context, elemType, numChannels, length, 0, 0, numMipmapLevels,
-                       surfaceLoadStore == ArraySurface::Enable, false, false, false, 0);
+        void initialize1D(
+            CUcontext context, ArrayElementType elemType, uint32_t numChannels,
+            ArraySurface surfaceLoadStore,
+            uint32_t length, uint32_t numMipmapLevels) {
+            initialize(
+                context, elemType, numChannels, length, 0, 0, numMipmapLevels,
+                surfaceLoadStore == ArraySurface::Enable, false, false, false, 0);
         }
-        void initialize2D(CUcontext context, ArrayElementType elemType, uint32_t numChannels,
-                          ArraySurface surfaceLoadStore, ArrayTextureGather useTextureGather,
-                          uint32_t width, uint32_t height, uint32_t numMipmapLevels) {
-            initialize(context, elemType, numChannels, width, height, 0, numMipmapLevels,
-                       surfaceLoadStore == ArraySurface::Enable,
-                       useTextureGather == ArrayTextureGather::Enable,
-                       false, false, 0);
+        void initialize2D(
+            CUcontext context, ArrayElementType elemType, uint32_t numChannels,
+            ArraySurface surfaceLoadStore, ArrayTextureGather useTextureGather,
+            uint32_t width, uint32_t height, uint32_t numMipmapLevels) {
+            initialize(
+                context, elemType, numChannels, width, height, 0, numMipmapLevels,
+                surfaceLoadStore == ArraySurface::Enable,
+                useTextureGather == ArrayTextureGather::Enable,
+                false, false, 0);
         }
-        void initialize3D(CUcontext context, ArrayElementType elemType, uint32_t numChannels,
-                          ArraySurface surfaceLoadStore,
-                          uint32_t width, uint32_t height, uint32_t depth, uint32_t numMipmapLevels) {
-            initialize(context, elemType, numChannels, width, height, 0, numMipmapLevels,
-                       surfaceLoadStore == ArraySurface::Enable, false, false, false, 0);
+        void initialize3D(
+            CUcontext context, ArrayElementType elemType, uint32_t numChannels,
+            ArraySurface surfaceLoadStore,
+            uint32_t width, uint32_t height, uint32_t depth, uint32_t numMipmapLevels) {
+            initialize(
+                context, elemType, numChannels, width, height, 0, numMipmapLevels,
+                surfaceLoadStore == ArraySurface::Enable, false, false, false, 0);
         }
-        void initializeFromGLTexture2D(CUcontext context, uint32_t glTexID,
-                                       ArraySurface surfaceLoadStore, ArrayTextureGather useTextureGather) {
+        void initializeFromGLTexture2D(
+            CUcontext context, uint32_t glTexID,
+            ArraySurface surfaceLoadStore, ArrayTextureGather useTextureGather) {
 #if defined(CUDA_UTIL_USE_GL_INTEROP)
             GLint width, height;
             GLint numMipmapLevels;
@@ -684,15 +740,17 @@ namespace cudau {
             ArrayElementType elemType;
             uint32_t numChannels;
             getArrayElementFormat((GLenum)format, &elemType, &numChannels);
-            initialize(context, elemType, numChannels, width, height, 0, numMipmapLevels,
-                       surfaceLoadStore == ArraySurface::Enable,
-                       useTextureGather == ArrayTextureGather::Enable,
-                       false, false, glTexID);
+            initialize(
+                context, elemType, numChannels, width, height, 0, numMipmapLevels,
+                surfaceLoadStore == ArraySurface::Enable,
+                useTextureGather == ArrayTextureGather::Enable,
+                false, false, glTexID);
 #else
             (void)context;
             (void)glTexID;
             (void)surfaceLoadStore;
-            throw std::runtime_error("Enable \"CUDA_UTIL_USE_GL_INTEROP\" at the top of this file if you use CUDA/OpenGL interoperability.");
+            throw std::runtime_error(
+                "Disable \"CUDA_UTIL_DONT_USE_GL_INTEROP\" if you use CUDA/OpenGL interoperability.");
 #endif
         }
         void finalize();
@@ -734,6 +792,9 @@ namespace cudau {
         uint32_t getNumMipmapLevels() const {
             return m_numMipmapLevels;
         }
+        bool isBCTexture() const {
+            return isBCFormat(m_elemType);
+        }
         bool isInitialized() const {
             return m_initialized;
         }
@@ -743,14 +804,16 @@ namespace cudau {
 
         void* map(uint32_t mipmapLevel = 0, CUstream stream = 0, BufferMapFlag flag = BufferMapFlag::ReadWrite);
         template <typename T>
-        T* map(uint32_t mipmapLevel = 0, CUstream stream = 0, BufferMapFlag flag = BufferMapFlag::ReadWrite) {
+        T* map(
+            uint32_t mipmapLevel = 0, CUstream stream = 0, BufferMapFlag flag = BufferMapFlag::ReadWrite) {
             return reinterpret_cast<T*>(map(mipmapLevel, stream, flag));
         }
         void unmap(uint32_t mipmapLevel = 0, CUstream stream = 0);
         template <typename T>
         void write(const T* srcValues, uint32_t numValues, uint32_t mipmapLevel = 0, CUstream stream = 0) {
-            uint32_t width = std::max<uint32_t>(1, m_width >> mipmapLevel);
-            uint32_t height = std::max<uint32_t>(1, m_height >> mipmapLevel);
+            uint32_t width;
+            uint32_t height;
+            computeDimensionsOfLevel<!CUDA_UTIL_TEX_DIM_WORKAROUND>(mipmapLevel, &width, &height);
             uint32_t depth = std::max<uint32_t>(1, m_depth);
             size_t size = static_cast<size_t>(m_stride) * depth * height * width;
             if (sizeof(T) * numValues > size)
@@ -765,8 +828,9 @@ namespace cudau {
         }
         template <typename T>
         void read(T* dstValues, uint32_t numValues, uint32_t mipmapLevel = 0, CUstream stream = 0) {
-            uint32_t width = std::max<uint32_t>(1, m_width >> mipmapLevel);
-            uint32_t height = std::max<uint32_t>(1, m_height >> mipmapLevel);
+            uint32_t width;
+            uint32_t height;
+            computeDimensionsOfLevel<!CUDA_UTIL_TEX_DIM_WORKAROUND>(mipmapLevel, &width, &height);
             uint32_t depth = std::max<uint32_t>(1, m_depth);
             size_t size = static_cast<size_t>(m_stride) * depth * height * width;
             if (sizeof(T) * numValues > size)
@@ -781,8 +845,9 @@ namespace cudau {
         }
         template <typename T>
         void fill(const T &value, uint32_t mipmapLevel = 0, CUstream stream = 0) {
-            uint32_t width = std::max<uint32_t>(1, m_width >> mipmapLevel);
-            uint32_t height = std::max<uint32_t>(1, m_height >> mipmapLevel);
+            uint32_t width;
+            uint32_t height;
+            computeDimensionsOfLevel<!CUDA_UTIL_TEX_DIM_WORKAROUND>(mipmapLevel, &width, &height);
             uint32_t depth = std::max<uint32_t>(1, m_depth);
             size_t size = static_cast<size_t>(m_stride) * depth * height * width;
             size_t numValues = size / sizeof(T);
@@ -812,7 +877,8 @@ namespace cudau {
             return ret;
 #else
             (void)mipmapLevel;
-            throw std::runtime_error("Enable \"CUDA_UTIL_USE_GL_INTEROP\" at the top of this file if you use CUDA/OpenGL interoperability.");
+            throw std::runtime_error(
+                "Disable \"CUDA_UTIL_DONT_USE_GL_INTEROP\" if you use CUDA/OpenGL interoperability.");
 #endif
         }
     };
@@ -820,13 +886,19 @@ namespace cudau {
     // MIP-level 0 only
     template <uint32_t NumBuffers>
     class InteropSurfaceObjectHolder {
-        Array* m_array;
+        Array* m_arrays[NumBuffers];
         CUsurfObject m_surfObjs[NumBuffers];
+        uint32_t m_numArrays;
+        uint32_t m_arrayIndex;
         uint32_t m_bufferIndex;
 
     public:
-        void initialize(Array* array) {
-            m_array = array;
+        template <uint32_t numArrays>
+        void initialize(Array* const (&arrays)[numArrays]) {
+            for (uint32_t i = 0; i < NumBuffers; ++i)
+                m_arrays[i] = arrays[i % numArrays];
+            m_numArrays = numArrays;
+            m_arrayIndex = 0;
             m_bufferIndex = 0;
             for (uint32_t i = 0; i < NumBuffers; ++i)
                 m_surfObjs[i] = 0;
@@ -837,21 +909,24 @@ namespace cudau {
                 m_surfObjs[i] = 0;
             }
             m_bufferIndex = 0;
-            m_array = nullptr;
+            m_arrayIndex = 0;
         }
 
         void beginCUDAAccess(CUstream stream) {
-            m_array->beginCUDAAccess(stream, 0);
+            m_arrays[m_arrayIndex]->beginCUDAAccess(stream, 0);
         }
-        void endCUDAAccess(CUstream stream) {
-            m_array->endCUDAAccess(stream, 0);
+        void endCUDAAccess(CUstream stream, bool endFrame) {
+            m_arrays[m_arrayIndex]->endCUDAAccess(stream, 0);
+            if (endFrame) {
+                m_arrayIndex = (m_arrayIndex + 1) % m_numArrays;
+                m_bufferIndex = (m_bufferIndex + 1) % NumBuffers;
+            }
         }
         CUsurfObject getNext() {
             CUsurfObject &curSurfObj = m_surfObjs[m_bufferIndex];
             if (curSurfObj)
                 CUDADRV_CHECK(cuSurfObjectDestroy(curSurfObj));
-            curSurfObj = m_array->createGLSurfaceObject(0);
-            m_bufferIndex = (m_bufferIndex + 1) % NumBuffers;
+            curSurfObj = m_arrays[m_arrayIndex]->createGLSurfaceObject(0);
             return curSurfObj;
         }
     };
@@ -982,7 +1057,7 @@ namespace cudau {
 
     template <uint32_t NumBuffers>
     class InteropTextureObjectHolder {
-        Array* m_arrays;
+        Array* m_arrays[NumBuffers];
         TextureSampler* m_texSampler;
         CUtexObject m_texObjs[NumBuffers];
         uint32_t m_numArrays;
@@ -990,11 +1065,14 @@ namespace cudau {
         uint32_t m_bufferIndex;
 
     public:
-        void initialize(Array* arrays, uint32_t numArrays, uint32_t initIndex, TextureSampler* texSampler) {
+        template <uint32_t numArrays>
+        void initialize(Array* const (&arrays)[numArrays], TextureSampler* texSampler) {
+            for (uint32_t i = 0; i < NumBuffers; ++i)
+                m_arrays[i] = arrays[i % numArrays];
             m_arrays = arrays;
             m_texSampler = texSampler;
             m_numArrays = numArrays;
-            m_arrayIndex = initIndex;
+            m_arrayIndex = 0;
             m_bufferIndex = 0;
             for (uint32_t i = 0; i < NumBuffers; ++i)
                 m_texObjs[i] = 0;
@@ -1007,7 +1085,6 @@ namespace cudau {
             m_bufferIndex = 0;
             m_arrayIndex = 0;
             m_texSampler = nullptr;
-            m_arrays = nullptr;
         }
 
         void beginCUDAAccess(CUstream stream) {

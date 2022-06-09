@@ -2,6 +2,7 @@
 
 #include "common_shared.h"
 
+#include "../utils/gl_util.h"
 #include <numbers>
 #include <fstream>
 #include <sstream>
@@ -409,6 +410,14 @@ enum class MaterialConvention {
     SimplePBR,
 };
 
+enum class BumpMapTextureType {
+    NormalMap = 0,
+    NormalMap_BC,
+    NormalMap_BC_2ch,
+    HeightMap,
+    HeightMap_BC,
+};
+
 struct Material {
     struct Lambert {
         const cudau::Array* reflectance;
@@ -444,6 +453,9 @@ struct Material {
         SimplePBR> body;
     const cudau::Array* normal;
     CUtexObject texNormal;
+    const glu::Texture2D* gfxNormal;
+    glu::Sampler gfxSampler;
+    BumpMapTextureType bumpMapType;
     const cudau::Array* emittance;
     CUtexObject texEmittance;
     uint32_t materialSlot;
@@ -457,12 +469,33 @@ struct Material {
 struct GeometryInstance {
     const Material* mat;
 
+    glu::Buffer gfxVertexBuffer;
+    glu::Buffer gfxTriangleBuffer;
+    glu::VertexArray gfxVertexArray;
     cudau::TypedBuffer<shared::Vertex> vertexBuffer;
     cudau::TypedBuffer<shared::Triangle> triangleBuffer;
     LightDistribution emitterPrimDist;
     uint32_t geomInstSlot;
     optixu::GeometryInstance optixGeomInst;
     AABB aabb;
+
+    void draw() const {
+        glUniform1ui(9, mat->materialSlot);
+        glBindTextureUnit(0, mat->gfxNormal->getHandle());
+        glBindSampler(0, mat->gfxSampler.getHandle());
+        uint32_t flags = 0;
+        if (mat->bumpMapType == BumpMapTextureType::NormalMap ||
+            mat->bumpMapType == BumpMapTextureType::NormalMap_BC)
+            flags |= 0 << 0;
+        else if (mat->bumpMapType == BumpMapTextureType::NormalMap_BC_2ch)
+            flags |= 1 << 0;
+        else
+            flags |= 2 << 0;
+        glUniform1ui(11, flags);
+
+        glBindVertexArray(gfxVertexArray.getHandle());
+        glDrawElements(GL_TRIANGLES, 3 * triangleBuffer.numElements(), GL_UNSIGNED_INT, nullptr);
+    }
 };
 
 struct GeometryGroup {
@@ -472,35 +505,48 @@ struct GeometryGroup {
     cudau::Buffer optixGasMem;
     uint32_t numEmitterPrimitives;
     AABB aabb;
+
+    void draw() const {
+        for (const GeometryInstance* geomInst : geomInsts)
+            geomInst->draw();
+    }
 };
 
 struct Mesh {
-    struct Group {
+    struct GeometryGroupInstance {
         const GeometryGroup* geomGroup;
         Matrix4x4 transform;
     };
-    std::vector<Group> groups;
+    std::vector<GeometryGroupInstance> groupInsts;
 };
 
 struct Instance {
-    const GeometryGroup* geomGroup;
+    Mesh::GeometryGroupInstance geomGroupInst;
 
     cudau::TypedBuffer<uint32_t> geomInstSlots;
     LightDistribution lightGeomInstDist;
     uint32_t instSlot;
     optixu::Instance optixInst;
+
+    Matrix4x4 prevMatM2W;
+    Matrix4x4 matM2W;
+    Matrix3x3 nMatM2W;
+
+    void draw() const {
+        glUniformMatrix4fv(5, 1, false, reinterpret_cast<const float*>(&prevMatM2W));
+        glUniformMatrix4fv(6, 1, false, reinterpret_cast<const float*>(&matM2W));
+        glUniformMatrix3fv(7, 1, false, reinterpret_cast<const float*>(&nMatM2W));
+        glUniform1ui(8, instSlot);
+        geomGroupInst.geomGroup->draw();
+    }
 };
 
 struct InstanceController {
     Instance* inst;
-    Matrix4x4 defaultTransform;
 
     float curScale;
     Quaternion curOrientation;
     float3 curPosition;
-    Matrix4x4 prevMatM2W;
-    Matrix4x4 matM2W;
-    Matrix3x3 nMatM2W;
 
     float beginScale;
     Quaternion beginOrientation;
@@ -512,11 +558,11 @@ struct InstanceController {
     float frequency;
 
     InstanceController(
-        Instance* _inst, const Matrix4x4 &_defaultTranform,
+        Instance* _inst,
         float _beginScale, const Quaternion &_beginOrienatation, const float3 &_beginPosition,
         float _endScale, const Quaternion &_endOrienatation, const float3 &_endPosition,
         float _frequency, float initTime) :
-        inst(_inst), defaultTransform(_defaultTranform),
+        inst(_inst),
         beginScale(_beginScale), beginOrientation(_beginOrienatation), beginPosition(_beginPosition),
         endScale(_endScale), endOrientation(_endOrienatation), endPosition(_endPosition),
         time(initTime), frequency(_frequency) {
@@ -531,22 +577,24 @@ struct InstanceController {
     }
 
     void update(shared::InstanceData* instDataBuffer, float dt) {
-        prevMatM2W = matM2W;
+        inst->prevMatM2W = inst->matM2W;
         updateBody(dt);
-        matM2W = Matrix4x4(curOrientation.toMatrix3x3() * scale3x3(curScale), curPosition) * defaultTransform;
-        nMatM2W = transpose(inverse(matM2W.getUpperLeftMatrix()));
+        inst->matM2W =
+            Matrix4x4(curOrientation.toMatrix3x3() * scale3x3(curScale), curPosition) *
+            inst->geomGroupInst.transform;
+        inst->nMatM2W = transpose(inverse(inst->matM2W.getUpperLeftMatrix()));
 
-        Matrix4x4 tMatM2W = transpose(matM2W);
+        Matrix4x4 tMatM2W = transpose(inst->matM2W);
         inst->optixInst.setTransform(reinterpret_cast<const float*>(&tMatM2W));
 
         float3 scale;
-        matM2W.decompose(&scale, nullptr, nullptr);
+        inst->matM2W.decompose(&scale, nullptr, nullptr);
         float uniformScale = scale.x;
 
         shared::InstanceData &instData = instDataBuffer[inst->instSlot];
-        instData.prevTransform = prevMatM2W;
-        instData.transform = matM2W;
-        instData.normalMatrix = nMatM2W;
+        instData.prevTransform = inst->prevMatM2W;
+        instData.transform = inst->matM2W;
+        instData.normalMatrix = inst->nMatM2W;
         instData.uniformScale = uniformScale;
     }
 };
@@ -696,6 +744,9 @@ struct Scene {
             geomInst->emitterPrimDist.finalize();
             geomInst->triangleBuffer.finalize();
             geomInst->vertexBuffer.finalize();
+            geomInst->gfxVertexArray.finalize();
+            geomInst->gfxTriangleBuffer.finalize();
+            geomInst->gfxVertexBuffer.finalize();
         }
         for (int i = materials.size() - 1; i >= 0; --i) {
             Material* material = materials[i];
@@ -862,7 +913,7 @@ struct Scene {
             if (!inst->lightGeomInstDist.isInitialized())
                 continue;
             shared::InstanceData* instData = instDataBuffer[0].getDevicePointerAt(inst->instSlot);
-            uint32_t numGeomInsts = inst->geomGroup->geomInsts.size();
+            uint32_t numGeomInsts = inst->geomGroupInst.geomGroup->geomInsts.size();
 #if USE_PROBABILITY_TEXTURE
             uint2 dims = shared::computeProbabilityTextureDimentions(numGeomInsts);
             uint32_t numMipLevels = nextPowOf2Exponent(dims.x) + 1;
@@ -886,7 +937,7 @@ struct Scene {
             if (!inst->lightGeomInstDist.isInitialized())
                 continue;
             shared::InstanceData* instData = instDataBuffer[0].getDevicePointerAt(inst->instSlot);
-            uint32_t numGeomInsts = inst->geomGroup->geomInsts.size();
+            uint32_t numGeomInsts = inst->geomGroupInst.geomGroup->geomInsts.size();
 #if USE_PROBABILITY_TEXTURE
             uint2 curDims = shared::computeProbabilityTextureDimentions(numGeomInsts);
             uint32_t numMipLevels = nextPowOf2Exponent(curDims.x) + 1;
@@ -1029,6 +1080,13 @@ struct Scene {
         //hpprintf("");
 #endif
     }
+
+    void draw() const {
+        for (int instIdx = 0; instIdx < insts.size(); ++instIdx) {
+            const Instance* inst = insts[instIdx];
+            inst->draw();
+        }
+    }
 };
 
 void finalizeTextureCaches();
@@ -1038,7 +1096,7 @@ void createTriangleMeshes(
     const std::filesystem::path &filePath,
     MaterialConvention matConv,
     const Matrix4x4 &preTransform,
-    CUcontext cuContext, Scene* scene);
+    CUcontext cuContext, Scene* scene, bool allocateGfxResource = false);
 
 void createRectangleLight(
     const std::string &meshName,
@@ -1047,7 +1105,7 @@ void createRectangleLight(
     const std::filesystem::path &emittancePath,
     const float3 &immEmittance,
     const Matrix4x4 &transform,
-    CUcontext cuContext, Scene* scene);
+    CUcontext cuContext, Scene* scene, bool allocateGfxResource = false);
 
 void createSphereLight(
     const std::string &meshName,
@@ -1056,11 +1114,11 @@ void createSphereLight(
     const std::filesystem::path &emittancePath,
     const float3 &immEmittance,
     const float3 &position,
-    CUcontext cuContext, Scene* scene);
+    CUcontext cuContext, Scene* scene, bool allocateGfxResource = false);
 
 Instance* createInstance(
     CUcontext cuContext, Scene* scene,
-    const GeometryGroup* geomGroup,
+    const Mesh::GeometryGroupInstance &geomGroupInst,
     const Matrix4x4 &transform);
 
 void loadEnvironmentalTexture(
@@ -1074,27 +1132,40 @@ void loadEnvironmentalTexture(
 void saveImage(const std::filesystem::path &filepath, uint32_t width, uint32_t height, const uint32_t* data);
 void saveImageHDR(const std::filesystem::path &filepath, uint32_t width, uint32_t height,
                   float brightnessScale,
-                  const float4* data);
+                  const float* data, bool flipY = false);
+void saveImageHDR(const std::filesystem::path &filepath, uint32_t width, uint32_t height,
+                  float brightnessScale,
+                  const float4* data, bool flipY = false);
+
+struct SDRImageSaverConfig {
+    float alphaForOverride;
+    float brightnessScale;
+    unsigned int applyToneMap : 1;
+    unsigned int apply_sRGB_gammaCorrection : 1;
+    unsigned int flipY : 1;
+
+    SDRImageSaverConfig() :
+        brightnessScale(1.0f),
+        applyToneMap(false), apply_sRGB_gammaCorrection(false),
+        flipY(false),
+        alphaForOverride(-1) {}
+};
 
 void saveImage(const std::filesystem::path &filepath, uint32_t width, uint32_t height, const float4* data,
-               float brightnessScale,
-               bool applyToneMap, bool apply_sRGB_gammaCorrection);
+               const SDRImageSaverConfig &config);
 
 void saveImage(const std::filesystem::path &filepath,
                uint32_t width, cudau::TypedBuffer<float4> &buffer,
-               float brightnessScale,
-               bool applyToneMap, bool apply_sRGB_gammaCorrection);
+               const SDRImageSaverConfig &config);
 
 void saveImage(const std::filesystem::path &filepath,
                cudau::Array &array,
-               float brightnessScale,
-               bool applyToneMap, bool apply_sRGB_gammaCorrection);
+               const SDRImageSaverConfig &config);
 
 template <uint32_t log2BlockWidth>
 void saveImage(const std::filesystem::path &filepath,
                optixu::HostBlockBuffer2D<float4, log2BlockWidth> &buffer,
-               float brightnessScale,
-               bool applyToneMap, bool apply_sRGB_gammaCorrection) {
+               const SDRImageSaverConfig &config) {
     uint32_t width = buffer.getWidth();
     uint32_t height = buffer.getHeight();
     auto data = new float4[width * height];
@@ -1105,8 +1176,6 @@ void saveImage(const std::filesystem::path &filepath,
         }
     }
     buffer.unmap();
-    saveImage(filepath, width, height, data,
-              brightnessScale,
-              applyToneMap, apply_sRGB_gammaCorrection);
+    saveImage(filepath, width, height, data, config);
     delete[] data;
 }

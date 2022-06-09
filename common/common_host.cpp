@@ -736,8 +736,11 @@ static void computeFlattenedNodes(const aiScene* scene, const Matrix4x4 &parentX
         computeFlattenedNodes(scene, flattenedNode.transform, curNode->mChildren[cIdx], flattenedNodes);
 }
 
-static void translate(dds::Format ddsFormat, cudau::ArrayElementType* cudaType, bool* needsDegamma) {
+static void translate(
+    dds::Format ddsFormat,
+    cudau::ArrayElementType* cudaType, bool* needsDegamma, bool* isHDR) {
     *needsDegamma = false;
+    *isHDR = false;
     switch (ddsFormat) {
     case dds::Format::BC1_UNorm:
         *cudaType = cudau::ArrayElementType::BC1_UNorm;
@@ -774,9 +777,11 @@ static void translate(dds::Format ddsFormat, cudau::ArrayElementType* cudaType, 
         break;
     case dds::Format::BC6H_UF16:
         *cudaType = cudau::ArrayElementType::BC6H_UF16;
+        *isHDR = true;
         break;
     case dds::Format::BC6H_SF16:
         *cudaType = cudau::ArrayElementType::BC6H_SF16;
+        *isHDR = true;
         break;
     case dds::Format::BC7_UNorm:
         *cudaType = cudau::ArrayElementType::BC7_UNorm;
@@ -790,13 +795,100 @@ static void translate(dds::Format ddsFormat, cudau::ArrayElementType* cudaType, 
     }
 };
 
-enum class BumpMapTextureType {
-    NormalMap = 0,
-    NormalMap_BC,
-    NormalMap_BC_2ch,
-    HeightMap,
-    HeightMap_BC,
+static void translate(
+    dds::Format ddsFormat,
+    GLenum* glFormat, bool* needsDegamma, bool* isHDR) {
+    *needsDegamma = false;
+    *isHDR = false;
+    // https://dench.flatlib.jp/opengl/textures
+    switch (ddsFormat) {
+    case dds::Format::BC1_UNorm:
+        *glFormat = 0x83F1; // GL_COMPRESSED_RGBA_S3TC_DXT1_EXT
+        break;
+    case dds::Format::BC1_UNorm_sRGB:
+        *glFormat = 0x8C4D; // GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT1_EXT
+        *needsDegamma = true;
+        break;
+    case dds::Format::BC2_UNorm:
+        *glFormat = 0x83F2; // GL_COMPRESSED_RGBA_S3TC_DXT3_EXT
+        break;
+    case dds::Format::BC2_UNorm_sRGB:
+        *glFormat = 0x8C4E; // GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT3_EXT
+        *needsDegamma = true;
+        break;
+    case dds::Format::BC3_UNorm:
+        *glFormat = 0x83F3; // GL_COMPRESSED_RGBA_S3TC_DXT5_EXT
+        break;
+    case dds::Format::BC3_UNorm_sRGB:
+        *glFormat = 0x8C4F; // GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT5_EXT
+        *needsDegamma = true;
+        break;
+    case dds::Format::BC4_UNorm:
+        *glFormat = 0x8DBB; // GL_COMPRESSED_RED_RGTC1_EXT
+        break;
+    case dds::Format::BC4_SNorm:
+        *glFormat = 0x8DBC; // GL_COMPRESSED_SIGNED_RED_RGTC1_EXT
+        break;
+    case dds::Format::BC5_UNorm:
+        *glFormat = 0x8DBD; // GL_COMPRESSED_RED_GREEN_RGTC2_EXT
+        break;
+    case dds::Format::BC5_SNorm:
+        *glFormat = 0x8DBE; // GL_COMPRESSED_SIGNED_RED_GREEN_RGTC2_EXT
+        break;
+    case dds::Format::BC6H_UF16:
+        *glFormat = 0x8E8F; // GL_COMPRESSED_RGB_BPTC_UNSIGNED_FLOAT_ARB
+        *isHDR = true;
+        break;
+    case dds::Format::BC6H_SF16:
+        *glFormat = 0x8E8E; // GL_COMPRESSED_RGB_BPTC_SIGNED_FLOAT_ARB
+        *isHDR = true;
+        break;
+    case dds::Format::BC7_UNorm:
+        *glFormat = 0x8E8C; // GL_COMPRESSED_RGBA_BPTC_UNORM_ARB
+        break;
+    case dds::Format::BC7_UNorm_sRGB:
+        *glFormat = 0x8E8D; // GL_COMPRESSED_SRGB_ALPHA_BPTC_UNORM_ARB
+        *needsDegamma = true;
+        break;
+    default:
+        Assert_ShouldNotBeCalled();
+        break;
+    }
 };
+
+static constexpr bool useGLTexture = true;
+
+static BumpMapTextureType getBumpMapType(cudau::ArrayElementType elemType) {
+    if (elemType == cudau::ArrayElementType::BC1_UNorm ||
+        elemType == cudau::ArrayElementType::BC2_UNorm ||
+        elemType == cudau::ArrayElementType::BC3_UNorm ||
+        elemType == cudau::ArrayElementType::BC7_UNorm)
+        return BumpMapTextureType::NormalMap_BC;
+    else if (elemType == cudau::ArrayElementType::BC4_SNorm ||
+             elemType == cudau::ArrayElementType::BC4_UNorm)
+        return BumpMapTextureType::HeightMap_BC;
+    else if (elemType == cudau::ArrayElementType::BC5_UNorm)
+        return BumpMapTextureType::NormalMap_BC_2ch;
+    else
+        Assert_NotImplemented();
+    return BumpMapTextureType::NormalMap;
+}
+
+static BumpMapTextureType getBumpMapType(GLenum glFormat) {
+    if (glFormat == 0x8CF1 ||
+        glFormat == 0x83F2 ||
+        glFormat == 0x83F3 ||
+        glFormat == 0x838C)
+        return BumpMapTextureType::NormalMap_BC;
+    else if (glFormat == 0x8DBB ||
+             glFormat == 0x8DBC)
+        return BumpMapTextureType::HeightMap_BC;
+    else if (glFormat == 0x8DBD)
+        return BumpMapTextureType::NormalMap_BC_2ch;
+    else
+        Assert_NotImplemented();
+    return BumpMapTextureType::NormalMap;
+}
 
 struct TextureCacheKey {
     std::filesystem::path filePath;
@@ -887,6 +979,7 @@ struct Fx4ImmTextureCacheKey {
 };
 
 struct TextureCacheValue {
+    glu::Texture2D gfxTexture;
     cudau::Array texture;
     bool needsDegamma;
     bool isHDR;
@@ -899,14 +992,22 @@ static std::map<Fx3ImmTextureCacheKey, TextureCacheValue> s_Fx3ImmTextureCache;
 static std::map<Fx4ImmTextureCacheKey, TextureCacheValue> s_Fx4ImmTextureCache;
 
 void finalizeTextureCaches() {
-    for (auto &it : s_textureCache)
+    for (auto &it : s_textureCache) {
         it.second.texture.finalize();
-    for (auto &it : s_Fx1ImmTextureCache)
+        it.second.gfxTexture.finalize();
+    }
+    for (auto &it : s_Fx1ImmTextureCache) {
         it.second.texture.finalize();
-    for (auto &it : s_Fx3ImmTextureCache)
+        it.second.gfxTexture.finalize();
+    }
+    for (auto &it : s_Fx3ImmTextureCache) {
         it.second.texture.finalize();
-    for (auto &it : s_Fx4ImmTextureCache)
+        it.second.gfxTexture.finalize();
+    }
+    for (auto &it : s_Fx4ImmTextureCache) {
         it.second.texture.finalize();
+        it.second.gfxTexture.finalize();
+    }
 }
 
 static void createFx1ImmTexture(
@@ -950,13 +1051,16 @@ static void createFx3ImmTexture(
     CUcontext cuContext,
     const float3 &immValue,
     bool isNormalized,
-    const cudau::Array** texture) {
+    const cudau::Array** texture,
+    const glu::Texture2D** gfxTexture) {
     Fx3ImmTextureCacheKey cacheKey;
     cacheKey.immValue = immValue;
     cacheKey.cuContext = cuContext;
     if (s_Fx3ImmTextureCache.count(cacheKey)) {
         const TextureCacheValue &value = s_Fx3ImmTextureCache.at(cacheKey);
         *texture = &value.texture;
+        if (gfxTexture)
+            *gfxTexture = &value.gfxTexture;
         return;
     }
 
@@ -967,6 +1071,12 @@ static void createFx3ImmTexture(
                          (std::min<uint32_t>(255 * immValue.y, 255) << 8) |
                          (std::min<uint32_t>(255 * immValue.z, 255) << 16) |
                          255 << 24);
+        if constexpr (useGLTexture) {
+            if (gfxTexture) {
+                cacheValue.gfxTexture.initialize(GL_RGBA8, 1, 1, 1);
+                cacheValue.gfxTexture.transferImage(GL_RGBA, GL_UNSIGNED_INT_8_8_8_8_REV, &data, 0);
+            }
+        }
         cacheValue.texture.initialize2D(
             cuContext, cudau::ArrayElementType::UInt8, 4,
             cudau::ArraySurface::Disable, cudau::ArrayTextureGather::Disable,
@@ -977,6 +1087,12 @@ static void createFx3ImmTexture(
         float data[4] = {
             immValue.x, immValue.y, immValue.z, 1.0f
         };
+        if constexpr (useGLTexture) {
+            if (gfxTexture) {
+                cacheValue.gfxTexture.initialize(GL_RGBA32F, 1, 1, 1);
+                cacheValue.gfxTexture.transferImage(GL_RGBA, GL_FLOAT, &data, 0);
+            }
+        }
         cacheValue.texture.initialize2D(
             cuContext, cudau::ArrayElementType::Float32, 4,
             cudau::ArraySurface::Disable, cudau::ArrayTextureGather::Disable,
@@ -987,6 +1103,8 @@ static void createFx3ImmTexture(
     s_Fx3ImmTextureCache[cacheKey] = std::move(cacheValue);
 
     *texture = &s_Fx3ImmTextureCache.at(cacheKey).texture;
+    if (gfxTexture)
+        *gfxTexture = &s_Fx3ImmTextureCache.at(cacheKey).gfxTexture;
 }
 
 static void createFx4ImmTexture(
@@ -1061,15 +1179,14 @@ static bool loadTexture(
                                         &width, &height, &mipCount, &sizes, &ddsFormat);
         if (imageData) {
             cudau::ArrayElementType elemType;
-            translate(ddsFormat, &elemType, &cacheValue.needsDegamma);
-            cacheValue.isHDR =
-                elemType == cudau::ArrayElementType::BC6H_SF16 ||
-                elemType == cudau::ArrayElementType::BC6H_UF16;
+            translate(ddsFormat, &elemType, &cacheValue.needsDegamma, &cacheValue.isHDR);
             cacheValue.texture.initialize2D(
                 cuContext, elemType, 1,
                 cudau::ArraySurface::Disable, cudau::ArrayTextureGather::Disable,
-                width, height, 1);
-            cacheValue.texture.write<uint8_t>(imageData[0], static_cast<uint32_t>(sizes[0]));
+                width, height, mipCount);
+            for (int32_t mipLevel = 0; mipLevel < std::max(mipCount - 2, 1); ++mipLevel)
+                cacheValue.texture.write<uint8_t>(
+                    imageData[mipLevel], static_cast<uint32_t>(sizes[mipLevel]), mipLevel);
             dds::free(imageData, mipCount, sizes);
         }
         else {
@@ -1115,6 +1232,7 @@ static bool loadNormalTexture(
     const std::filesystem::path &filePath,
     CUcontext cuContext,
     const cudau::Array** texture,
+    const glu::Texture2D** gfxTexture,
     BumpMapTextureType* bumpMapType) {
     TextureCacheKey cacheKey;
     cacheKey.filePath = filePath;
@@ -1122,6 +1240,7 @@ static bool loadNormalTexture(
     if (s_textureCache.count(cacheKey)) {
         const TextureCacheValue &value = s_textureCache.at(cacheKey);
         *texture = &value.texture;
+        *gfxTexture = &value.gfxTexture;
         *bumpMapType = value.bumpMapType;
         return true;
     }
@@ -1136,20 +1255,24 @@ static bool loadNormalTexture(
         uint8_t** imageData = dds::load(filePath.string().c_str(),
                                         &width, &height, &mipCount, &sizes, &ddsFormat);
         if (imageData) {
+            bool isHDR;
+            if constexpr (useGLTexture) {
+                GLenum glFormat;
+                translate(ddsFormat, &glFormat, &cacheValue.needsDegamma, &isHDR);
+                cacheValue.bumpMapType = getBumpMapType(glFormat);
+                auto textureGather = cacheValue.bumpMapType == BumpMapTextureType::HeightMap_BC ?
+                    cudau::ArrayTextureGather::Enable :
+                    cudau::ArrayTextureGather::Disable;
+                cacheValue.gfxTexture.initialize(glFormat, width, height, mipCount);
+                for (int mipLevel = 0; mipLevel < mipCount; ++mipLevel)
+                    cacheValue.gfxTexture.transferCompressedImage(imageData[mipLevel], sizes[mipLevel], mipLevel);
+                //cacheValue.texture.initializeFromGLTexture2D(
+                //    cuContext, cacheValue.gfxTexture.getHandle(),
+                //    cudau::ArraySurface::Disable, textureGather);
+            }
             cudau::ArrayElementType elemType;
-            translate(ddsFormat, &elemType, &cacheValue.needsDegamma);
-            if (elemType == cudau::ArrayElementType::BC1_UNorm ||
-                elemType == cudau::ArrayElementType::BC2_UNorm ||
-                elemType == cudau::ArrayElementType::BC3_UNorm ||
-                elemType == cudau::ArrayElementType::BC7_UNorm)
-                cacheValue.bumpMapType = BumpMapTextureType::NormalMap_BC;
-            else if (elemType == cudau::ArrayElementType::BC4_SNorm ||
-                     elemType == cudau::ArrayElementType::BC4_UNorm)
-                cacheValue.bumpMapType = BumpMapTextureType::HeightMap_BC;
-            else if (elemType == cudau::ArrayElementType::BC5_UNorm)
-                cacheValue.bumpMapType = BumpMapTextureType::NormalMap_BC_2ch;
-            else
-                Assert_NotImplemented();
+            translate(ddsFormat, &elemType, &cacheValue.needsDegamma, &isHDR);
+            cacheValue.bumpMapType = getBumpMapType(elemType);
             auto textureGather = cacheValue.bumpMapType == BumpMapTextureType::HeightMap_BC ?
                 cudau::ArrayTextureGather::Enable :
                 cudau::ArrayTextureGather::Disable;
@@ -1157,8 +1280,10 @@ static bool loadNormalTexture(
                 cuContext, elemType, 1,
                 cudau::ArraySurface::Disable,
                 textureGather,
-                width, height, 1);
-            cacheValue.texture.write<uint8_t>(imageData[0], static_cast<uint32_t>(sizes[0]));
+                width, height, mipCount);
+            for (int32_t mipLevel = 0; mipLevel < std::max(mipCount - 2, 1); ++mipLevel)
+                cacheValue.texture.write<uint8_t>(
+                    imageData[mipLevel], static_cast<uint32_t>(sizes[mipLevel]), mipLevel);
             dds::free(imageData, mipCount, sizes);
         }
         else {
@@ -1179,6 +1304,13 @@ static bool loadNormalTexture(
             auto textureGather = cacheValue.bumpMapType == BumpMapTextureType::HeightMap ?
                 cudau::ArrayTextureGather::Enable :
                 cudau::ArrayTextureGather::Disable;
+            if constexpr (useGLTexture) {
+                cacheValue.gfxTexture.initialize(GL_RGBA8, width, height, 1);
+                cacheValue.gfxTexture.transferImage(GL_RGBA, GL_UNSIGNED_INT_8_8_8_8_REV, linearImageData, 0);
+                //cacheValue.texture.initializeFromGLTexture2D(
+                //    cuContext, cacheValue.gfxTexture.getHandle(),
+                //    cudau::ArraySurface::Disable, cudau::ArrayTextureGather::Disable);
+            }
             cacheValue.texture.initialize2D(
                 cuContext, cudau::ArrayElementType::UInt8, 4,
                 cudau::ArraySurface::Disable, textureGather,
@@ -1194,10 +1326,11 @@ static bool loadNormalTexture(
     if (success) {
         s_textureCache[cacheKey] = std::move(cacheValue);
         *texture = &s_textureCache.at(cacheKey).texture;
+        *gfxTexture = &s_textureCache.at(cacheKey).gfxTexture;
         *bumpMapType = s_textureCache.at(cacheKey).bumpMapType;
     }
     else {
-        createFx3ImmTexture(cuContext, float3(0.5f, 0.5f, 1.0f), true, texture);
+        createFx3ImmTexture(cuContext, float3(0.5f, 0.5f, 1.0f), true, texture, gfxTexture);
         *bumpMapType = BumpMapTextureType::NormalMap;
     }
 
@@ -1207,14 +1340,14 @@ static bool loadNormalTexture(
 static void createNormalTexture(
     CUcontext cuContext,
     const std::filesystem::path &normalPath,
-    Material* mat, BumpMapTextureType* bumpMapType) {
+    Material* mat) {
     if (normalPath.empty()) {
-        createFx3ImmTexture(cuContext, float3(0.5f, 0.5f, 1.0f), true, &mat->normal);
-        *bumpMapType = BumpMapTextureType::NormalMap;
+        createFx3ImmTexture(cuContext, float3(0.5f, 0.5f, 1.0f), true, &mat->normal, &mat->gfxNormal);
+        mat->bumpMapType = BumpMapTextureType::NormalMap;
     }
     else {
         hpprintf("  Reading: %s ... ", normalPath.string().c_str());
-        if (loadNormalTexture(normalPath, cuContext, &mat->normal, bumpMapType))
+        if (loadNormalTexture(normalPath, cuContext, &mat->normal, &mat->gfxNormal, &mat->bumpMapType))
             hpprintf("done.\n");
         else
             hpprintf("failed.\n");
@@ -1231,7 +1364,7 @@ static void createEmittanceTexture(
     if (emittancePath.empty()) {
         mat->texEmittance = 0;
         if (immEmittance != float3(0.0f, 0.0f, 0.0f))
-            createFx3ImmTexture(cuContext, immEmittance, false, &mat->emittance);
+            createFx3ImmTexture(cuContext, immEmittance, false, &mat->emittance, nullptr);
     }
     else {
         hpprintf("  Reading: %s ... ", emittancePath.string().c_str());
@@ -1241,6 +1374,20 @@ static void createEmittanceTexture(
         else
             hpprintf("failed.\n");
     }
+}
+
+static shared::TexDimInfo calcDimInfo(const cudau::Array &cuArray, bool isLeftHanded = true) {
+    shared::TexDimInfo dimInfo = {};
+    uint32_t w = cuArray.getWidth();
+    uint32_t h = cuArray.getHeight();
+    bool wIsPowerOfTwo = (w & (w - 1)) == 0;
+    bool hIsPowerOfTwo = (h & (h - 1)) == 0;
+    dimInfo.dimX = w;
+    dimInfo.dimY = h;
+    dimInfo.isNonPowerOfTwo = !wIsPowerOfTwo || !hIsPowerOfTwo;
+    dimInfo.isBCTexture = cuArray.isBCTexture();
+    dimInfo.isLeftHanded = isLeftHanded;
+    return dimInfo;
 }
 
 static Material* createLambertMaterial(
@@ -1254,21 +1401,21 @@ static Material* createLambertMaterial(
     sampler_sRGB.setXyFilterMode(cudau::TextureFilterMode::Linear);
     sampler_sRGB.setWrapMode(0, cudau::TextureWrapMode::Repeat);
     sampler_sRGB.setWrapMode(1, cudau::TextureWrapMode::Repeat);
-    sampler_sRGB.setMipMapFilterMode(cudau::TextureFilterMode::Point);
+    sampler_sRGB.setMipMapFilterMode(cudau::TextureFilterMode::Linear);
     sampler_sRGB.setReadMode(cudau::TextureReadMode::NormalizedFloat_sRGB);
 
     cudau::TextureSampler sampler_float;
     sampler_float.setXyFilterMode(cudau::TextureFilterMode::Linear);
     sampler_float.setWrapMode(0, cudau::TextureWrapMode::Repeat);
     sampler_float.setWrapMode(1, cudau::TextureWrapMode::Repeat);
-    sampler_float.setMipMapFilterMode(cudau::TextureFilterMode::Point);
+    sampler_float.setMipMapFilterMode(cudau::TextureFilterMode::Linear);
     sampler_float.setReadMode(cudau::TextureReadMode::ElementType);
 
     cudau::TextureSampler sampler_normFloat;
     sampler_normFloat.setXyFilterMode(cudau::TextureFilterMode::Linear);
     sampler_normFloat.setWrapMode(0, cudau::TextureWrapMode::Repeat);
     sampler_normFloat.setWrapMode(1, cudau::TextureWrapMode::Repeat);
-    sampler_normFloat.setMipMapFilterMode(cudau::TextureFilterMode::Point);
+    sampler_normFloat.setMipMapFilterMode(cudau::TextureFilterMode::Linear);
     sampler_normFloat.setReadMode(cudau::TextureReadMode::NormalizedFloat);
 
     Material* mat = new Material();
@@ -1285,7 +1432,7 @@ static Material* createLambertMaterial(
             hpprintf("failed.\n");
     }
     if (!body.reflectance) {
-        createFx3ImmTexture(cuContext, immReflectance, true, &body.reflectance);
+        createFx3ImmTexture(cuContext, immReflectance, true, &body.reflectance, nullptr);
         needsDegamma = true;
     }
     if (needsDegamma)
@@ -1293,14 +1440,18 @@ static Material* createLambertMaterial(
     else
         body.texReflectance = sampler_normFloat.createTextureObject(*body.reflectance);
 
-    BumpMapTextureType bumpMapType;
-    createNormalTexture(cuContext, normalPath, mat, &bumpMapType);
+    createNormalTexture(cuContext, normalPath, mat);
     mat->texNormal = sampler_normFloat.createTextureObject(*mat->normal);
+    mat->gfxSampler.initialize(
+        glu::Sampler::MinFilter::LinearMipMapLinear,
+        glu::Sampler::MagFilter::Linear,
+        glu::Sampler::WrapMode::Repeat,
+        glu::Sampler::WrapMode::Repeat);
     CallableProgram dcReadModifiedNormal;
-    if (bumpMapType == BumpMapTextureType::NormalMap ||
-        bumpMapType == BumpMapTextureType::NormalMap_BC)
+    if (mat->bumpMapType == BumpMapTextureType::NormalMap ||
+        mat->bumpMapType == BumpMapTextureType::NormalMap_BC)
         dcReadModifiedNormal = CallableProgram_readModifiedNormalFromNormalMap;
-    else if (bumpMapType == BumpMapTextureType::NormalMap_BC)
+    else if (mat->bumpMapType == BumpMapTextureType::NormalMap_BC_2ch)
         dcReadModifiedNormal = CallableProgram_readModifiedNormalFromNormalMap2ch;
     else
         dcReadModifiedNormal = CallableProgram_readModifiedNormalFromHeightMap;
@@ -1322,10 +1473,10 @@ static Material* createLambertMaterial(
 
     shared::MaterialData matData = {};
     matData.asLambert.reflectance = body.texReflectance;
+    matData.asLambert.reflectanceDimInfo = calcDimInfo(*body.reflectance);
     matData.normal = mat->texNormal;
     matData.emittance = mat->texEmittance;
-    matData.normalWidth = mat->normal->getWidth();
-    matData.normalHeight = mat->normal->getHeight();
+    matData.normalDimInfo = calcDimInfo(*mat->normal);
     matData.readModifiedNormal = shared::ReadModifiedNormal(dcReadModifiedNormal);
     matData.setupBSDFBody = shared::SetupBSDFBody(CallableProgram_setupLambertBRDF);
     matData.bsdfGetSurfaceParameters = shared::BSDFGetSurfaceParameters(CallableProgram_LambertBRDF_getSurfaceParameters);
@@ -1351,21 +1502,21 @@ static Material* createDiffuseAndSpecularMaterial(
     sampler_sRGB.setXyFilterMode(cudau::TextureFilterMode::Linear);
     sampler_sRGB.setWrapMode(0, cudau::TextureWrapMode::Repeat);
     sampler_sRGB.setWrapMode(1, cudau::TextureWrapMode::Repeat);
-    sampler_sRGB.setMipMapFilterMode(cudau::TextureFilterMode::Point);
+    sampler_sRGB.setMipMapFilterMode(cudau::TextureFilterMode::Linear);
     sampler_sRGB.setReadMode(cudau::TextureReadMode::NormalizedFloat_sRGB);
 
     cudau::TextureSampler sampler_float;
     sampler_float.setXyFilterMode(cudau::TextureFilterMode::Linear);
     sampler_float.setWrapMode(0, cudau::TextureWrapMode::Repeat);
     sampler_float.setWrapMode(1, cudau::TextureWrapMode::Repeat);
-    sampler_float.setMipMapFilterMode(cudau::TextureFilterMode::Point);
+    sampler_float.setMipMapFilterMode(cudau::TextureFilterMode::Linear);
     sampler_float.setReadMode(cudau::TextureReadMode::ElementType);
 
     cudau::TextureSampler sampler_normFloat;
     sampler_normFloat.setXyFilterMode(cudau::TextureFilterMode::Linear);
     sampler_normFloat.setWrapMode(0, cudau::TextureWrapMode::Repeat);
     sampler_normFloat.setWrapMode(1, cudau::TextureWrapMode::Repeat);
-    sampler_normFloat.setMipMapFilterMode(cudau::TextureFilterMode::Point);
+    sampler_normFloat.setMipMapFilterMode(cudau::TextureFilterMode::Linear);
     sampler_normFloat.setReadMode(cudau::TextureReadMode::NormalizedFloat);
 
     Material* mat = new Material();
@@ -1383,7 +1534,7 @@ static Material* createDiffuseAndSpecularMaterial(
             hpprintf("failed.\n");
     }
     if (!body.diffuse) {
-        createFx3ImmTexture(cuContext, immDiffuseColor, true, &body.diffuse);
+        createFx3ImmTexture(cuContext, immDiffuseColor, true, &body.diffuse, nullptr);
         needsDegamma = true;
     }
     if (needsDegamma)
@@ -1400,7 +1551,7 @@ static Material* createDiffuseAndSpecularMaterial(
             hpprintf("failed.\n");
     }
     if (!body.specular) {
-        createFx3ImmTexture(cuContext, immSpecularColor, true, &body.specular);
+        createFx3ImmTexture(cuContext, immSpecularColor, true, &body.specular, nullptr);
         needsDegamma = true;
     }
     if (needsDegamma)
@@ -1411,14 +1562,18 @@ static Material* createDiffuseAndSpecularMaterial(
     createFx1ImmTexture(cuContext, immSmoothness, true, &body.smoothness);
     body.texSmoothness = sampler_normFloat.createTextureObject(*body.smoothness);
 
-    BumpMapTextureType bumpMapType;
-    createNormalTexture(cuContext, normalPath, mat, &bumpMapType);
+    createNormalTexture(cuContext, normalPath, mat);
     mat->texNormal = sampler_normFloat.createTextureObject(*mat->normal);
+    mat->gfxSampler.initialize(
+        glu::Sampler::MinFilter::LinearMipMapLinear,
+        glu::Sampler::MagFilter::Linear,
+        glu::Sampler::WrapMode::Repeat,
+        glu::Sampler::WrapMode::Repeat);
     CallableProgram dcReadModifiedNormal;
-    if (bumpMapType == BumpMapTextureType::NormalMap ||
-        bumpMapType == BumpMapTextureType::NormalMap_BC)
+    if (mat->bumpMapType == BumpMapTextureType::NormalMap ||
+        mat->bumpMapType == BumpMapTextureType::NormalMap_BC)
         dcReadModifiedNormal = CallableProgram_readModifiedNormalFromNormalMap;
-    else if (bumpMapType == BumpMapTextureType::NormalMap_BC)
+    else if (mat->bumpMapType == BumpMapTextureType::NormalMap_BC_2ch)
         dcReadModifiedNormal = CallableProgram_readModifiedNormalFromNormalMap2ch;
     else
         dcReadModifiedNormal = CallableProgram_readModifiedNormalFromHeightMap;
@@ -1442,10 +1597,12 @@ static Material* createDiffuseAndSpecularMaterial(
     matData.asDiffuseAndSpecular.diffuse = body.texDiffuse;
     matData.asDiffuseAndSpecular.specular = body.texSpecular;
     matData.asDiffuseAndSpecular.smoothness = body.texSmoothness;
+    matData.asDiffuseAndSpecular.diffuseDimInfo = calcDimInfo(*body.diffuse);
+    matData.asDiffuseAndSpecular.specularDimInfo = calcDimInfo(*body.specular);
+    matData.asDiffuseAndSpecular.smoothnessDimInfo = calcDimInfo(*body.smoothness);
     matData.normal = mat->texNormal;
     matData.emittance = mat->texEmittance;
-    matData.normalWidth = mat->normal->getWidth();
-    matData.normalHeight = mat->normal->getHeight();
+    matData.normalDimInfo = calcDimInfo(*mat->normal);
     matData.readModifiedNormal = shared::ReadModifiedNormal(dcReadModifiedNormal);
     matData.setupBSDFBody = shared::SetupBSDFBody(CallableProgram_setupDiffuseAndSpecularBRDF);
     matData.bsdfGetSurfaceParameters =
@@ -1474,21 +1631,21 @@ static Material* createSimplePBRMaterial(
     sampler_sRGB.setXyFilterMode(cudau::TextureFilterMode::Linear);
     sampler_sRGB.setWrapMode(0, cudau::TextureWrapMode::Repeat);
     sampler_sRGB.setWrapMode(1, cudau::TextureWrapMode::Repeat);
-    sampler_sRGB.setMipMapFilterMode(cudau::TextureFilterMode::Point);
+    sampler_sRGB.setMipMapFilterMode(cudau::TextureFilterMode::Linear);
     sampler_sRGB.setReadMode(cudau::TextureReadMode::NormalizedFloat_sRGB);
 
     cudau::TextureSampler sampler_float;
     sampler_float.setXyFilterMode(cudau::TextureFilterMode::Linear);
     sampler_float.setWrapMode(0, cudau::TextureWrapMode::Repeat);
     sampler_float.setWrapMode(1, cudau::TextureWrapMode::Repeat);
-    sampler_float.setMipMapFilterMode(cudau::TextureFilterMode::Point);
+    sampler_float.setMipMapFilterMode(cudau::TextureFilterMode::Linear);
     sampler_float.setReadMode(cudau::TextureReadMode::ElementType);
 
     cudau::TextureSampler sampler_normFloat;
     sampler_normFloat.setXyFilterMode(cudau::TextureFilterMode::Linear);
     sampler_normFloat.setWrapMode(0, cudau::TextureWrapMode::Repeat);
     sampler_normFloat.setWrapMode(1, cudau::TextureWrapMode::Repeat);
-    sampler_normFloat.setMipMapFilterMode(cudau::TextureFilterMode::Point);
+    sampler_normFloat.setMipMapFilterMode(cudau::TextureFilterMode::Linear);
     sampler_normFloat.setReadMode(cudau::TextureReadMode::NormalizedFloat);
 
     Material* mat = new Material();
@@ -1526,19 +1683,23 @@ static Material* createSimplePBRMaterial(
     }
     if (!body.occlusion_roughness_metallic) {
         createFx3ImmTexture(cuContext, immOcclusion_roughness_metallic, true,
-                            &body.occlusion_roughness_metallic);
+                            &body.occlusion_roughness_metallic, nullptr);
     }
     body.texOcclusion_roughness_metallic =
         sampler_normFloat.createTextureObject(*body.occlusion_roughness_metallic);
 
-    BumpMapTextureType bumpMapType;
-    createNormalTexture(cuContext, normalPath, mat, &bumpMapType);
+    createNormalTexture(cuContext, normalPath, mat);
     mat->texNormal = sampler_normFloat.createTextureObject(*mat->normal);
+    mat->gfxSampler.initialize(
+        glu::Sampler::MinFilter::LinearMipMapLinear,
+        glu::Sampler::MagFilter::Linear,
+        glu::Sampler::WrapMode::Repeat,
+        glu::Sampler::WrapMode::Repeat);
     CallableProgram dcReadModifiedNormal;
-    if (bumpMapType == BumpMapTextureType::NormalMap ||
-        bumpMapType == BumpMapTextureType::NormalMap_BC)
+    if (mat->bumpMapType == BumpMapTextureType::NormalMap ||
+        mat->bumpMapType == BumpMapTextureType::NormalMap_BC)
         dcReadModifiedNormal = CallableProgram_readModifiedNormalFromNormalMap;
-    else if (bumpMapType == BumpMapTextureType::NormalMap_BC)
+    else if (mat->bumpMapType == BumpMapTextureType::NormalMap_BC_2ch)
         dcReadModifiedNormal = CallableProgram_readModifiedNormalFromNormalMap2ch;
     else
         dcReadModifiedNormal = CallableProgram_readModifiedNormalFromHeightMap;
@@ -1561,10 +1722,11 @@ static Material* createSimplePBRMaterial(
     shared::MaterialData matData = {};
     matData.asSimplePBR.baseColor_opacity = body.texBaseColor_opacity;
     matData.asSimplePBR.occlusion_roughness_metallic = body.texOcclusion_roughness_metallic;
+    matData.asSimplePBR.baseColor_opacity_dimInfo = calcDimInfo(*body.baseColor_opacity);
+    matData.asSimplePBR.occlusion_roughness_metallic_dimInfo = calcDimInfo(*body.occlusion_roughness_metallic);
     matData.normal = mat->texNormal;
     matData.emittance = mat->texEmittance;
-    matData.normalWidth = mat->normal->getWidth();
-    matData.normalHeight = mat->normal->getHeight();
+    matData.normalDimInfo = calcDimInfo(*mat->normal);
     matData.readModifiedNormal = shared::ReadModifiedNormal(dcReadModifiedNormal);
     matData.setupBSDFBody = shared::SetupBSDFBody(CallableProgram_setupSimplePBR_BRDF);
     matData.bsdfGetSurfaceParameters =
@@ -1584,7 +1746,8 @@ static GeometryInstance* createGeometryInstance(
     CUcontext cuContext, Scene* scene,
     const std::vector<shared::Vertex> &vertices,
     const std::vector<shared::Triangle> &triangles,
-    const Material* mat) {
+    const Material* mat,
+    bool allocateGfxResource) {
     shared::GeometryInstanceData* geomInstDataOnHost = scene->geomInstDataBuffer.getMappedPointer();
 
     GeometryInstance* geomInst = new GeometryInstance();
@@ -1603,6 +1766,36 @@ static GeometryInstance* createGeometryInstance(
     }
 
     geomInst->mat = mat;
+    if (allocateGfxResource) {
+        geomInst->gfxVertexBuffer.initialize(
+            sizeof(shared::Vertex), vertices.size(), glu::Buffer::Usage::StaticDraw);
+        geomInst->gfxVertexBuffer.write(vertices);
+        geomInst->gfxTriangleBuffer.initialize(
+            sizeof(shared::Triangle), triangles.size(), glu::Buffer::Usage::StaticDraw);
+        geomInst->gfxTriangleBuffer.write(triangles);
+
+        geomInst->gfxVertexArray.initialize();
+        {
+            GLuint vaoHandle = geomInst->gfxVertexArray.getHandle();
+            glVertexArrayVertexBuffer(vaoHandle,
+                                      0, geomInst->gfxVertexBuffer.getHandle(),
+                                      0, sizeof(shared::Vertex));
+            glVertexArrayAttribBinding(vaoHandle, 0, 0);
+            glVertexArrayAttribBinding(vaoHandle, 1, 0);
+            glVertexArrayAttribBinding(vaoHandle, 2, 0);
+            glVertexArrayAttribBinding(vaoHandle, 3, 0);
+            glVertexArrayAttribFormat(vaoHandle, 0, 3, GL_FLOAT, false, offsetof(shared::Vertex, position));
+            glVertexArrayAttribFormat(vaoHandle, 1, 3, GL_FLOAT, false, offsetof(shared::Vertex, normal));
+            glVertexArrayAttribFormat(vaoHandle, 2, 3, GL_FLOAT, false, offsetof(shared::Vertex, texCoord0Dir));
+            glVertexArrayAttribFormat(vaoHandle, 3, 2, GL_FLOAT, false, offsetof(shared::Vertex, texCoord));
+            glVertexArrayBindingDivisor(vaoHandle, 0, 0);
+            glEnableVertexArrayAttrib(vaoHandle, 0);
+            glEnableVertexArrayAttrib(vaoHandle, 1);
+            glEnableVertexArrayAttrib(vaoHandle, 2);
+            glEnableVertexArrayAttrib(vaoHandle, 3);
+            glVertexArrayElementBuffer(vaoHandle, geomInst->gfxTriangleBuffer.getHandle());
+        }
+    }
     geomInst->vertexBuffer.initialize(cuContext, Scene::bufferType, vertices);
     geomInst->triangleBuffer.initialize(cuContext, Scene::bufferType, triangles);
     if (mat->emittance) {
@@ -1661,7 +1854,7 @@ void createTriangleMeshes(
     const std::filesystem::path &filePath,
     MaterialConvention matConv,
     const Matrix4x4 &preTransform,
-    CUcontext cuContext, Scene* scene) {
+    CUcontext cuContext, Scene* scene, bool allocateGfxResource) {
     hpprintf("Reading: %s ... ", filePath.string().c_str());
     fflush(stdout);
     Assimp::Importer importer;
@@ -1817,7 +2010,6 @@ void createTriangleMeshes(
     }
 
     uint32_t baseGeomInstIndex = static_cast<uint32_t>(scene->geomInsts.size());
-    Matrix3x3 preNormalTransform = transpose(inverse(preTransform.getUpperLeftMatrix()));
     for (uint32_t meshIdx = 0; meshIdx < aiscene->mNumMeshes; ++meshIdx) {
         const aiMesh* aiMesh = aiscene->mMeshes[meshIdx];
 
@@ -1846,9 +2038,9 @@ void createTriangleMeshes(
                 aiVector3D(0.0f, 0.0f, 0.0f);
 
             shared::Vertex v;
-            v.position = preTransform * float3(aip.x, aip.y, aip.z);
-            v.normal = normalize(preNormalTransform * float3(ain.x, ain.y, ain.z));
-            v.texCoord0Dir = normalize(preTransform * float3(aitc0dir.x, aitc0dir.y, aitc0dir.z));
+            v.position = float3(aip.x, aip.y, aip.z);
+            v.normal = normalize(float3(ain.x, ain.y, ain.z));
+            v.texCoord0Dir = normalize(float3(aitc0dir.x, aitc0dir.y, aitc0dir.z));
             v.texCoord = float2(ait.x, ait.y);
             vertices[vIdx] = v;
         }
@@ -1865,11 +2057,12 @@ void createTriangleMeshes(
         }
 
         scene->geomInsts.push_back(createGeometryInstance(
-            cuContext, scene, vertices, triangles, scene->materials[baseMatIndex + aiMesh->mMaterialIndex]));
+            cuContext, scene, vertices, triangles,
+            scene->materials[baseMatIndex + aiMesh->mMaterialIndex], allocateGfxResource));
     }
 
     std::vector<FlattenedNode> flattenedNodes;
-    computeFlattenedNodes(aiscene, Matrix4x4(), aiscene->mRootNode, flattenedNodes);
+    computeFlattenedNodes(aiscene, preTransform, aiscene->mRootNode, flattenedNodes);
     //for (int i = 0; i < flattenedNodes.size(); ++i) {
     //    const Matrix4x4 &mat = flattenedNodes[i].transform;
     //    hpprintf("%8.5f, %8.5f, %8.5f, %8.5f\n", mat.m00, mat.m01, mat.m02, mat.m03);
@@ -1899,10 +2092,10 @@ void createTriangleMeshes(
             scene->geomGroups.push_back(geomGroup);
         }
 
-        Mesh::Group g = {};
+        Mesh::GeometryGroupInstance g = {};
         g.geomGroup = geomGroup;
         g.transform = node.transform;
-        mesh->groups.push_back(g);
+        mesh->groupInsts.push_back(g);
     }
 
     scene->meshes[meshName] = mesh;
@@ -1915,7 +2108,7 @@ void createRectangleLight(
     const std::filesystem::path &emittancePath,
     const float3 &immEmittance,
     const Matrix4x4 &transform,
-    CUcontext cuContext, Scene* scene) {
+    CUcontext cuContext, Scene* scene, bool allocateGfxResource) {
     Material* material;
     if constexpr (useLambertMaterial)
         material = createLambertMaterial(cuContext, scene, "", reflectance, "", emittancePath, immEmittance);
@@ -1936,7 +2129,8 @@ void createRectangleLight(
         shared::Triangle{0, 1, 2},
         shared::Triangle{0, 2, 3},
     };
-    GeometryInstance* geomInst = createGeometryInstance(cuContext, scene, vertices, triangles, material);
+    GeometryInstance* geomInst = createGeometryInstance(
+        cuContext, scene, vertices, triangles, material, allocateGfxResource);
     scene->geomInsts.push_back(geomInst);
 
     std::set<const GeometryInstance*> srcGeomInsts = { geomInst };
@@ -1944,11 +2138,11 @@ void createRectangleLight(
     scene->geomGroups.push_back(geomGroup);
 
     auto mesh = new Mesh();
-    Mesh::Group g = {};
+    Mesh::GeometryGroupInstance g = {};
     g.geomGroup = geomGroup;
     g.transform = transform;
-    mesh->groups.clear();
-    mesh->groups.push_back(g);
+    mesh->groupInsts.clear();
+    mesh->groupInsts.push_back(g);
     scene->meshes[meshName] = mesh;
 }
 
@@ -1959,7 +2153,7 @@ void createSphereLight(
     const std::filesystem::path &emittancePath,
     const float3 &immEmittance,
     const float3 &position,
-    CUcontext cuContext, Scene* scene) {
+    CUcontext cuContext, Scene* scene, bool allocateGfxResource) {
     Material* material;
     if constexpr (useLambertMaterial)
         material = createLambertMaterial(cuContext, scene, "", reflectance, "", emittancePath, immEmittance);
@@ -2027,7 +2221,8 @@ void createSphereLight(
             triangles[triIdx++] = shared::Triangle{ lIdx, urIdx, ulIdx };
         }
     }
-    GeometryInstance* geomInst = createGeometryInstance(cuContext, scene, vertices, triangles, material);
+    GeometryInstance* geomInst = createGeometryInstance(
+        cuContext, scene, vertices, triangles, material, allocateGfxResource);
     scene->geomInsts.push_back(geomInst);
 
     std::set<const GeometryInstance*> srcGeomInsts = { geomInst };
@@ -2035,22 +2230,24 @@ void createSphereLight(
     scene->geomGroups.push_back(geomGroup);
 
     auto mesh = new Mesh();
-    Mesh::Group g = {};
+    Mesh::GeometryGroupInstance g = {};
     g.geomGroup = geomGroup;
     g.transform = Matrix4x4();
-    mesh->groups.clear();
-    mesh->groups.push_back(g);
+    mesh->groupInsts.clear();
+    mesh->groupInsts.push_back(g);
     scene->meshes[meshName] = mesh;
 }
 
 Instance* createInstance(
     CUcontext cuContext, Scene* scene,
-    const GeometryGroup* geomGroup,
+    const Mesh::GeometryGroupInstance &geomGroupInst,
     const Matrix4x4 &transform) {
     shared::InstanceData* instDataOnHost = scene->instDataBuffer[0].getMappedPointer();
 
+    Matrix4x4 finalTransform = transform * geomGroupInst.transform;
+
     float3 scale;
-    transform.decompose(&scale, nullptr, nullptr);
+    finalTransform.decompose(&scale, nullptr, nullptr);
     float uniformScale = scale.x;
 
     // JP: 各ジオメトリインスタンスの光源サンプリングに関わるインポータンスは
@@ -2059,6 +2256,7 @@ Instance* createInstance(
     //     for sampling a light source
     std::vector<uint32_t> geomInstSlots;
     bool hasEmitterGeomInsts = false;
+    const GeometryGroup* geomGroup = geomGroupInst.geomGroup;
     for (auto it = geomGroup->geomInsts.cbegin(); it != geomGroup->geomInsts.cend(); ++it) {
         const GeometryInstance* geomInst = *it;
         geomInstSlots.push_back(geomInst->geomInstSlot);
@@ -2075,7 +2273,7 @@ Instance* createInstance(
     }
 
     Instance* inst = new Instance();
-    inst->geomGroup = geomGroup;
+    inst->geomGroupInst = geomGroupInst;
     inst->geomInstSlots.initialize(cuContext, Scene::bufferType, geomInstSlots);
     if (hasEmitterGeomInsts) {
 #if USE_PROBABILITY_TEXTURE
@@ -2088,9 +2286,9 @@ Instance* createInstance(
     scene->instSlotFinder.setInUse(inst->instSlot);
 
     shared::InstanceData instData = {};
-    instData.transform = transform;
-    instData.prevTransform = transform;
-    instData.normalMatrix = transpose(inverse(transform.getUpperLeftMatrix()));
+    instData.transform = finalTransform;
+    instData.prevTransform = finalTransform;
+    instData.normalMatrix = transpose(inverse(finalTransform.getUpperLeftMatrix()));
     instData.uniformScale = uniformScale;
     instData.geomInstSlots = inst->geomInstSlots.getDevicePointer();
     inst->lightGeomInstDist.getDeviceType(&instData.lightGeomInstDist);
@@ -2100,11 +2298,15 @@ Instance* createInstance(
     inst->optixInst.setID(inst->instSlot);
     inst->optixInst.setChild(geomGroup->optixGas);
     float xfm[12] = {
-        transform.m00, transform.m01, transform.m02, transform.m03,
-        transform.m10, transform.m11, transform.m12, transform.m13,
-        transform.m20, transform.m21, transform.m22, transform.m23,
+        finalTransform.m00, finalTransform.m01, finalTransform.m02, finalTransform.m03,
+        finalTransform.m10, finalTransform.m11, finalTransform.m12, finalTransform.m13,
+        finalTransform.m20, finalTransform.m21, finalTransform.m22, finalTransform.m23,
     };
     inst->optixInst.setTransform(xfm);
+
+    inst->prevMatM2W = finalTransform;
+    inst->matM2W = finalTransform;
+    inst->nMatM2W = transpose(inverse(finalTransform.getUpperLeftMatrix()));
 
     return inst;
 }
@@ -2177,7 +2379,7 @@ void saveImage(const std::filesystem::path &filepath, uint32_t width, uint32_t h
 
 void saveImageHDR(const std::filesystem::path &filepath, uint32_t width, uint32_t height,
                   float brightnessScale,
-                  const float4* data) {
+                  const float* data, bool flipY) {
     EXRHeader header;
     InitEXRHeader(&header);
 
@@ -2192,11 +2394,80 @@ void saveImageHDR(const std::filesystem::path &filepath, uint32_t width, uint32_
     images[2].resize(width * height);
     images[3].resize(width * height);
 
-    for (int i = 0; i < width * height; i++) {
-        images[0][i] = brightnessScale * data[i].x;
-        images[1][i] = brightnessScale * data[i].y;
-        images[2][i] = brightnessScale * data[i].z;
-        images[3][i] = brightnessScale * data[i].w;
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            uint32_t srcIdx = y * width + x;
+            uint32_t dstIdx = (flipY ? (height - 1 - y) : y) * width + x;
+            images[0][dstIdx] = brightnessScale * data[srcIdx];
+            images[1][dstIdx] = 0.0f;
+            images[2][dstIdx] = 0.0f;
+            images[3][dstIdx] = 0.0f;
+        }
+    }
+
+    float* image_ptr[4];
+    image_ptr[0] = &(images[3].at(0)); // A
+    image_ptr[1] = &(images[2].at(0)); // B
+    image_ptr[2] = &(images[1].at(0)); // G
+    image_ptr[3] = &(images[0].at(0)); // R
+
+    image.images = (unsigned char**)image_ptr;
+    image.width = width;
+    image.height = height;
+
+    header.num_channels = 4;
+    header.channels = (EXRChannelInfo *)malloc(sizeof(EXRChannelInfo) * header.num_channels);
+    // Must be (A)BGR order, since most of EXR viewers expect this channel order.
+    strncpy(header.channels[0].name, "A", 255); header.channels[0].name[strlen("A")] = '\0';
+    strncpy(header.channels[1].name, "B", 255); header.channels[1].name[strlen("B")] = '\0';
+    strncpy(header.channels[2].name, "G", 255); header.channels[2].name[strlen("G")] = '\0';
+    strncpy(header.channels[3].name, "R", 255); header.channels[3].name[strlen("R")] = '\0';
+
+    header.pixel_types = (int32_t*)malloc(sizeof(int32_t) * header.num_channels);
+    header.requested_pixel_types = (int32_t*)malloc(sizeof(int32_t) * header.num_channels);
+    for (int i = 0; i < header.num_channels; i++) {
+        header.pixel_types[i] = TINYEXR_PIXELTYPE_FLOAT; // pixel type of input image
+        header.requested_pixel_types[i] = TINYEXR_PIXELTYPE_HALF; // pixel type of output image to be stored in .EXR
+    }
+
+    const char* err = nullptr;
+    int32_t ret = SaveEXRImageToFile(&image, &header, filepath.string().c_str(), &err);
+    if (ret != TINYEXR_SUCCESS) {
+        fprintf(stderr, "Save EXR err: %s\n", err);
+        FreeEXRErrorMessage(err);
+    }
+
+    free(header.channels);
+    free(header.pixel_types);
+    free(header.requested_pixel_types);
+}
+
+void saveImageHDR(const std::filesystem::path &filepath, uint32_t width, uint32_t height,
+                  float brightnessScale,
+                  const float4* data, bool flipY) {
+    EXRHeader header;
+    InitEXRHeader(&header);
+
+    EXRImage image;
+    InitEXRImage(&image);
+
+    image.num_channels = 4;
+
+    std::vector<float> images[4];
+    images[0].resize(width * height);
+    images[1].resize(width * height);
+    images[2].resize(width * height);
+    images[3].resize(width * height);
+
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            uint32_t srcIdx = y * width + x;
+            uint32_t dstIdx = (flipY ? (height - 1 - y) : y) * width + x;
+            images[0][dstIdx] = brightnessScale * data[srcIdx].x;
+            images[1][dstIdx] = brightnessScale * data[srcIdx].y;
+            images[2][dstIdx] = brightnessScale * data[srcIdx].z;
+            images[3][dstIdx] = brightnessScale * data[srcIdx].w;
+        }
     }
 
     float* image_ptr[4];
@@ -2237,22 +2508,26 @@ void saveImageHDR(const std::filesystem::path &filepath, uint32_t width, uint32_
 }
 
 void saveImage(const std::filesystem::path &filepath, uint32_t width, uint32_t height, const float4* data,
-               float brightnessScale,
-               bool applyToneMap, bool apply_sRGB_gammaCorrection) {
+               const SDRImageSaverConfig &config) {
     auto image = new uint32_t[width * height];
     for (int y = 0; y < static_cast<int32_t>(height); ++y) {
+        uint32_t sy = config.flipY ? (height - 1 - y) : y;
         for (int x = 0; x < static_cast<int32_t>(width); ++x) {
-            float4 src = data[y * width + x];
-            if (applyToneMap) {
+            float4 src = data[sy * width + x];
+            if (config.alphaForOverride >= 0.0f)
+                src.w = config.alphaForOverride;
+            if (config.applyToneMap) {
                 float3 rgb = make_float3(src);
+                if (!allFinite(rgb))
+                    rgb = make_float3(0.0f, 0.0f, 0.0f);
                 float lum = sRGB_calcLuminance(rgb);
-                float lumT = simpleToneMap_s(brightnessScale * lum);
-                float s = lumT / lum;
+                float lumT = simpleToneMap_s(config.brightnessScale * lum);
+                float s = lum > 0.0f ? lumT / lum : 0.0f;
                 src.x = rgb.x * s;
                 src.y = rgb.y * s;
                 src.z = rgb.z * s;
             }
-            if (apply_sRGB_gammaCorrection) {
+            if (config.apply_sRGB_gammaCorrection) {
                 src.x = sRGB_gamma_s(src.x);
                 src.y = sRGB_gamma_s(src.y);
                 src.z = sRGB_gamma_s(src.z);
@@ -2272,24 +2547,18 @@ void saveImage(const std::filesystem::path &filepath, uint32_t width, uint32_t h
 
 void saveImage(const std::filesystem::path &filepath,
                uint32_t width, cudau::TypedBuffer<float4> &buffer,
-               float brightnessScale,
-               bool applyToneMap, bool apply_sRGB_gammaCorrection) {
+               const SDRImageSaverConfig &config) {
     Assert(buffer.numElements() % width == 0, "Buffer's length is not divisible by the width.");
     uint32_t height = buffer.numElements() / width;
     auto data = buffer.map();
-    saveImage(filepath, width, height, data,
-              brightnessScale,
-              applyToneMap, apply_sRGB_gammaCorrection);
+    saveImage(filepath, width, height, data, config);
     buffer.unmap();
 }
 
 void saveImage(const std::filesystem::path &filepath,
                cudau::Array &array,
-               float brightnessScale,
-               bool applyToneMap, bool apply_sRGB_gammaCorrection) {
+               const SDRImageSaverConfig &config) {
     auto data = array.map<float4>();
-    saveImage(filepath, array.getWidth(), array.getHeight(), data,
-              brightnessScale,
-              applyToneMap, apply_sRGB_gammaCorrection);
+    saveImage(filepath, array.getWidth(), array.getHeight(), data, config);
     array.unmap();
 }

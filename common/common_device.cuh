@@ -15,16 +15,16 @@ static constexpr float RayEpsilon = 1e-4;
 
 
 
-CUDA_DEVICE_FUNCTION CUDA_INLINE float pow2(float x) {
+CUDA_DEVICE_FUNCTION CUDA_INLINE constexpr float pow2(float x) {
     return x * x;
 }
-CUDA_DEVICE_FUNCTION CUDA_INLINE float pow3(float x) {
+CUDA_DEVICE_FUNCTION CUDA_INLINE constexpr float pow3(float x) {
     return x * x * x;
 }
-CUDA_DEVICE_FUNCTION CUDA_INLINE float pow4(float x) {
+CUDA_DEVICE_FUNCTION CUDA_INLINE constexpr float pow4(float x) {
     return x * x * x * x;
 }
-CUDA_DEVICE_FUNCTION CUDA_INLINE float pow5(float x) {
+CUDA_DEVICE_FUNCTION CUDA_INLINE constexpr float pow5(float x) {
     return x * x * x * x * x;
 }
 
@@ -60,7 +60,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE float absDot(const float3 & a, const float3 & b
     return std::fabs(dot(a, b));
 }
 
-CUDA_DEVICE_FUNCTION CUDA_INLINE void makeCoordinateSystem(const float3 & normal, float3 * tangent, float3 * bitangent) {
+CUDA_DEVICE_FUNCTION CUDA_INLINE void makeCoordinateSystem(
+    const float3 & normal, float3 * tangent, float3 * bitangent) {
     float sign = normal.z >= 0 ? 1 : -1;
     const float a = -1 / (sign + normal.z);
     const float b = normal.x * normal.y * a;
@@ -70,13 +71,15 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void makeCoordinateSystem(const float3 & normal
 
 // JP: 自己交叉回避のためにレイの原点にオフセットを付加する。
 // EN: Add an offset to a ray origin to avoid self-intersection.
-CUDA_DEVICE_FUNCTION CUDA_INLINE float3 offsetRayOriginNaive(const float3 & p, const float3 & geometricNormal) {
+CUDA_DEVICE_FUNCTION CUDA_INLINE float3 offsetRayOriginNaive(
+    const float3 & p, const float3 & geometricNormal) {
     return p + RayEpsilon * geometricNormal;
 }
 
 // Reference:
 // Chapter 6. A Fast and Robust Method for Avoiding Self-Intersection, Ray Tracing Gems, 2019
-CUDA_DEVICE_FUNCTION CUDA_INLINE float3 offsetRayOrigin(const float3 &p, const float3 &geometricNormal) {
+CUDA_DEVICE_FUNCTION CUDA_INLINE float3 offsetRayOrigin(
+    const float3 &p, const float3 &geometricNormal) {
     constexpr float kOrigin = 1.0f / 32.0f;
     constexpr float kFloatScale = 1.0f / 65536.0f;
     constexpr float kIntScale = 256.0f;
@@ -104,6 +107,25 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE float3 offsetRayOrigin(const float3 &p, const f
                        std::fabs(p.z) < kOrigin ? newP2.z : newP1.z);
 }
 
+CUDA_DEVICE_FUNCTION CUDA_INLINE float2 adjustTexCoord(
+    shared::TexDimInfo dimInfo, float2 texCoord) {
+    float2 mTexCoord = texCoord;
+    if (dimInfo.isNonPowerOfTwo && dimInfo.isBCTexture) {
+        uint32_t bcWidth = (dimInfo.dimX + 3) / 4 * 4;
+        uint32_t bcHeight = (dimInfo.dimY + 3) / 4 * 4;
+        mTexCoord.x *= static_cast<float>(dimInfo.dimX) / bcWidth;
+        mTexCoord.y *= static_cast<float>(dimInfo.dimY) / bcHeight;
+    }
+    return mTexCoord;
+}
+
+template <typename T>
+CUDA_DEVICE_FUNCTION CUDA_INLINE T sample(
+    CUtexObject texture, shared::TexDimInfo dimInfo, float2 texCoord) {
+    float2 mTexCoord = adjustTexCoord(dimInfo, texCoord);
+    return tex2DLod<T>(texture, mTexCoord.x, mTexCoord.y, 0.0f);
+}
+
 struct ReferenceFrame {
     float3 tangent;
     float3 bitangent;
@@ -129,7 +151,8 @@ struct ReferenceFrame {
     }
 };
 
-CUDA_DEVICE_FUNCTION CUDA_INLINE void applyBumpMapping(const float3 &modNormalInTF, ReferenceFrame* frameToModify) {
+CUDA_DEVICE_FUNCTION CUDA_INLINE void applyBumpMapping(
+    const float3 &modNormalInTF, ReferenceFrame* frameToModify) {
     // JP: 法線から回転軸と回転角(、Quaternion)を求めて対応する接平面ベクトルを求める。
     // EN: calculate a rotating axis and an angle (and quaternion) from the normal then calculate corresponding tangential vectors.
     float projLength = std::sqrt(modNormalInTF.x * modNormalInTF.x + modNormalInTF.y * modNormalInTF.y);
@@ -153,31 +176,39 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void applyBumpMapping(const float3 &modNormalIn
 }
 
 RT_CALLABLE_PROGRAM float3 RT_DC_NAME(readModifiedNormalFromNormalMap)
-(CUtexObject texture, const float2 &texCoord, uint32_t) {
-    float3 modLocalNormal = make_float3(tex2DLod<float4>(texture, texCoord.x, texCoord.y, 0.0f));
+(CUtexObject texture, shared::TexDimInfo dimInfo, float2 texCoord) {
+    float3 modLocalNormal = make_float3(sample<float4>(texture, dimInfo, texCoord));
     modLocalNormal = 2.0f * modLocalNormal - make_float3(1.0f);
-    modLocalNormal.y *= -1; // DirectX convention
+    if (dimInfo.isLeftHanded)
+        modLocalNormal.y *= -1; // DirectX convention
     return modLocalNormal;
 }
 CUDA_DECLARE_CALLABLE_PROGRAM_POINTER(readModifiedNormalFromNormalMap);
 
 RT_CALLABLE_PROGRAM float3 RT_DC_NAME(readModifiedNormalFromNormalMap2ch)
-(CUtexObject texture, const float2 &texCoord, uint32_t) {
-    float2 texValue = tex2DLod<float2>(texture, texCoord.x, texCoord.y, 0.0f);
+(CUtexObject texture, shared::TexDimInfo dimInfo, float2 texCoord) {
+    float2 texValue = sample<float2>(texture, dimInfo, texCoord);
     texValue = 2.0f * texValue - make_float2(1.0f);
     float z = std::sqrt(1.0f - pow2(texValue.x) - pow2(texValue.y));
     float3 modLocalNormal = make_float3(texValue.x, texValue.y, z);
-    modLocalNormal.y *= -1; // DirectX convention
+    if (dimInfo.isLeftHanded)
+        modLocalNormal.y *= -1; // DirectX convention
     return modLocalNormal;
 }
 CUDA_DECLARE_CALLABLE_PROGRAM_POINTER(readModifiedNormalFromNormalMap2ch);
 
 RT_CALLABLE_PROGRAM float3 RT_DC_NAME(readModifiedNormalFromHeightMap)
-(CUtexObject texture, const float2 &texCoord, uint32_t texDim) {
+(CUtexObject texture, shared::TexDimInfo dimInfo, float2 texCoord) {
+    if (dimInfo.isNonPowerOfTwo && dimInfo.isBCTexture) {
+        uint32_t bcWidth = (dimInfo.dimX + 3) / 4 * 4;
+        uint32_t bcHeight = (dimInfo.dimY + 3) / 4 * 4;
+        texCoord.x *= static_cast<float>(dimInfo.dimX) / bcWidth;
+        texCoord.y *= static_cast<float>(dimInfo.dimY) / bcHeight;
+    }
     float4 heightValues = tex2Dgather<float4>(texture, texCoord.x, texCoord.y, 0);
     constexpr float coeff = (5.0f / 1024);
-    uint32_t width = (texDim >> 0) & 0xFFFF;
-    uint32_t height = (texDim >> 16) & 0xFFFF;
+    uint32_t width = (dimInfo.dimX >> 0) & 0xFFFF;
+    uint32_t height = (dimInfo.dimY >> 16) & 0xFFFF;
     float dhdu = (coeff * width) * (heightValues.y - heightValues.x);
     float dhdv = (coeff * height) * (heightValues.x - heightValues.w);
     float3 modLocalNormal = normalize(make_float3(-dhdu, dhdv, 1));
@@ -232,7 +263,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE float3 cosineSampleHemisphere(float u0, float u
 
 template <typename BSDFType>
 CUDA_DEVICE_FUNCTION CUDA_INLINE void setupBSDFBody(
-    const shared::MaterialData &matData, const float2 &texCoord, uint32_t* bodyData);
+    const shared::MaterialData &matData, float2 texCoord, uint32_t* bodyData);
 
 
 
@@ -278,8 +309,9 @@ public:
 
 template<>
 CUDA_DEVICE_FUNCTION CUDA_INLINE void setupBSDFBody<LambertBRDF>(
-    const shared::MaterialData &matData, const float2 &texCoord, uint32_t* bodyData) {
-    float4 reflectance = tex2DLod<float4>(matData.asLambert.reflectance, texCoord.x, texCoord.y, 0.0f);
+    const shared::MaterialData &matData, float2 texCoord, uint32_t* bodyData) {
+    float4 reflectance = sample<float4>(
+        matData.asLambert.reflectance, matData.asLambert.reflectanceDimInfo, texCoord);
     auto &bsdfBody = *reinterpret_cast<LambertBRDF*>(bodyData);
     bsdfBody = LambertBRDF(make_float3(reflectance.x, reflectance.y, reflectance.z));
 }
@@ -662,25 +694,37 @@ public:
 
 template<>
 CUDA_DEVICE_FUNCTION CUDA_INLINE void setupBSDFBody<DiffuseAndSpecularBRDF>(
-    const shared::MaterialData &matData, const float2 &texCoord, uint32_t* bodyData) {
-    float4 diffuseColor =
-        tex2DLod<float4>(matData.asDiffuseAndSpecular.diffuse, texCoord.x, texCoord.y, 0.0f);
-    float4 specularF0Color =
-        tex2DLod<float4>(matData.asDiffuseAndSpecular.specular, texCoord.x, texCoord.y, 0.0f);
-    float smoothness = tex2DLod<float>(matData.asDiffuseAndSpecular.smoothness, texCoord.x, texCoord.y, 0.0f);
+    const shared::MaterialData &matData, float2 texCoord, uint32_t* bodyData) {
+    float4 diffuseColor = sample<float4>(
+        matData.asDiffuseAndSpecular.diffuse,
+        matData.asDiffuseAndSpecular.diffuseDimInfo,
+        texCoord);
+    float4 specularF0Color = sample<float4>(
+        matData.asDiffuseAndSpecular.specular,
+        matData.asDiffuseAndSpecular.specularDimInfo,
+        texCoord);
+    float smoothness = sample<float>(
+        matData.asDiffuseAndSpecular.smoothness,
+        matData.asDiffuseAndSpecular.smoothnessDimInfo,
+        texCoord);
     auto &bsdfBody = *reinterpret_cast<DiffuseAndSpecularBRDF*>(bodyData);
-    bsdfBody = DiffuseAndSpecularBRDF(make_float3(diffuseColor),
-                                      make_float3(specularF0Color),
-                                      min(smoothness, 0.999f));
+    bsdfBody = DiffuseAndSpecularBRDF(
+        make_float3(diffuseColor),
+        make_float3(specularF0Color),
+        min(smoothness, 0.999f));
 }
 
 template<>
 CUDA_DEVICE_FUNCTION CUDA_INLINE void setupBSDFBody<SimplePBR_BRDF>(
-    const shared::MaterialData &matData, const float2 &texCoord, uint32_t* bodyData) {
-    float4 baseColor_opacity =
-        tex2DLod<float4>(matData.asSimplePBR.baseColor_opacity, texCoord.x, texCoord.y, 0.0f);
-    float4 occlusion_roughness_metallic =
-        tex2DLod<float4>(matData.asSimplePBR.occlusion_roughness_metallic, texCoord.x, texCoord.y, 0.0f);
+    const shared::MaterialData &matData, float2 texCoord, uint32_t* bodyData) {
+    float4 baseColor_opacity = sample<float4>(
+        matData.asSimplePBR.baseColor_opacity,
+        matData.asSimplePBR.baseColor_opacity_dimInfo,
+        texCoord);
+    float4 occlusion_roughness_metallic = sample<float4>(
+        matData.asSimplePBR.occlusion_roughness_metallic,
+        matData.asSimplePBR.occlusion_roughness_metallic_dimInfo,
+        texCoord);
     float3 baseColor = make_float3(baseColor_opacity);
     float smoothness = min(1.0f - occlusion_roughness_metallic.y, 0.999f);
     float metallic = occlusion_roughness_metallic.z;
@@ -730,7 +774,7 @@ DEFINE_BSDF_CALLABLES(DiffuseAndSpecularBRDF);
 
 #define DEFINE_SETUP_BSDF_CALLABLE(BSDFType) \
     RT_CALLABLE_PROGRAM void RT_DC_NAME(setup ## BSDFType)(\
-        const shared::MaterialData &matData, const float2 &texCoord, uint32_t* bodyData) {\
+        const shared::MaterialData &matData, float2 texCoord, uint32_t* bodyData) {\
         setupBSDFBody<BSDFType>(matData, texCoord, bodyData);\
     }\
     CUDA_DECLARE_CALLABLE_PROGRAM_POINTER(setup ## BSDFType)

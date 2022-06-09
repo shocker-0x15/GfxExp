@@ -1,10 +1,124 @@
-﻿#include "../path_tracing_shared.h"
+﻿#include "../svgf_shared.h"
 
 using namespace shared;
 
 CUDA_DEVICE_KERNEL void RT_AH_NAME(visibility)() {
     float visibility = 0.0f;
     VisibilityRayPayloadSignature::set(&visibility);
+}
+
+
+
+struct PreviousResult {
+    float3 noisyLighting;
+    float firstMoment;
+    float secondMoment;
+    SampleInfo sampleInfo;
+};
+
+struct PreviousNeighbor {
+    float3 position;
+    float3 normal;
+    uint32_t instSlot;
+    uint32_t matSlot;
+
+    float3 noisyLighting;
+    float firstMoment;
+    float secondMoment;
+    SampleInfo sampleInfo;
+
+    CUDA_DEVICE_FUNCTION PreviousNeighbor(const int2 &pix) {
+        uint32_t prevBufIdx = (plp.f->bufferIndex + 1) % 2;
+        const StaticPipelineLaunchParameters::TemporalSet &staticTemporalSet =
+            plp.s->temporalSets[prevBufIdx];
+        const PerFramePipelineLaunchParameters::TemporalSet &perFrameTemporalSet =
+            plp.f->temporalSets[prevBufIdx];
+        float depth = perFrameTemporalSet.depthBuffer.read(glPix(pix));
+        GBuffer0 gBuffer0 = perFrameTemporalSet.GBuffer0.read(glPix(pix));
+        GBuffer1 gBuffer1 = perFrameTemporalSet.GBuffer1.read(glPix(pix));
+        GBuffer2 gBuffer2 = perFrameTemporalSet.GBuffer2.read(glPix(pix));
+        position = gBuffer0.positionInWorld;
+        normal = gBuffer1.normalInWorld;
+        instSlot = gBuffer2.instSlot;
+        matSlot = gBuffer2.materialSlot;
+
+        Lighting_Variance lighting_var = plp.s->prevNoisyLightingBuffer.read(pix);
+        noisyLighting = lighting_var.noisyLighting;
+        MomentPair_SampleInfo momentPair_sampleInfo =
+            staticTemporalSet.momentPair_sampleInfo_buffer.read(pix);
+        firstMoment = momentPair_sampleInfo.firstMoment;
+        secondMoment = momentPair_sampleInfo.secondMoment;
+        sampleInfo = momentPair_sampleInfo.sampleInfo;
+    }
+};
+
+CUDA_DEVICE_FUNCTION CUDA_INLINE void reprojectPreviousAccumulation(
+    const float3 &curPosInWorld, const float3 &curNormalInWorld, uint32_t curInstSlot, uint32_t curMatSlot,
+    float2 prevScreenPos,
+    PreviousResult* prevResult) {
+    prevResult->noisyLighting = make_float3(0.0f, 0.0f, 0.0f);
+    prevResult->firstMoment = 0.0f;
+    prevResult->secondMoment = 0.0f;
+    prevResult->sampleInfo = SampleInfo(0, 0);
+
+    bool outOfScreen = (prevScreenPos.x < 0.0f || prevScreenPos.y < 0.0f ||
+                        prevScreenPos.x >= 1.0f || prevScreenPos.y >= 1.0f);
+    if (outOfScreen)
+        return;
+
+    int2 imageSize = plp.s->imageSize;
+
+    float2 prevViewportPos = make_float2(imageSize.x * prevScreenPos.x, imageSize.y * prevScreenPos.y);
+    int2 prevPixPos = make_int2(prevViewportPos);
+
+    int2 ulPos = make_int2(prevPixPos.x, prevPixPos.y);
+    int2 urPos = make_int2(min(prevPixPos.x + 1, imageSize.x - 1), prevPixPos.y);
+    int2 llPos = make_int2(prevPixPos.x, min(prevPixPos.y + 1, imageSize.y - 1));
+    int2 lrPos = make_int2(min(prevPixPos.x + 1, imageSize.x - 1),
+                           min(prevPixPos.y + 1, imageSize.y - 1));
+
+    PreviousNeighbor prevNeighbors[] = {
+        PreviousNeighbor(ulPos),
+        PreviousNeighbor(urPos),
+        PreviousNeighbor(llPos),
+        PreviousNeighbor(lrPos),
+    };
+
+    float sumWeights = 0.0f;
+    float prevFloatSampleCount = 0;
+    uint32_t acceptableFlags = 0;
+    float s = clamp((prevViewportPos.x - 0.5f) - prevPixPos.x, 0.0f, 1.0f);
+    float t = clamp((prevViewportPos.y - 0.5f) - prevPixPos.y, 0.0f, 1.0f);
+
+    const auto testAndAccumulate = [&](uint32_t i, float weight) {
+        const PreviousNeighbor &prevNeighbor = prevNeighbors[i];
+        if (prevNeighbor.instSlot != curInstSlot || prevNeighbor.matSlot != curMatSlot)
+            return;
+        if (dot(prevNeighbor.normal, curNormalInWorld) <= 0.85)
+            return;
+        if (sqLength(prevNeighbor.position - curPosInWorld) > 0.1f)
+            return;
+
+        prevResult->noisyLighting += weight * prevNeighbor.noisyLighting;
+        prevResult->firstMoment += weight * prevNeighbor.firstMoment;
+        prevResult->secondMoment += weight * prevNeighbor.secondMoment;
+        prevFloatSampleCount += weight * prevNeighbor.sampleInfo.count;
+        sumWeights += weight;
+        acceptableFlags |= (1 << i);
+    };
+
+    testAndAccumulate(0, (1 - s) * (1 - t));
+    testAndAccumulate(1, s * (1 - t));
+    testAndAccumulate(2, (1 - s) * t);
+    testAndAccumulate(3, s * t);
+
+    if (sumWeights > 0) {
+        prevResult->noisyLighting /= sumWeights;
+        prevResult->firstMoment /= sumWeights;
+        prevResult->secondMoment /= sumWeights;
+        prevResult->sampleInfo.count = static_cast<uint32_t>(roundf(prevFloatSampleCount / sumWeights));
+        prevResult->sampleInfo.acceptFlags = acceptableFlags;
+    }
 }
 
 
@@ -69,21 +183,25 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE float3 performNextEventEstimation(
     return ret;
 }
 
+template <bool enableTemporalAccumulation>
 CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_rayGen_generic() {
     uint2 launchIndex = make_uint2(optixGetLaunchIndex().x, optixGetLaunchIndex().y);
 
     uint32_t bufIdx = plp.f->bufferIndex;
-    GBuffer0 gBuffer0 = plp.s->GBuffer0[bufIdx].read(launchIndex);
-    GBuffer1 gBuffer1 = plp.s->GBuffer1[bufIdx].read(launchIndex);
-    GBuffer2 gBuffer2 = plp.s->GBuffer2[bufIdx].read(launchIndex);
+    GBuffer0 gBuffer0 = plp.f->temporalSets[bufIdx].GBuffer0.read(glPix(launchIndex));
+    GBuffer1 gBuffer1 = plp.f->temporalSets[bufIdx].GBuffer1.read(glPix(launchIndex));
+    GBuffer2 gBuffer2 = plp.f->temporalSets[bufIdx].GBuffer2.read(glPix(launchIndex));
 
     float3 positionInWorld = gBuffer0.positionInWorld;
     float3 shadingNormalInWorld = gBuffer1.normalInWorld;
     float2 texCoord = make_float2(gBuffer0.texCoord_x, gBuffer1.texCoord_y);
+    float2 prevScreenPos = gBuffer2.prevScreenPos;
+    uint32_t instSlot = gBuffer2.instSlot;
     uint32_t materialSlot = gBuffer2.materialSlot;
 
-    const PerspectiveCamera &camera = plp.f->camera;
+    const PerspectiveCamera &camera = plp.f->temporalSets[bufIdx].camera;
 
+    float3 dhReflectance = make_float3(0.0f, 0.0f, 0.0f);
     bool useEnvLight = plp.s->envLightTexture && plp.f->enableEnvLight;
     float3 contribution = make_float3(0.001f, 0.001f, 0.001f);
     if (materialSlot != 0xFFFFFFFF) {
@@ -118,6 +236,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_rayGen_generic() {
 
             BSDF bsdf;
             bsdf.setup(mat, texCoord);
+
+            dhReflectance = bsdf.evaluateDHReflectanceEstimate(vOutLocal);
 
             // Next event estimation (explicit light sampling) on the first hit.
             contribution += alpha * performNextEventEstimation(
@@ -193,12 +313,58 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_rayGen_generic() {
         }
     }
 
-    float3 prevColorResult = make_float3(0.0f, 0.0f, 0.0f);
-    if (plp.f->numAccumFrames > 0)
-        prevColorResult = getXYZ(plp.s->beautyAccumBuffer.read(launchIndex));
-    float curWeight = 1.0f / (1 + plp.f->numAccumFrames);
-    float3 colorResult = (1 - curWeight) * prevColorResult + curWeight * contribution;
-    plp.s->beautyAccumBuffer.write(launchIndex, make_float4(colorResult, 1.0f));
+    Albedo albedo = {};
+    albedo.dhReflectance = dhReflectance;
+    plp.s->albedoBuffer.write(launchIndex, albedo);
+
+    PreviousResult prevResult;
+    if constexpr (enableTemporalAccumulation) {
+        reprojectPreviousAccumulation(
+            positionInWorld, shadingNormalInWorld, instSlot, materialSlot,
+            prevScreenPos, &prevResult);
+    }
+
+    float3 demCont = safeDivide(contribution, albedo.dhReflectance);
+    float luminance = sRGB_calcLuminance(demCont);
+    float sqLuminance = pow2(luminance);
+
+    if (plp.f->isFirstFrame || !plp.f->enableTemporalAccumulation)
+        prevResult.sampleInfo.asUInt32 = 0;
+    uint32_t sampleCount = min(prevResult.sampleInfo.count + 1, 65535u);
+    if constexpr (enableTemporalAccumulation) {
+        if (sampleCount > 1) {
+            float curWeight = 1.0f / 5; // Exponential Moving Average
+            if (sampleCount < 5) // Cumulative Moving Average
+                curWeight = 1.0f / sampleCount;
+            float prevWeight = 1.0f - curWeight;
+            demCont = prevWeight * prevResult.noisyLighting + curWeight * demCont;
+            luminance = prevWeight * prevResult.firstMoment + curWeight * luminance;
+            sqLuminance = prevWeight * prevResult.secondMoment + curWeight * sqLuminance;
+        }
+    }
+
+    //if (plp.f->mousePosition == launchIndex) {
+    //    printf("%2u (%4u, %4u): norm: (%g, %g, %g) cont: (%g, %g, %g), dem: (%g, %g, %g), %g, %g, %u\n",
+    //           plp.f->frameIndex, launchIndex.x, launchIndex.y,
+    //           vector3Arg(shadingNormalInWorld), vector3Arg(contribution), vector3Arg(demCont),
+    //           luminance, sqLuminance, sampleCount);
+    //}
+
+    Lighting_Variance lighting_var;
+    lighting_var.noisyLighting = demCont;
+    lighting_var.variance = 0.0f;
+    plp.s->lighting_variance_buffers[0].write(launchIndex, lighting_var);
+
+    if constexpr (enableTemporalAccumulation) {
+        if (!plp.f->enableSVGF)
+            plp.s->prevNoisyLightingBuffer.write(launchIndex, lighting_var);
+    }
+
+    MomentPair_SampleInfo moment_sampleInfo = {};
+    moment_sampleInfo.firstMoment = luminance;
+    moment_sampleInfo.secondMoment = sqLuminance;
+    moment_sampleInfo.sampleInfo = SampleInfo(sampleCount, prevResult.sampleInfo.acceptFlags);
+    plp.s->temporalSets[bufIdx].momentPair_sampleInfo_buffer.write(launchIndex, moment_sampleInfo);
 }
 
 CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_closestHit_generic() {
@@ -284,15 +450,19 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_closestHit_generic() {
     rwPayload->terminate = false;
 }
 
-CUDA_DEVICE_KERNEL void RT_RG_NAME(pathTraceBaseline)() {
-    pathTrace_rayGen_generic();
+CUDA_DEVICE_KERNEL void RT_RG_NAME(pathTraceWithoutTemporalAccumulation)() {
+    pathTrace_rayGen_generic<false>();
 }
 
-CUDA_DEVICE_KERNEL void RT_CH_NAME(pathTraceBaseline)() {
+CUDA_DEVICE_KERNEL void RT_RG_NAME(pathTraceWithTemporalAccumulation)() {
+    pathTrace_rayGen_generic<true>();
+}
+
+CUDA_DEVICE_KERNEL void RT_CH_NAME(pathTrace)() {
     pathTrace_closestHit_generic();
 }
 
-CUDA_DEVICE_KERNEL void RT_MS_NAME(pathTraceBaseline)() {
+CUDA_DEVICE_KERNEL void RT_MS_NAME(pathTrace)() {
     if constexpr (useImplicitLightSampling) {
         if (!plp.s->envLightTexture || !plp.f->enableEnvLight)
             return;

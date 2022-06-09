@@ -77,7 +77,7 @@ void devPrintf(const char* fmt, ...);
 
 
 template <typename T, size_t size>
-CUDA_COMMON_FUNCTION CUDA_INLINE constexpr size_t lengthof(const T(&array)[size]) {
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr size_t lengthof(const T (&array)[size]) {
     return size;
 }
 
@@ -288,6 +288,9 @@ CUDA_COMMON_FUNCTION CUDA_INLINE float3 getXYZ(const float4 &v) {
     return make_float3(v.x, v.y, v.z);
 }
 
+CUDA_COMMON_FUNCTION CUDA_INLINE int2 make_int2(const float2 &v) {
+    return make_int2(static_cast<int32_t>(v.x), static_cast<int32_t>(v.y));
+}
 CUDA_COMMON_FUNCTION CUDA_INLINE bool operator==(const int2 &v0, const int2 &v1) {
     return v0.x == v1.x && v0.y == v1.y;
 }
@@ -302,6 +305,9 @@ CUDA_COMMON_FUNCTION CUDA_INLINE bool operator!=(const int2 &v0, const uint2 &v1
 }
 CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator+(const int2 &v0, const uint2 &v1) {
     return make_uint2(v0.x + v1.x, v0.y + v1.y);
+}
+CUDA_COMMON_FUNCTION CUDA_INLINE int2 operator+(const int2 &v0, const int2 &v1) {
+    return make_int2(v0.x + v1.x, v0.y + v1.y);
 }
 CUDA_COMMON_FUNCTION CUDA_INLINE int2 operator*(const int2 &v0, const int2 &v1) {
     return make_int2(v0.x * v1.x, v0.y * v1.y);
@@ -329,6 +335,9 @@ CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator/(const int2 &v0, const uint2 &v1
     return make_uint2(v0.x / v1.x, v0.y / v1.y);
 }
 
+CUDA_COMMON_FUNCTION CUDA_INLINE uint2 make_uint2(const float2 &v) {
+    return make_uint2(static_cast<uint32_t>(v.x), static_cast<uint32_t>(v.y));
+}
 CUDA_COMMON_FUNCTION CUDA_INLINE bool operator==(const uint2 &v0, const uint2 &v1) {
     return v0.x == v1.x && v0.y == v1.y;
 }
@@ -1082,8 +1091,12 @@ struct Matrix4x4 {
         return *this;
     }
 
+    CUDA_COMMON_FUNCTION float4 &operator[](uint32_t c) {
+        //Assert(c < 3, "\"c\" is out of range [0, 3].");
+        return *(&c0 + c);
+    }
     CUDA_COMMON_FUNCTION float4 row(unsigned int r) const {
-        //Assert(r < 3, "\"r\" is out of range [0, 2].");
+        //Assert(r < 3, "\"r\" is out of range [0, 3].");
         switch (r) {
         case 0:
             return make_float4(m00, m01, m02, m03);
@@ -1265,6 +1278,24 @@ CUDA_COMMON_FUNCTION CUDA_INLINE Matrix4x4 translate4x4(const float3 &t) {
 }
 CUDA_COMMON_FUNCTION CUDA_INLINE Matrix4x4 translate4x4(float tx, float ty, float tz) {
     return translate4x4(make_float3(tx, ty, tz));
+}
+
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix4x4 camera(float aspect, float fovY, float near, float far) {
+    Matrix4x4 matrix;
+    float f = 1 / std::tan(fovY / 2);
+    float dz = far - near;
+
+    matrix.m00 = f / aspect;
+    matrix.m11 = f;
+    matrix.m22 = -(near + far) / dz;
+    matrix.m32 = -1;
+    matrix.m23 = -2 * far * near / dz;
+    matrix.m10 = matrix.m20 = matrix.m30 =
+        matrix.m01 = matrix.m21 = matrix.m31 =
+        matrix.m02 = matrix.m12 =
+        matrix.m03 = matrix.m13 = matrix.m33 = 0;
+
+    return matrix;
 }
 
 
@@ -2146,8 +2177,18 @@ namespace shared {
 
 
 
+    struct TexDimInfo {
+        unsigned int dimX : 14;
+        unsigned int dimY : 14;
+        unsigned int isNonPowerOfTwo : 1;
+        unsigned int isBCTexture : 1;
+        unsigned int isLeftHanded : 1; // for normal map
+    };
+
+
+
     using ReadModifiedNormal = DynamicFunction<
-        float3(CUtexObject texture, const float2 &texCoord, uint32_t texDim)>;
+        float3(CUtexObject texture, TexDimInfo dimInfo, float2 texCoord)>;
 
     using BSDFGetSurfaceParameters = DynamicFunction<
         void(const uint32_t* data, float3* diffuseReflectance, float3* specularReflectance, float* roughness)>;
@@ -2177,32 +2218,32 @@ namespace shared {
     struct MaterialData;
 
     using SetupBSDFBody = DynamicFunction<
-        void(const MaterialData &matData, const float2 &texCoord, uint32_t* bodyData)>;
+        void(const MaterialData &matData, float2 texCoord, uint32_t* bodyData)>;
 
     struct MaterialData {
         union {
             struct {
                 CUtexObject reflectance;
+                TexDimInfo reflectanceDimInfo;
             } asLambert;
             struct {
                 CUtexObject diffuse;
                 CUtexObject specular;
                 CUtexObject smoothness;
+                TexDimInfo diffuseDimInfo;
+                TexDimInfo specularDimInfo;
+                TexDimInfo smoothnessDimInfo;
             } asDiffuseAndSpecular;
             struct {
                 CUtexObject baseColor_opacity;
                 CUtexObject occlusion_roughness_metallic;
+                TexDimInfo baseColor_opacity_dimInfo;
+                TexDimInfo occlusion_roughness_metallic_dimInfo;
             } asSimplePBR;
         };
         CUtexObject normal;
         CUtexObject emittance;
-        union {
-            struct {
-                unsigned int normalWidth : 16;
-                unsigned int normalHeight : 16;
-            };
-            uint32_t normalDimension;
-        };
+        TexDimInfo normalDimInfo;
 
         ReadModifiedNormal readModifiedNormal;
 

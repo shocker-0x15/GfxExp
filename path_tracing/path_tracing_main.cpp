@@ -868,23 +868,21 @@ int32_t main(int32_t argc, const char* argv[]) try {
     for (int i = 0; i < g_meshInstInfos.size(); ++i) {
         const MeshInstanceInfo &info = g_meshInstInfos[i];
         const Mesh* mesh = scene.meshes.at(info.name);
-        for (int j = 0; j < mesh->groups.size(); ++j) {
-            const Mesh::Group &group = mesh->groups[j];
+        for (int j = 0; j < mesh->groupInsts.size(); ++j) {
+            const Mesh::GeometryGroupInstance &groupInst = mesh->groupInsts[j];
 
             Matrix4x4 instXfm =
-                Matrix4x4(info.beginScale * info.beginOrientation.toMatrix3x3(), info.beginPosition) *
-                group.transform;
-            Instance* inst = createInstance(gpuEnv.cuContext, &scene, group.geomGroup, instXfm);
+                Matrix4x4(info.beginScale * info.beginOrientation.toMatrix3x3(), info.beginPosition);
+            Instance* inst = createInstance(gpuEnv.cuContext, &scene, groupInst, instXfm);
             scene.insts.push_back(inst);
 
-            scene.initialSceneAabb.unify(instXfm * group.geomGroup->aabb);
+            scene.initialSceneAabb.unify(instXfm * groupInst.transform * groupInst.geomGroup->aabb);
 
             if (info.beginPosition != info.endPosition ||
                 info.beginOrientation != info.endOrientation ||
                 info.beginScale != info.endScale) {
-                // TODO: group.transformを追加のtransformにする？
                 auto controller = new InstanceController(
-                    inst, group.transform,
+                    inst,
                     info.beginScale, info.beginOrientation, info.beginPosition,
                     info.endScale, info.endOrientation, info.endPosition,
                     info.frequency, info.initTime);
@@ -906,7 +904,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
     uint32_t totalNumEmitterPrimitives = 0;
     for (int i = 0; i < scene.insts.size(); ++i) {
         const Instance* inst = scene.insts[i];
-        totalNumEmitterPrimitives += inst->geomGroup->numEmitterPrimitives;
+        totalNumEmitterPrimitives += inst->geomGroupInst.geomGroup->numEmitterPrimitives;
     }
     hpprintf("%u emitter primitives\n", totalNumEmitterPrimitives);
 
@@ -1118,7 +1116,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
     outputTexture.initialize(GL_RGBA32F, renderTargetSizeX, renderTargetSizeY, 1);
     outputArray.initializeFromGLTexture2D(gpuEnv.cuContext, outputTexture.getHandle(),
                                           cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable);
-    outputBufferSurfaceHolder.initialize(&outputArray);
+    outputBufferSurfaceHolder.initialize({ &outputArray });
 
     glu::Sampler outputSampler;
     outputSampler.initialize(glu::Sampler::MinFilter::Nearest, glu::Sampler::MagFilter::Nearest,
@@ -1456,10 +1454,14 @@ int32_t main(int32_t argc, const char* argv[]) try {
                     0, 0, 0, renderTargetSizeX, renderTargetSizeY, 1,
                     GL_RGBA, GL_FLOAT, sizeof(float4) * renderTargetSizeX * renderTargetSizeY, rawImage);
 
-                if (saveSS_LDR)
+                if (saveSS_LDR) {
+                    SDRImageSaverConfig config;
+                    config.brightnessScale = std::pow(10.0f, brightness);
+                    config.applyToneMap = applyToneMapAndGammaCorrection;
+                    config.apply_sRGB_gammaCorrection = applyToneMapAndGammaCorrection;
                     saveImage("output.png", renderTargetSizeX, renderTargetSizeY, rawImage,
-                              std::pow(10.0f, brightness),
-                              applyToneMapAndGammaCorrection, applyToneMapAndGammaCorrection);
+                              config);
+                }
                 if (saveSS_HDR)
                     saveImageHDR("output.exr", renderTargetSizeX, renderTargetSizeY,
                                  std::pow(10.0f, brightness), rawImage);
@@ -1735,7 +1737,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
         // JP: パストレーシングによるシェーディングを実行。
         // EN: Perform shading by path tracing.
         curGPUTimer.pathTrace.start(cuStream);
-        CUDADRV_CHECK(cuMemcpyHtoDAsync(plpOnDevice, &plp, sizeof(plp), cuStream));
         gpuEnv.pathTracing.setEntryPoint(PathTracingEntryPoint::pathTraceBaseline);
         gpuEnv.pathTracing.optixPipeline.launch(
             cuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);
@@ -1810,7 +1811,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
             outputBufferSurfaceHolder.getNext(),
             uint2(renderTargetSizeX, renderTargetSizeY));
 
-        outputBufferSurfaceHolder.endCUDAAccess(cuStream);
+        outputBufferSurfaceHolder.endCUDAAccess(cuStream, true);
 
         curGPUTimer.frame.stop(cuStream);
 
