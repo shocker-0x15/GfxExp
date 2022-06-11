@@ -364,11 +364,6 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_rayGen_generic() {
     lighting_var.variance = 0.0f;
     plp.s->lighting_variance_buffers[0].write(launchIndex, lighting_var);
 
-    if constexpr (enableTemporalAccumulation) {
-        if (!plp.f->enableSVGF)
-            plp.s->prevNoisyLightingBuffer.write(launchIndex, lighting_var);
-    }
-
     MomentPair_SampleInfo moment_sampleInfo = {};
     moment_sampleInfo.firstMoment = luminance;
     moment_sampleInfo.secondMoment = sqLuminance;

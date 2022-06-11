@@ -247,6 +247,8 @@ CUDA_DEVICE_FUNCTION void applyATrousFilter_generic(uint32_t filterStageIndex) {
     // EN: Obtain the current pixel's information.
 
     Lighting_Variance src_lighting_var = src_lighting_variance_buffer.read(pix);
+    if (filterStageIndex == 0 && !plp.f->feedback1stFilteredResult)
+        plp.s->prevNoisyLightingBuffer.write(pix, src_lighting_var);
     float luminance = sRGB_calcLuminance(src_lighting_var.noisyLighting);
 
     float depth = perFrameTemporalSet.depthBuffer.read(glPix(pix));
@@ -323,15 +325,31 @@ CUDA_DEVICE_FUNCTION void applyATrousFilter_generic(uint32_t filterStageIndex) {
     dst_lighting_var.denoisedLighting /= sumWeights;
     dst_lighting_var.variance /= pow2(sumWeights);
 
-    // TODO: Varianceは最終レベルは出力の必要なし。
     dst_lighting_variance_buffer.write(pix, dst_lighting_var);
 
-    if (filterStageIndex == 0)
+    if (filterStageIndex == 0 && plp.f->feedback1stFilteredResult)
         plp.s->prevNoisyLightingBuffer.write(pix, dst_lighting_var);
 }
 
 CUDA_DEVICE_KERNEL void applyATrousFilter_box3x3(uint32_t filterStageIndex) {
     applyATrousFilter_generic<ATrousKernelType_Box3x3>(filterStageIndex);
+}
+
+// for the case where SVGF is disabled and temporal accumulation is enabled.
+CUDA_DEVICE_KERNEL void feedbackNoisyLighting() {
+    int2 launchIndex = make_int2(blockDim.x * blockIdx.x + threadIdx.x,
+                                 blockDim.y * blockIdx.y + threadIdx.y);
+    int2 pix = make_int2(launchIndex.x, launchIndex.y);
+    int2 imageSize = plp.s->imageSize;
+    bool valid = pix.x >= 0 && pix.y >= 0 && pix.x < imageSize.x && pix.y < imageSize.y;
+    if (!valid)
+        return;
+
+    optixu::NativeBlockBuffer2D<Lighting_Variance> &src_lighting_variance_buffer =
+        plp.s->lighting_variance_buffers[0];
+
+    Lighting_Variance lighting_var = src_lighting_variance_buffer.read(pix);
+    plp.s->prevNoisyLightingBuffer.write(launchIndex, lighting_var);
 }
 
 

@@ -206,6 +206,7 @@ namespace shared {
         unsigned int isFirstFrame : 1;
         unsigned int enableTemporalAccumulation : 1;
         unsigned int enableSVGF : 1;
+        unsigned int feedback1stFilteredResult : 1;
         unsigned int enableTemporalAA : 1;
         unsigned int modulateAlbedo : 1;
 
@@ -228,6 +229,8 @@ namespace shared {
 
     enum class BufferToDisplay {
         NoisyBeauty = 0,
+        Variance,
+        FilteredVariance,
         Albedo,
         Normal,
         Flow,

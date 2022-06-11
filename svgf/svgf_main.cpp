@@ -27,6 +27,7 @@ struct GPUEnvironment {
     CUmodule svgfModule;
     cudau::Kernel kernelEstimateVariance;
     cudau::Kernel kernelApplyATrousFilter_box3x3;
+    cudau::Kernel kernelFeedbackNoisyLighting;
     cudau::Kernel kernelApplyAlbedoModulationAndTemporalAntiAliasing;
     CUdeviceptr plpPtrForSvgfModule;
 
@@ -67,6 +68,8 @@ struct GPUEnvironment {
             cudau::Kernel(svgfModule, "estimateVariance", cudau::dim3(8, 8), 0);
         kernelApplyATrousFilter_box3x3 =
             cudau::Kernel(svgfModule, "applyATrousFilter_box3x3", cudau::dim3(8, 8), 0);
+        kernelFeedbackNoisyLighting =
+            cudau::Kernel(svgfModule, "feedbackNoisyLighting", cudau::dim3(8, 8), 0);
         kernelApplyAlbedoModulationAndTemporalAntiAliasing =
             cudau::Kernel(svgfModule, "applyAlbedoModulationAndTemporalAntiAliasing", cudau::dim3(8, 8), 0);
 
@@ -1552,6 +1555,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         static int32_t maxPathLength = 5;
         static bool enableTemporalAccumulation = true;
         static bool enableSVGF = true;
+        static bool feedback1stFilteredResult = true;
         static bool enableTemporalAA = true;
         static bool modulateAlbedo = true;
         static float log2TaaHistoryLength = std::log2(16);
@@ -1606,6 +1610,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
                     resetAccumulation |= ImGui::Checkbox("Temporal Accumulation", &enableTemporalAccumulation);
                     resetAccumulation |= ImGui::Checkbox("SVGF", &enableSVGF);
+                    if (enableSVGF)
+                        ImGui::Checkbox("Feedback 1st filtered result", &feedback1stFilteredResult);
 
                     resetAccumulation |= ImGui::Checkbox("Temporal AA", &enableTemporalAA);
                     ImGui::PushID("TAA History Length");
@@ -1635,6 +1641,10 @@ int32_t main(int32_t argc, const char* argv[]) try {
                     ImGui::Text("Buffer to Display");
                     ImGui::RadioButtonE(
                         "Noisy Beauty", &bufferTypeToDisplay, shared::BufferToDisplay::NoisyBeauty);
+                    ImGui::RadioButtonE(
+                        "Variance", &bufferTypeToDisplay, shared::BufferToDisplay::Variance);
+                    ImGui::RadioButtonE(
+                        "Filtered Variance", &bufferTypeToDisplay, shared::BufferToDisplay::FilteredVariance);
                     ImGui::RadioButtonE(
                         "Albedo", &bufferTypeToDisplay, shared::BufferToDisplay::Albedo);
                     ImGui::RadioButtonE(
@@ -1709,7 +1719,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
         applyToneMapAndGammaCorrection =
             bufferTypeToDisplay == shared::BufferToDisplay::NoisyBeauty ||
-            bufferTypeToDisplay == shared::BufferToDisplay::DenoisedBeauty;
+            bufferTypeToDisplay == shared::BufferToDisplay::DenoisedBeauty ||
+            bufferTypeToDisplay == shared::BufferToDisplay::Variance ||
+            bufferTypeToDisplay == shared::BufferToDisplay::FilteredVariance;
 
 
 
@@ -1781,6 +1793,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         perFramePlp.isFirstFrame = newSequence;
         perFramePlp.enableTemporalAccumulation = enableTemporalAccumulation;
         perFramePlp.enableSVGF = enableSVGF;
+        perFramePlp.feedback1stFilteredResult = feedback1stFilteredResult;
         perFramePlp.enableTemporalAA = enableTemporalAA;
         perFramePlp.modulateAlbedo = modulateAlbedo;
         for (int i = 0; i < lengthof(debugSwitches); ++i)
@@ -1943,6 +1956,16 @@ int32_t main(int32_t argc, const char* argv[]) try {
                 cuStream, gpuEnv.kernelEstimateVariance.calcGridDim(renderTargetSizeX, renderTargetSizeY));
             curGPUTimer.estimateVariance.stop(cuStream);
 
+            if (bufferTypeToDisplay == shared::BufferToDisplay::NoisyBeauty ||
+                bufferTypeToDisplay == shared::BufferToDisplay::Variance) {
+                gpuEnv.kernelDebugVisualize(
+                    cuStream, gpuEnv.kernelDebugVisualize.calcGridDim(renderTargetSizeX, renderTargetSizeY),
+                    bufferTypeToDisplay,
+                    0.5f, std::pow(10.0f, motionVectorScale),
+                    numFilteringStages);
+                CUDADRV_CHECK(cuStreamSynchronize(cuStream));
+            }
+
             //{
             //    glFinish();
             //    CUDADRV_CHECK(cuStreamSynchronize(cuStream));
@@ -1975,6 +1998,12 @@ int32_t main(int32_t argc, const char* argv[]) try {
             curGPUTimer.aTrousFilter.stop(cuStream);
 
             curGPUTimer.denoise.stop(cuStream);
+        }
+        else {
+            if (enableTemporalAccumulation) {
+                gpuEnv.kernelFeedbackNoisyLighting(
+                    cuStream, gpuEnv.kernelFeedbackNoisyLighting.calcGridDim(renderTargetSizeX, renderTargetSizeY));
+            }
         }
 
         //{
@@ -2012,13 +2041,15 @@ int32_t main(int32_t argc, const char* argv[]) try {
         //}
 
         if (bufferTypeToDisplay == shared::BufferToDisplay::Albedo ||
+            bufferTypeToDisplay == shared::BufferToDisplay::FilteredVariance ||
             bufferTypeToDisplay == shared::BufferToDisplay::Normal ||
             bufferTypeToDisplay == shared::BufferToDisplay::Flow ||
             bufferTypeToDisplay == shared::BufferToDisplay::SampleCount) {
             gpuEnv.kernelDebugVisualize(
                 cuStream, gpuEnv.kernelDebugVisualize.calcGridDim(renderTargetSizeX, renderTargetSizeY),
                 bufferTypeToDisplay,
-                0.5f, std::pow(10.0f, motionVectorScale));
+                0.5f, std::pow(10.0f, motionVectorScale),
+                numFilteringStages);
             CUDADRV_CHECK(cuStreamSynchronize(cuStream));
         }
 

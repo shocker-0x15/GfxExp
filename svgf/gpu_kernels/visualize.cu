@@ -5,7 +5,8 @@ using namespace shared;
 
 CUDA_DEVICE_KERNEL void debugVisualize(
     BufferToDisplay bufferToDisplay,
-    float motionVectorOffset, float motionVectorScale) {
+    float motionVectorOffset, float motionVectorScale,
+    uint32_t numFilteringStages) {
     uint2 launchIndex = make_uint2(blockDim.x * blockIdx.x + threadIdx.x,
                                    blockDim.y * blockIdx.y + threadIdx.y);
     int2 pix = make_int2(launchIndex.x, launchIndex.y);
@@ -22,8 +23,31 @@ CUDA_DEVICE_KERNEL void debugVisualize(
 
     float4 color = make_float4(0.0f, 0.0f, 0.0f, 1.0f);
     switch (bufferToDisplay) {
-    case BufferToDisplay::NoisyBeauty:
+    case BufferToDisplay::NoisyBeauty: {
+        Lighting_Variance lighting_var =
+            plp.s->lighting_variance_buffers[0].read(pix);
+        float3 lighting = lighting_var.noisyLighting;
+        if (plp.f->modulateAlbedo) {
+            Albedo albedo = plp.s->albedoBuffer.read(pix);
+            lighting *= albedo.dhReflectance;
+        }
+        color = make_float4(lighting, 1.0f);
         break;
+    }
+    case BufferToDisplay::Variance: {
+        Lighting_Variance lighting_var =
+            plp.s->lighting_variance_buffers[0].read(pix);
+        float stdDev = std::sqrt(lighting_var.variance);
+        color = make_float4(make_float3(stdDev), 1.0f);
+        break;
+    }
+    case BufferToDisplay::FilteredVariance: {
+        Lighting_Variance filtered_lighting_var =
+            plp.s->lighting_variance_buffers[numFilteringStages % 2].read(pix);
+        float stdDev = std::sqrt(filtered_lighting_var.variance);
+        color = make_float4(make_float3(stdDev), 1.0f);
+        break;
+    }
     case BufferToDisplay::Albedo: {
         Albedo albedo = plp.s->albedoBuffer.read(pix);
         color = make_float4(albedo.dhReflectance, 1.0f);
