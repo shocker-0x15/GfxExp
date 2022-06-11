@@ -65,6 +65,7 @@
   </ItemGroup>
   <ItemGroup>
     <CudaCompile Include="..\common\gpu_kernels\compute_light_probs.cu" />
+    <CudaCompile Include="gpu_kernels\visualize.cu" />
     <CudaCompile Include="gpu_kernels\svgf.cu" />
     <CudaCompile Include="gpu_kernels\optix_pathtracing_kernels.cu">
       <GPUDebugInfo Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</GPUDebugInfo>

@@ -28,7 +28,11 @@ struct GPUEnvironment {
     cudau::Kernel kernelEstimateVariance;
     cudau::Kernel kernelApplyATrousFilter_box3x3;
     cudau::Kernel kernelApplyAlbedoModulationAndTemporalAntiAliasing;
-    CUdeviceptr plpPtr;
+    CUdeviceptr plpPtrForSvgfModule;
+
+    CUmodule debugVisualizeModule;
+    cudau::Kernel kernelDebugVisualize;
+    CUdeviceptr plpPtrForDebugVisualizeModule;
 
     template <typename EntryPointType>
     struct Pipeline {
@@ -67,7 +71,17 @@ struct GPUEnvironment {
             cudau::Kernel(svgfModule, "applyAlbedoModulationAndTemporalAntiAliasing", cudau::dim3(8, 8), 0);
 
         size_t plpSize;
-        CUDADRV_CHECK(cuModuleGetGlobal(&plpPtr, &plpSize, svgfModule, "plp"));
+
+        CUDADRV_CHECK(cuModuleGetGlobal(&plpPtrForSvgfModule, &plpSize, svgfModule, "plp"));
+        Assert(sizeof(shared::PipelineLaunchParameters) == plpSize, "Unexpected plp size.");
+
+        CUDADRV_CHECK(cuModuleLoad(
+            &debugVisualizeModule,
+            (getExecutableDirectory() / "svgf/ptxes/visualize.ptx").string().c_str()));
+        kernelDebugVisualize =
+            cudau::Kernel(debugVisualizeModule, "debugVisualize", cudau::dim3(8, 8), 0);
+
+        CUDADRV_CHECK(cuModuleGetGlobal(&plpPtrForDebugVisualizeModule, &plpSize, debugVisualizeModule, "plp"));
         Assert(sizeof(shared::PipelineLaunchParameters) == plpSize, "Unexpected plp size.");
 
         optixContext = optixu::Context::create(cuContext/*, 4, DEBUG_SELECT(true, false)*/);
@@ -165,6 +179,7 @@ struct GPUEnvironment {
 
         optixContext.destroy();
 
+        CUDADRV_CHECK(cuModuleUnload(debugVisualizeModule));
         CUDADRV_CHECK(cuModuleUnload(svgfModule));
 
         CUDADRV_CHECK(cuCtxDestroy(cuContext));
@@ -910,6 +925,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
     cudau::Array lighting_variance_buffers[2];
     cudau::Array prevNoisyLightingBuffer;
     cudau::Array rngBuffer;
+    glu::Texture2D gfxDebugVisualizeBuffer;
+    cudau::Array cuArrayDebugVisualizeBuffer;
+    cudau::InteropSurfaceObjectHolder<2> debugVisualizeBufferInteropHandler;
 
     gBufferSampler.setXyFilterMode(cudau::TextureFilterMode::Point);
     gBufferSampler.setMipMapFilterMode(cudau::TextureFilterMode::Point);
@@ -991,9 +1009,20 @@ int32_t main(int32_t argc, const char* argv[]) try {
             }
             rngBuffer.unmap();
         }
+
+        gfxDebugVisualizeBuffer.initialize(
+            GL_RGBA32F, renderTargetSizeX, renderTargetSizeY, 1);
+        cuArrayDebugVisualizeBuffer.initializeFromGLTexture2D(
+            gpuEnv.cuContext, gfxDebugVisualizeBuffer.getHandle(),
+            cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable);
+        debugVisualizeBufferInteropHandler.initialize({ &cuArrayDebugVisualizeBuffer });
     };
 
     const auto finalizeResolutionDependentBuffers = [&]() {
+        debugVisualizeBufferInteropHandler.finalize();
+        cuArrayDebugVisualizeBuffer.finalize();
+        gfxDebugVisualizeBuffer.finalize();
+
         rngBuffer.finalize();
 
         prevNoisyLightingBuffer.finalize();
@@ -1030,30 +1059,30 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
             temporalSet.gfxGBuffers.finalize();
             temporalSet.gfxGBuffers.initialize(
-                width, height, 2,
-                gBufferFormats, 0b111, lengthof(gBufferFormats),
+                width, height, 1,
+                gBufferFormats, 0, lengthof(gBufferFormats),
                 &depthFormat, false);
             temporalSet.gfxDepthBufferCopy.finalize();
             temporalSet.gfxDepthBufferCopy.initialize(
-                width, height, 2,
-                &depthAlternativeFormat, 0b1, 1,
+                width, height, 1,
+                &depthAlternativeFormat, 0, 1,
                 nullptr, false);
 
             temporalSet.cuArrayGBuffer0.finalize();
             temporalSet.cuArrayGBuffer0.initializeFromGLTexture2D(
-                gpuEnv.cuContext, temporalSet.gfxGBuffers.getRenderTargetTexture(0, i).getHandle(),
+                gpuEnv.cuContext, temporalSet.gfxGBuffers.getRenderTargetTexture(0, 0).getHandle(),
                 cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable);
             temporalSet.cuArrayGBuffer1.finalize();
             temporalSet.cuArrayGBuffer1.initializeFromGLTexture2D(
-                gpuEnv.cuContext, temporalSet.gfxGBuffers.getRenderTargetTexture(1, i).getHandle(),
+                gpuEnv.cuContext, temporalSet.gfxGBuffers.getRenderTargetTexture(1, 0).getHandle(),
                 cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable);
             temporalSet.cuArrayGBuffer2.finalize();
             temporalSet.cuArrayGBuffer2.initializeFromGLTexture2D(
-                gpuEnv.cuContext, temporalSet.gfxGBuffers.getRenderTargetTexture(2, i).getHandle(),
+                gpuEnv.cuContext, temporalSet.gfxGBuffers.getRenderTargetTexture(2, 0).getHandle(),
                 cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable);
             temporalSet.cuArrayDepthBuffer.finalize();
             temporalSet.cuArrayDepthBuffer.initializeFromGLTexture2D(
-                gpuEnv.cuContext, temporalSet.gfxDepthBufferCopy.getRenderTargetTexture(0, i).getHandle(),
+                gpuEnv.cuContext, temporalSet.gfxDepthBufferCopy.getRenderTargetTexture(0, 0).getHandle(),
                 cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable);
 
             temporalSet.cuArray_momentPair_sampleInfo_buffer.finalize();
@@ -1063,8 +1092,10 @@ int32_t main(int32_t argc, const char* argv[]) try {
                 cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable,
                 renderTargetSizeX, renderTargetSizeY, 1);
 
+            temporalSet.gfxFinalLightingBuffer.finalize();
             temporalSet.gfxFinalLightingBuffer.initialize(
                 GL_RGBA32F, renderTargetSizeX, renderTargetSizeY, 1);
+            temporalSet.cuArrayFinalLightingBuffer.finalize();
             temporalSet.cuArrayFinalLightingBuffer.initializeFromGLTexture2D(
                 gpuEnv.cuContext, temporalSet.gfxFinalLightingBuffer.getHandle(),
                 cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable);
@@ -1088,6 +1119,15 @@ int32_t main(int32_t argc, const char* argv[]) try {
             }
             rngBuffer.unmap();
         }
+
+        gfxDebugVisualizeBuffer.finalize();
+        gfxDebugVisualizeBuffer.initialize(
+            GL_RGBA32F, renderTargetSizeX, renderTargetSizeY, 1);
+        cuArrayDebugVisualizeBuffer.finalize();
+        cuArrayDebugVisualizeBuffer.initializeFromGLTexture2D(
+            gpuEnv.cuContext, gfxDebugVisualizeBuffer.getHandle(),
+            cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable);
+        debugVisualizeBufferInteropHandler.initialize({ &cuArrayDebugVisualizeBuffer });
     };
 
     initializeResolutionDependentBuffers();
@@ -1227,6 +1267,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
         cudau::Timer setupGBuffers;
         cudau::Timer pathTrace;
         cudau::Timer denoise;
+        cudau::Timer estimateVariance;
+        cudau::Timer aTrousFilter;
+        cudau::Timer temporalAA;
 
         void initialize(CUcontext context) {
             frame.initialize(context);
@@ -1235,8 +1278,14 @@ int32_t main(int32_t argc, const char* argv[]) try {
             setupGBuffers.initialize(context);
             pathTrace.initialize(context);
             denoise.initialize(context);
+            estimateVariance.initialize(context);
+            aTrousFilter.initialize(context);
+            temporalAA.initialize(context);
         }
         void finalize() {
+            estimateVariance.finalize();
+            aTrousFilter.finalize();
+            temporalAA.finalize();
             denoise.finalize();
             pathTrace.finalize();
             setupGBuffers.finalize();
@@ -1255,6 +1304,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
         perFramePlp.temporalSets[0].camera.fovY,
         cameraNear, cameraFar);
     matW2Vs[0] = inverse(Matrix4x4((g_cameraOrientation * qRotateY(M_PI)).toMatrix3x3(), g_cameraPosition));
+    matV2Cs[1] = matV2Cs[0];
+    matW2Vs[1] = matW2Vs[0];
 
     GPUTimer gpuTimers[2];
     gpuTimers[0].initialize(gpuEnv.cuContext);
@@ -1264,8 +1315,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
     int32_t requestedSize[2];
     uint32_t numAccumFrames = 0;
     while (true) {
-        uint32_t curBufIdx = frameIndex % 2;
-        uint32_t prevBufIdx = (frameIndex + 1) % 2;
+        const uint32_t curBufIdx = frameIndex % 2;
+        const uint32_t prevBufIdx = (frameIndex + 1) % 2;
 
         TemporalSet &curTemporalSet = temporalSets[curBufIdx];
         TemporalSet &prevTemporalSet = temporalSets[prevBufIdx];
@@ -1325,6 +1376,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
                 curPerFrameTemporalSet.camera.aspect,
                 curPerFrameTemporalSet.camera.fovY,
                 cameraNear, cameraFar);
+            prevMatV2C = curMatV2C;
 
             CUDADRV_CHECK(cuMemcpyHtoD(staticPlpOnDevice, &staticPlp, sizeof(staticPlp)));
 
@@ -1422,7 +1474,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         bool resetAccumulation = false;
         
         // Camera Window
-        static shared::BufferToDisplay bufferTypeToDisplay = shared::BufferToDisplay::NoisyBeauty;
+        static shared::BufferToDisplay bufferTypeToDisplay = shared::BufferToDisplay::DenoisedBeauty;
         static bool applyToneMapAndGammaCorrection = true;
         static float brightness = g_initBrightness;
         static bool enableEnvLight = true;
@@ -1457,23 +1509,27 @@ int32_t main(int32_t argc, const char* argv[]) try {
             if (ImGui::Button("Both"))
                 saveSS_LDR = saveSS_HDR = true;
             if (saveSS_LDR || saveSS_HDR) {
+                glFinish();
                 CUDADRV_CHECK(cuStreamSynchronize(cuStream));
                 auto rawImage = new float4[renderTargetSizeX * renderTargetSizeY];
-                //glGetTextureSubImage(
-                //    outputTexture.getHandle(), 0,
-                //    0, 0, 0, renderTargetSizeX, renderTargetSizeY, 1,
-                //    GL_RGBA, GL_FLOAT, sizeof(float4) * renderTargetSizeX * renderTargetSizeY, rawImage);
+                glu::Texture2D &texToDisplay = bufferTypeToDisplay == shared::BufferToDisplay::DenoisedBeauty ?
+                    curTemporalSet.gfxFinalLightingBuffer : gfxDebugVisualizeBuffer;
+                glGetTextureSubImage(
+                    texToDisplay.getHandle(), 0,
+                    0, 0, 0, renderTargetSizeX, renderTargetSizeY, 1,
+                    GL_RGBA, GL_FLOAT, sizeof(float4) * renderTargetSizeX * renderTargetSizeY, rawImage);
 
                 if (saveSS_LDR) {
                     SDRImageSaverConfig config;
                     config.brightnessScale = std::pow(10.0f, brightness);
                     config.applyToneMap = applyToneMapAndGammaCorrection;
                     config.apply_sRGB_gammaCorrection = applyToneMapAndGammaCorrection;
+                    config.flipY = true;
                     saveImage("output.png", renderTargetSizeX, renderTargetSizeY, rawImage, config);
                 }
                 if (saveSS_HDR)
                     saveImageHDR("output.exr", renderTargetSizeX, renderTargetSizeY,
-                                 std::pow(10.0f, brightness), rawImage);
+                                 std::pow(10.0f, brightness), rawImage, true);
                 delete[] rawImage;
             }
 
@@ -1579,9 +1635,14 @@ int32_t main(int32_t argc, const char* argv[]) try {
                     ImGui::Text("Buffer to Display");
                     ImGui::RadioButtonE(
                         "Noisy Beauty", &bufferTypeToDisplay, shared::BufferToDisplay::NoisyBeauty);
-                    ImGui::RadioButtonE("Albedo", &bufferTypeToDisplay, shared::BufferToDisplay::Albedo);
-                    ImGui::RadioButtonE("Normal", &bufferTypeToDisplay, shared::BufferToDisplay::Normal);
-                    ImGui::RadioButtonE("Motion Vector", &bufferTypeToDisplay, shared::BufferToDisplay::Flow);
+                    ImGui::RadioButtonE(
+                        "Albedo", &bufferTypeToDisplay, shared::BufferToDisplay::Albedo);
+                    ImGui::RadioButtonE(
+                        "Normal", &bufferTypeToDisplay, shared::BufferToDisplay::Normal);
+                    ImGui::RadioButtonE(
+                        "Motion Vector", &bufferTypeToDisplay, shared::BufferToDisplay::Flow);
+                    ImGui::RadioButtonE(
+                        "Sample Count", &bufferTypeToDisplay, shared::BufferToDisplay::SampleCount);
                     ImGui::RadioButtonE(
                         "Denoised Beauty", &bufferTypeToDisplay, shared::BufferToDisplay::DenoisedBeauty);
                     ImGui::SliderFloat("Motion Vector Scale", &motionVectorScale, -2.0f, 2.0f);
@@ -1616,6 +1677,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
             static MovingAverageTime setupGBuffersTime;
             static MovingAverageTime pathTraceTime;
             static MovingAverageTime denoiseTime;
+            static MovingAverageTime estimateVarianceTime;
+            static MovingAverageTime aTrousFilterTime;
+            static MovingAverageTime temporalAATime;
 
             cudaFrameTime.append(curGPUTimer.frame.report());
             updateTime.append(curGPUTimer.update.report());
@@ -1623,6 +1687,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
             setupGBuffersTime.append(curGPUTimer.setupGBuffers.report());
             pathTraceTime.append(curGPUTimer.pathTrace.report());
             denoiseTime.append(curGPUTimer.denoise.report());
+            estimateVarianceTime.append(curGPUTimer.estimateVariance.report());
+            aTrousFilterTime.append(curGPUTimer.aTrousFilter.report());
+            temporalAATime.append(curGPUTimer.temporalAA.report());
 
             //ImGui::SetNextItemWidth(100.0f);
             ImGui::Text("CUDA/OptiX GPU %.3f [ms]:", cudaFrameTime.getAverage());
@@ -1630,8 +1697,10 @@ int32_t main(int32_t argc, const char* argv[]) try {
             ImGui::Text("  Compute PDF Texture: %.3f [ms]", computePDFTextureTime.getAverage());
             ImGui::Text("  Setup G-Buffers: %.3f [ms]", setupGBuffersTime.getAverage());
             ImGui::Text("  Path Trace: %.3f [ms]", pathTraceTime.getAverage());
-            if (bufferTypeToDisplay == shared::BufferToDisplay::DenoisedBeauty)
-                ImGui::Text("  Denoise: %.3f [ms]", denoiseTime.getAverage());
+            ImGui::Text("  Denoise: %.3f [ms]", denoiseTime.getAverage());
+            ImGui::Text("    Estimate Variance: %.3f [ms]", estimateVarianceTime.getAverage());
+            ImGui::Text("    A-Trous Filter: %.3f [ms]", aTrousFilterTime.getAverage());
+            ImGui::Text("  Temporal AA: %.3f [ms]", temporalAATime.getAverage());
 
             ImGui::Text("%u [spp]", std::min(numAccumFrames + 1, (1u << log2MaxNumAccums)));
 
@@ -1717,8 +1786,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
         for (int i = 0; i < lengthof(debugSwitches); ++i)
             perFramePlp.setDebugSwitch(i, debugSwitches[i]);
 
-        prevMatW2V = curMatW2V;
-        prevMatV2C = curMatV2C;
         curMatW2V = inverse(Matrix4x4((g_tempCameraOrientation * qRotateY(M_PI)).toMatrix3x3(), g_cameraPosition));
 
         float2 curSubPixelOffset = { 0.5f, 0.5f };
@@ -1831,6 +1898,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
         curTemporalSet.depthBufferInteropHandler.beginCUDAAccess(cuStream);
         curTemporalSet.finalLightingBufferInteropHandler.beginCUDAAccess(cuStream);
 
+        debugVisualizeBufferInteropHandler.beginCUDAAccess(cuStream);
+
         prevPerFrameTemporalSet.GBuffer0 = prevTemporalSet.gBuffer0InteropHandler.getNext();
         prevPerFrameTemporalSet.GBuffer1 = prevTemporalSet.gBuffer1InteropHandler.getNext();
         prevPerFrameTemporalSet.GBuffer2 = prevTemporalSet.gBuffer2InteropHandler.getNext();
@@ -1843,8 +1912,13 @@ int32_t main(int32_t argc, const char* argv[]) try {
         curPerFrameTemporalSet.depthBuffer = curTemporalSet.depthBufferInteropHandler.getNext();
         curPerFrameTemporalSet.finalLightingBuffer = curTemporalSet.finalLightingBufferInteropHandler.getNext();
 
+        perFramePlp.debugVisualizeBuffer = debugVisualizeBufferInteropHandler.getNext();
+
         CUDADRV_CHECK(cuMemcpyHtoDAsync(plpOnDevice, &plp, sizeof(plp), cuStream)); // for OptiX
-        CUDADRV_CHECK(cuMemcpyHtoDAsync(gpuEnv.plpPtr, &plp, sizeof(plp), cuStream)); // for pure CUDA
+        // for pure CUDA
+        CUDADRV_CHECK(cuMemcpyHtoDAsync(gpuEnv.plpPtrForSvgfModule, &plp, sizeof(plp), cuStream));
+        CUDADRV_CHECK(cuMemcpyHtoDAsync(gpuEnv.plpPtrForDebugVisualizeModule, &plp, sizeof(plp), cuStream));
+
         CUDADRV_CHECK(cuMemcpyHtoDAsync(perFramePlpOnDevice, &perFramePlp, sizeof(perFramePlp), cuStream));
 
         // JP: パストレーシングによるシェーディングを実行。
@@ -1860,10 +1934,14 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
         constexpr uint32_t numFilteringStages = 5;
         if (enableSVGF) {
+            curGPUTimer.denoise.start(cuStream);
+
             // JP:
             // EN:
+            curGPUTimer.estimateVariance.start(cuStream);
             gpuEnv.kernelEstimateVariance(
                 cuStream, gpuEnv.kernelEstimateVariance.calcGridDim(renderTargetSizeX, renderTargetSizeY));
+            curGPUTimer.estimateVariance.stop(cuStream);
 
             //{
             //    glFinish();
@@ -1888,11 +1966,15 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
             // JP:
             // EN:
+            curGPUTimer.aTrousFilter.start(cuStream);
             for (uint32_t filterStageIndex = 0; filterStageIndex < numFilteringStages; ++filterStageIndex) {
                 gpuEnv.kernelApplyATrousFilter_box3x3(
                     cuStream, gpuEnv.kernelApplyATrousFilter_box3x3.calcGridDim(renderTargetSizeX, renderTargetSizeY),
                     filterStageIndex);
             }
+            curGPUTimer.aTrousFilter.stop(cuStream);
+
+            curGPUTimer.denoise.stop(cuStream);
         }
 
         //{
@@ -1909,9 +1991,11 @@ int32_t main(int32_t argc, const char* argv[]) try {
         //    }
         //}
 
+        curGPUTimer.temporalAA.start(cuStream);
         gpuEnv.kernelApplyAlbedoModulationAndTemporalAntiAliasing(
             cuStream, gpuEnv.kernelApplyAlbedoModulationAndTemporalAntiAliasing.calcGridDim(renderTargetSizeX, renderTargetSizeY),
             numFilteringStages);
+        curGPUTimer.temporalAA.stop(cuStream);
 
         //{
         //    glFinish();
@@ -1926,6 +2010,19 @@ int32_t main(int32_t argc, const char* argv[]) try {
         //        curTemporalSet.cuArrayFinalLightingBuffer.unmap();
         //    }
         //}
+
+        if (bufferTypeToDisplay == shared::BufferToDisplay::Albedo ||
+            bufferTypeToDisplay == shared::BufferToDisplay::Normal ||
+            bufferTypeToDisplay == shared::BufferToDisplay::Flow ||
+            bufferTypeToDisplay == shared::BufferToDisplay::SampleCount) {
+            gpuEnv.kernelDebugVisualize(
+                cuStream, gpuEnv.kernelDebugVisualize.calcGridDim(renderTargetSizeX, renderTargetSizeY),
+                bufferTypeToDisplay,
+                0.5f, std::pow(10.0f, motionVectorScale));
+            CUDADRV_CHECK(cuStreamSynchronize(cuStream));
+        }
+
+        debugVisualizeBufferInteropHandler.endCUDAAccess(cuStream, true);
 
         curTemporalSet.finalLightingBufferInteropHandler.endCUDAAccess(cuStream, true);
         curTemporalSet.depthBufferInteropHandler.endCUDAAccess(cuStream, true);
@@ -1954,12 +2051,14 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
         glUseProgram(drawResultShader.getHandle());
 
-        glBindTextureUnit(0, curTemporalSet.gfxFinalLightingBuffer.getHandle());
+        glu::Texture2D &texToDisplay = bufferTypeToDisplay == shared::BufferToDisplay::DenoisedBeauty ?
+            curTemporalSet.gfxFinalLightingBuffer : gfxDebugVisualizeBuffer;
+        glBindTextureUnit(0, texToDisplay.getHandle());
         glBindSampler(0, outputSampler.getHandle());
         glUniform1f(1, std::pow(10.0f, brightness));
         uint32_t flags =
             (applyToneMapAndGammaCorrection ? 1 : 0);
-        glUniform1i(2, flags);
+        glUniform1ui(2, flags);
 
         glBindVertexArray(vertexArrayForFullScreen.getHandle());
         glDrawArrays(GL_TRIANGLES, 0, 3);

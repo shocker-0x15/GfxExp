@@ -90,6 +90,15 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void reprojectPreviousAccumulation(
     float s = clamp((prevViewportPos.x - 0.5f) - prevPixPos.x, 0.0f, 1.0f);
     float t = clamp((prevViewportPos.y - 0.5f) - prevPixPos.y, 0.0f, 1.0f);
 
+    //{
+    //    uint2 launchIndex = make_uint2(optixGetLaunchIndex().x, optixGetLaunchIndex().y);
+    //    if (launchIndex == plp.f->mousePosition) {
+    //        printf("m: %4u, %4u, prev: %6.1f, %6.1f: %.3f, %.3f\n",
+    //               vector2Arg(launchIndex), vector2Arg(prevViewportPos),
+    //               s, t);
+    //    }
+    //}
+
     const auto testAndAccumulate = [&](uint32_t i, float weight) {
         const PreviousNeighbor &prevNeighbor = prevNeighbors[i];
         if (prevNeighbor.instSlot != curInstSlot || prevNeighbor.matSlot != curMatSlot)

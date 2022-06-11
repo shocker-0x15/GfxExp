@@ -95,6 +95,7 @@ namespace shared {
 
 
     struct GBuffer0 {
+        // TODO: 位置はデプスなどから復元したほうが効率的。
         float3 positionInWorld;
         float texCoord_x;
     };
@@ -183,6 +184,7 @@ namespace shared {
         };
 
         TemporalSet temporalSets[2];
+        optixu::NativeBlockBuffer2D<float4> debugVisualizeBuffer;
 
         OptixTraversableHandle travHandle;
         uint32_t numAccumFrames;
@@ -229,6 +231,7 @@ namespace shared {
         Albedo,
         Normal,
         Flow,
+        SampleCount,
         DenoisedBeauty,
     };
 
@@ -537,7 +540,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void computeSurfacePoint(
 
     // JP: ヒットポイントのローカル座標中の各値を計算する。
     // EN: Compute hit point properties in the local coordinates.
-    float3 position = b0 * p[0] + b1 * p[1] + b2 * p[2];
+    *positionInWorld = b0 * p[0] + b1 * p[1] + b2 * p[2];
     float3 shadingNormal = b0 * v0.normal + b1 * v1.normal + b2 * v2.normal;
     float3 texCoord0Dir = b0 * v0.texCoord0Dir + b1 * v1.texCoord0Dir + b2 * v2.texCoord0Dir;
     float3 geometricNormal = cross(p[1] - p[0], p[2] - p[0]);
@@ -550,7 +553,6 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void computeSurfacePoint(
 
     // JP: ローカル座標中の値をワールド座標中の値へと変換する。
     // EN: Convert the local properties to ones in world coordinates.
-    *positionInWorld = optixTransformPointFromObjectToWorldSpace(position);
     *shadingNormalInWorld = normalize(optixTransformNormalFromObjectToWorldSpace(shadingNormal));
     *texCoord0DirInWorld = normalize(optixTransformVectorFromObjectToWorldSpace(texCoord0Dir));
     *geometricNormalInWorld = normalize(geometricNormal);

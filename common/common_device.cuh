@@ -207,8 +207,8 @@ RT_CALLABLE_PROGRAM float3 RT_DC_NAME(readModifiedNormalFromHeightMap)
     }
     float4 heightValues = tex2Dgather<float4>(texture, texCoord.x, texCoord.y, 0);
     constexpr float coeff = (5.0f / 1024);
-    uint32_t width = (dimInfo.dimX >> 0) & 0xFFFF;
-    uint32_t height = (dimInfo.dimY >> 16) & 0xFFFF;
+    uint32_t width = dimInfo.dimX;
+    uint32_t height = dimInfo.dimY;
     float dhdu = (coeff * width) * (heightValues.y - heightValues.x);
     float dhdv = (coeff * height) * (heightValues.x - heightValues.w);
     float3 modLocalNormal = normalize(make_float3(-dhdu, dhdv, 1));

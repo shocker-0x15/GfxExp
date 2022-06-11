@@ -214,7 +214,12 @@ template <ATrousKernelType kernelType>
 CUDA_DEVICE_FUNCTION void applyATrousFilter_generic(uint32_t filterStageIndex) {
     int2 launchIndex = make_int2(blockDim.x * blockIdx.x + threadIdx.x,
                                  blockDim.y * blockIdx.y + threadIdx.y);
+    int2 pix = make_int2(launchIndex.x, launchIndex.y);
     int2 imageSize = plp.s->imageSize;
+    bool valid = pix.x >= 0 && pix.y >= 0 && pix.x < imageSize.x && pix.y < imageSize.y;
+    if (!valid)
+        return;
+
     constexpr int32_t stepWidths[] = {
 #if 1
         1, 2, 4, 8, 16,
@@ -223,10 +228,6 @@ CUDA_DEVICE_FUNCTION void applyATrousFilter_generic(uint32_t filterStageIndex) {
 #endif
     };
     const int32_t stepWidth = stepWidths[filterStageIndex];
-    int2 pix = make_int2(launchIndex.x, launchIndex.y);
-    bool valid = pix.x >= 0 && pix.y >= 0 && pix.x < imageSize.x && pix.y < imageSize.y;
-    if (!valid)
-        return;
 
     uint32_t curBufIdx = plp.f->bufferIndex;
     //const StaticPipelineLaunchParameters::TemporalSet &staticTemporalSet =
@@ -359,6 +360,16 @@ CUDA_DEVICE_FUNCTION void reprojectPreviousAccumulation(
     float s = clamp((prevViewportPos.x - 0.5f) - prevPixPos.x, 0.0f, 1.0f);
     float t = clamp((prevViewportPos.y - 0.5f) - prevPixPos.y, 0.0f, 1.0f);
 
+    //{
+    //    int2 launchIndex = make_int2(blockDim.x * blockIdx.x + threadIdx.x,
+    //                                 blockDim.y * blockIdx.y + threadIdx.y);
+    //    if (launchIndex == plp.f->mousePosition) {
+    //        printf("m: %4u, %4u, prev: %6.1f, %6.1f: %.3f, %.3f\n",
+    //               vector2Arg(launchIndex), vector2Arg(prevViewportPos),
+    //               s, t);
+    //    }
+    //}
+
     // Upper Left
     {
         float weight = (1 - s) * (1 - t);
@@ -452,7 +463,7 @@ CUDA_DEVICE_KERNEL void applyAlbedoModulationAndTemporalAntiAliasing(uint32_t nu
         }
         float3 nbMin = 0.5f * (nbBoxMin + nbCrossMin);
         float3 nbMax = 0.5f * (nbBoxMax + nbCrossMax);
-        prevFinalLighting = clamp(prevFinalLighting, nbMax, nbMax);
+        prevFinalLighting = clamp(prevFinalLighting, nbMin, nbMax);
 
         float curWeight = 1.0f / plp.f->taaHistoryLength; // Exponential Moving Average
         //if (sampleCount < plp.f->taaHistoryLength) // Cumulative Moving Average

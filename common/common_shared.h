@@ -457,6 +457,18 @@ CUDA_COMMON_FUNCTION CUDA_INLINE float2 operator*(float s, const float2 &v) {
 CUDA_COMMON_FUNCTION CUDA_INLINE float2 operator*(const float2 &v, float s) {
     return make_float2(s * v.x, s * v.y);
 }
+CUDA_COMMON_FUNCTION CUDA_INLINE float2 operator*(const int2 &v0, const float2 &v1) {
+    return make_float2(v0.x * v1.x, v0.y * v1.y);
+}
+CUDA_COMMON_FUNCTION CUDA_INLINE float2 operator*(const float2 &v0, const int2 &v1) {
+    return make_float2(v0.x * v1.x, v0.y * v1.y);
+}
+CUDA_COMMON_FUNCTION CUDA_INLINE float2 operator/(const float2 &v0, const float2 &v1) {
+    return make_float2(v0.x / v1.x, v0.y / v1.y);
+}
+CUDA_COMMON_FUNCTION CUDA_INLINE float2 operator/(const float2 &v0, const int2 &v1) {
+    return make_float2(v0.x / v1.x, v0.y / v1.y);
+}
 CUDA_COMMON_FUNCTION CUDA_INLINE float2 operator/(const float2 &v, float s) {
     float r = 1 / s;
     return r * v;
@@ -1469,6 +1481,7 @@ struct AABB {
 //#define USE_HARD_CODED_BSDF_FUNCTIONS
 #define HARD_CODED_BSDF DiffuseAndSpecularBRDF
 //#define HARD_CODED_BSDF SimplePBR_BRDF
+//#define HARD_CODED_BSDF LambertBRDF
 
 #define USE_PROBABILITY_TEXTURE 0
 

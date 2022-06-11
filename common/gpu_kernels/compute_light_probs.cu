@@ -31,7 +31,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE float computeTriangleImportance(
     };
 
     float3 normal = cross(v[1].position - v[0].position, v[2].position - v[0].position);
-    float area = length(normal);
+    float area = 0.5f * length(normal);
 
     // TODO: もっと正確な、少なくとも保守的な推定の実装。テクスチャー空間中の面積に応じてMIPレベルを選択する？
     float3 emittanceEstimate = make_float3(0.0f, 0.0f, 0.0f);
