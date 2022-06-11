@@ -6,12 +6,12 @@ file(
 
 set(
     CUDA_KERNELS
-    "gpu_kernels/copy_buffers.cu"
+    "gpu_kernels/svgf.cu"
+    "gpu_kernels/visualize.cu"
 )
 
 set(
     OPTIX_KERNELS
-    "gpu_kernels/optix_gbuffer_kernels.cu"
     "gpu_kernels/optix_pathtracing_kernels.cu"
 )
 
@@ -23,6 +23,16 @@ set(
     "../common/common_shared.h"
     "../common/common_device.cuh"
     "${TARGET_NAME}_shared.h"
+)
+
+file(
+    GLOB_RECURSE SHADERS
+    "shaders/*")
+
+copy_files(
+    SOURCES ${SHADERS}
+    TARGET_PATH "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${CMAKE_CFG_INTDIR}/${TARGET_NAME}/shaders"
+    GENERATED_FILES COPIED_SHADERS
 )
 
 nvcuda_compile_ptx(
@@ -64,6 +74,9 @@ source_group(
 source_group(
     "essentials/GPU kernels" REGULAR_EXPRESSION
     "${CMAKE_CURRENT_SOURCE_DIR}/gpu_kernels/[^/]*\.(cu)$")
+source_group(
+    "essentials/shaders" REGULAR_EXPRESSION
+    "${CMAKE_CURRENT_SOURCE_DIR}/shaders/[^/]*\..*$")
 
 add_executable(
     "${TARGET_NAME}"
@@ -71,6 +84,7 @@ add_executable(
     ${SOURCES}
     ${CUDA_KERNELS}
     ${OPTIX_KERNELS}
+    ${SHADERS}
 )
 target_compile_features("${TARGET_NAME}" PRIVATE cxx_std_20)
 set_target_properties("${TARGET_NAME}" PROPERTIES CXX_EXTENSIONS OFF)
