@@ -18,7 +18,7 @@ JP: このプログラムはSVGF (Spatiotemporal Variance-Guided Filtering) [1]�
     またSVGFとは基本的には直交する概念ですが、ライトトランスポートにおけるサンプルのTemporal Accumulation、
     最終レンダリングのTemporal Anti-Aliasingも併用することで画像の安定性を向上させています。
     ※デフォルトではBRDFにOptiXのCallable ProgramやCUDAの関数ポインターを使用した汎用的な実装になっており、
-      性能上のオーバーヘッドが著しいため、純粋な性能を見る上では restir_shared.h の USE_HARD_CODED_BSDF_FUNCTIONS
+      性能上のオーバーヘッドが著しいため、純粋な性能を見る上では common_shared.h の USE_HARD_CODED_BSDF_FUNCTIONS
       を有効化したほうがよいかもしれません。
 
 EN: This program is an example implementation of SVGF (Spatiotemporal Variance-Guided Filtering) [1].
@@ -32,7 +32,7 @@ EN: This program is an example implementation of SVGF (Spatiotemporal Variance-G
     orthogonally concept to the SVGF.
     * The program is generic implementation with OptiX's callable program and CUDA's function pointer,
       and has significant performance overhead, therefore it may be recommended to enable USE_HARD_CODED_BSDF_FUNCTIONS
-      in restir_shared.h to see pure performance.
+      in common_shared.h to see pure performance.
 
 [1] Spatiotemporal Variance-Guided Filtering: Real-Time Reconstruction for Path-Traced Global Illumination
     https://research.nvidia.com/publication/2017-07_spatiotemporal-variance-guided-filtering-real-time-reconstruction-path-traced

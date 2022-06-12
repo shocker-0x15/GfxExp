@@ -33,7 +33,7 @@ JP: このプログラムはReSTIR (Reservoir-based Spatio-Temporal Importance R
     Rearchitected版はアルゴリズムの構造を変更することでオリジナルのReSTIRにあったボトルネックを解消、
     劇的な性能向上・品質向上を実現しています。
     ※デフォルトではBRDFにOptiXのCallable ProgramやCUDAの関数ポインターを使用した汎用的な実装になっており、
-      性能上のオーバーヘッドが著しいため、純粋な性能を見る上では restir_shared.h の USE_HARD_CODED_BSDF_FUNCTIONS
+      性能上のオーバーヘッドが著しいため、純粋な性能を見る上では common_shared.h の USE_HARD_CODED_BSDF_FUNCTIONS
       を有効化したほうがよいかもしれません。
 
 EN: This program is an example implementation of ReSTIR (Reservoir-based Spatio-Temporal Importance Resampling) [1].
@@ -45,7 +45,7 @@ EN: This program is an example implementation of ReSTIR (Reservoir-based Spatio-
     by changing algorithmic structure to remove the bottlenecks in the original ReSTIR.
     * The program is generic implementation with OptiX's callable program and CUDA's function pointer,
       and has significant performance overhead, therefore it may be recommended to enable USE_HARD_CODED_BSDF_FUNCTIONS
-      in restir_shared.h to see pure performance.
+      in common_shared.h to see pure performance.
 
 [1] Spatiotemporal reservoir resampling for real-time ray tracing with dynamic direct lighting
     https://research.nvidia.com/publication/2020-07_Spatiotemporal-reservoir-resampling

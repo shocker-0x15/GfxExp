@@ -27,7 +27,7 @@ JP: このプログラムはReGIR (Reservoir-based Grid Importance Resampling) [
     ReSTIRとは異なり、セカンダリー以降の光源サンプリングにも対応するため、Reservoirをワールド空間のグリッドに記録し、
     2段階のStreaming RISを行います。
     ※デフォルトではBRDFにOptiXのCallable ProgramやCUDAの関数ポインターを使用した汎用的な実装になっており、
-      性能上のオーバーヘッドが著しいため、純粋な性能を見る上では restir_shared.h の USE_HARD_CODED_BSDF_FUNCTIONS
+      性能上のオーバーヘッドが著しいため、純粋な性能を見る上では common_shared.h の USE_HARD_CODED_BSDF_FUNCTIONS
       を有効化したほうがよいかもしれません。
 
 EN: This program is an example implementation of ReGIR (Reservoir-based Grid? Importance Resampling) [1].
@@ -37,7 +37,7 @@ EN: This program is an example implementation of ReGIR (Reservoir-based Grid? Im
     to support light sampling after secondary visibility.
     * The program is generic implementation with OptiX's callable program and CUDA's function pointer,
       and has significant performance overhead, therefore it may be recommended to enable USE_HARD_CODED_BSDF_FUNCTIONS
-      in restir_shared.h to see pure performance.
+      in common_shared.h to see pure performance.
 
 [1] Chapter 23. "Rendering Many Lights with Grid-based Reservoirs", Ray Tracing Gems II
     https://www.realtimerendering.com/raytracinggems/rtg2/index.html
