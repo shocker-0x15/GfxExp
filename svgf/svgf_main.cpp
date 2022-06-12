@@ -1504,7 +1504,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
             g_prevMouseX = g_mouseX;
             g_prevMouseY = g_mouseY;
 
-            prevPerFrameTemporalSet.camera = curPerFrameTemporalSet.camera;
             curPerFrameTemporalSet.camera.position = g_cameraPosition;
             curPerFrameTemporalSet.camera.orientation = g_tempCameraOrientation.toMatrix3x3();
         }
@@ -1616,29 +1615,29 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
             ImGui::Separator();
             ImGui::Text("Cursor Info: %.1lf, %.1lf", g_mouseX, g_mouseY);
-            shared::PickInfo pickInfoOnHost;
-            curPickInfo.read(&pickInfoOnHost, 1, cuStream);
-            ImGui::Text("Hit: %s", pickInfoOnHost.hit ? "True" : "False");
-            ImGui::Text("Instance: %u", pickInfoOnHost.instSlot);
-            ImGui::Text("Geometry Instance: %u", pickInfoOnHost.geomInstSlot);
-            ImGui::Text("Primitive Index: %u", pickInfoOnHost.primIndex);
-            ImGui::Text("Material: %u", pickInfoOnHost.matSlot);
-            ImGui::Text("Position: %.3f, %.3f, %.3f",
-                        pickInfoOnHost.positionInWorld.x,
-                        pickInfoOnHost.positionInWorld.y,
-                        pickInfoOnHost.positionInWorld.z);
-            ImGui::Text("Normal: %.3f, %.3f, %.3f",
-                        pickInfoOnHost.normalInWorld.x,
-                        pickInfoOnHost.normalInWorld.y,
-                        pickInfoOnHost.normalInWorld.z);
-            ImGui::Text("Albedo: %.3f, %.3f, %.3f",
-                        pickInfoOnHost.albedo.x,
-                        pickInfoOnHost.albedo.y,
-                        pickInfoOnHost.albedo.z);
-            ImGui::Text("Emittance: %.3f, %.3f, %.3f",
-                        pickInfoOnHost.emittance.x,
-                        pickInfoOnHost.emittance.y,
-                        pickInfoOnHost.emittance.z);
+            //shared::PickInfo pickInfoOnHost;
+            //curPickInfo.read(&pickInfoOnHost, 1, cuStream);
+            //ImGui::Text("Hit: %s", pickInfoOnHost.hit ? "True" : "False");
+            //ImGui::Text("Instance: %u", pickInfoOnHost.instSlot);
+            //ImGui::Text("Geometry Instance: %u", pickInfoOnHost.geomInstSlot);
+            //ImGui::Text("Primitive Index: %u", pickInfoOnHost.primIndex);
+            //ImGui::Text("Material: %u", pickInfoOnHost.matSlot);
+            //ImGui::Text("Position: %.3f, %.3f, %.3f",
+            //            pickInfoOnHost.positionInWorld.x,
+            //            pickInfoOnHost.positionInWorld.y,
+            //            pickInfoOnHost.positionInWorld.z);
+            //ImGui::Text("Normal: %.3f, %.3f, %.3f",
+            //            pickInfoOnHost.normalInWorld.x,
+            //            pickInfoOnHost.normalInWorld.y,
+            //            pickInfoOnHost.normalInWorld.z);
+            //ImGui::Text("Albedo: %.3f, %.3f, %.3f",
+            //            pickInfoOnHost.albedo.x,
+            //            pickInfoOnHost.albedo.y,
+            //            pickInfoOnHost.albedo.z);
+            //ImGui::Text("Emittance: %.3f, %.3f, %.3f",
+            //            pickInfoOnHost.emittance.x,
+            //            pickInfoOnHost.emittance.y,
+            //            pickInfoOnHost.emittance.z);
 
             ImGui::Separator();
 

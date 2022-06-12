@@ -212,127 +212,122 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_rayGen_generic() {
     float2 prevScreenPos = gBuffer2.prevScreenPos;
     uint32_t instSlot = gBuffer2.instSlot;
     uint32_t materialSlot = gBuffer2.materialSlot;
+    if (materialSlot == 0xFFFFFFFF) {
+        Lighting_Variance lighting_var;
+        lighting_var.noisyLighting = make_float3(0.0f, 0.0f, 0.0f);
+        lighting_var.variance = 0.0f;
+        plp.s->lighting_variance_buffers[0].write(launchIndex, lighting_var);
+        return;
+    }
 
     const PerspectiveCamera &camera = perFrameTemporalSet.camera;
 
     float3 dhReflectance = make_float3(0.0f, 0.0f, 0.0f);
-    bool useEnvLight = plp.s->envLightTexture && plp.f->enableEnvLight;
-    float3 contribution = make_float3(0.001f, 0.001f, 0.001f);
-    if (materialSlot != 0xFFFFFFFF) {
-        float3 alpha = make_float3(1.0f);
-        float initImportance = sRGB_calcLuminance(alpha);
-        PCG32RNG rng = plp.s->rngBuffer.read(launchIndex);
+    float3 contribution = make_float3(0.0f, 0.0f, 0.0f);
+    float3 alpha = make_float3(1.0f);
+    float initImportance = sRGB_calcLuminance(alpha);
+    PCG32RNG rng = plp.s->rngBuffer.read(launchIndex);
 
-        // JP: 最初の交点におけるシェーディング。
-        // EN: Shading on the first hit.
-        float3 vIn;
-        float dirPDensity;
-        {
-            const MaterialData &mat = plp.s->materialDataBuffer[materialSlot];
+    // JP: 最初の交点におけるシェーディング。
+    // EN: Shading on the first hit.
+    float3 vIn;
+    float dirPDensity;
+    {
+        const MaterialData &mat = plp.s->materialDataBuffer[materialSlot];
 
-            // TODO?: Use true geometric normal.
-            float3 geometricNormalInWorld = shadingNormalInWorld;
-            float3 vOut = normalize(camera.position - positionInWorld);
-            float frontHit = dot(vOut, geometricNormalInWorld) >= 0.0f ? 1.0f : -1.0f;
+        // TODO?: Use true geometric normal.
+        float3 geometricNormalInWorld = shadingNormalInWorld;
+        float3 vOut = normalize(camera.position - positionInWorld);
+        float frontHit = dot(vOut, geometricNormalInWorld) >= 0.0f ? 1.0f : -1.0f;
 
-            ReferenceFrame shadingFrame(shadingNormalInWorld);
-            positionInWorld = offsetRayOriginNaive(positionInWorld, frontHit * geometricNormalInWorld);
-            float3 vOutLocal = shadingFrame.toLocal(vOut);
+        ReferenceFrame shadingFrame(shadingNormalInWorld);
+        positionInWorld = offsetRayOriginNaive(positionInWorld, frontHit * geometricNormalInWorld);
+        float3 vOutLocal = shadingFrame.toLocal(vOut);
 
-            // JP: 光源を直接見ている場合の寄与を蓄積。
-            // EN: Accumulate the contribution from a light source directly seeing.
-            contribution = make_float3(0.0f);
-            if (vOutLocal.z > 0 && mat.emittance) {
-                float4 texValue = tex2DLod<float4>(mat.emittance, texCoord.x, texCoord.y, 0.0f);
-                float3 emittance = make_float3(texValue);
-                contribution += alpha * emittance / Pi;
-            }
-
-            BSDF bsdf;
-            bsdf.setup(mat, texCoord);
-
-            dhReflectance = bsdf.evaluateDHReflectanceEstimate(vOutLocal);
-
-            // Next event estimation (explicit light sampling) on the first hit.
-            contribution += alpha * performNextEventEstimation(
-                positionInWorld, vOutLocal, shadingFrame, bsdf, rng);
-
-            // generate a next ray.
-            float3 vInLocal;
-            alpha *= bsdf.sampleThroughput(
-                vOutLocal, rng.getFloat0cTo1o(), rng.getFloat0cTo1o(),
-                &vInLocal, &dirPDensity);
-            vIn = shadingFrame.fromLocal(vInLocal);
+        // JP: 光源を直接見ている場合の寄与を蓄積。
+        // EN: Accumulate the contribution from a light source directly seeing.
+        if (vOutLocal.z > 0 && mat.emittance) {
+            float4 texValue = tex2DLod<float4>(mat.emittance, texCoord.x, texCoord.y, 0.0f);
+            float3 emittance = make_float3(texValue);
+            contribution += alpha * emittance / Pi;
         }
 
-        // Path extension loop
-        PathTraceWriteOnlyPayload woPayload = {};
-        PathTraceWriteOnlyPayload* woPayloadPtr = &woPayload;
-        PathTraceReadWritePayload rwPayload = {};
-        PathTraceReadWritePayload* rwPayloadPtr = &rwPayload;
-        rwPayload.rng = rng;
-        rwPayload.initImportance = initImportance;
-        rwPayload.alpha = alpha;
-        rwPayload.prevDirPDensity = dirPDensity;
-        rwPayload.contribution = contribution;
-        rwPayload.pathLength = 1;
-        float3 rayOrg = positionInWorld;
-        float3 rayDir = vIn;
-        while (true) {
-            bool isValidSampling = rwPayload.prevDirPDensity > 0.0f && isfinite(rwPayload.prevDirPDensity);
-            if (!isValidSampling)
-                break;
+        BSDF bsdf;
+        bsdf.setup(mat, texCoord);
 
-            ++rwPayload.pathLength;
-            if (rwPayload.pathLength >= plp.f->maxPathLength)
-                rwPayload.maxLengthTerminate = true;
-            rwPayload.terminate = true;
-            // JP: 経路長制限に到達したときに、implicit light samplingを使わない場合はClosest-hit program内
-            //     で行うことが無いので終了する。
-            // EN: Nothing to do in the closest-hit program when reaching the path length limit
-            //     in the case implicit light sampling is unused.
-            if constexpr (!useImplicitLightSampling) {
-                if (rwPayload.maxLengthTerminate)
-                    break;
-                // Russian roulette
-                float continueProb = std::fmin(sRGB_calcLuminance(rwPayload.alpha) / rwPayload.initImportance, 1.0f);
-                if (rwPayload.rng.getFloat0cTo1o() >= continueProb)
-                    break;
-                rwPayload.alpha /= continueProb;
-            }
+        dhReflectance = bsdf.evaluateDHReflectanceEstimate(vOutLocal);
 
-            constexpr PathTracingRayType pathTraceRayType = PathTracingRayType::Baseline;
-            optixu::trace<PathTraceRayPayloadSignature>(
-                plp.f->travHandle, rayOrg, rayDir,
-                0.0f, FLT_MAX, 0.0f, 0xFF, OPTIX_RAY_FLAG_NONE,
-                pathTraceRayType, maxNumRayTypes, pathTraceRayType,
-                woPayloadPtr, rwPayloadPtr);
-            if (rwPayload.terminate)
-                break;
-            rayOrg = woPayload.nextOrigin;
-            rayDir = woPayload.nextDirection;
-        }
-        contribution = rwPayload.contribution;
+        // Next event estimation (explicit light sampling) on the first hit.
+        contribution += alpha * performNextEventEstimation(
+            positionInWorld, vOutLocal, shadingFrame, bsdf, rng);
 
-        plp.s->rngBuffer.write(launchIndex, rwPayload.rng);
+        // generate a next ray.
+        float3 vInLocal;
+        alpha *= bsdf.sampleThroughput(
+            vOutLocal, rng.getFloat0cTo1o(), rng.getFloat0cTo1o(),
+            &vInLocal, &dirPDensity);
+        vIn = shadingFrame.fromLocal(vInLocal);
     }
-    else {
-        // JP: 環境光源を直接見ている場合の寄与を蓄積。
-        // EN: Accumulate the contribution from the environmental light source directly seeing.
-        if (useEnvLight) {
-            float u = texCoord.x, v = texCoord.y;
-            float4 texValue = tex2DLod<float4>(plp.s->envLightTexture, u, v, 0.0f);
-            float3 luminance = plp.f->envLightPowerCoeff * make_float3(texValue);
-            contribution = luminance;
+
+    // Path extension loop
+    PathTraceWriteOnlyPayload woPayload = {};
+    PathTraceWriteOnlyPayload* woPayloadPtr = &woPayload;
+    PathTraceReadWritePayload rwPayload = {};
+    PathTraceReadWritePayload* rwPayloadPtr = &rwPayload;
+    rwPayload.rng = rng;
+    rwPayload.initImportance = initImportance;
+    rwPayload.alpha = alpha;
+    rwPayload.prevDirPDensity = dirPDensity;
+    rwPayload.contribution = contribution;
+    rwPayload.pathLength = 1;
+    float3 rayOrg = positionInWorld;
+    float3 rayDir = vIn;
+    while (true) {
+        bool isValidSampling = rwPayload.prevDirPDensity > 0.0f && isfinite(rwPayload.prevDirPDensity);
+        if (!isValidSampling)
+            break;
+
+        ++rwPayload.pathLength;
+        if (rwPayload.pathLength >= plp.f->maxPathLength)
+            rwPayload.maxLengthTerminate = true;
+        rwPayload.terminate = true;
+        // JP: 経路長制限に到達したときに、implicit light samplingを使わない場合はClosest-hit program内
+        //     で行うことが無いので終了する。
+        // EN: Nothing to do in the closest-hit program when reaching the path length limit
+        //     in the case implicit light sampling is unused.
+        if constexpr (!useImplicitLightSampling) {
+            if (rwPayload.maxLengthTerminate)
+                break;
+            // Russian roulette
+            float continueProb = std::fmin(sRGB_calcLuminance(rwPayload.alpha) / rwPayload.initImportance, 1.0f);
+            if (rwPayload.rng.getFloat0cTo1o() >= continueProb)
+                break;
+            rwPayload.alpha /= continueProb;
         }
+
+        constexpr PathTracingRayType pathTraceRayType = PathTracingRayType::Baseline;
+        optixu::trace<PathTraceRayPayloadSignature>(
+            plp.f->travHandle, rayOrg, rayDir,
+            0.0f, FLT_MAX, 0.0f, 0xFF, OPTIX_RAY_FLAG_NONE,
+            pathTraceRayType, maxNumRayTypes, pathTraceRayType,
+            woPayloadPtr, rwPayloadPtr);
+        if (rwPayload.terminate)
+            break;
+        rayOrg = woPayload.nextOrigin;
+        rayDir = woPayload.nextDirection;
     }
+    contribution = rwPayload.contribution;
+    contribution = max(contribution, make_float3(0.0f));
+
+    plp.s->rngBuffer.write(launchIndex, rwPayload.rng);
 
     /*
     JP: Directional-Hemisperical Reflectance (DHref)の推定値が非常に小さな場合、
         demodulationされたライティングの値が異常に大きくなってしまう不安定性があるため
         十分に小さい場合はDHrefをゼロとして扱う。
-    EN: Treat directional-hemispherical reflectance (DHref) as zero when the estimate of DHref is very small
-        because there is instability in demodulated lighting values that the value become so huge in this case.
+    EN: Treat directional-hemispherical reflectance (DHref) as zero when the estimate of DHref
+        is very small because there is instability in demodulated lighting values that
+        the value become so huge in this case.
     */
     dhReflectance.x = dhReflectance.x < 0.001f ? 0.0f : dhReflectance.x;
     dhReflectance.y = dhReflectance.y < 0.001f ? 0.0f : dhReflectance.y;
@@ -342,6 +337,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_rayGen_generic() {
     albedo.dhReflectance = dhReflectance;
     plp.s->albedoBuffer.write(launchIndex, albedo);
 
+    // JP: Temporal Accumulationを行って前フレームの対応サンプルを取得する。
+    // EN: Perform temporal accumulation to obtain the corresponding sample from the previous frame.
     PreviousResult prevResult;
     if constexpr (enableTemporalAccumulation) {
         reprojectPreviousAccumulation(
@@ -353,6 +350,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_rayGen_generic() {
     float luminance = sRGB_calcLuminance(demCont);
     float sqLuminance = pow2(luminance);
 
+    // JP: 前フレームの結果と現在のフレームの結果をブレンドする。
+    // EN: Blend the current frame result adn the previous frame result.
     if (plp.f->isFirstFrame || !plp.f->enableTemporalAccumulation)
         prevResult.sampleInfo.asUInt32 = 0;
     uint32_t sampleCount = min(prevResult.sampleInfo.count + 1, 65535u);
@@ -367,13 +366,6 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_rayGen_generic() {
             sqLuminance = prevWeight * prevResult.secondMoment + curWeight * sqLuminance;
         }
     }
-
-    //if (plp.f->mousePosition == launchIndex) {
-    //    printf("%2u (%4u, %4u): norm: (%g, %g, %g) cont: (%g, %g, %g), dem: (%g, %g, %g), %g, %g, %u\n",
-    //           plp.f->frameIndex, launchIndex.x, launchIndex.y,
-    //           vector3Arg(shadingNormalInWorld), vector3Arg(contribution), vector3Arg(demCont),
-    //           luminance, sqLuminance, sampleCount);
-    //}
 
     Lighting_Variance lighting_var;
     lighting_var.noisyLighting = demCont;
