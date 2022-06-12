@@ -1871,9 +1871,13 @@ int32_t main(int32_t argc, const char* argv[]) try {
             glDepthFunc(GL_LESS);
 
             glViewport(0, 0, curFBWidth, curFBHeight);
-            glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+            //glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+            constexpr int32_t clearValueForGBuffer2[] = { 0, 0, 0, 0xFFFFFFFF };
+            glClearNamedFramebufferiv(
+                curTemporalSet.gfxGBuffers.getHandle(0), GL_COLOR, 2,
+                clearValueForGBuffer2);
             glClearDepth(1.0f);
-            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+            glClear(GL_DEPTH_BUFFER_BIT);
 
             glUseProgram(gBufferShader.getHandle());
 
