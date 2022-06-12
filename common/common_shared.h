@@ -291,6 +291,12 @@ CUDA_COMMON_FUNCTION CUDA_INLINE float3 getXYZ(const float4 &v) {
 CUDA_COMMON_FUNCTION CUDA_INLINE int2 make_int2(const float2 &v) {
     return make_int2(static_cast<int32_t>(v.x), static_cast<int32_t>(v.y));
 }
+CUDA_COMMON_FUNCTION CUDA_INLINE int2 make_int2(const int3 &v) {
+    return make_int2(v.x, v.y);
+}
+CUDA_COMMON_FUNCTION CUDA_INLINE int2 make_int2(const uint3 &v) {
+    return make_int2(static_cast<int32_t>(v.x), static_cast<int32_t>(v.y));
+}
 CUDA_COMMON_FUNCTION CUDA_INLINE bool operator==(const int2 &v0, const int2 &v1) {
     return v0.x == v1.x && v0.y == v1.y;
 }
@@ -337,6 +343,12 @@ CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator/(const int2 &v0, const uint2 &v1
 
 CUDA_COMMON_FUNCTION CUDA_INLINE uint2 make_uint2(const float2 &v) {
     return make_uint2(static_cast<uint32_t>(v.x), static_cast<uint32_t>(v.y));
+}
+CUDA_COMMON_FUNCTION CUDA_INLINE uint2 make_uint2(const int3 &v) {
+    return make_uint2(static_cast<uint32_t>(v.x), static_cast<uint32_t>(v.y));
+}
+CUDA_COMMON_FUNCTION CUDA_INLINE uint2 make_uint2(const uint3 &v) {
+    return make_uint2(v.x, v.y);
 }
 CUDA_COMMON_FUNCTION CUDA_INLINE bool operator==(const uint2 &v0, const uint2 &v1) {
     return v0.x == v1.x && v0.y == v1.y;
@@ -2230,8 +2242,21 @@ namespace shared {
 
     struct MaterialData;
 
+    struct BSDFFlags {
+        enum Value {
+            None = 0,
+            Regularize = 1 << 0,
+        } value;
+
+        CUDA_DEVICE_FUNCTION constexpr BSDFFlags(Value v = None) : value(v) {}
+
+        CUDA_DEVICE_FUNCTION operator uint32_t() const {
+            return static_cast<uint32_t>(value);
+        }
+    };
+
     using SetupBSDFBody = DynamicFunction<
-        void(const MaterialData &matData, float2 texCoord, uint32_t* bodyData)>;
+        void(const MaterialData &matData, float2 texCoord, uint32_t* bodyData, BSDFFlags flags)>;
 
     struct MaterialData {
         union {

@@ -66,6 +66,20 @@ Path Tracing + Neural Radiance Cache (NRC) replaces contributions given from bey
 ![example](neural_radiance_caching/comparison.jpg)
 Zero-Day from [Open Research Content Archive (ORCA)](https://developer.nvidia.com/orca/beeple-zero-day)
 
+### SVGF
+Spatiotemporal Variance-Guided Filtering: Real-Time Reconstruction for Path-Traced Global Illumination\
+https://research.nvidia.com/publication/2017-07_spatiotemporal-variance-guided-filtering-real-time-reconstruction-path-traced
+
+SVGFはパストレーシングなどによって得られたライティング結果を、物体表面のパラメターを参照しつつ画像空間でフィルタリングします。各ピクセルのライティングの分散を時間的・空間的にトラッキングし、分散が小さな箇所では小さなフィルター半径、分散が大きな箇所では大きなフィルター半径とすることで画像のぼけを抑えつつレンダリング画像における視覚的なノイズを低減します。フィルターにはà-trous Filterを用いることで大きなフィルタリング半径を比較的小さなコストで実現します。
+
+SVGF filters the lighting result in screen-space obtained by methods like path tracing with references to surface parameters. It tracks the variance of the lighting for each pixel in spatially and temporally, then uses smaller filter radii at lower variance parts and larger filter radii at higher variance parts to get rid of perceptual noises from the rendered image while avoiding excessive blurs in the image. It uses an à-trous filter so that large filter radii can be used with relatively low costs.
+
+- [x] Basic Implementation (temporal accumulation, SVGF, temporal AA)
+- [ ] Advanced Items
+
+![example](svgf/comparison.jpg)
+Crytek Sponza from Morgan McGuire's [Computer Graphics Archive](https://casual-effects.com/data)
+
 ## その他 / Miscellaneous
 OptiX/CUDAのラッパーとして[OptiX Utility](https://github.com/shocker-0x15/OptiX_Utility)を使用しています。
 
@@ -87,9 +101,11 @@ It requires the following libraries.
 
 ## オープンソースソフトウェア / Open Source Software
 - [Open Asset Import Library (assimp)](https://github.com/assimp/assimp)
+- [CUBd](https://github.com/shocker-0x15/CUBd)
 - [Dear ImGui](https://github.com/ocornut/imgui)
 - [gl3w](https://github.com/skaslev/gl3w)
 - [GLFW](https://github.com/glfw/glfw)
+- [OptiX Utility](https://github.com/shocker-0x15/OptiX_Utility)
 - [stb](https://github.com/nothings/stb)
 - [Tiny CUDA Neural Networks (tiny-cuda-nn)](https://github.com/NVlabs/tiny-cuda-nn)
 - [Tiny OpenEXR image library (tinyexr)](https://github.com/syoyo/tinyexr)

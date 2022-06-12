@@ -196,10 +196,15 @@ template <bool enableTemporalAccumulation>
 CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_rayGen_generic() {
     uint2 launchIndex = make_uint2(optixGetLaunchIndex().x, optixGetLaunchIndex().y);
 
-    uint32_t bufIdx = plp.f->bufferIndex;
-    GBuffer0 gBuffer0 = plp.f->temporalSets[bufIdx].GBuffer0.read(glPix(launchIndex));
-    GBuffer1 gBuffer1 = plp.f->temporalSets[bufIdx].GBuffer1.read(glPix(launchIndex));
-    GBuffer2 gBuffer2 = plp.f->temporalSets[bufIdx].GBuffer2.read(glPix(launchIndex));
+    uint32_t curBufIdx = plp.f->bufferIndex;
+    const StaticPipelineLaunchParameters::TemporalSet &staticTemporalSet =
+        plp.s->temporalSets[curBufIdx];
+    const PerFramePipelineLaunchParameters::TemporalSet &perFrameTemporalSet =
+        plp.f->temporalSets[curBufIdx];
+
+    GBuffer0 gBuffer0 = perFrameTemporalSet.GBuffer0.read(glPix(launchIndex));
+    GBuffer1 gBuffer1 = perFrameTemporalSet.GBuffer1.read(glPix(launchIndex));
+    GBuffer2 gBuffer2 = perFrameTemporalSet.GBuffer2.read(glPix(launchIndex));
 
     float3 positionInWorld = gBuffer0.positionInWorld;
     float3 shadingNormalInWorld = gBuffer1.normalInWorld;
@@ -208,7 +213,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_rayGen_generic() {
     uint32_t instSlot = gBuffer2.instSlot;
     uint32_t materialSlot = gBuffer2.materialSlot;
 
-    const PerspectiveCamera &camera = plp.f->temporalSets[bufIdx].camera;
+    const PerspectiveCamera &camera = perFrameTemporalSet.camera;
 
     float3 dhReflectance = make_float3(0.0f, 0.0f, 0.0f);
     bool useEnvLight = plp.s->envLightTexture && plp.f->enableEnvLight;
@@ -322,6 +327,17 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_rayGen_generic() {
         }
     }
 
+    /*
+    JP: Directional-Hemisperical Reflectance (DHref)の推定値が非常に小さな場合、
+        demodulationされたライティングの値が異常に大きくなってしまう不安定性があるため
+        十分に小さい場合はDHrefをゼロとして扱う。
+    EN: Treat directional-hemispherical reflectance (DHref) as zero when the estimate of DHref is very small
+        because there is instability in demodulated lighting values that the value become so huge in this case.
+    */
+    dhReflectance.x = dhReflectance.x < 0.001f ? 0.0f : dhReflectance.x;
+    dhReflectance.y = dhReflectance.y < 0.001f ? 0.0f : dhReflectance.y;
+    dhReflectance.z = dhReflectance.z < 0.001f ? 0.0f : dhReflectance.z;
+
     Albedo albedo = {};
     albedo.dhReflectance = dhReflectance;
     plp.s->albedoBuffer.write(launchIndex, albedo);
@@ -368,7 +384,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_rayGen_generic() {
     moment_sampleInfo.firstMoment = luminance;
     moment_sampleInfo.secondMoment = sqLuminance;
     moment_sampleInfo.sampleInfo = SampleInfo(sampleCount, prevResult.sampleInfo.acceptFlags);
-    plp.s->temporalSets[bufIdx].momentPair_sampleInfo_buffer.write(launchIndex, moment_sampleInfo);
+    staticTemporalSet.momentPair_sampleInfo_buffer.write(launchIndex, moment_sampleInfo);
 }
 
 CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_closestHit_generic() {
@@ -433,8 +449,11 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_closestHit_generic() {
         rwPayload->alpha /= continueProb;
     }
 
+    // JP: ファイアフライを抑えるために二次反射以降のスペキュラー面のラフネスを抑える。
+    // EN: Mollify specular roughness after secondary reflection to avoid fire flies.
     BSDF bsdf;
-    bsdf.setup(mat, texCoord);
+    BSDFFlags bsdfFlags = plp.f->mollifySpecular ? BSDFFlags::Regularize : BSDFFlags::None;
+    bsdf.setup(mat, texCoord, bsdfFlags);
 
     // Next Event Estimation (Explicit Light Sampling)
     rwPayload->contribution += rwPayload->alpha * performNextEventEstimation(

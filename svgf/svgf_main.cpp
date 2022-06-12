@@ -1,5 +1,42 @@
 ﻿/*
 
+コマンドラインオプション例 / Command line option example:
+You can load a 3D model for example by downloading from the internet.
+(e.g. https://casual-effects.com/data/)
+
+(1) -cam-pos 0 3 0 -cam-yaw 90
+    -name sponza -obj crytek_sponza/sponza.obj 0.01 trad
+    -begin-pos 0 0 0.36125 -inst sponza
+    -name rectlight -emittance 600 600 600 -rectangle 2 2 -begin-pos 0 15 0 -inst rectlight
+
+JP: このプログラムはSVGF (Spatiotemporal Variance-Guided Filtering) [1]の実装例です。
+    SVGFはパストレーシングなどによって得られたライティング結果を、物体表面のパラメターを参照しつつ画像空間で
+    フィルタリングします。各ピクセルのライティングの分散を時間的・空間的にトラッキングし、
+    分散が小さな箇所では小さなフィルター半径、分散が大きな箇所では大きなフィルター半径とすることで
+    画像のぼけを抑えつつレンダリング画像における視覚的なノイズを低減します。
+    フィルターにはà-trous Filterを用いることで大きなフィルタリング半径を比較的小さなコストで実現します。
+    またSVGFとは基本的には直交する概念ですが、ライトトランスポートにおけるサンプルのTemporal Accumulation、
+    最終レンダリングのTemporal Anti-Aliasingも併用することで画像の安定性を向上させています。
+    ※デフォルトではBRDFにOptiXのCallable ProgramやCUDAの関数ポインターを使用した汎用的な実装になっており、
+      性能上のオーバーヘッドが著しいため、純粋な性能を見る上では restir_shared.h の USE_HARD_CODED_BSDF_FUNCTIONS
+      を有効化したほうがよいかもしれません。
+
+EN: This program is an example implementation of SVGF (Spatiotemporal Variance-Guided Filtering) [1].
+    SVGF filters the lighting result in screen-space obtained by methods like path tracing with references
+    to surface parameters. It tracks the variance of the lighting for each pixel in spatially and temporally,
+    then uses smaller filter radii at lower variance parts and larger filter radii at higher variance parts
+    to get rid of perceptual noises from the rendered image while avoiding excessive blurs in the image.
+    It uses an à-trous filter so that large filter radii can be used with relatively low costs.
+    Additionally, temporal accumulation for light transport samples and temporal anti-alising
+    for the final rendered image are used along with SVGF to improve image stability while these are basically
+    orthogonally concept to the SVGF.
+    * The program is generic implementation with OptiX's callable program and CUDA's function pointer,
+      and has significant performance overhead, therefore it may be recommended to enable USE_HARD_CODED_BSDF_FUNCTIONS
+      in restir_shared.h to see pure performance.
+
+[1] Spatiotemporal Variance-Guided Filtering: Real-Time Reconstruction for Path-Traced Global Illumination
+    https://research.nvidia.com/publication/2017-07_spatiotemporal-variance-guided-filtering-real-time-reconstruction-path-traced
+
 */
 
 #include "svgf_shared.h"
@@ -1477,7 +1514,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         bool resetAccumulation = false;
         
         // Camera Window
-        static shared::BufferToDisplay bufferTypeToDisplay = shared::BufferToDisplay::DenoisedBeauty;
+        static shared::BufferToDisplay bufferTypeToDisplay = shared::BufferToDisplay::FinalRendering;
         static bool applyToneMapAndGammaCorrection = true;
         static float brightness = g_initBrightness;
         static bool enableEnvLight = true;
@@ -1515,7 +1552,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
                 glFinish();
                 CUDADRV_CHECK(cuStreamSynchronize(cuStream));
                 auto rawImage = new float4[renderTargetSizeX * renderTargetSizeY];
-                glu::Texture2D &texToDisplay = bufferTypeToDisplay == shared::BufferToDisplay::DenoisedBeauty ?
+                glu::Texture2D &texToDisplay = bufferTypeToDisplay == shared::BufferToDisplay::FinalRendering ?
                     curTemporalSet.gfxFinalLightingBuffer : gfxDebugVisualizeBuffer;
                 glGetTextureSubImage(
                     texToDisplay.getHandle(), 0,
@@ -1556,6 +1593,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         static bool enableTemporalAccumulation = true;
         static bool enableSVGF = true;
         static bool feedback1stFilteredResult = true;
+        static bool specularMollification = true;
         static bool enableTemporalAA = true;
         static bool modulateAlbedo = true;
         static float log2TaaHistoryLength = std::log2(16);
@@ -1610,8 +1648,10 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
                     resetAccumulation |= ImGui::Checkbox("Temporal Accumulation", &enableTemporalAccumulation);
                     resetAccumulation |= ImGui::Checkbox("SVGF", &enableSVGF);
-                    if (enableSVGF)
+                    if (enableSVGF) {
                         ImGui::Checkbox("Feedback 1st filtered result", &feedback1stFilteredResult);
+                        ImGui::Checkbox("Specular Mollification", &specularMollification);
+                    }
 
                     resetAccumulation |= ImGui::Checkbox("Temporal AA", &enableTemporalAA);
                     ImGui::PushID("TAA History Length");
@@ -1650,11 +1690,11 @@ int32_t main(int32_t argc, const char* argv[]) try {
                     ImGui::RadioButtonE(
                         "Normal", &bufferTypeToDisplay, shared::BufferToDisplay::Normal);
                     ImGui::RadioButtonE(
-                        "Motion Vector", &bufferTypeToDisplay, shared::BufferToDisplay::Flow);
+                        "Motion Vector", &bufferTypeToDisplay, shared::BufferToDisplay::MotionVector);
                     ImGui::RadioButtonE(
                         "Sample Count", &bufferTypeToDisplay, shared::BufferToDisplay::SampleCount);
                     ImGui::RadioButtonE(
-                        "Denoised Beauty", &bufferTypeToDisplay, shared::BufferToDisplay::DenoisedBeauty);
+                        "Final Rendering", &bufferTypeToDisplay, shared::BufferToDisplay::FinalRendering);
                     ImGui::SliderFloat("Motion Vector Scale", &motionVectorScale, -2.0f, 2.0f);
 
                     ImGui::EndTabItem();
@@ -1719,7 +1759,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
         applyToneMapAndGammaCorrection =
             bufferTypeToDisplay == shared::BufferToDisplay::NoisyBeauty ||
-            bufferTypeToDisplay == shared::BufferToDisplay::DenoisedBeauty ||
+            bufferTypeToDisplay == shared::BufferToDisplay::FinalRendering ||
             bufferTypeToDisplay == shared::BufferToDisplay::Variance ||
             bufferTypeToDisplay == shared::BufferToDisplay::FilteredVariance;
 
@@ -1794,6 +1834,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         perFramePlp.enableTemporalAccumulation = enableTemporalAccumulation;
         perFramePlp.enableSVGF = enableSVGF;
         perFramePlp.feedback1stFilteredResult = feedback1stFilteredResult;
+        perFramePlp.mollifySpecular = specularMollification;
         perFramePlp.enableTemporalAA = enableTemporalAA;
         perFramePlp.modulateAlbedo = modulateAlbedo;
         for (int i = 0; i < lengthof(debugSwitches); ++i)
@@ -1869,36 +1910,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
             glBindFramebuffer(GL_FRAMEBUFFER, 0);
         }
 
-        //{
-        //    glFinish();
-        //    CUDADRV_CHECK(cuStreamSynchronize(cuStream));
-        //    auto rawImage = new float4[renderTargetSizeX * renderTargetSizeY];
-        //    glGetTextureSubImage(
-        //        curTemporalSet.gfxGBuffers.getRenderTargetTexture(0, 0).getHandle(), 0,
-        //        0, 0, 0, renderTargetSizeX, renderTargetSizeY, 1,
-        //        GL_RGBA, GL_FLOAT, sizeof(float4) * renderTargetSizeX * renderTargetSizeY, rawImage);
-        //    saveImageHDR("gbuffer0.exr", renderTargetSizeX, renderTargetSizeY, 1.0f, rawImage, true);
-        //    glGetTextureSubImage(
-        //        curTemporalSet.gfxGBuffers.getRenderTargetTexture(1, 0).getHandle(), 0,
-        //        0, 0, 0, renderTargetSizeX, renderTargetSizeY, 1,
-        //        GL_RGBA, GL_FLOAT, sizeof(float4) * renderTargetSizeX * renderTargetSizeY, rawImage);
-        //    saveImageHDR("gbuffer1.exr", renderTargetSizeX, renderTargetSizeY, 1.0f, rawImage, true);
-        //    glGetTextureSubImage(
-        //        curTemporalSet.gfxGBuffers.getRenderTargetTexture(2, 0).getHandle(), 0,
-        //        0, 0, 0, renderTargetSizeX, renderTargetSizeY, 1,
-        //        GL_RGBA, GL_FLOAT, sizeof(float4) * renderTargetSizeX * renderTargetSizeY, rawImage);
-        //    saveImageHDR("gbuffer2.exr", renderTargetSizeX, renderTargetSizeY, 1.0f, rawImage, true);
-        //    delete[] rawImage;
-
-        //    auto rawDepthImage = new float[renderTargetSizeX * renderTargetSizeY];
-        //    glGetTextureSubImage(
-        //        curTemporalSet.gfxDepthBufferCopy.getRenderTargetTexture(0, 0).getHandle(), 0,
-        //        0, 0, 0, renderTargetSizeX, renderTargetSizeY, 1,
-        //        GL_RED, GL_FLOAT, sizeof(float) * renderTargetSizeX * renderTargetSizeY, rawDepthImage);
-        //    saveImageHDR("depthBuffer.exr", renderTargetSizeX, renderTargetSizeY, 1.0f, rawDepthImage, true);
-        //    delete[] rawDepthImage;
-        //}
-
         prevTemporalSet.gBuffer0InteropHandler.beginCUDAAccess(cuStream);
         prevTemporalSet.gBuffer1InteropHandler.beginCUDAAccess(cuStream);
         prevTemporalSet.gBuffer2InteropHandler.beginCUDAAccess(cuStream);
@@ -1949,8 +1960,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
         if (enableSVGF) {
             curGPUTimer.denoise.start(cuStream);
 
-            // JP:
-            // EN:
+            // JP: ピクセルごとの輝度の分散を求める。
+            // EN: Compute the variance of the luminance for each pixel.
             curGPUTimer.estimateVariance.start(cuStream);
             gpuEnv.kernelEstimateVariance(
                 cuStream, gpuEnv.kernelEstimateVariance.calcGridDim(renderTargetSizeX, renderTargetSizeY));
@@ -1966,29 +1977,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
                 CUDADRV_CHECK(cuStreamSynchronize(cuStream));
             }
 
-            //{
-            //    glFinish();
-            //    CUDADRV_CHECK(cuStreamSynchronize(cuStream));
-            //    SDRImageSaverConfig config;
-            //    config.applyToneMap = false;
-            //    config.apply_sRGB_gammaCorrection = false;
-            //    config.flipY = false;
-            //    config.alphaForOverride = 1.0f;
-            //    saveImage("albedo.png", albedoBuffer, config);
-
-            //    {
-            //        char filename[256];
-
-            //        auto data = lighting_variance_buffers[0].map<float4>();
-            //        sprintf_s(filename, "%03llu_lighting_variance_0.exr", frameIndex);
-            //        saveImageHDR(
-            //            filename, renderTargetSizeX, renderTargetSizeY, 1.0f, data);
-            //        lighting_variance_buffers[0].unmap();
-            //    }
-            //}
-
-            // JP:
-            // EN:
+            // JP: A-Trousフィルターをライティングと分散に複数回適用する。
+            // EN: Apply the a-trous filter to lighting and its variance multiple times.
             curGPUTimer.aTrousFilter.start(cuStream);
             for (uint32_t filterStageIndex = 0; filterStageIndex < numFilteringStages; ++filterStageIndex) {
                 gpuEnv.kernelApplyATrousFilter_box3x3(
@@ -2006,44 +1996,16 @@ int32_t main(int32_t argc, const char* argv[]) try {
             }
         }
 
-        //{
-        //    glFinish();
-        //    CUDADRV_CHECK(cuStreamSynchronize(cuStream));
-        //    {
-        //        char filename[256];
-
-        //        auto data = lighting_variance_buffers[1].map<float4>();
-        //        sprintf_s(filename, "%03llu_lighting_variance_5.exr", frameIndex);
-        //        saveImageHDR(
-        //            filename, renderTargetSizeX, renderTargetSizeY, 1.0f, data);
-        //        lighting_variance_buffers[1].unmap();
-        //    }
-        //}
-
         curGPUTimer.temporalAA.start(cuStream);
         gpuEnv.kernelApplyAlbedoModulationAndTemporalAntiAliasing(
             cuStream, gpuEnv.kernelApplyAlbedoModulationAndTemporalAntiAliasing.calcGridDim(renderTargetSizeX, renderTargetSizeY),
             numFilteringStages);
         curGPUTimer.temporalAA.stop(cuStream);
 
-        //{
-        //    glFinish();
-        //    CUDADRV_CHECK(cuStreamSynchronize(cuStream));
-        //    {
-        //        char filename[256];
-
-        //        auto data = curTemporalSet.cuArrayFinalLightingBuffer.map<float4>();
-        //        sprintf_s(filename, "%03llu_final_lighting.exr", frameIndex);
-        //        saveImageHDR(
-        //            filename, renderTargetSizeX, renderTargetSizeY, 1.0f, data, true);
-        //        curTemporalSet.cuArrayFinalLightingBuffer.unmap();
-        //    }
-        //}
-
         if (bufferTypeToDisplay == shared::BufferToDisplay::Albedo ||
             bufferTypeToDisplay == shared::BufferToDisplay::FilteredVariance ||
             bufferTypeToDisplay == shared::BufferToDisplay::Normal ||
-            bufferTypeToDisplay == shared::BufferToDisplay::Flow ||
+            bufferTypeToDisplay == shared::BufferToDisplay::MotionVector ||
             bufferTypeToDisplay == shared::BufferToDisplay::SampleCount) {
             gpuEnv.kernelDebugVisualize(
                 cuStream, gpuEnv.kernelDebugVisualize.calcGridDim(renderTargetSizeX, renderTargetSizeY),
@@ -2069,6 +2031,10 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
         curGPUTimer.frame.stop(cuStream);
 
+        // ----------------------------------------------------------------
+        // JP: 最終レンダーターゲットに結果を描画する。
+        // EN: Draw the result to the final render target.
+
         if (applyToneMapAndGammaCorrection) {
             glEnable(GL_FRAMEBUFFER_SRGB);
             ImGui::GetStyle() = guiStyleWithGamma;
@@ -2082,7 +2048,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
         glUseProgram(drawResultShader.getHandle());
 
-        glu::Texture2D &texToDisplay = bufferTypeToDisplay == shared::BufferToDisplay::DenoisedBeauty ?
+        glu::Texture2D &texToDisplay = bufferTypeToDisplay == shared::BufferToDisplay::FinalRendering ?
             curTemporalSet.gfxFinalLightingBuffer : gfxDebugVisualizeBuffer;
         glBindTextureUnit(0, texToDisplay.getHandle());
         glBindSampler(0, outputSampler.getHandle());
@@ -2098,6 +2064,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
         glDisable(GL_FRAMEBUFFER_SRGB);
+
+        // END: Draw the result to the final render target.
+        // ----------------------------------------------------------------
 
         glfwSwapBuffers(window);
 

@@ -207,6 +207,7 @@ namespace shared {
         unsigned int enableTemporalAccumulation : 1;
         unsigned int enableSVGF : 1;
         unsigned int feedback1stFilteredResult : 1;
+        unsigned int mollifySpecular : 1;
         unsigned int enableTemporalAA : 1;
         unsigned int modulateAlbedo : 1;
 
@@ -233,9 +234,9 @@ namespace shared {
         FilteredVariance,
         Albedo,
         Normal,
-        Flow,
+        MotionVector,
         SampleCount,
-        DenoisedBeauty,
+        FinalRendering,
     };
 
 

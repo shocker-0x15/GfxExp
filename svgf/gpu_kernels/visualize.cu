@@ -58,7 +58,7 @@ CUDA_DEVICE_KERNEL void debugVisualize(
         color = make_float4(0.5f * gBuffer1.normalInWorld + make_float3(0.5f), 1.0f);
         break;
     }
-    case BufferToDisplay::Flow: {
+    case BufferToDisplay::MotionVector: {
         GBuffer2 gBuffer2 = perFrameTemporalSet.GBuffer2.read(glPix(pix));
         float2 curScreenPos = make_float2(pix.x + 0.5f, pix.y + 0.5f) / imageSize;
         float2 prevScreenPos = gBuffer2.prevScreenPos;
