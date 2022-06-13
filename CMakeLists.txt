@@ -124,6 +124,12 @@ function(set_common_sources)
         GENERATED_FILES COPIED_COMMON_SHADERS
     )
 
+    copy_files(
+        SOURCES "../common/common_shader.h"
+        TARGET_PATH "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${CMAKE_CFG_INTDIR}"
+        GENERATED_FILES COPIED_COMMON_HEADER_FOR_SHADERS
+    )
+
     # non-essentials
     source_group(
         "non-essentials" REGULAR_EXPRESSION
