@@ -186,6 +186,9 @@
     <CudaCompile Include="gpu_kernels\visualize.cu">
       <Filter>GPU kernels</Filter>
     </CudaCompile>
+    <CudaCompile Include="gpu_kernels\optix_picker_kernels.cu">
+      <Filter>GPU kernels</Filter>
+    </CudaCompile>
   </ItemGroup>
   <ItemGroup>
     <CopyFileToFolders Include="..\ext\prebuilt\bin\assimp-vc143-mt.dll">

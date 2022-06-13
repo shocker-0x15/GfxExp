@@ -57,6 +57,10 @@ enum class PathTracingEntryPoint {
     pathTraceWithTemporalAccumulation,
 };
 
+enum class PickerEntryPoint {
+    pick,
+};
+
 struct GPUEnvironment {
     CUcontext cuContext;
     optixu::Context optixContext;
@@ -88,6 +92,7 @@ struct GPUEnvironment {
     };
 
     Pipeline<PathTracingEntryPoint> pathTracing;
+    Pipeline<PickerEntryPoint> pick;
 
     optixu::Material optixDefaultMaterial;
 
@@ -128,6 +133,69 @@ struct GPUEnvironment {
 
         optixDefaultMaterial = optixContext.createMaterial();
         optixu::Module emptyModule;
+
+        // 512ドライバーのバグでこのパイプラインを先に作る必要がある。
+        {
+            Pipeline<PickerEntryPoint> &pipeline = pick;
+            optixu::Pipeline &p = pipeline.optixPipeline;
+            optixu::Module &m = pipeline.optixModule;
+            p = optixContext.createPipeline();
+
+            p.setPipelineOptions(
+                std::max({
+                    shared::PickRayPayloadSignature::numDwords
+                         }),
+                optixu::calcSumDwords<float2>(),
+                "plp", sizeof(shared::PipelineLaunchParameters),
+                false, OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_LEVEL_INSTANCING,
+                OPTIX_EXCEPTION_FLAG_STACK_OVERFLOW | OPTIX_EXCEPTION_FLAG_TRACE_DEPTH |
+                DEBUG_SELECT(OPTIX_EXCEPTION_FLAG_DEBUG, OPTIX_EXCEPTION_FLAG_NONE),
+                OPTIX_PRIMITIVE_TYPE_FLAGS_TRIANGLE);
+
+            m = p.createModuleFromPTXString(
+                readTxtFile(getExecutableDirectory() / "svgf/ptxes/optix_picker_kernels.ptx"),
+                OPTIX_COMPILE_DEFAULT_MAX_REGISTER_COUNT,
+                DEBUG_SELECT(OPTIX_COMPILE_OPTIMIZATION_LEVEL_0, OPTIX_COMPILE_OPTIMIZATION_DEFAULT),
+                DEBUG_SELECT(OPTIX_COMPILE_DEBUG_LEVEL_FULL, OPTIX_COMPILE_DEBUG_LEVEL_NONE));
+
+            pipeline.entryPoints[PickerEntryPoint::pick] =
+                p.createRayGenProgram(m, RT_RG_NAME_STR("pick"));
+
+            pipeline.programs[RT_MS_NAME_STR("pick")] = p.createMissProgram(
+                m, RT_MS_NAME_STR("pick"));
+            pipeline.programs[RT_CH_NAME_STR("pick")] = p.createHitProgramGroupForTriangleIS(
+                m, RT_CH_NAME_STR("pick"),
+                emptyModule, nullptr);
+
+            pipeline.programs["emptyHitGroup"] = p.createEmptyHitProgramGroup();
+
+            p.setNumMissRayTypes(shared::PickRayType::NumTypes);
+            p.setMissProgram(
+                shared::PickRayType::Primary, pipeline.programs.at(RT_MS_NAME_STR("pick")));
+
+            p.setNumCallablePrograms(NumCallablePrograms);
+            pipeline.callablePrograms.resize(NumCallablePrograms);
+            for (int i = 0; i < NumCallablePrograms; ++i) {
+                optixu::ProgramGroup program = p.createCallableProgramGroup(
+                    m, callableProgramEntryPoints[i],
+                    emptyModule, nullptr);
+                pipeline.callablePrograms[i] = program;
+                p.setCallableProgram(i, program);
+            }
+
+            p.link(1, DEBUG_SELECT(OPTIX_COMPILE_DEBUG_LEVEL_FULL, OPTIX_COMPILE_DEBUG_LEVEL_NONE));
+
+            optixDefaultMaterial.setHitGroup(
+                shared::PickRayType::Primary, pipeline.programs.at(RT_CH_NAME_STR("pick")));
+            for (uint32_t r = shared::PickRayType::Primary + 1; r < shared::maxNumRayTypes; ++r)
+                optixDefaultMaterial.setHitGroup(r, pipeline.programs.at("emptyHitGroup"));
+
+            size_t sbtSize;
+            p.generateShaderBindingTableLayout(&sbtSize);
+            pipeline.sbt.initialize(cuContext, Scene::bufferType, sbtSize, 1);
+            pipeline.sbt.setMappedMemoryPersistent(true);
+            p.setShaderBindingTable(pipeline.sbt, pipeline.sbt.getMappedPointer());
+        }
 
         {
             Pipeline<PathTracingEntryPoint> &pipeline = pathTracing;
@@ -201,6 +269,20 @@ struct GPUEnvironment {
     }
 
     void finalize() {
+        {
+            Pipeline<PickerEntryPoint> &pipeline = pick;
+            pipeline.hitGroupSbt.finalize();
+            pipeline.sbt.finalize();
+            for (int i = 0; i < NumCallablePrograms; ++i)
+                pipeline.callablePrograms[i].destroy();
+            for (auto &pair : pipeline.programs)
+                pair.second.destroy();
+            for (auto &pair : pipeline.entryPoints)
+                pair.second.destroy();
+            pipeline.optixModule.destroy();
+            pipeline.optixPipeline.destroy();
+        }
+
         {
             Pipeline<PathTracingEntryPoint> &pipeline = pathTracing;
             pipeline.hitGroupSbt.finalize();
@@ -1262,6 +1344,13 @@ int32_t main(int32_t argc, const char* argv[]) try {
     gpuEnv.pathTracing.optixPipeline.setHitGroupShaderBindingTable(
         gpuEnv.pathTracing.hitGroupSbt, gpuEnv.pathTracing.hitGroupSbt.getMappedPointer());
 
+    gpuEnv.pick.hitGroupSbt.initialize(
+        gpuEnv.cuContext, Scene::bufferType, scene.hitGroupSbtSize, 1);
+    gpuEnv.pick.hitGroupSbt.setMappedMemoryPersistent(true);
+    gpuEnv.pick.optixPipeline.setScene(scene.optixScene);
+    gpuEnv.pick.optixPipeline.setHitGroupShaderBindingTable(
+        gpuEnv.pick.hitGroupSbt, gpuEnv.pick.hitGroupSbt.getMappedPointer());
+
     shared::PickInfo initPickInfo = {};
     initPickInfo.hit = false;
     initPickInfo.instSlot = 0xFFFFFFFF;
@@ -1525,7 +1614,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
             ImGui::Text("W/A/S/D/R/F: Move, Q/E: Tilt");
             ImGui::Text("Mouse Middle Drag: Rotate");
 
-            ImGui::InputFloat3("Position", reinterpret_cast<float*>(&curPerFrameTemporalSet.camera.position));
+            ImGui::InputFloat3("Position", reinterpret_cast<float*>(&g_cameraPosition));
             static float rollPitchYaw[3];
             g_tempCameraOrientation.toEulerAngles(&rollPitchYaw[0], &rollPitchYaw[1], &rollPitchYaw[2]);
             rollPitchYaw[0] *= 180 / pi_v<float>;
@@ -1615,29 +1704,29 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
             ImGui::Separator();
             ImGui::Text("Cursor Info: %.1lf, %.1lf", g_mouseX, g_mouseY);
-            //shared::PickInfo pickInfoOnHost;
-            //curPickInfo.read(&pickInfoOnHost, 1, cuStream);
-            //ImGui::Text("Hit: %s", pickInfoOnHost.hit ? "True" : "False");
-            //ImGui::Text("Instance: %u", pickInfoOnHost.instSlot);
-            //ImGui::Text("Geometry Instance: %u", pickInfoOnHost.geomInstSlot);
-            //ImGui::Text("Primitive Index: %u", pickInfoOnHost.primIndex);
-            //ImGui::Text("Material: %u", pickInfoOnHost.matSlot);
-            //ImGui::Text("Position: %.3f, %.3f, %.3f",
-            //            pickInfoOnHost.positionInWorld.x,
-            //            pickInfoOnHost.positionInWorld.y,
-            //            pickInfoOnHost.positionInWorld.z);
-            //ImGui::Text("Normal: %.3f, %.3f, %.3f",
-            //            pickInfoOnHost.normalInWorld.x,
-            //            pickInfoOnHost.normalInWorld.y,
-            //            pickInfoOnHost.normalInWorld.z);
-            //ImGui::Text("Albedo: %.3f, %.3f, %.3f",
-            //            pickInfoOnHost.albedo.x,
-            //            pickInfoOnHost.albedo.y,
-            //            pickInfoOnHost.albedo.z);
-            //ImGui::Text("Emittance: %.3f, %.3f, %.3f",
-            //            pickInfoOnHost.emittance.x,
-            //            pickInfoOnHost.emittance.y,
-            //            pickInfoOnHost.emittance.z);
+            shared::PickInfo pickInfoOnHost;
+            curPickInfo.read(&pickInfoOnHost, 1, cuStream);
+            ImGui::Text("Hit: %s", pickInfoOnHost.hit ? "True" : "False");
+            ImGui::Text("Instance: %u", pickInfoOnHost.instSlot);
+            ImGui::Text("Geometry Instance: %u", pickInfoOnHost.geomInstSlot);
+            ImGui::Text("Primitive Index: %u", pickInfoOnHost.primIndex);
+            ImGui::Text("Material: %u", pickInfoOnHost.matSlot);
+            ImGui::Text("Position: %.3f, %.3f, %.3f",
+                        pickInfoOnHost.positionInWorld.x,
+                        pickInfoOnHost.positionInWorld.y,
+                        pickInfoOnHost.positionInWorld.z);
+            ImGui::Text("Normal: %.3f, %.3f, %.3f",
+                        pickInfoOnHost.normalInWorld.x,
+                        pickInfoOnHost.normalInWorld.y,
+                        pickInfoOnHost.normalInWorld.z);
+            ImGui::Text("Albedo: %.3f, %.3f, %.3f",
+                        pickInfoOnHost.albedo.x,
+                        pickInfoOnHost.albedo.y,
+                        pickInfoOnHost.albedo.z);
+            ImGui::Text("Emittance: %.3f, %.3f, %.3f",
+                        pickInfoOnHost.emittance.x,
+                        pickInfoOnHost.emittance.y,
+                        pickInfoOnHost.emittance.z);
 
             ImGui::Separator();
 
@@ -2033,6 +2122,10 @@ int32_t main(int32_t argc, const char* argv[]) try {
         prevTemporalSet.gBuffer0InteropHandler.endCUDAAccess(cuStream, true);
 
         curGPUTimer.frame.stop(cuStream);
+
+        gpuEnv.pick.setEntryPoint(PickerEntryPoint::pick);
+        gpuEnv.pick.optixPipeline.launch(
+            cuStream, plpOnDevice, 1, 1, 1);
 
         // ----------------------------------------------------------------
         // JP: 最終レンダーターゲットに結果を描画する。

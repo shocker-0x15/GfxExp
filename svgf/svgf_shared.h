@@ -21,6 +21,19 @@ namespace shared {
         }
     };
 
+    struct PickRayType {
+        enum Value {
+            Primary,
+            NumTypes
+        } value;
+
+        CUDA_DEVICE_FUNCTION constexpr PickRayType(Value v = Primary) : value(v) {}
+
+        CUDA_DEVICE_FUNCTION operator uint32_t() const {
+            return static_cast<uint32_t>(value);
+        }
+    };
+
     constexpr uint32_t maxNumRayTypes = 2;
 
 
@@ -241,8 +254,8 @@ namespace shared {
 
 
 
-    using PrimaryRayPayloadSignature =
-        optixu::PayloadSignature<shared::HitPointParams*, shared::PickInfo*>;
+    using PickRayPayloadSignature =
+        optixu::PayloadSignature<shared::PickInfo*>;
     using PathTraceRayPayloadSignature =
         optixu::PayloadSignature<shared::PathTraceWriteOnlyPayload*, shared::PathTraceReadWritePayload*>;
     using VisibilityRayPayloadSignature =

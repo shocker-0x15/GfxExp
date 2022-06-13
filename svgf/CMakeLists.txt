@@ -13,6 +13,7 @@ set(
 set(
     OPTIX_KERNELS
     "gpu_kernels/optix_pathtracing_kernels.cu"
+    "gpu_kernels/optix_picker_kernels.cu"
 )
 
 set(
