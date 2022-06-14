@@ -74,8 +74,7 @@ SVGFはパストレーシングなどによって得られたライティング�
 
 SVGF filters the lighting result in screen-space obtained by methods like path tracing with references to surface parameters. It tracks the variance of the lighting for each pixel in spatially and temporally, then uses smaller filter radii at lower variance parts and larger filter radii at higher variance parts to get rid of perceptual noises from the rendered image while avoiding excessive blurs in the image. It uses an à-trous filter so that large filter radii can be used with relatively low costs.
 
-- [ ] Basic Implementation (temporal accumulation, SVGF, temporal AA)\
-WIP (seems a bit weird for camera motion)
+- [x] Basic Implementation (temporal accumulation, SVGF, temporal AA)
 - [ ] Advanced Items
 
 ![example](svgf/comparison.jpg)
