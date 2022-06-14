@@ -33,7 +33,7 @@ struct PreviousNeighbor {
             plp.s->temporalSets[prevBufIdx];
         const PerFramePipelineLaunchParameters::TemporalSet &perFrameTemporalSet =
             plp.f->temporalSets[prevBufIdx];
-        float depth = perFrameTemporalSet.depthBuffer.read(glPix(pix));
+        //float depth = perFrameTemporalSet.depthBuffer.read(glPix(pix));
         GBuffer0 gBuffer0 = perFrameTemporalSet.GBuffer0.read(glPix(pix));
         GBuffer1 gBuffer1 = perFrameTemporalSet.GBuffer1.read(glPix(pix));
         GBuffer2 gBuffer2 = perFrameTemporalSet.GBuffer2.read(glPix(pix));
@@ -70,34 +70,28 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void reprojectPreviousAccumulation(
 
     float2 prevViewportPos = make_float2(imageSize.x * prevScreenPos.x, imageSize.y * prevScreenPos.y);
     int2 prevPixPos = make_int2(prevViewportPos);
+    float2 fDelta = prevViewportPos - (make_float2(prevPixPos) + make_float2(0.5f));
+    int2 delta = make_int2(fDelta.x < 0 ? -1 : 1,
+                           fDelta.y < 0 ? -1 : 1);
 
-    int2 ulPos = make_int2(prevPixPos.x, prevPixPos.y);
-    int2 urPos = make_int2(min(prevPixPos.x + 1, imageSize.x - 1), prevPixPos.y);
-    int2 llPos = make_int2(prevPixPos.x, min(prevPixPos.y + 1, imageSize.y - 1));
-    int2 lrPos = make_int2(min(prevPixPos.x + 1, imageSize.x - 1),
-                           min(prevPixPos.y + 1, imageSize.y - 1));
+    int2 basePos = make_int2(prevPixPos.x, prevPixPos.y);
+    int2 dxPos = make_int2(clamp(prevPixPos.x + delta.x, 0, imageSize.x - 1), prevPixPos.y);
+    int2 dyPos = make_int2(prevPixPos.x, clamp(prevPixPos.y + delta.y, 0, imageSize.y - 1));
+    int2 dxdyPos = make_int2(clamp(prevPixPos.x + delta.x, 0, imageSize.x - 1),
+                             clamp(prevPixPos.y + delta.y, 0, imageSize.y - 1));
 
     PreviousNeighbor prevNeighbors[] = {
-        PreviousNeighbor(ulPos),
-        PreviousNeighbor(urPos),
-        PreviousNeighbor(llPos),
-        PreviousNeighbor(lrPos),
+        PreviousNeighbor(basePos),
+        PreviousNeighbor(dxPos),
+        PreviousNeighbor(dyPos),
+        PreviousNeighbor(dxdyPos),
     };
 
     float sumWeights = 0.0f;
     float prevFloatSampleCount = 0;
     uint32_t acceptableFlags = 0;
-    float s = clamp((prevViewportPos.x - 0.5f) - prevPixPos.x, 0.0f, 1.0f);
-    float t = clamp((prevViewportPos.y - 0.5f) - prevPixPos.y, 0.0f, 1.0f);
-
-    //{
-    //    uint2 launchIndex = make_uint2(optixGetLaunchIndex().x, optixGetLaunchIndex().y);
-    //    if (launchIndex == plp.f->mousePosition) {
-    //        printf("m: %4u, %4u, prev: %6.1f, %6.1f: %.3f, %.3f\n",
-    //               vector2Arg(launchIndex), vector2Arg(prevViewportPos),
-    //               s, t);
-    //    }
-    //}
+    float s = std::fabs(fDelta.x);
+    float t = std::fabs(fDelta.y);
 
     const auto testAndAccumulate = [&](uint32_t i, float weight) {
         const PreviousNeighbor &prevNeighbor = prevNeighbors[i];
@@ -105,7 +99,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void reprojectPreviousAccumulation(
             return;
         if (dot(prevNeighbor.normal, curNormalInWorld) <= 0.85)
             return;
-        if (sqLength(prevNeighbor.position - curPosInWorld) > 0.1f)
+        if (sqLength(prevNeighbor.position - curPosInWorld) > 0.1f) // TODO: シーンスケールに対して相対的な指標にする。
             return;
 
         prevResult->noisyLighting += weight * prevNeighbor.noisyLighting;
@@ -435,10 +429,12 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_closestHit_generic() {
         }
 
         // Russian roulette
-        float continueProb = std::fmin(sRGB_calcLuminance(rwPayload->alpha) / rwPayload->initImportance, 1.0f);
-        if (rng.getFloat0cTo1o() >= continueProb || rwPayload->maxLengthTerminate)
-            return;
-        rwPayload->alpha /= continueProb;
+        if (rwPayload->pathLength > 2) {
+            float continueProb = std::fmin(sRGB_calcLuminance(rwPayload->alpha) / rwPayload->initImportance, 1.0f);
+            if (rng.getFloat0cTo1o() >= continueProb || rwPayload->maxLengthTerminate)
+                return;
+            rwPayload->alpha /= continueProb;
+        }
     }
 
     // JP: ファイアフライを抑えるために二次反射以降のスペキュラー面のラフネスを抑える。

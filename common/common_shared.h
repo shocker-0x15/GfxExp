@@ -445,6 +445,12 @@ CUDA_COMMON_FUNCTION CUDA_INLINE uint2 max(const uint2 &v0, const uint2 &v1) {
 CUDA_COMMON_FUNCTION CUDA_INLINE float2 make_float2(float v) {
     return make_float2(v, v);
 }
+CUDA_COMMON_FUNCTION CUDA_INLINE float2 make_float2(const int2 &v) {
+    return make_float2(v.x, v.y);
+}
+CUDA_COMMON_FUNCTION CUDA_INLINE float2 make_float2(const uint2 &v) {
+    return make_float2(v.x, v.y);
+}
 CUDA_COMMON_FUNCTION CUDA_INLINE bool operator==(const float2 &v0, const float2 &v1) {
     return v0.x == v1.x && v0.y == v1.y;
 }

@@ -383,16 +383,19 @@ CUDA_DEVICE_FUNCTION void reprojectPreviousAccumulation(
 
     float2 prevViewportPos = make_float2(imageSize.x * prevScreenPos.x, imageSize.y * prevScreenPos.y);
     int2 prevPixPos = make_int2(prevViewportPos);
+    float2 fDelta = prevViewportPos - (make_float2(prevPixPos) + make_float2(0.5f));
+    int2 delta = make_int2(fDelta.x < 0 ? -1 : 1,
+                           fDelta.y < 0 ? -1 : 1);
 
-    int2 ulPos = make_int2(prevPixPos.x, prevPixPos.y);
-    int2 urPos = make_int2(min(prevPixPos.x + 1, imageSize.x - 1), prevPixPos.y);
-    int2 llPos = make_int2(prevPixPos.x, min(prevPixPos.y + 1, imageSize.y - 1));
-    int2 lrPos = make_int2(min(prevPixPos.x + 1, imageSize.x - 1),
-                           min(prevPixPos.y + 1, imageSize.y - 1));
+    int2 basePos = make_int2(prevPixPos.x, prevPixPos.y);
+    int2 dxPos = make_int2(clamp(prevPixPos.x + delta.x, 0, imageSize.x - 1), prevPixPos.y);
+    int2 dyPos = make_int2(prevPixPos.x, clamp(prevPixPos.y + delta.y, 0, imageSize.y - 1));
+    int2 dxdyPos = make_int2(clamp(prevPixPos.x + delta.x, 0, imageSize.x - 1),
+                             clamp(prevPixPos.y + delta.y, 0, imageSize.y - 1));
 
     float sumWeights = 0.0f;
-    float s = clamp((prevViewportPos.x - 0.5f) - prevPixPos.x, 0.0f, 1.0f);
-    float t = clamp((prevViewportPos.y - 0.5f) - prevPixPos.y, 0.0f, 1.0f);
+    float s = std::fabs(fDelta.x);
+    float t = std::fabs(fDelta.y);
 
     //{
     //    int2 launchIndex = make_int2(blockDim.x * blockIdx.x + threadIdx.x,
@@ -404,28 +407,28 @@ CUDA_DEVICE_FUNCTION void reprojectPreviousAccumulation(
     //    }
     //}
 
-    // Upper Left
+    // Base
     {
         float weight = (1 - s) * (1 - t);
-        *prevFinalLighting += weight * make_float3(prevFinalLightingBuffer.read(glPix(ulPos)));
+        *prevFinalLighting += weight * make_float3(prevFinalLightingBuffer.read(glPix(basePos)));
         sumWeights += weight;
     }
-    // Upper Right
+    // dx
     {
         float weight = s * (1 - t);
-        *prevFinalLighting += weight * make_float3(prevFinalLightingBuffer.read(glPix(urPos)));
+        *prevFinalLighting += weight * make_float3(prevFinalLightingBuffer.read(glPix(dxPos)));
         sumWeights += weight;
     }
-    // Lower Left
+    // dy
     {
         float weight = (1 - s) * t;
-        *prevFinalLighting += weight * make_float3(prevFinalLightingBuffer.read(glPix(llPos)));
+        *prevFinalLighting += weight * make_float3(prevFinalLightingBuffer.read(glPix(dyPos)));
         sumWeights += weight;
     }
-    // Lower Right
+    // dxdy
     {
         float weight = s * t;
-        *prevFinalLighting += weight * make_float3(prevFinalLightingBuffer.read(glPix(lrPos)));
+        *prevFinalLighting += weight * make_float3(prevFinalLightingBuffer.read(glPix(dxdyPos)));
         sumWeights += weight;
     }
 
