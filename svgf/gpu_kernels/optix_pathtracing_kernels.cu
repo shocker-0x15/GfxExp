@@ -429,12 +429,12 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_closestHit_generic() {
         }
 
         // Russian roulette
-        if (rwPayload->pathLength > 2) {
-            float continueProb = std::fmin(sRGB_calcLuminance(rwPayload->alpha) / rwPayload->initImportance, 1.0f);
-            if (rng.getFloat0cTo1o() >= continueProb || rwPayload->maxLengthTerminate)
-                return;
-            rwPayload->alpha /= continueProb;
-        }
+        float continueProb = 1.0f;
+        if (rwPayload->pathLength > 2)
+          continueProb = std::fmin(sRGB_calcLuminance(rwPayload->alpha) / rwPayload->initImportance, 1.0f);
+        if (rng.getFloat0cTo1o() >= continueProb || rwPayload->maxLengthTerminate)
+            return;
+        rwPayload->alpha /= continueProb;
     }
 
     // JP: ファイアフライを抑えるために二次反射以降のスペキュラー面のラフネスを抑える。
