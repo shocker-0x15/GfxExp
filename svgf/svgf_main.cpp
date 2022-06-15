@@ -134,69 +134,6 @@ struct GPUEnvironment {
         optixDefaultMaterial = optixContext.createMaterial();
         optixu::Module emptyModule;
 
-        // 512ドライバーのバグでこのパイプラインを先に作る必要がある。
-        {
-            Pipeline<PickerEntryPoint> &pipeline = pick;
-            optixu::Pipeline &p = pipeline.optixPipeline;
-            optixu::Module &m = pipeline.optixModule;
-            p = optixContext.createPipeline();
-
-            p.setPipelineOptions(
-                std::max({
-                    shared::PickRayPayloadSignature::numDwords
-                         }),
-                optixu::calcSumDwords<float2>(),
-                "plp", sizeof(shared::PipelineLaunchParameters),
-                false, OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_LEVEL_INSTANCING,
-                OPTIX_EXCEPTION_FLAG_STACK_OVERFLOW | OPTIX_EXCEPTION_FLAG_TRACE_DEPTH |
-                DEBUG_SELECT(OPTIX_EXCEPTION_FLAG_DEBUG, OPTIX_EXCEPTION_FLAG_NONE),
-                OPTIX_PRIMITIVE_TYPE_FLAGS_TRIANGLE);
-
-            m = p.createModuleFromPTXString(
-                readTxtFile(getExecutableDirectory() / "svgf/ptxes/optix_picker_kernels.ptx"),
-                OPTIX_COMPILE_DEFAULT_MAX_REGISTER_COUNT,
-                DEBUG_SELECT(OPTIX_COMPILE_OPTIMIZATION_LEVEL_0, OPTIX_COMPILE_OPTIMIZATION_DEFAULT),
-                DEBUG_SELECT(OPTIX_COMPILE_DEBUG_LEVEL_FULL, OPTIX_COMPILE_DEBUG_LEVEL_NONE));
-
-            pipeline.entryPoints[PickerEntryPoint::pick] =
-                p.createRayGenProgram(m, RT_RG_NAME_STR("pick"));
-
-            pipeline.programs[RT_MS_NAME_STR("pick")] = p.createMissProgram(
-                m, RT_MS_NAME_STR("pick"));
-            pipeline.programs[RT_CH_NAME_STR("pick")] = p.createHitProgramGroupForTriangleIS(
-                m, RT_CH_NAME_STR("pick"),
-                emptyModule, nullptr);
-
-            pipeline.programs["emptyHitGroup"] = p.createEmptyHitProgramGroup();
-
-            p.setNumMissRayTypes(shared::PickRayType::NumTypes);
-            p.setMissProgram(
-                shared::PickRayType::Primary, pipeline.programs.at(RT_MS_NAME_STR("pick")));
-
-            p.setNumCallablePrograms(NumCallablePrograms);
-            pipeline.callablePrograms.resize(NumCallablePrograms);
-            for (int i = 0; i < NumCallablePrograms; ++i) {
-                optixu::ProgramGroup program = p.createCallableProgramGroup(
-                    m, callableProgramEntryPoints[i],
-                    emptyModule, nullptr);
-                pipeline.callablePrograms[i] = program;
-                p.setCallableProgram(i, program);
-            }
-
-            p.link(1, DEBUG_SELECT(OPTIX_COMPILE_DEBUG_LEVEL_FULL, OPTIX_COMPILE_DEBUG_LEVEL_NONE));
-
-            optixDefaultMaterial.setHitGroup(
-                shared::PickRayType::Primary, pipeline.programs.at(RT_CH_NAME_STR("pick")));
-            for (uint32_t r = shared::PickRayType::Primary + 1; r < shared::maxNumRayTypes; ++r)
-                optixDefaultMaterial.setHitGroup(r, pipeline.programs.at("emptyHitGroup"));
-
-            size_t sbtSize;
-            p.generateShaderBindingTableLayout(&sbtSize);
-            pipeline.sbt.initialize(cuContext, Scene::bufferType, sbtSize, 1);
-            pipeline.sbt.setMappedMemoryPersistent(true);
-            p.setShaderBindingTable(pipeline.sbt, pipeline.sbt.getMappedPointer());
-        }
-
         {
             Pipeline<PathTracingEntryPoint> &pipeline = pathTracing;
             optixu::Pipeline &p = pipeline.optixPipeline;
@@ -259,6 +196,68 @@ struct GPUEnvironment {
                 shared::PathTracingRayType::Baseline, pipeline.programs.at(RT_CH_NAME_STR("pathTrace")));
             optixDefaultMaterial.setHitGroup(
                 shared::PathTracingRayType::Visibility, pipeline.programs.at(RT_AH_NAME_STR("visibility")));
+
+            size_t sbtSize;
+            p.generateShaderBindingTableLayout(&sbtSize);
+            pipeline.sbt.initialize(cuContext, Scene::bufferType, sbtSize, 1);
+            pipeline.sbt.setMappedMemoryPersistent(true);
+            p.setShaderBindingTable(pipeline.sbt, pipeline.sbt.getMappedPointer());
+        }
+
+        {
+            Pipeline<PickerEntryPoint> &pipeline = pick;
+            optixu::Pipeline &p = pipeline.optixPipeline;
+            optixu::Module &m = pipeline.optixModule;
+            p = optixContext.createPipeline();
+
+            p.setPipelineOptions(
+                std::max({
+                    shared::PickRayPayloadSignature::numDwords
+                         }),
+                optixu::calcSumDwords<float2>(),
+                "plp", sizeof(shared::PipelineLaunchParameters),
+                false, OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_LEVEL_INSTANCING,
+                OPTIX_EXCEPTION_FLAG_STACK_OVERFLOW | OPTIX_EXCEPTION_FLAG_TRACE_DEPTH |
+                DEBUG_SELECT(OPTIX_EXCEPTION_FLAG_DEBUG, OPTIX_EXCEPTION_FLAG_NONE),
+                OPTIX_PRIMITIVE_TYPE_FLAGS_TRIANGLE);
+
+            m = p.createModuleFromPTXString(
+                readTxtFile(getExecutableDirectory() / "svgf/ptxes/optix_picker_kernels.ptx"),
+                OPTIX_COMPILE_DEFAULT_MAX_REGISTER_COUNT,
+                DEBUG_SELECT(OPTIX_COMPILE_OPTIMIZATION_LEVEL_0, OPTIX_COMPILE_OPTIMIZATION_DEFAULT),
+                DEBUG_SELECT(OPTIX_COMPILE_DEBUG_LEVEL_FULL, OPTIX_COMPILE_DEBUG_LEVEL_NONE));
+
+            pipeline.entryPoints[PickerEntryPoint::pick] =
+                p.createRayGenProgram(m, RT_RG_NAME_STR("pick"));
+
+            pipeline.programs[RT_MS_NAME_STR("pick")] = p.createMissProgram(
+                m, RT_MS_NAME_STR("pick"));
+            pipeline.programs[RT_CH_NAME_STR("pick")] = p.createHitProgramGroupForTriangleIS(
+                m, RT_CH_NAME_STR("pick"),
+                emptyModule, nullptr);
+
+            pipeline.programs["emptyHitGroup"] = p.createEmptyHitProgramGroup();
+
+            p.setNumMissRayTypes(shared::PickRayType::NumTypes);
+            p.setMissProgram(
+                shared::PickRayType::Primary, pipeline.programs.at(RT_MS_NAME_STR("pick")));
+
+            p.setNumCallablePrograms(NumCallablePrograms);
+            pipeline.callablePrograms.resize(NumCallablePrograms);
+            for (int i = 0; i < NumCallablePrograms; ++i) {
+                optixu::ProgramGroup program = p.createCallableProgramGroup(
+                    m, callableProgramEntryPoints[i],
+                    emptyModule, nullptr);
+                pipeline.callablePrograms[i] = program;
+                p.setCallableProgram(i, program);
+            }
+
+            p.link(1, DEBUG_SELECT(OPTIX_COMPILE_DEBUG_LEVEL_FULL, OPTIX_COMPILE_DEBUG_LEVEL_NONE));
+
+            optixDefaultMaterial.setHitGroup(
+                shared::PickRayType::Primary, pipeline.programs.at(RT_CH_NAME_STR("pick")));
+            for (uint32_t r = shared::PickRayType::Primary + 1; r < shared::maxNumRayTypes; ++r)
+                optixDefaultMaterial.setHitGroup(r, pipeline.programs.at("emptyHitGroup"));
 
             size_t sbtSize;
             p.generateShaderBindingTableLayout(&sbtSize);

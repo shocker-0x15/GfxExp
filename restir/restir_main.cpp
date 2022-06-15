@@ -148,6 +148,63 @@ struct GPUEnvironment {
         optixu::Module emptyModule;
 
         {
+            Pipeline<GBufferEntryPoint> &pipeline = gBuffer;
+            optixu::Pipeline &p = pipeline.optixPipeline;
+            optixu::Module &m = pipeline.optixModule;
+            p = optixContext.createPipeline();
+
+            p.setPipelineOptions(
+                std::max({
+                    shared::PrimaryRayPayloadSignature::numDwords
+                         }),
+                optixu::calcSumDwords<float2>(),
+                "plp", sizeof(shared::PipelineLaunchParameters),
+                false, OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_LEVEL_INSTANCING,
+                OPTIX_EXCEPTION_FLAG_STACK_OVERFLOW | OPTIX_EXCEPTION_FLAG_TRACE_DEPTH |
+                DEBUG_SELECT(OPTIX_EXCEPTION_FLAG_DEBUG, OPTIX_EXCEPTION_FLAG_NONE),
+                OPTIX_PRIMITIVE_TYPE_FLAGS_TRIANGLE);
+
+            m = p.createModuleFromPTXString(
+                readTxtFile(getExecutableDirectory() / "restir/ptxes/optix_gbuffer_kernels.ptx"),
+                OPTIX_COMPILE_DEFAULT_MAX_REGISTER_COUNT,
+                DEBUG_SELECT(OPTIX_COMPILE_OPTIMIZATION_LEVEL_0, OPTIX_COMPILE_OPTIMIZATION_DEFAULT),
+                DEBUG_SELECT(OPTIX_COMPILE_DEBUG_LEVEL_FULL, OPTIX_COMPILE_DEBUG_LEVEL_NONE));
+
+            pipeline.entryPoints[GBufferEntryPoint::setupGBuffers] = p.createRayGenProgram(
+                m, RT_RG_NAME_STR("setupGBuffers"));
+
+            pipeline.programs["hitgroup"] = p.createHitProgramGroupForTriangleIS(
+                m, RT_CH_NAME_STR("setupGBuffers"),
+                emptyModule, nullptr);
+            pipeline.programs["miss"] = p.createMissProgram(
+                m, RT_MS_NAME_STR("setupGBuffers"));
+
+            pipeline.setEntryPoint(GBufferEntryPoint::setupGBuffers);
+            p.setNumMissRayTypes(shared::GBufferRayType::NumTypes);
+            p.setMissProgram(shared::GBufferRayType::Primary, pipeline.programs.at("miss"));
+
+            p.setNumCallablePrograms(NumCallablePrograms);
+            pipeline.callablePrograms.resize(NumCallablePrograms);
+            for (int i = 0; i < NumCallablePrograms; ++i) {
+                optixu::ProgramGroup program = p.createCallableProgramGroup(
+                    m, callableProgramEntryPoints[i],
+                    emptyModule, nullptr);
+                pipeline.callablePrograms[i] = program;
+                p.setCallableProgram(i, program);
+            }
+
+            p.link(1, DEBUG_SELECT(OPTIX_COMPILE_DEBUG_LEVEL_FULL, OPTIX_COMPILE_DEBUG_LEVEL_NONE));
+
+            optixDefaultMaterial.setHitGroup(shared::GBufferRayType::Primary, pipeline.programs.at("hitgroup"));
+
+            size_t sbtSize;
+            p.generateShaderBindingTableLayout(&sbtSize);
+            pipeline.sbt.initialize(cuContext, Scene::bufferType, sbtSize, 1);
+            pipeline.sbt.setMappedMemoryPersistent(true);
+            p.setShaderBindingTable(pipeline.sbt, pipeline.sbt.getMappedPointer());
+        }
+
+        {
             Pipeline<ReSTIREntryPoint> &pipeline = restir;
             optixu::Pipeline &p = pipeline.optixPipeline;
             optixu::Module &m = pipeline.optixModule;
@@ -205,63 +262,6 @@ struct GPUEnvironment {
 
             optixDefaultMaterial.setHitGroup(
                 shared::ReSTIRRayType::Visibility, pipeline.programs.at("visibility"));
-
-            size_t sbtSize;
-            p.generateShaderBindingTableLayout(&sbtSize);
-            pipeline.sbt.initialize(cuContext, Scene::bufferType, sbtSize, 1);
-            pipeline.sbt.setMappedMemoryPersistent(true);
-            p.setShaderBindingTable(pipeline.sbt, pipeline.sbt.getMappedPointer());
-        }
-
-        {
-            Pipeline<GBufferEntryPoint> &pipeline = gBuffer;
-            optixu::Pipeline &p = pipeline.optixPipeline;
-            optixu::Module &m = pipeline.optixModule;
-            p = optixContext.createPipeline();
-
-            p.setPipelineOptions(
-                std::max({
-                    shared::PrimaryRayPayloadSignature::numDwords
-                         }),
-                optixu::calcSumDwords<float2>(),
-                "plp", sizeof(shared::PipelineLaunchParameters),
-                false, OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_LEVEL_INSTANCING,
-                OPTIX_EXCEPTION_FLAG_STACK_OVERFLOW | OPTIX_EXCEPTION_FLAG_TRACE_DEPTH |
-                DEBUG_SELECT(OPTIX_EXCEPTION_FLAG_DEBUG, OPTIX_EXCEPTION_FLAG_NONE),
-                OPTIX_PRIMITIVE_TYPE_FLAGS_TRIANGLE);
-
-            m = p.createModuleFromPTXString(
-                readTxtFile(getExecutableDirectory() / "restir/ptxes/optix_gbuffer_kernels.ptx"),
-                OPTIX_COMPILE_DEFAULT_MAX_REGISTER_COUNT,
-                DEBUG_SELECT(OPTIX_COMPILE_OPTIMIZATION_LEVEL_0, OPTIX_COMPILE_OPTIMIZATION_DEFAULT),
-                DEBUG_SELECT(OPTIX_COMPILE_DEBUG_LEVEL_FULL, OPTIX_COMPILE_DEBUG_LEVEL_NONE));
-
-            pipeline.entryPoints[GBufferEntryPoint::setupGBuffers] = p.createRayGenProgram(
-                m, RT_RG_NAME_STR("setupGBuffers"));
-
-            pipeline.programs["hitgroup"] = p.createHitProgramGroupForTriangleIS(
-                m, RT_CH_NAME_STR("setupGBuffers"),
-                emptyModule, nullptr);
-            pipeline.programs["miss"] = p.createMissProgram(
-                m, RT_MS_NAME_STR("setupGBuffers"));
-
-            pipeline.setEntryPoint(GBufferEntryPoint::setupGBuffers);
-            p.setNumMissRayTypes(shared::GBufferRayType::NumTypes);
-            p.setMissProgram(shared::GBufferRayType::Primary, pipeline.programs.at("miss"));
-
-            p.setNumCallablePrograms(NumCallablePrograms);
-            pipeline.callablePrograms.resize(NumCallablePrograms);
-            for (int i = 0; i < NumCallablePrograms; ++i) {
-                optixu::ProgramGroup program = p.createCallableProgramGroup(
-                    m, callableProgramEntryPoints[i],
-                    emptyModule, nullptr);
-                pipeline.callablePrograms[i] = program;
-                p.setCallableProgram(i, program);
-            }
-
-            p.link(1, DEBUG_SELECT(OPTIX_COMPILE_DEBUG_LEVEL_FULL, OPTIX_COMPILE_DEBUG_LEVEL_NONE));
-
-            optixDefaultMaterial.setHitGroup(shared::GBufferRayType::Primary, pipeline.programs.at("hitgroup"));
 
             size_t sbtSize;
             p.generateShaderBindingTableLayout(&sbtSize);
