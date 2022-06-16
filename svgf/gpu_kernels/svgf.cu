@@ -95,10 +95,9 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void estimateVariance_generic() {
                 float hx = filterKernel[j + 3];
 
                 int2 nbPix = make_int2(nbPixX, nbPixY);
-                uint32_t nbMatSlot = perFrameTemporalSet.GBuffer2.read(glPix(nbPix)).materialSlot;
-                if (nbMatSlot == 0xFFFFFFFF)
-                    continue;
                 float nbDepth = perFrameTemporalSet.depthBuffer.read(glPix(nbPix));
+                if (nbDepth == 1.0f)
+                    continue;
                 float3 nbNormal = perFrameTemporalSet.GBuffer1.read(glPix(nbPix)).normalInWorld;
 
                 float wz = calcDepthWeight(nbDepth, depth, dzdx, dzdy, j, i);
@@ -125,7 +124,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void estimateVariance_generic() {
 
     // V[X] = E[X^2] - E[X]^2
     float variance = max(secondMoment - pow2(firstMoment), 0.0f);
-    plp.s->lighting_variance_buffers[0].writeComp<3>(pix, variance);
+    constexpr size_t byteOffset = offsetof(Lighting_Variance, variance);
+    plp.s->lighting_variance_buffers[0].writePartially<byteOffset>(pix, variance);
 }
 
 CUDA_DEVICE_KERNEL void estimateVariance() {
@@ -351,6 +351,8 @@ CUDA_DEVICE_KERNEL void applyATrousFilter_box3x3(uint32_t filterStageIndex) {
     applyATrousFilter_generic<ATrousKernelType_Box3x3>(filterStageIndex);
 }
 
+
+
 // for the case where SVGF is disabled and temporal accumulation is enabled.
 CUDA_DEVICE_KERNEL void feedbackNoisyLighting() {
     int2 launchIndex = make_int2(blockDim.x * blockIdx.x + threadIdx.x,
@@ -366,6 +368,91 @@ CUDA_DEVICE_KERNEL void feedbackNoisyLighting() {
 
     Lighting_Variance lighting_var = src_lighting_variance_buffer.read(pix);
     plp.s->prevNoisyLightingBuffer.write(launchIndex, lighting_var);
+}
+
+
+
+CUDA_DEVICE_KERNEL void fillBackground(uint32_t numFilteringStages) {
+    int2 launchIndex = make_int2(blockDim.x * blockIdx.x + threadIdx.x,
+                                 blockDim.y * blockIdx.y + threadIdx.y);
+    int2 imageSize = plp.s->imageSize;
+    int2 pix = make_int2(launchIndex.x, launchIndex.y);
+    bool valid = pix.x >= 0 && pix.y >= 0 && pix.x < imageSize.x && pix.y < imageSize.y;
+    if (!valid)
+        return;
+
+    uint32_t curBufIdx = plp.f->bufferIndex;
+    uint32_t prevBufIdx = (plp.f->bufferIndex + 1) % 2;
+    const PerFramePipelineLaunchParameters::TemporalSet &curPerFrameTemporalSet =
+        plp.f->temporalSets[curBufIdx];
+    const PerFramePipelineLaunchParameters::TemporalSet &prevPerFrameTemporalSet =
+        plp.f->temporalSets[prevBufIdx];
+
+    optixu::NativeBlockBuffer2D<Lighting_Variance> &dst_lighting_variance_buffer =
+        plp.s->lighting_variance_buffers[plp.f->enableSVGF ? numFilteringStages % 2 : 0];
+
+    bool useEnvLight = plp.s->envLightTexture && plp.f->enableEnvLight;
+
+    GBuffer2 gBuffer2 = curPerFrameTemporalSet.GBuffer2.read(glPix(pix));
+    if (gBuffer2.materialSlot != 0xFFFFFFFF)
+        return;
+
+    auto const computeEnvDirection = [&]
+    (const PerspectiveCamera &tgtCamera, int2 tgtPix, bool withSubPixelOffset) {
+        float2 fpix = make_float2(tgtPix.x + (withSubPixelOffset ? tgtCamera.subPixelOffset.x : 0.5f),
+                                  tgtPix.y + (withSubPixelOffset ? (1 - tgtCamera.subPixelOffset.y) : 0.5f));
+        float x = fpix.x / imageSize.x;
+        float y = fpix.y / imageSize.y;
+        float vh = 2 * std::tan(tgtCamera.fovY * 0.5f);
+        float vw = tgtCamera.aspect * vh;
+
+        float3 direction = normalize(tgtCamera.orientation * make_float3(vw * (0.5f - x), vh * (0.5f - y), 1));
+        return direction;
+    };
+
+    auto const computeEnvMapTexCoord = [&]
+    (const float3 &direction) {
+        float posPhi, posTheta;
+        toPolarYUp(direction, &posPhi, &posTheta);
+
+        float phi = posPhi + plp.f->envLightRotation;
+        if (useEnvLight)
+            phi += plp.f->envLightRotation;
+
+        float u = phi / (2 * Pi);
+        u -= floorf(u);
+        float v = posTheta / Pi;
+
+        return make_float2(u, v);
+    };
+
+    float3 finalLighting = make_float3(0.001f, 0.001f, 0.001f);
+    if (useEnvLight) {
+        float3 direction = computeEnvDirection(curPerFrameTemporalSet.camera, pix, true);
+        float2 texCoord = computeEnvMapTexCoord(direction);
+        float4 texValue = tex2DLod<float4>(
+            plp.s->envLightTexture, texCoord.x, texCoord.y, 0.0f);
+        finalLighting = plp.f->envLightPowerCoeff * make_float3(texValue);
+    }
+
+    float3 direction = computeEnvDirection(curPerFrameTemporalSet.camera, pix, false);
+    const PerspectiveCamera &prevCamera = prevPerFrameTemporalSet.camera;
+    direction = transpose(prevCamera.orientation) * direction;
+    direction /= direction.z;
+    float vh = 2 * std::tan(prevCamera.fovY * 0.5f);
+    float vw = prevCamera.aspect * vh;
+    float2 prevScreenPos = make_float2(0.5f - direction.x / vw, 0.5f - direction.y / vh);
+
+    Lighting_Variance lighting_var;
+    lighting_var.denoisedLighting = finalLighting;
+    lighting_var.variance = 0.0f;
+
+    Albedo albedo;
+    albedo.dhReflectance = make_float3(1.0f, 1.0f, 1.0f);
+
+    dst_lighting_variance_buffer.write(pix, lighting_var);
+    plp.s->albedoBuffer.write(pix, albedo);
+    curPerFrameTemporalSet.GBuffer2.writePartially<0>(glPix(pix), prevScreenPos);
 }
 
 
@@ -456,62 +543,21 @@ CUDA_DEVICE_KERNEL void applyAlbedoModulationAndTemporalAntiAliasing(uint32_t nu
     optixu::NativeBlockBuffer2D<Lighting_Variance> &src_lighting_variance_buffer =
         plp.s->lighting_variance_buffers[plp.f->enableSVGF ? numFilteringStages % 2 : 0];
 
-    auto const computeEnvMapTexCoord = [&]
-    (int2 pix) {
-        const PerspectiveCamera &camera = prevPerFrameTemporalSet.camera;
-
-        float2 fpix = make_float2(pix.x + camera.subPixelOffset.x, pix.y + camera.subPixelOffset.y);
-        float x = fpix.x / imageSize.x;
-        float y = fpix.y / imageSize.y;
-        float vh = 2 * std::tan(camera.fovY * 0.5f);
-        float vw = camera.aspect * vh;
-
-        float3 direction = normalize(camera.orientation * make_float3(vw * (0.5f - x), vh * (0.5f - y), 1));
-
-        float3 p = direction;
-
-        float posPhi, posTheta;
-        toPolarYUp(p, &posPhi, &posTheta);
-
-        float phi = posPhi + plp.f->envLightRotation;
-
-        float u = phi / (2 * Pi);
-        u -= floorf(u);
-        float v = posTheta / Pi;
-
-        return make_float2(u, v);
-    };
-
-    bool useEnvLight = plp.s->envLightTexture && plp.f->enableEnvLight;
-    GBuffer2 gBuffer2 = curPerFrameTemporalSet.GBuffer2.read(glPix(pix));
-    float3 finalLighting;
-    if (gBuffer2.materialSlot == 0xFFFFFFFF) {
-        finalLighting = make_float3(0.001f, 0.001f, 0.001f);
-        if (useEnvLight) {
-            float2 texCoord = computeEnvMapTexCoord(pix);
-            float4 texValue = tex2DLod<float4>(
-                plp.s->envLightTexture, texCoord.x, texCoord.y, 0.0f);
-            finalLighting = plp.f->envLightPowerCoeff * make_float3(texValue);
-        }
-    }
-    else {
-        Lighting_Variance src_lighting_var = src_lighting_variance_buffer.read(pix);
-        Albedo albedo = plp.s->albedoBuffer.read(pix);
-        finalLighting = src_lighting_var.denoisedLighting;
-        if (plp.f->modulateAlbedo)
-            finalLighting *= albedo.dhReflectance;
-    }
+    Lighting_Variance src_lighting_var = src_lighting_variance_buffer.read(pix);
+    Albedo albedo = plp.s->albedoBuffer.read(pix);
+    float3 finalLighting = src_lighting_var.denoisedLighting;
+    if (plp.f->modulateAlbedo)
+        finalLighting *= albedo.dhReflectance;
 
     if (plp.f->enableTemporalAA && !plp.f->isFirstFrame) {
-        float2 prevScreenPos = gBuffer2.prevScreenPos;
-
         const optixu::NativeBlockBuffer2D<float4> &prevFinalLightingBuffer =
             prevPerFrameTemporalSet.finalLightingBuffer;
 
+        GBuffer2 gBuffer2 = curPerFrameTemporalSet.GBuffer2.read(glPix(pix));
         float3 prevFinalLighting;
         bool prevWasOutOfScreen;
         reprojectPreviousAccumulation(
-            prevFinalLightingBuffer, prevScreenPos,
+            prevFinalLightingBuffer, gBuffer2.prevScreenPos,
             &prevFinalLighting, &prevWasOutOfScreen);
 
         float3 nbBoxMin = finalLighting;
@@ -524,24 +570,11 @@ CUDA_DEVICE_KERNEL void applyAlbedoModulationAndTemporalAntiAliasing(uint32_t nu
                     continue;
                 int2 nbPix = make_int2(clamp<int32_t>(pix.x + j, 0, imageSize.x - 1),
                                        clamp<int32_t>(pix.y + i, 0, imageSize.y - 1));
-                float3 nbValue;
-                uint32_t nbMatSlot = curPerFrameTemporalSet.GBuffer2.read(glPix(nbPix)).materialSlot;
-                if (nbMatSlot == 0xFFFFFFFF) {
-                    nbValue = make_float3(0.001f, 0.001f, 0.001f);
-                    if (useEnvLight) {
-                        float2 nbTexCoord = computeEnvMapTexCoord(nbPix);
-                        float4 nbTexValue = tex2DLod<float4>(
-                            plp.s->envLightTexture, nbTexCoord.x, nbTexCoord.y, 0.0f);
-                        nbValue = plp.f->envLightPowerCoeff * make_float3(nbTexValue);
-                    }
-                }
-                else {
-                    Lighting_Variance nbSrc_lighting_var = src_lighting_variance_buffer.read(nbPix);
-                    Albedo nbAlbedo = plp.s->albedoBuffer.read(nbPix);
-                    nbValue = nbSrc_lighting_var.denoisedLighting;
-                    if (plp.f->modulateAlbedo)
-                        nbValue *= nbAlbedo.dhReflectance;
-                }
+                Lighting_Variance nbSrc_lighting_var = src_lighting_variance_buffer.read(nbPix);
+                Albedo nbAlbedo = plp.s->albedoBuffer.read(nbPix);
+                float3 nbValue = nbSrc_lighting_var.denoisedLighting;
+                if (plp.f->modulateAlbedo)
+                    nbValue *= nbAlbedo.dhReflectance;
 
                 nbBoxMin = min(nbBoxMin, nbValue);
                 nbBoxMax = max(nbBoxMax, nbValue);

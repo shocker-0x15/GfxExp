@@ -69,6 +69,7 @@ struct GPUEnvironment {
     cudau::Kernel kernelEstimateVariance;
     cudau::Kernel kernelApplyATrousFilter_box3x3;
     cudau::Kernel kernelFeedbackNoisyLighting;
+    cudau::Kernel kernelFillBackground;
     cudau::Kernel kernelApplyAlbedoModulationAndTemporalAntiAliasing;
     CUdeviceptr plpPtrForSvgfModule;
 
@@ -112,6 +113,8 @@ struct GPUEnvironment {
             cudau::Kernel(svgfModule, "applyATrousFilter_box3x3", cudau::dim3(8, 8), 0);
         kernelFeedbackNoisyLighting =
             cudau::Kernel(svgfModule, "feedbackNoisyLighting", cudau::dim3(8, 8), 0);
+        kernelFillBackground =
+            cudau::Kernel(svgfModule, "fillBackground", cudau::dim3(8, 8), 0);
         kernelApplyAlbedoModulationAndTemporalAntiAliasing =
             cudau::Kernel(svgfModule, "applyAlbedoModulationAndTemporalAntiAliasing", cudau::dim3(8, 8), 0);
 
@@ -1695,11 +1698,11 @@ int32_t main(int32_t argc, const char* argv[]) try {
                     lastFrameWasAnimated = true;
                 animate = !animate;
             }
-            ImGui::SameLine();
-            if (ImGui::Button("Reset Accum"))
-                resetAccumulation = true;
-            ImGui::Checkbox("Enable Accumulation", &enableAccumulation);
-            ImGui::InputLog2Int("#MaxNumAccum", &log2MaxNumAccums, 16, 5);
+            //ImGui::SameLine();
+            //if (ImGui::Button("Reset Accum"))
+            //    resetAccumulation = true;
+            //ImGui::Checkbox("Enable Accumulation", &enableAccumulation);
+            //ImGui::InputLog2Int("#MaxNumAccum", &log2MaxNumAccums, 16, 5);
 
             ImGui::Separator();
             ImGui::Text("Cursor Info: %.1lf, %.1lf", g_mouseX, g_mouseY);
@@ -2088,6 +2091,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
         }
 
         curGPUTimer.temporalAA.start(cuStream);
+        gpuEnv.kernelFillBackground(
+            cuStream, gpuEnv.kernelFillBackground.calcGridDim(renderTargetSizeX, renderTargetSizeY),
+            numFilteringStages);
         gpuEnv.kernelApplyAlbedoModulationAndTemporalAntiAliasing(
             cuStream, gpuEnv.kernelApplyAlbedoModulationAndTemporalAntiAliasing.calcGridDim(renderTargetSizeX, renderTargetSizeY),
             numFilteringStages);

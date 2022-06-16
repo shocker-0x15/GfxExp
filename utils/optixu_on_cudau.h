@@ -128,9 +128,9 @@ namespace optixu {
                 }
             }
         }
-        template <uint32_t comp, typename U>
-        RT_DEVICE_FUNCTION void writeComp(uint2 idx, U value, cudaSurfaceBoundaryMode boundaryMode = cudaBoundaryModeTrap) const {
-            surf2Dwrite(value, m_surfObject, idx.x * sizeof(T) + comp * sizeof(U), idx.y, boundaryMode);
+        template <size_t offsetInBytes, typename U>
+        RT_DEVICE_FUNCTION void writePartially(uint2 idx, U value, cudaSurfaceBoundaryMode boundaryMode = cudaBoundaryModeTrap) const {
+            surf2Dwrite(value, m_surfObject, idx.x * sizeof(T) + offsetInBytes, idx.y, boundaryMode);
         }
 
         RT_DEVICE_FUNCTION T read(int2 idx, cudaSurfaceBoundaryMode boundaryMode = cudaBoundaryModeTrap) const {
@@ -139,9 +139,9 @@ namespace optixu {
         RT_DEVICE_FUNCTION void write(int2 idx, const T &value, cudaSurfaceBoundaryMode boundaryMode = cudaBoundaryModeTrap) const {
             write(make_uint2(idx.x, idx.y), value, boundaryMode);
         }
-        template <uint32_t comp, typename U>
-        RT_DEVICE_FUNCTION void writeComp(int2 idx, U value, cudaSurfaceBoundaryMode boundaryMode = cudaBoundaryModeTrap) const {
-            writeComp<comp>(make_uint2(idx.x, idx.y), value, boundaryMode);
+        template <size_t offsetInBytes, typename U>
+        RT_DEVICE_FUNCTION void writePartially(int2 idx, U value, cudaSurfaceBoundaryMode boundaryMode = cudaBoundaryModeTrap) const {
+            writePartially<offsetInBytes>(make_uint2(idx.x, idx.y), value, boundaryMode);
         }
 #endif
     };

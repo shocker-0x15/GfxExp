@@ -331,8 +331,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_rayGen_generic() {
     albedo.dhReflectance = dhReflectance;
     plp.s->albedoBuffer.write(launchIndex, albedo);
 
-    // JP: Temporal Accumulationを行って前フレームの対応サンプルを取得する。
-    // EN: Perform temporal accumulation to obtain the corresponding sample from the previous frame.
+    // JP: Temporal Reprojectionを行って前フレームの対応サンプルを取得する。
+    // EN: Perform temporal reprojection to obtain the corresponding sample from the previous frame.
     PreviousResult prevResult;
     if constexpr (enableTemporalAccumulation) {
         reprojectPreviousAccumulation(
