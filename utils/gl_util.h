@@ -636,4 +636,45 @@ namespace glu {
             return m_handle;
         }
     };
+
+
+
+    class Timer {
+        GLuint m_event;
+        bool m_startIsValid;
+        bool m_endIsValid;
+
+    public:
+        void initialize() {
+            glCreateQueries(GL_TIME_ELAPSED, 1, &m_event);
+            m_startIsValid = false;
+            m_endIsValid = false;
+        }
+        void finalize() {
+            m_startIsValid = false;
+            m_endIsValid = false;
+            glDeleteQueries(1, &m_event);
+        }
+
+        void start() {
+            glBeginQuery(GL_TIME_ELAPSED, m_event);
+            m_startIsValid = true;
+        }
+        void stop() {
+            glEndQuery(GL_TIME_ELAPSED);
+            m_endIsValid = true;
+        }
+
+        float report() {
+            float ret = 0.0f;
+            if (m_startIsValid && m_endIsValid) {
+                GLint64 elapsedTime;
+                glGetQueryObjecti64v(m_event, GL_QUERY_RESULT, &elapsedTime);
+                ret = elapsedTime * 1e-6f;
+                m_startIsValid = false;
+                m_endIsValid = false;
+            }
+            return ret;
+        }
+    };
 }

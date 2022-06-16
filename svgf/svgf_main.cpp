@@ -1395,28 +1395,36 @@ int32_t main(int32_t argc, const char* argv[]) try {
         cudau::Timer frame;
         cudau::Timer update;
         cudau::Timer computePDFTexture;
-        cudau::Timer setupGBuffers;
+        //cudau::Timer setupGBuffers;
+        glu::Timer setupGBuffers;
         cudau::Timer pathTrace;
         cudau::Timer denoise;
         cudau::Timer estimateVariance;
         cudau::Timer aTrousFilter;
         cudau::Timer temporalAA;
+        cudau::Timer pick;
+        glu::Timer toneMap;
 
         void initialize(CUcontext context) {
             frame.initialize(context);
             update.initialize(context);
             computePDFTexture.initialize(context);
-            setupGBuffers.initialize(context);
+            //setupGBuffers.initialize(context);
+            setupGBuffers.initialize();
             pathTrace.initialize(context);
             denoise.initialize(context);
             estimateVariance.initialize(context);
             aTrousFilter.initialize(context);
             temporalAA.initialize(context);
+            pick.initialize(context);
+            toneMap.initialize();
         }
         void finalize() {
-            estimateVariance.finalize();
-            aTrousFilter.finalize();
+            toneMap.finalize();
+            pick.finalize();
             temporalAA.finalize();
+            aTrousFilter.finalize();
+            estimateVariance.finalize();
             denoise.finalize();
             pathTrace.finalize();
             setupGBuffers.finalize();
@@ -1820,6 +1828,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
             static MovingAverageTime estimateVarianceTime;
             static MovingAverageTime aTrousFilterTime;
             static MovingAverageTime temporalAATime;
+            static MovingAverageTime pickTime;
+            static MovingAverageTime toneMapTime;
 
             cudaFrameTime.append(curGPUTimer.frame.report());
             updateTime.append(curGPUTimer.update.report());
@@ -1830,6 +1840,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
             estimateVarianceTime.append(curGPUTimer.estimateVariance.report());
             aTrousFilterTime.append(curGPUTimer.aTrousFilter.report());
             temporalAATime.append(curGPUTimer.temporalAA.report());
+            pickTime.append(curGPUTimer.pick.report());
+            toneMapTime.append(curGPUTimer.toneMap.report());
 
             //ImGui::SetNextItemWidth(100.0f);
             ImGui::Text("CUDA/OptiX GPU %.3f [ms]:", cudaFrameTime.getAverage());
@@ -1841,6 +1853,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
             ImGui::Text("    Estimate Variance: %.3f [ms]", estimateVarianceTime.getAverage());
             ImGui::Text("    A-Trous Filter: %.3f [ms]", aTrousFilterTime.getAverage());
             ImGui::Text("  Temporal AA: %.3f [ms]", temporalAATime.getAverage());
+            ImGui::Text("  Pick: %.3f [ms]", pickTime.getAverage());
+            ImGui::Text("  Tone Map: %.3f [ms]", toneMapTime.getAverage());
 
             ImGui::Text("%u [spp]", std::min(numAccumFrames + 1, (1u << log2MaxNumAccums)));
 
@@ -1937,6 +1951,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
             curSubPixelOffset = subPixelOffsets[frameIndex % perFramePlp.taaHistoryLength];
         curPerFrameTemporalSet.camera.subPixelOffset = curSubPixelOffset;
 
+        curGPUTimer.setupGBuffers.start();
+
         // JP: Gバッファーのセットアップ。
         // EN: Setup the G-buffers.
         {
@@ -2003,6 +2019,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
             curTemporalSet.gfxDepthBufferCopy.resetDrawBuffers();
             glBindFramebuffer(GL_FRAMEBUFFER, 0);
         }
+
+        curGPUTimer.setupGBuffers.stop();
 
         prevTemporalSet.gBuffer0InteropHandler.beginCUDAAccess(cuStream);
         prevTemporalSet.gBuffer1InteropHandler.beginCUDAAccess(cuStream);
@@ -2126,15 +2144,17 @@ int32_t main(int32_t argc, const char* argv[]) try {
         prevTemporalSet.gBuffer1InteropHandler.endCUDAAccess(cuStream, true);
         prevTemporalSet.gBuffer0InteropHandler.endCUDAAccess(cuStream, true);
 
-        curGPUTimer.frame.stop(cuStream);
-
+        curGPUTimer.pick.start(cuStream);
         gpuEnv.pick.setEntryPoint(PickerEntryPoint::pick);
         gpuEnv.pick.optixPipeline.launch(
             cuStream, plpOnDevice, 1, 1, 1);
+        curGPUTimer.pick.stop(cuStream);
 
         // ----------------------------------------------------------------
         // JP: 最終レンダーターゲットに結果を描画する。
         // EN: Draw the result to the final render target.
+
+        curGPUTimer.toneMap.start();
 
         if (applyToneMapAndGammaCorrection) {
             glEnable(GL_FRAMEBUFFER_SRGB);
@@ -2166,8 +2186,12 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
         glDisable(GL_FRAMEBUFFER_SRGB);
 
+        curGPUTimer.toneMap.stop();
+
         // END: Draw the result to the final render target.
         // ----------------------------------------------------------------
+
+        curGPUTimer.frame.stop(cuStream);
 
         glfwSwapBuffers(window);
 
