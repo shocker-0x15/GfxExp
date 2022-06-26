@@ -13,13 +13,13 @@
   <ItemGroup>
     <ClCompile Include="..\common\common_host.cpp" />
     <ClCompile Include="..\common\dds_loader.cpp" />
-    <ClCompile Include="..\ext\gl3w\gl3w.c" />
     <ClCompile Include="..\ext\imgui\backends\imgui_impl_glfw.cpp" />
     <ClCompile Include="..\ext\imgui\backends\imgui_impl_opengl3.cpp" />
     <ClCompile Include="..\ext\imgui\imgui.cpp" />
     <ClCompile Include="..\ext\imgui\imgui_draw.cpp" />
     <ClCompile Include="..\ext\imgui\imgui_tables.cpp" />
     <ClCompile Include="..\ext\imgui\imgui_widgets.cpp" />
+    <ClCompile Include="..\ext\prebuilt\src\gl3w.c" />
     <ClCompile Include="..\ext\stb_image_write_compile.cpp" />
     <ClCompile Include="..\ext\tinyexr\deps\miniz\miniz.c" />
     <ClCompile Include="..\ext\tinyexr\tinyexr.cc" />
@@ -33,9 +33,6 @@
     <ClInclude Include="..\common\common_shared.h" />
     <ClInclude Include="..\common\common_host.h" />
     <ClInclude Include="..\common\dds_loader.h" />
-    <ClInclude Include="..\ext\gl3w\include\GL\gl3w.h" />
-    <ClInclude Include="..\ext\gl3w\include\GL\glcorearb.h" />
-    <ClInclude Include="..\ext\gl3w\include\KHR\khrplatform.h" />
     <ClInclude Include="..\ext\glfw\include\GLFW\glfw3.h" />
     <ClInclude Include="..\ext\glfw\include\GLFW\glfw3native.h" />
     <ClInclude Include="..\ext\imgui\backends\imgui_impl_glfw.h" />
@@ -47,6 +44,9 @@
     <ClInclude Include="..\ext\imgui\imstb_rectpack.h" />
     <ClInclude Include="..\ext\imgui\imstb_textedit.h" />
     <ClInclude Include="..\ext\imgui\imstb_truetype.h" />
+    <ClInclude Include="..\ext\prebuilt\include\GL\gl3w.h" />
+    <ClInclude Include="..\ext\prebuilt\include\GL\glcorearb.h" />
+    <ClInclude Include="..\ext\prebuilt\include\KHR\khrplatform.h" />
     <ClInclude Include="..\ext\stb_image.h" />
     <ClInclude Include="..\ext\stb_image_write.h" />
     <ClInclude Include="..\ext\tinyexr\deps\miniz\miniz.h" />
@@ -74,11 +74,6 @@
       <GenerateLineInfo Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</GenerateLineInfo>
     </CudaCompile>
     <CudaCompile Include="gpu_kernels\per_pixel_ris.cu" />
-  </ItemGroup>
-  <ItemGroup>
-    <CopyFileToFolders Include="..\ext\prebuilt\bin\assimp-vc143-mt.dll">
-      <FileType>Document</FileType>
-    </CopyFileToFolders>
   </ItemGroup>
   <ItemGroup>
     <CopyFileToFolders Include="..\common\shaders\drawOptiXResult.frag">
@@ -129,14 +124,14 @@
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <LibraryPath>C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v11.6\lib\x64;$(SolutionDir)ext\glfw\lib;$(LibraryPath)</LibraryPath>
+    <LibraryPath>$(SolutionDir)ext\prebuilt\lib;C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v11.6\lib\x64;$(LibraryPath)</LibraryPath>
     <TargetName>restir</TargetName>
-    <ExternalIncludePath>$(SolutionDir)ext\tinyexr;$(SolutionDir)ext\tinyexr\deps\miniz;$(SolutionDir)ext\gl3w\include;$(SolutionDir)ext\glfw\include;$(SolutionDir)ext\imgui;$(SolutionDir)ext\prebuilt\include;C:\ProgramData\NVIDIA Corporation\OptiX SDK 7.4.0\include;$(ExternalIncludePath)</ExternalIncludePath>
+    <ExternalIncludePath>$(SolutionDir)ext\tinyexr;$(SolutionDir)ext\tinyexr\deps\miniz;$(SolutionDir)ext\glfw\include;$(SolutionDir)ext\imgui;$(SolutionDir)ext\prebuilt\include;C:\ProgramData\NVIDIA Corporation\OptiX SDK 7.4.0\include;$(ExternalIncludePath)</ExternalIncludePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <LibraryPath>C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v11.6\lib\x64;$(SolutionDir)ext\glfw\lib;$(LibraryPath)</LibraryPath>
+    <LibraryPath>$(SolutionDir)ext\prebuilt\lib;C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v11.6\lib\x64;$(LibraryPath)</LibraryPath>
     <TargetName>restir</TargetName>
-    <ExternalIncludePath>$(SolutionDir)ext\tinyexr;$(SolutionDir)ext\tinyexr\deps\miniz;$(SolutionDir)ext\gl3w\include;$(SolutionDir)ext\glfw\include;$(SolutionDir)ext\imgui;$(SolutionDir)ext\prebuilt\include;C:\ProgramData\NVIDIA Corporation\OptiX SDK 7.4.0\include;$(ExternalIncludePath)</ExternalIncludePath>
+    <ExternalIncludePath>$(SolutionDir)ext\tinyexr;$(SolutionDir)ext\tinyexr\deps\miniz;$(SolutionDir)ext\glfw\include;$(SolutionDir)ext\imgui;$(SolutionDir)ext\prebuilt\include;C:\ProgramData\NVIDIA Corporation\OptiX SDK 7.4.0\include;$(ExternalIncludePath)</ExternalIncludePath>
   </PropertyGroup>
   <PropertyGroup Label="Vcpkg">
     <VcpkgEnabled>false</VcpkgEnabled>
@@ -153,7 +148,7 @@
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
-      <AdditionalDependencies>$(SolutionDir)ext\prebuilt\lib\assimp-vc143-mt.lib;cuda.lib;cudart_static.lib;glfw3.lib;opengl32.lib;$(SolutionDir)ext\prebuilt\lib\libcubd_staticd.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(SolutionDir)ext\prebuilt\lib\assimp-vc143-mtd.lib;$(SolutionDir)ext\prebuilt\lib\zlibstaticd.lib;cuda.lib;cudart_static.lib;glfw3d.lib;opengl32.lib;$(SolutionDir)ext\prebuilt\lib\libcubd_staticd.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <IgnoreSpecificDefaultLibraries>msvcrt.lib</IgnoreSpecificDefaultLibraries>
     </Link>
     <PostBuildEvent>
@@ -193,7 +188,7 @@
       <SubSystem>Console</SubSystem>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
-      <AdditionalDependencies>$(SolutionDir)ext\prebuilt\lib\assimp-vc143-mt.lib;cuda.lib;cudart_static.lib;glfw3.lib;opengl32.lib;$(SolutionDir)ext\prebuilt\lib\libcubd_static.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(SolutionDir)ext\prebuilt\lib\assimp-vc143-mt.lib;$(SolutionDir)ext\prebuilt\lib\zlibstatic.lib;cuda.lib;cudart_static.lib;glfw3.lib;opengl32.lib;$(SolutionDir)ext\prebuilt\lib\libcubd_static.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PostBuildEvent>
       <Command>

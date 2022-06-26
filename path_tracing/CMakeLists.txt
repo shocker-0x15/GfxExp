@@ -56,6 +56,10 @@ nvcuda_compile_ptx(
 )
 
 set_common_sources()
+set_source_files_properties(
+    ${GL3W_SOURCES} PROPERTIES
+    GENERATED TRUE
+)
 
 # essentials
 source_group(
@@ -69,32 +73,14 @@ add_executable(
     "${TARGET_NAME}"
     ${COMMON_SOURCES}
     ${SOURCES}
+    ${GL3W_SOURCES}
     ${CUDA_KERNELS}
     ${OPTIX_KERNELS}
 )
 target_compile_features("${TARGET_NAME}" PRIVATE cxx_std_20)
 set_target_properties("${TARGET_NAME}" PROPERTIES CXX_EXTENSIONS OFF)
-target_include_directories(
-    "${TARGET_NAME}" PRIVATE
-    "../ext/tinyexr"
-    "../ext/tinyexr/deps/miniz"
-    "../ext/assimp/include"
-    "${CMAKE_BINARY_DIR}/ext/assimp/include"
-    "../ext/gl3w/include"
-    "../ext/glfw/include"
-    "../ext/imgui"
-    "${OPTIX_INCLUDE_DIR}"
-)
-target_link_directories(
-    "${TARGET_NAME}" PRIVATE
-    "../ext/glfw/lib"
-)
 target_link_libraries(
     "${TARGET_NAME}"
     fakelib
-    CUDA::cuda_driver
-    opengl32
-    glfw3
-    assimp::assimp
 )
     

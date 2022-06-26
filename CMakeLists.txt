@@ -34,7 +34,10 @@ file(
     GLOB_RECURSE COMMON_SOURCES
     "common/*"
     "utils/*"
-    "ext/*"
+    "ext/cubd/cubd.h"
+    "ext/glfw/include/*"
+    "ext/imgui/*"
+    "ext/tinyexr/*"
 )
 list(
     FILTER COMMON_SOURCES INCLUDE REGEX
@@ -53,9 +56,6 @@ list(
     "ext/imgui/(backends|misc|examples)/.*")
 list(
     FILTER COMMON_SOURCES EXCLUDE REGEX
-    "ext/assimp/.*")
-list(
-    FILTER COMMON_SOURCES EXCLUDE REGEX
     "ext/tinyexr/deps/miniz/examples/.*")
 list(
     FILTER COMMON_SOURCES EXCLUDE REGEX
@@ -66,9 +66,6 @@ list(
 list(
     FILTER COMMON_SOURCES EXCLUDE REGEX
     "ext/tinyexr/test_tinyexr.cc$")
-list(
-    FILTER COMMON_SOURCES EXCLUDE REGEX
-    "ext/tiny-cuda-nn/.*")
 list(
     FILTER COMMON_SOURCES EXCLUDE REGEX
     "ext/cubd/.*(cpp|cu)$")
@@ -96,6 +93,15 @@ set(
 
 # Called from the sub directories
 function(set_common_sources)
+    set(
+        GL3W_SOURCES
+        "${CMAKE_BINARY_DIR}/ext/gl3w/include/GL/gl3w.h"
+        "${CMAKE_BINARY_DIR}/ext/gl3w/include/GL/glcorearb.h"
+        "${CMAKE_BINARY_DIR}/ext/gl3w/include/KHR/khplatform.h"
+        "${CMAKE_BINARY_DIR}/ext/gl3w/src/gl3w.c"
+        PARENT_SCOPE
+    )
+
     file(
         GLOB_RECURSE COMMON_CUDA_KERNELS
         "../common/gpu_kernels/*")
@@ -235,6 +241,18 @@ set(ENV{TCNN_CUDA_ARCHITECTURES} ${TARGET_CUDA_ARCH})
 
 
 
+# gl3w
+add_subdirectory(ext/gl3w)
+set_project_group("External" "ext/gl3w")
+
+# GLFW
+option(GLFW_BUILD_EXAMPLES "Build the GLFW example programs" OFF)
+option(GLFW_BUILD_TESTS "Build the GLFW test programs" OFF)
+option(GLFW_BUILD_DOCS "Build the GLFW documentation" OFF)
+option(GLFW_INSTALL "Generate installation target" OFF)
+add_subdirectory(ext/glfw)
+set_project_group("External" "ext/GLFW")
+
 # Assimp
 option(ASSIMP_BUILD_ASSIMP_TOOLS "If the supplementary tools for Assimp are built in addition to the library." OFF)
 option(ASSIMP_BUILD_SAMPLES "If the official samples are built as well (needs Glut)." OFF)
@@ -271,9 +289,25 @@ target_compile_options(
     "$<$<AND:$<C_COMPILER_ID:MSVC>,$<NOT:$<COMPILE_LANGUAGE:CUDA>>>:/MP>"
     "$<$<AND:$<CXX_COMPILER_ID:MSVC>,$<NOT:$<COMPILE_LANGUAGE:CUDA>>>:/MP>"
 )
+target_include_directories(
+    fakelib INTERFACE
+    "ext/tinyexr"
+    "ext/tinyexr/deps/miniz"
+    "ext/glfw/include"
+    "ext/imgui"
+    "ext/assimp/include"
+    "${CMAKE_BINARY_DIR}/ext/assimp/include"
+    "${CMAKE_BINARY_DIR}/ext/gl3w/include"
+    "${OPTIX_INCLUDE_DIR}"
+)
 target_link_libraries(
     fakelib INTERFACE
     libcubd_static
+    CUDA::cuda_driver
+    opengl32
+    gl3w
+    glfw
+    assimp::assimp
 )
 
 add_subdirectory(path_tracing)

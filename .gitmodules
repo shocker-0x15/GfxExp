@@ -13,3 +13,9 @@
 [submodule "ext/cubd"]
 	path = ext/cubd
 	url = https://github.com/shocker-0x15/CUBd.git
+[submodule "ext/gl3w"]
+	path = ext/gl3w
+	url = https://github.com/skaslev/gl3w.git
+[submodule "ext/glfw"]
+	path = ext/glfw
+	url = https://github.com/glfw/glfw.git
