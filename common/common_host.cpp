@@ -6,7 +6,6 @@
 #include "../common/dds_loader.h"
 #include "../../ext/stb_image.h"
 #include "tinyexr.h"
-#define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "../ext/stb_image_write.h"
 
 void devPrintf(const char* fmt, ...) {

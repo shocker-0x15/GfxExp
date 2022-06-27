@@ -38,6 +38,7 @@ file(
     "ext/glfw/include/*"
     "ext/imgui/*"
     "ext/tinyexr/*"
+    "ext/stb_*"
 )
 list(
     FILTER COMMON_SOURCES INCLUDE REGEX

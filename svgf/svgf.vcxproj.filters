@@ -55,7 +55,7 @@
     <ClCompile Include="..\utils\optix_util.cpp">
       <Filter>non-essentials\utils</Filter>
     </ClCompile>
-    <ClCompile Include="..\ext\stb_image_write_compile.cpp">
+    <ClCompile Include="..\ext\stb_image_compile.cpp">
       <Filter>non-essentials\ext</Filter>
     </ClCompile>
     <ClCompile Include="..\common\common_host.cpp">

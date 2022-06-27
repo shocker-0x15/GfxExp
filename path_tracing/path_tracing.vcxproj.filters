@@ -52,9 +52,6 @@
     <ClCompile Include="..\utils\optix_util.cpp">
       <Filter>non-essentials\utils</Filter>
     </ClCompile>
-    <ClCompile Include="..\ext\stb_image_write_compile.cpp">
-      <Filter>non-essentials\ext</Filter>
-    </ClCompile>
     <ClCompile Include="..\common\common_host.cpp">
       <Filter>non-essentials</Filter>
     </ClCompile>
@@ -84,6 +81,9 @@
     </ClCompile>
     <ClCompile Include="..\ext\prebuilt\src\gl3w.c">
       <Filter>non-essentials\ext\gl3w</Filter>
+    </ClCompile>
+    <ClCompile Include="..\ext\stb_image_compile.cpp">
+      <Filter>non-essentials\ext</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

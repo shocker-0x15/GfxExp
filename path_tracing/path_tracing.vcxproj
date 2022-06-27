@@ -20,7 +20,7 @@
     <ClCompile Include="..\ext\imgui\imgui_tables.cpp" />
     <ClCompile Include="..\ext\imgui\imgui_widgets.cpp" />
     <ClCompile Include="..\ext\prebuilt\src\gl3w.c" />
-    <ClCompile Include="..\ext\stb_image_write_compile.cpp" />
+    <ClCompile Include="..\ext\stb_image_compile.cpp" />
     <ClCompile Include="..\ext\tinyexr\deps\miniz\miniz.c" />
     <ClCompile Include="..\ext\tinyexr\tinyexr.cc" />
     <ClCompile Include="..\utils\cuda_util.cpp" />
