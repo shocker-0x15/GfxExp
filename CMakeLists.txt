@@ -38,7 +38,6 @@ file(
     "ext/glfw/include/*"
     "ext/imgui/*"
     "ext/tinyexr/*"
-    "ext/stb_*"
 )
 list(
     FILTER COMMON_SOURCES INCLUDE REGEX
@@ -73,6 +72,7 @@ list(
 list(
     FILTER COMMON_SOURCES EXCLUDE REGEX
     "ext/cubd/cuda_util.*$")
+file(GLOB STB_SOURCES "ext/stb_*")
 file(
     GLOB IMGUI_BACKEND_SOURCES
     "ext/imgui/backends/imgui_impl_glfw*"
@@ -81,6 +81,7 @@ file(
 set(
     COMMON_SOURCES
     ${COMMON_SOURCES}
+    ${STB_SOURCES}
     ${IMGUI_BACKEND_SOURCES}
 )
 # foreach(f IN LISTS COMMON_SOURCES)
@@ -312,7 +313,7 @@ target_link_libraries(
 )
 
 add_subdirectory(path_tracing)
-add_subdirectory(svgf)
 add_subdirectory(restir)
 add_subdirectory(regir)
 add_subdirectory(neural_radiance_caching)
+add_subdirectory(svgf)
