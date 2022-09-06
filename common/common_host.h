@@ -880,7 +880,7 @@ struct Scene {
 #else
             size_t scratchMemSize = scanScratchMem.sizeInBytes();
             CUDADRV_CHECK(cubd::DeviceScan::ExclusiveSum(
-                asScratchMem.getDevicePointer(), scratchMemSize,
+                scanScratchMem.getDevicePointer(), scratchMemSize,
                 geomInst->emitterPrimDist.weightsOnDevice(),
                 geomInst->emitterPrimDist.cdfOnDevice(),
                 numTriangles, cuStream));
@@ -1029,7 +1029,7 @@ struct Scene {
 
         size_t scratchMemSize = scanScratchMem.sizeInBytes();
         CUDADRV_CHECK(cubd::DeviceScan::ExclusiveSum(
-            asScratchMem.getDevicePointer(), scratchMemSize,
+            scanScratchMem.getDevicePointer(), scratchMemSize,
             lightInstDist.weightsOnDevice(),
             lightInstDist.cdfOnDevice(),
             numInsts, cuStream));

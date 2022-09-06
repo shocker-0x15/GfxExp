@@ -38,6 +38,7 @@ nvcuda_compile_ptx(
     GENERATED_FILES CUDA_PTXES
     NVCC_OPTIONS
     "$<$<CONFIG:Debug>:-G>"
+    "$<$<CONFIG:Debug>:-D_DEBUG=1>"
     "--gpu-architecture=compute_52"
     "-std=c++17"
     "-cudart" "shared"
@@ -53,6 +54,7 @@ nvcuda_compile_ptx(
     GENERATED_FILES OPTIX_PTXES
     NVCC_OPTIONS
     "$<$<CONFIG:Debug>:-lineinfo>"
+    "$<$<CONFIG:Debug>:-D_DEBUG=1>"
     "--gpu-architecture=compute_52"
     "-std=c++17"
     "-cudart" "shared"

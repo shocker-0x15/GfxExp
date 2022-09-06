@@ -2209,11 +2209,11 @@ namespace shared {
 
 
     struct TexDimInfo {
-        unsigned int dimX : 14;
-        unsigned int dimY : 14;
-        unsigned int isNonPowerOfTwo : 1;
-        unsigned int isBCTexture : 1;
-        unsigned int isLeftHanded : 1; // for normal map
+        uint32_t dimX : 14;
+        uint32_t dimY : 14;
+        uint32_t isNonPowerOfTwo : 1;
+        uint32_t isBCTexture : 1;
+        uint32_t isLeftHanded : 1; // for normal map
     };
 
 

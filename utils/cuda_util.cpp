@@ -792,7 +792,7 @@ namespace cudau {
         // srcDevice, srcHeight, srcHost, srcLOD, srcPitch are not used in this case.
 
         params.dstMemoryType = CU_MEMORYTYPE_ARRAY;
-        params.dstArray = m_array;
+        params.dstArray = newArray.m_array;
         params.dstXInBytes = 0;
         params.dstY = 0;
         params.dstZ = 0;

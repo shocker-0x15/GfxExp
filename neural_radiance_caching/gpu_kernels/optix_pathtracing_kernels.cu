@@ -27,7 +27,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void createRadianceQuery(
     convertToPolar(scatteredDirInWorld, &phi, &theta);
     query->vOut_phi = phi;
     query->vOut_theta = theta;
-    query->roughness = roughness;
+    query->roughness = 1 - std::exp(-roughness);
     query->diffuseReflectance = diffuseReflectance;
     query->specularReflectance = specularReflectance;
 }
