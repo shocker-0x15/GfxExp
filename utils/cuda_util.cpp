@@ -121,7 +121,7 @@ namespace cudau {
 
         return *this;
     }
-    
+
     void Buffer::initialize(
         CUcontext context, BufferType type,
         uint32_t numElements, uint32_t stride, uint32_t glBufferID) {
@@ -483,7 +483,7 @@ namespace cudau {
 #undef CUDA_UTIL_EXPR0
     }
 #endif
-    
+
     Array::Array() :
         m_cuContext(nullptr),
         m_array(0), m_mappedPointers(nullptr), m_mappedArrays(nullptr), m_surfObjs(nullptr),
@@ -557,7 +557,7 @@ namespace cudau {
 
         return *this;
     }
-    
+
     void Array::initialize(
         CUcontext context, ArrayElementType elemType, uint32_t numChannels,
         uint32_t width, uint32_t height, uint32_t depth, uint32_t numMipmapLevels,
@@ -761,7 +761,7 @@ namespace cudau {
             throw std::runtime_error("Array dimension cannot be changed.");
         if (m_numMipmapLevels > 1)
             throw std::runtime_error("resize() is supported only on non-mipmapped array.");
-        
+
         if (width == m_width && height == m_height)
             return;
 

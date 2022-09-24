@@ -97,7 +97,7 @@ I've confirmed that the program runs correctly in the following environment.
 It requires the following libraries.
 
 * CUDA 11.6 Update 2
-* OptiX 7.4.0 (requires Maxwell or later generation NVIDIA GPU)
+* OptiX 7.5.0 (requires Maxwell or later generation NVIDIA GPU)
 
 ## オープンソースソフトウェア / Open Source Software
 - [Open Asset Import Library (assimp)](https://github.com/assimp/assimp)

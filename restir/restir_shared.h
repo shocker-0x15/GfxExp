@@ -512,7 +512,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE float3 performDirectLighting(
     if constexpr (withVisibility) {
         if (lightSample.atInfinity)
             dist = 1e+10f;
-        optixu::trace<shared::VisibilityRayPayloadSignature>(
+        shared::VisibilityRayPayloadSignature::trace(
             plp.f->travHandle,
             shadingPoint, shadowRayDir, 0.0f, dist * 0.9999f, 0.0f,
             0xFF, OPTIX_RAY_FLAG_NONE,
@@ -546,7 +546,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool evaluateVisibility(
         dist = 1e+10f;
 
     float visibility = 1.0f;
-    optixu::trace<shared::VisibilityRayPayloadSignature>(
+    shared::VisibilityRayPayloadSignature::trace(
         plp.f->travHandle,
         shadingPoint, shadowRayDir, 0.0f, dist * 0.9999f, 0.0f,
         0xFF, OPTIX_RAY_FLAG_NONE,

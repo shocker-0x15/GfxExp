@@ -211,10 +211,12 @@ namespace optixu {
                 OPTIX_DEVICE_CONTEXT_VALIDATION_MODE_ALL :
                 OPTIX_DEVICE_CONTEXT_VALIDATION_MODE_OFF;
             OPTIX_CHECK(optixDeviceContextCreate(cuContext, &options, &rawContext));
-            OPTIX_CHECK(optixDeviceContextGetProperty(rawContext, OPTIX_DEVICE_PROPERTY_LIMIT_MAX_INSTANCE_ID,
-                                                      &maxInstanceID, sizeof(maxInstanceID)));
-            OPTIX_CHECK(optixDeviceContextGetProperty(rawContext, OPTIX_DEVICE_PROPERTY_LIMIT_NUM_BITS_INSTANCE_VISIBILITY_MASK,
-                                                      &numVisibilityMaskBits, sizeof(numVisibilityMaskBits)));
+            OPTIX_CHECK(optixDeviceContextGetProperty(
+                rawContext, OPTIX_DEVICE_PROPERTY_LIMIT_MAX_INSTANCE_ID,
+                &maxInstanceID, sizeof(maxInstanceID)));
+            OPTIX_CHECK(optixDeviceContextGetProperty(
+                rawContext, OPTIX_DEVICE_PROPERTY_LIMIT_NUM_BITS_INSTANCE_VISIBILITY_MASK,
+                &numVisibilityMaskBits, sizeof(numVisibilityMaskBits)));
         }
         ~Priv() {
             optixDeviceContextDestroy(rawContext);
@@ -343,7 +345,8 @@ namespace optixu {
         SizeAlign getUserDataSizeAlign() const {
             return userDataSizeAlign;
         }
-        void setRecordHeader(const _Pipeline* pipeline, uint32_t rayType, uint8_t* record, SizeAlign* curSizeAlign) const;
+        void setRecordHeader(
+            const _Pipeline* pipeline, uint32_t rayType, uint8_t* record, SizeAlign* curSizeAlign) const;
         void setRecordData(uint8_t* record, SizeAlign* curSizeAlign) const;
     };
 
@@ -459,7 +462,7 @@ namespace optixu {
             OptixVertexFormat vertexFormat;
             OptixIndicesFormat indexFormat;
             BufferView materialIndexBuffer;
-            uint32_t materialIndexSize;
+            unsigned int materialIndexSize : 3;
         };
         struct CurveGeometry {
             CUdeviceptr* vertexBufferArray;
@@ -469,15 +472,25 @@ namespace optixu {
             BufferView segmentIndexBuffer;
             OptixCurveEndcapFlags endcapFlags;
         };
+        struct SphereGeometry {
+            CUdeviceptr* centerBufferArray;
+            CUdeviceptr* radiusBufferArray;
+            BufferView* centerBuffers;
+            BufferView* radiusBuffers;
+            BufferView materialIndexBuffer;
+            unsigned int materialIndexSize : 3;
+            unsigned int useSingleRadius : 1;
+        };
         struct CustomPrimitiveGeometry {
             CUdeviceptr* primitiveAabbBufferArray;
             BufferView* primitiveAabbBuffers;
             BufferView materialIndexBuffer;
-            uint32_t materialIndexSize;
+            unsigned int materialIndexSize : 3;
         };
         std::variant<
             TriangleGeometry,
             CurveGeometry,
+            SphereGeometry,
             CustomPrimitiveGeometry
         > geometry;
         GeometryType geomType;
@@ -529,6 +542,20 @@ namespace optixu {
                 geom.segmentIndexBuffer = BufferView();
                 geom.endcapFlags = OPTIX_CURVE_ENDCAP_DEFAULT;
             }
+            else if (geomType == GeometryType::Spheres) {
+                geometry = SphereGeometry{};
+                auto &geom = std::get<SphereGeometry>(geometry);
+                geom.centerBufferArray = new CUdeviceptr[numMotionSteps];
+                geom.centerBufferArray[0] = 0;
+                geom.centerBuffers = new BufferView[numMotionSteps];
+                geom.centerBuffers[0] = BufferView();
+                geom.radiusBufferArray = new CUdeviceptr[numMotionSteps];
+                geom.radiusBufferArray[0] = 0;
+                geom.radiusBuffers = new BufferView[numMotionSteps];
+                geom.radiusBuffers[0] = BufferView();
+                geom.materialIndexSize = 0;
+                geom.useSingleRadius = false;
+            }
             else if (geomType == GeometryType::CustomPrimitives) {
                 geometry = CustomPrimitiveGeometry{};
                 auto &geom = std::get<CustomPrimitiveGeometry>(geometry);
@@ -554,6 +581,13 @@ namespace optixu {
                 delete[] geom.widthBufferArray;
                 delete[] geom.vertexBuffers;
                 delete[] geom.vertexBufferArray;
+            }
+            else if (std::holds_alternative<SphereGeometry>(geometry)) {
+                auto &geom = std::get<SphereGeometry>(geometry);
+                delete[] geom.radiusBuffers;
+                delete[] geom.radiusBufferArray;
+                delete[] geom.centerBuffers;
+                delete[] geom.centerBufferArray;
             }
             else if (std::holds_alternative<CustomPrimitiveGeometry>(geometry)) {
                 auto &geom = std::get<CustomPrimitiveGeometry>(geometry);
@@ -589,14 +623,16 @@ namespace optixu {
         void fillBuildInput(OptixBuildInput* input, CUdeviceptr preTransform) const;
         void updateBuildInput(OptixBuildInput* input, CUdeviceptr preTransform) const;
 
-        void calcSBTRequirements(uint32_t gasMatSetIdx,
-                                 const SizeAlign &gasUserDataSizeAlign,
-                                 const SizeAlign &gasChildUserDataSizeAlign,
-                                 SizeAlign* maxRecordSizeAlign, uint32_t* numSBTRecords) const;
-        uint32_t fillSBTRecords(const _Pipeline* pipeline, uint32_t gasMatSetIdx,
-                                const void* gasUserData, const SizeAlign &gasUserDataSizeAlign,
-                                const void* gasChildUserData, const SizeAlign &gasChildUserDataSizeAlign,
-                                uint32_t numRayTypes, uint8_t* records) const;
+        void calcSBTRequirements(
+            uint32_t gasMatSetIdx,
+            const SizeAlign &gasUserDataSizeAlign,
+            const SizeAlign &gasChildUserDataSizeAlign,
+            SizeAlign* maxRecordSizeAlign, uint32_t* numSBTRecords) const;
+        uint32_t fillSBTRecords(
+            const _Pipeline* pipeline, uint32_t gasMatSetIdx,
+            const void* gasUserData, const SizeAlign &gasUserDataSizeAlign,
+            const void* gasChildUserData, const SizeAlign &gasChildUserDataSizeAlign,
+            uint32_t numRayTypes, uint8_t* records) const;
     };
 
 
@@ -666,8 +702,8 @@ namespace optixu {
 
             buildOptions = {};
 
-            CUDADRV_CHECK(cuEventCreate(&finishEvent,
-                                        CU_EVENT_BLOCKING_SYNC | CU_EVENT_DISABLE_TIMING));
+            CUDADRV_CHECK(cuEventCreate(
+                &finishEvent, CU_EVENT_BLOCKING_SYNC | CU_EVENT_DISABLE_TIMING));
             CUDADRV_CHECK(cuMemAlloc(&compactedSizeOnDevice, sizeof(size_t)));
 
             propertyCompactedSize = OptixAccelEmitDesc{};
@@ -699,7 +735,7 @@ namespace optixu {
         uint32_t getSerialID() const {
             return serialID;
         }
-        
+
         uint32_t getNumMaterialSets() const {
             return static_cast<uint32_t>(numRayTypesPerMaterialSet.size());
         }
@@ -707,7 +743,8 @@ namespace optixu {
             return numRayTypesPerMaterialSet[matSetIdx];
         }
 
-        void calcSBTRequirements(uint32_t matSetIdx, SizeAlign* maxRecordSizeAlign, uint32_t* numSBTRecords) const;
+        void calcSBTRequirements(
+            uint32_t matSetIdx, SizeAlign* maxRecordSizeAlign, uint32_t* numSBTRecords) const;
         uint32_t fillSBTRecords(const _Pipeline* pipeline, uint32_t matSetIdx, uint8_t* records) const;
         bool hasMotion() const {
             return buildOptions.motionOptions.numKeys >= 2;
@@ -954,12 +991,12 @@ namespace optixu {
 
 
     class Pipeline::Priv {
-        struct KeyForCurveModule {
+        struct KeyForBuiltinISModule {
             OptixPrimitiveType curveType;
             OptixCurveEndcapFlags endcapFlags;
             OptixBuildFlags buildFlags;
 
-            bool operator<(const KeyForCurveModule &rKey) const {
+            bool operator<(const KeyForBuiltinISModule &rKey) const {
                 if (curveType < rKey.curveType)
                     return true;
                 else if (curveType > rKey.curveType)
@@ -978,7 +1015,7 @@ namespace optixu {
             struct Hash {
                 typedef std::size_t result_type;
 
-                std::size_t operator()(const KeyForCurveModule& key) const {
+                std::size_t operator()(const KeyForBuiltinISModule& key) const {
                     size_t seed = 0;
                     auto hash0 = std::hash<OptixPrimitiveType>()(key.curveType);
                     auto hash1 = std::hash<OptixCurveEndcapFlags>()(key.endcapFlags);
@@ -989,7 +1026,7 @@ namespace optixu {
                     return seed;
                 }
             };
-            bool operator==(const KeyForCurveModule &rKey) const {
+            bool operator==(const KeyForBuiltinISModule &rKey) const {
                 return curveType == rKey.curveType &&
                     endcapFlags == rKey.endcapFlags &&
                     buildFlags == rKey.buildFlags;
@@ -1008,7 +1045,7 @@ namespace optixu {
         uint32_t numCallablePrograms;
         size_t sbtSize;
 
-        std::unordered_map<KeyForCurveModule, _Module*, KeyForCurveModule::Hash> modulesForCurveIS;
+        std::unordered_map<KeyForBuiltinISModule, _Module*, KeyForBuiltinISModule::Hash> modulesForBuiltinIS;
         _ProgramGroup* rayGenProgram;
         _ProgramGroup* exceptionProgram;
         std::vector<_ProgramGroup*> missPrograms;
@@ -1026,6 +1063,16 @@ namespace optixu {
             unsigned int hitGroupSbtIsUpToDate : 1;
         };
 
+        Module createModule(
+            const char* data, size_t size,
+            int32_t maxRegisterCount,
+            OptixCompileOptimizationLevel optLevel, OptixCompileDebugLevel debugLevel,
+            OptixModuleCompileBoundValueEntry* boundValues, uint32_t numBoundValues,
+            const PayloadType* payloadTypes, uint32_t numPayloadTypes);
+        OptixModule getModuleForBuiltin(
+            OptixPrimitiveType primType, OptixCurveEndcapFlags endcapFlags,
+            ASTradeoff tradeoff, bool allowUpdate, bool allowCompaction, bool allowRandomVertexAccess);
+
         void setupShaderBindingTable(CUstream stream);
 
     public:
@@ -1036,7 +1083,8 @@ namespace optixu {
             sizeOfPipelineLaunchParams(0),
             scene(nullptr), numMissRayTypes(0), numCallablePrograms(0),
             rayGenProgram(nullptr), exceptionProgram(nullptr),
-            pipelineLinked(false), sbtLayoutIsUpToDate(false), sbtIsUpToDate(false), hitGroupSbtIsUpToDate(false) {
+            pipelineLinked(false), sbtLayoutIsUpToDate(false),
+            sbtIsUpToDate(false), hitGroupSbtIsUpToDate(false) {
             sbtParams = {};
         }
         ~Priv();
@@ -1053,10 +1101,9 @@ namespace optixu {
 
 
         void markDirty();
-        OptixModule getModuleForCurves(
-            OptixPrimitiveType curveType, OptixCurveEndcapFlags endcapFlags,
-            ASTradeoff tradeoff, bool allowUpdate, bool allowCompaction, bool allowRandomVertexAccess);
-        void createProgram(const OptixProgramGroupDesc &desc, const OptixProgramGroupOptions &options, OptixProgramGroup* group);
+        void createProgram(
+            const OptixProgramGroupDesc &desc, const OptixProgramGroupOptions &options,
+            OptixProgramGroup* group);
         void destroyProgram(OptixProgramGroup group);
     };
 
@@ -1179,12 +1226,9 @@ namespace optixu {
         uint32_t tileWidth;
         uint32_t tileHeight;
         int32_t overlapWidth;
-        uint32_t maxInputWidth;
-        uint32_t maxInputHeight;
-        size_t stateSize;
-        size_t scratchSize;
-        size_t scratchSizeForComputeIntensity;
-        size_t scratchSizeForComputeAverageColor;
+        uint32_t inputWidth;
+        uint32_t inputHeight;
+        DenoiserSizes sizes;
 
         BufferView stateBuffer;
         BufferView scratchBuffer;
@@ -1194,21 +1238,9 @@ namespace optixu {
 
             unsigned int useTiling : 1;
             unsigned int imageSizeSet : 1;
+            unsigned int tasksAreReady : 1;
             unsigned int stateIsReady : 1;
         };
-
-        void invoke(CUstream stream,
-                    bool denoiseAlpha, CUdeviceptr hdrIntensity, CUdeviceptr hdrAverageColor, float blendFactor,
-                    const BufferView &noisyBeauty, OptixPixelFormat beautyFormat,
-                    const BufferView* noisyAovs, OptixPixelFormat* aovFormats, uint32_t numAovs,
-                    const BufferView &albedo, OptixPixelFormat albedoFormat,
-                    const BufferView &normal, OptixPixelFormat normalFormat,
-                    const BufferView &flow, OptixPixelFormat flowFormat,
-                    const BufferView &previousDenoisedBeauty,
-                    const BufferView* previousDenoisedAovs,
-                    const BufferView &denoisedBeauty,
-                    const BufferView* denoisedAovs,
-                    const DenoisingTask &task) const;
 
     public:
         OPTIXU_OPAQUE_BRIDGE(Denoiser);
@@ -1216,9 +1248,8 @@ namespace optixu {
         Priv(_Context* ctxt, OptixDenoiserModelKind _modelKind, bool _guideAlbedo, bool _guideNormal) :
             context(ctxt),
             imageWidth(0), imageHeight(0), tileWidth(0), tileHeight(0),
-            overlapWidth(0), maxInputWidth(0), maxInputHeight(0),
-            stateSize(0), scratchSize(0),
-            scratchSizeForComputeIntensity(0), scratchSizeForComputeAverageColor(0),
+            overlapWidth(0), inputWidth(0), inputHeight(0),
+            sizes{ 0, 0, 0, 0, 0 },
             modelKind(_modelKind), guideAlbedo(_guideAlbedo), guideNormal(_guideNormal),
             useTiling(false), imageSizeSet(false), stateIsReady(false) {
             OptixDenoiserOptions options = {};

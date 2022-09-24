@@ -1326,22 +1326,24 @@ int32_t main(int32_t argc, const char* argv[]) try {
     constexpr bool useTiledDenoising = false; // Change this to true to use tiled denoising.
     constexpr uint32_t tileWidth = useTiledDenoising ? 256 : 0;
     constexpr uint32_t tileHeight = useTiledDenoising ? 256 : 0;
-    optixu::Denoiser denoiser = gpuEnv.optixContext.createDenoiser(OPTIX_DENOISER_MODEL_KIND_TEMPORAL, true, true);
-    size_t stateSize;
-    size_t scratchSize;
-    size_t scratchSizeForComputeIntensity;
+    optixu::Denoiser denoiser = gpuEnv.optixContext.createDenoiser(
+        OPTIX_DENOISER_MODEL_KIND_TEMPORAL, true, true);
+    optixu::DenoiserSizes denoiserSizes;
     uint32_t numTasks;
-    denoiser.prepare(renderTargetSizeX, renderTargetSizeY, tileWidth, tileHeight,
-                     &stateSize, &scratchSize, &scratchSizeForComputeIntensity,
-                     &numTasks);
-    hpprintf("Denoiser State Buffer: %llu bytes\n", stateSize);
-    hpprintf("Denoiser Scratch Buffer: %llu bytes\n", scratchSize);
-    hpprintf("Compute Intensity Scratch Buffer: %llu bytes\n", scratchSizeForComputeIntensity);
+    denoiser.prepare(
+        renderTargetSizeX, renderTargetSizeY, tileWidth, tileHeight,
+        &denoiserSizes, &numTasks);
+    hpprintf("Denoiser State Buffer: %llu bytes\n", denoiserSizes.stateSize);
+    hpprintf("Denoiser Scratch Buffer: %llu bytes\n", denoiserSizes.scratchSize);
+    hpprintf("Compute Intensity Scratch Buffer: %llu bytes\n",
+             denoiserSizes.scratchSizeForComputeNormalizer);
     cudau::Buffer denoiserStateBuffer;
     cudau::Buffer denoiserScratchBuffer;
-    denoiserStateBuffer.initialize(gpuEnv.cuContext, Scene::bufferType, stateSize, 1);
-    denoiserScratchBuffer.initialize(gpuEnv.cuContext, Scene::bufferType,
-                                     std::max(scratchSize, scratchSizeForComputeIntensity), 1);
+    denoiserStateBuffer.initialize(
+        gpuEnv.cuContext, Scene::bufferType, denoiserSizes.stateSize, 1);
+    denoiserScratchBuffer.initialize(
+        gpuEnv.cuContext, Scene::bufferType,
+        std::max(denoiserSizes.scratchSize, denoiserSizes.scratchSizeForComputeNormalizer), 1);
 
     std::vector<optixu::DenoisingTask> denoisingTasks(numTasks);
     denoiser.getTasks(denoisingTasks.data());
@@ -1367,8 +1369,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
         Assert(sizeof(shared::PipelineLaunchParameters) == plpSizeForCopyBuffers, "Unexpected plp size.");
     }
 
-    CUdeviceptr hdrIntensity;
-    CUDADRV_CHECK(cuMemAlloc(&hdrIntensity, sizeof(float)));
+    CUdeviceptr hdrNormalizer;
+    CUDADRV_CHECK(cuMemAlloc(&hdrNormalizer, sizeof(float)));
 
     // END: Setup a denoiser.
     // ----------------------------------------------------------------
@@ -1590,18 +1592,18 @@ int32_t main(int32_t argc, const char* argv[]) try {
             resizeScreenRelatedBuffers(renderTargetSizeX, renderTargetSizeY);
 
             {
-                size_t stateSize;
-                size_t scratchSize;
-                size_t scratchSizeForComputeIntensity;
+                optixu::DenoiserSizes denoiserSizes;
                 uint32_t numTasks;
-                denoiser.prepare(renderTargetSizeX, renderTargetSizeY, tileWidth, tileHeight,
-                                 &stateSize, &scratchSize, &scratchSizeForComputeIntensity,
-                                 &numTasks);
-                hpprintf("Denoiser State Buffer: %llu bytes\n", stateSize);
-                hpprintf("Denoiser Scratch Buffer: %llu bytes\n", scratchSize);
-                hpprintf("Compute Intensity Scratch Buffer: %llu bytes\n", scratchSizeForComputeIntensity);
-                denoiserStateBuffer.resize(stateSize, 1);
-                denoiserScratchBuffer.resize(std::max(scratchSize, scratchSizeForComputeIntensity), 1);
+                denoiser.prepare(
+                    renderTargetSizeX, renderTargetSizeY, tileWidth, tileHeight,
+                    &denoiserSizes, &numTasks);
+                hpprintf("Denoiser State Buffer: %llu bytes\n", denoiserSizes.stateSize);
+                hpprintf("Denoiser Scratch Buffer: %llu bytes\n", denoiserSizes.scratchSize);
+                hpprintf("Compute Intensity Scratch Buffer: %llu bytes\n",
+                         denoiserSizes.scratchSizeForComputeNormalizer);
+                denoiserStateBuffer.resize(denoiserSizes.stateSize, 1);
+                denoiserScratchBuffer.resize(std::max(
+                    denoiserSizes.scratchSize, denoiserSizes.scratchSizeForComputeNormalizer), 1);
 
                 denoisingTasks.resize(numTasks);
                 denoiser.getTasks(denoisingTasks.data());
@@ -2008,18 +2010,18 @@ int32_t main(int32_t argc, const char* argv[]) try {
                             OPTIX_DENOISER_MODEL_KIND_HDR;
                         denoiser = gpuEnv.optixContext.createDenoiser(modelKind, true, true);
 
-                        size_t stateSize;
-                        size_t scratchSize;
-                        size_t scratchSizeForComputeIntensity;
+                        optixu::DenoiserSizes denoiserSizes;
                         uint32_t numTasks;
-                        denoiser.prepare(renderTargetSizeX, renderTargetSizeY, tileWidth, tileHeight,
-                                         &stateSize, &scratchSize, &scratchSizeForComputeIntensity,
-                                         &numTasks);
-                        hpprintf("Denoiser State Buffer: %llu bytes\n", stateSize);
-                        hpprintf("Denoiser Scratch Buffer: %llu bytes\n", scratchSize);
-                        hpprintf("Compute Intensity Scratch Buffer: %llu bytes\n", scratchSizeForComputeIntensity);
-                        denoiserStateBuffer.resize(stateSize, 1);
-                        denoiserScratchBuffer.resize(std::max(scratchSize, scratchSizeForComputeIntensity), 1);
+                        denoiser.prepare(
+                            renderTargetSizeX, renderTargetSizeY, tileWidth, tileHeight,
+                            &denoiserSizes, &numTasks);
+                        hpprintf("Denoiser State Buffer: %llu bytes\n", denoiserSizes.stateSize);
+                        hpprintf("Denoiser Scratch Buffer: %llu bytes\n", denoiserSizes.scratchSize);
+                        hpprintf("Compute Intensity Scratch Buffer: %llu bytes\n",
+                                 denoiserSizes.scratchSizeForComputeNormalizer);
+                        denoiserStateBuffer.resize(denoiserSizes.stateSize, 1);
+                        denoiserScratchBuffer.resize(std::max(
+                            denoiserSizes.scratchSize, denoiserSizes.scratchSizeForComputeNormalizer), 1);
 
                         denoisingTasks.resize(numTasks);
                         denoiser.getTasks(denoisingTasks.data());
@@ -2200,8 +2202,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
         // EN: Perform update of the tile size and initialization of training suffixes and so on.
         if (useNRC) {
             curGPUTimer.preprocessNRC.start(cuStream);
-            gpuEnv.kernelPreprocessNRC(
-                cuStream, gpuEnv.kernelPreprocessNRC.calcGridDim(maxNumTrainingSuffixes),
+            gpuEnv.kernelPreprocessNRC.launchWithThreadDim(
+                cuStream, cudau::dim3(maxNumTrainingSuffixes),
                 perFrameRng(), perFrameRng(), newSequence);
             curGPUTimer.preprocessNRC.stop(cuStream);
         }
@@ -2260,15 +2262,15 @@ int32_t main(int32_t argc, const char* argv[]) try {
                 // EN: Propagate the radiance values from the terminals of training suffixes to
                 //     complete training vertex data.
                 curGPUTimer.propagateRadiances.start(cuStream);
-                gpuEnv.kernelPropagateRadianceValues(
-                    cuStream, gpuEnv.kernelPropagateRadianceValues.calcGridDim(maxNumTrainingSuffixes));
+                gpuEnv.kernelPropagateRadianceValues.launchWithThreadDim(
+                    cuStream, cudau::dim3(maxNumTrainingSuffixes));
                 curGPUTimer.propagateRadiances.stop(cuStream);
 
                 // JP: 訓練データの空間的な相関を取り除くためにデータをシャッフルする。
                 // EN: Shuffle the training data to get rid of spatial correlations of the training data.
                 curGPUTimer.shuffleTrainingData.start(cuStream);
-                gpuEnv.kernelShuffleTrainingData(
-                    cuStream, gpuEnv.kernelShuffleTrainingData.calcGridDim(shared::numTrainingDataPerFrame));
+                gpuEnv.kernelShuffleTrainingData.launchWithThreadDim(
+                    cuStream, cudau::dim3(shared::numTrainingDataPerFrame));
                 curGPUTimer.shuffleTrainingData.stop(cuStream);
 
                 // JP: トレーニングの実行。
@@ -2316,36 +2318,46 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
         // JP: 結果をリニアバッファーにコピーする。(法線の正規化も行う。)
         // EN: Copy the results to the linear buffers (and normalize normals).
-        cudau::dim3 dimCopyBuffers = kernelCopyToLinearBuffers.calcGridDim(renderTargetSizeX, renderTargetSizeY);
-        kernelCopyToLinearBuffers(cuStream, dimCopyBuffers,
-                                  beautyAccumBuffer.getSurfaceObject(0),
-                                  albedoAccumBuffer.getSurfaceObject(0),
-                                  normalAccumBuffer.getSurfaceObject(0),
-                                  gBuffer2[bufferIndex].getSurfaceObject(0),
-                                  linearBeautyBuffer.getDevicePointer(),
-                                  linearAlbedoBuffer.getDevicePointer(),
-                                  linearNormalBuffer.getDevicePointer(),
-                                  linearFlowBuffer.getDevicePointer(),
-                                  uint2(renderTargetSizeX, renderTargetSizeY));
+        kernelCopyToLinearBuffers.launchWithThreadDim(
+            cuStream, cudau::dim3(renderTargetSizeX, renderTargetSizeY),
+            beautyAccumBuffer.getSurfaceObject(0),
+            albedoAccumBuffer.getSurfaceObject(0),
+            normalAccumBuffer.getSurfaceObject(0),
+            gBuffer2[bufferIndex].getSurfaceObject(0),
+            linearBeautyBuffer,
+            linearAlbedoBuffer,
+            linearNormalBuffer,
+            linearFlowBuffer,
+            uint2(renderTargetSizeX, renderTargetSizeY));
 
         curGPUTimer.denoise.start(cuStream);
         if (bufferTypeToDisplay == shared::BufferToDisplay::DenoisedBeauty) {
-            denoiser.computeIntensity(cuStream,
-                                      linearBeautyBuffer, OPTIX_PIXEL_FORMAT_FLOAT4,
-                                      denoiserScratchBuffer, hdrIntensity);
-            //float hdrIntensityOnHost;
-            //CUDADRV_CHECK(cuMemcpyDtoH(&hdrIntensityOnHost, hdrIntensity, sizeof(hdrIntensityOnHost)));
-            //printf("%g\n", hdrIntensityOnHost);
+            denoiser.computeNormalizer(
+                cuStream,
+                linearBeautyBuffer, OPTIX_PIXEL_FORMAT_FLOAT4,
+                denoiserScratchBuffer, hdrNormalizer);
+            //float hdrNormalizerOnHost;
+            //CUDADRV_CHECK(cuMemcpyDtoH(&hdrNormalizerOnHost, hdrNormalizer, sizeof(hdrNormalizerOnHost)));
+            //printf("%g\n", hdrNormalizerOnHost);
+
+            optixu::DenoiserInputBuffers inputBuffers = {};
+            inputBuffers.noisyBeauty = linearBeautyBuffer;
+            inputBuffers.albedo = linearAlbedoBuffer;
+            inputBuffers.normal = linearNormalBuffer;
+            inputBuffers.flow = linearFlowBuffer;
+            inputBuffers.previousDenoisedBeauty = newSequence ?
+                linearBeautyBuffer : linearDenoisedBeautyBuffer;
+            inputBuffers.beautyFormat = OPTIX_PIXEL_FORMAT_FLOAT4;
+            inputBuffers.albedoFormat = OPTIX_PIXEL_FORMAT_FLOAT4;
+            inputBuffers.normalFormat = OPTIX_PIXEL_FORMAT_FLOAT4;
+            inputBuffers.flowFormat = OPTIX_PIXEL_FORMAT_FLOAT2;
+
             for (int i = 0; i < denoisingTasks.size(); ++i)
-                denoiser.invoke(cuStream,
-                                false, hdrIntensity, 0.0f,
-                                linearBeautyBuffer, OPTIX_PIXEL_FORMAT_FLOAT4,
-                                linearAlbedoBuffer, OPTIX_PIXEL_FORMAT_FLOAT4,
-                                linearNormalBuffer, OPTIX_PIXEL_FORMAT_FLOAT4,
-                                linearFlowBuffer, OPTIX_PIXEL_FORMAT_FLOAT2,
-                                newSequence ? linearBeautyBuffer : linearDenoisedBeautyBuffer,
-                                linearDenoisedBeautyBuffer,
-                                denoisingTasks[i]);
+                denoiser.invoke(
+                    cuStream, denoisingTasks[i], inputBuffers,
+                    newSequence, OPTIX_DENOISER_ALPHA_MODE_COPY, hdrNormalizer, 0.0f,
+                    linearDenoisedBeautyBuffer, nullptr,
+                    optixu::BufferView());
         }
         curGPUTimer.denoise.stop(cuStream);
 
@@ -2377,8 +2389,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
             Assert_ShouldNotBeCalled();
             break;
         }
-        kernelVisualizeToOutputBuffer(
-            cuStream, kernelVisualizeToOutputBuffer.calcGridDim(renderTargetSizeX, renderTargetSizeY),
+        kernelVisualizeToOutputBuffer.launchWithThreadDim(
+            cuStream, cudau::dim3(renderTargetSizeX, renderTargetSizeY),
             visualizeTrainingPath,
             bufferToDisplay, bufferTypeToDisplay,
             0.5f, std::pow(10.0f, motionVectorScale),
@@ -2456,7 +2468,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
 
     
-    CUDADRV_CHECK(cuMemFree(hdrIntensity));
+    CUDADRV_CHECK(cuMemFree(hdrNormalizer));
     CUDADRV_CHECK(cuModuleUnload(moduleCopyBuffers));    
     denoiserScratchBuffer.finalize();
     denoiserStateBuffer.finalize();

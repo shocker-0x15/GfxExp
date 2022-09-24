@@ -153,7 +153,7 @@ namespace cudau {
     void devPrintf(const char* fmt, ...);
 
 
-    
+
     struct dim3 {
         uint32_t x, y, z;
         dim3(uint32_t xx = 1, uint32_t yy = 1, uint32_t zz = 1) : x(xx), y(yy), z(zz) {}
@@ -162,14 +162,11 @@ namespace cudau {
 
 
     using ConstVoidPtr = const void*;
-    
-    inline void addArgPointer(ConstVoidPtr* pointer) {}
+
+    inline void addArgPointer(ConstVoidPtr* argPointer, CUdeviceptr* pointer) {}
 
     template <typename HeadType, typename... TailTypes>
-    void addArgPointer(ConstVoidPtr* pointer, HeadType &&head, TailTypes&&... tails) {
-        *pointer = &head;
-        addArgPointer(pointer + 1, std::forward<TailTypes>(tails)...);
-    }
+    void addArgPointer(ConstVoidPtr* argPointer, CUdeviceptr* pointer, HeadType &&head, TailTypes&&... tails);
 
     template <typename... ArgTypes>
     void callKernel(
@@ -178,7 +175,8 @@ namespace cudau {
         ArgTypes&&... args) {
         if constexpr (sizeof...(args) > 0) {
             ConstVoidPtr argPointers[sizeof...(args)];
-            addArgPointer(argPointers, std::forward<ArgTypes>(args)...);
+            CUdeviceptr pointers[sizeof...(args)] = {};
+            addArgPointer(argPointers, pointers, std::forward<ArgTypes>(args)...);
 
             CUDADRV_CHECK(cuLaunchKernel(
                 kernel,
@@ -242,7 +240,19 @@ namespace cudau {
 
         template <typename... ArgTypes>
         void operator()(CUstream stream, const dim3 &gridDim, ArgTypes&&... args) const {
-            callKernel(stream, m_kernel, gridDim, m_blockDim, m_sharedMemSize, std::forward<ArgTypes>(args)...);
+            callKernel(
+                stream, m_kernel,
+                gridDim, m_blockDim, m_sharedMemSize,
+                std::forward<ArgTypes>(args)...);
+        }
+
+        template <typename... ArgTypes>
+        void launchWithThreadDim(CUstream stream, const dim3 &threadDim, ArgTypes&&... args) const {
+            dim3 gridDim = calcGridDim(threadDim.x, threadDim.y, threadDim.z);
+            callKernel(
+                stream, m_kernel,
+                gridDim, m_blockDim, m_sharedMemSize,
+                std::forward<ArgTypes>(args)...);
         }
     };
 
@@ -337,8 +347,9 @@ namespace cudau {
         Buffer(const Buffer &) = delete;
         Buffer &operator=(const Buffer &) = delete;
 
-        void initialize(CUcontext context, BufferType type,
-                        uint32_t numElements, uint32_t stride, uint32_t glBufferID);
+        void initialize(
+            CUcontext context, BufferType type,
+            uint32_t numElements, uint32_t stride, uint32_t glBufferID);
 
     public:
         Buffer();
@@ -350,8 +361,9 @@ namespace cudau {
         template <typename T>
         inline operator T() const;
 
-        void initialize(CUcontext context, BufferType type,
-                        uint32_t numElements, uint32_t stride) {
+        void initialize(
+            CUcontext context, BufferType type,
+            uint32_t numElements, uint32_t stride) {
             initialize(context, type, numElements, stride, 0);
         }
         void initializeFromGLBuffer(CUcontext context, uint32_t stride, uint32_t glBufferID) {
@@ -500,16 +512,25 @@ namespace cudau {
         void initialize(CUcontext context, BufferType type, uint32_t numElements) {
             Buffer::initialize(context, type, numElements, sizeof(T));
         }
-        void initialize(CUcontext context, BufferType type, uint32_t numElements, const T &value, CUstream stream = 0) {
+        void initialize(
+            CUcontext context, BufferType type,
+            uint32_t numElements, const T &value,
+            CUstream stream = 0) {
             std::vector<T> values(numElements, value);
             initialize(context, type, static_cast<uint32_t>(values.size()));
             CUDADRV_CHECK(cuMemcpyHtoDAsync(Buffer::getCUdeviceptr(), values.data(), values.size() * sizeof(T), stream));
         }
-        void initialize(CUcontext context, BufferType type, const T* v, uint32_t numElements, CUstream stream = 0) {
+        void initialize(
+            CUcontext context, BufferType type,
+            const T* v, uint32_t numElements,
+            CUstream stream = 0) {
             initialize(context, type, numElements);
             CUDADRV_CHECK(cuMemcpyHtoDAsync(Buffer::getCUdeviceptr(), v, numElements * sizeof(T), stream));
         }
-        void initialize(CUcontext context, BufferType type, const std::vector<T> &v, CUstream stream = 0) {
+        void initialize(
+            CUcontext context, BufferType type,
+            const std::vector<T> &v,
+            CUstream stream = 0) {
             initialize(context, type, static_cast<uint32_t>(v.size()));
             CUDADRV_CHECK(cuMemcpyHtoDAsync(Buffer::getCUdeviceptr(), v.data(), v.size() * sizeof(T), stream));
         }
@@ -574,9 +595,29 @@ namespace cudau {
         operator std::vector<T>() {
             std::vector<T> ret(numElements());
             read(ret);
-            return ret;
+            return std::move(ret);
         }
     };
+
+
+
+    template <typename>
+    static constexpr bool is_TypedBuffer_v = false;
+
+    template <typename T>
+    static constexpr bool is_TypedBuffer_v<TypedBuffer<T>> = true;
+
+    template <typename HeadType, typename... TailTypes>
+    void addArgPointer(ConstVoidPtr* argPointer, CUdeviceptr* pointer, HeadType &&head, TailTypes&&... tails) {
+        if constexpr (is_TypedBuffer_v<std::remove_const_t<std::remove_reference_t<HeadType>>>) {
+            *pointer = head.getCUdeviceptr();
+            *argPointer = pointer;
+        }
+        else {
+            *argPointer = &head;
+        }
+        addArgPointer(argPointer + 1, pointer + 1, std::forward<TailTypes>(tails)...);
+    }
 
 
 
@@ -627,7 +668,7 @@ namespace cudau {
                 elemType == cudau::ArrayElementType::BC6H_SF16 ||
                 elemType == cudau::ArrayElementType::BC7_UNorm);
     }
-    
+
     class Array {
         CUcontext m_cuContext;
 
@@ -802,10 +843,15 @@ namespace cudau {
         void beginCUDAAccess(CUstream stream, uint32_t mipmapLevel);
         void endCUDAAccess(CUstream stream, uint32_t mipmapLevel);
 
-        void* map(uint32_t mipmapLevel = 0, CUstream stream = 0, BufferMapFlag flag = BufferMapFlag::ReadWrite);
+        void* map(
+            uint32_t mipmapLevel = 0,
+            CUstream stream = 0,
+            BufferMapFlag flag = BufferMapFlag::ReadWrite);
         template <typename T>
         T* map(
-            uint32_t mipmapLevel = 0, CUstream stream = 0, BufferMapFlag flag = BufferMapFlag::ReadWrite) {
+            uint32_t mipmapLevel = 0,
+            CUstream stream = 0,
+            BufferMapFlag flag = BufferMapFlag::ReadWrite) {
             return reinterpret_cast<T*>(map(mipmapLevel, stream, flag));
         }
         void unmap(uint32_t mipmapLevel = 0, CUstream stream = 0);
@@ -955,7 +1001,7 @@ namespace cudau {
         NormalizedFloat,
         NormalizedFloat_sRGB
     };
-    
+
     class TextureSampler {
         CUDA_TEXTURE_DESC m_texDesc;
 

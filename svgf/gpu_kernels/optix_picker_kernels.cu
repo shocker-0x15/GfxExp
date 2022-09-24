@@ -28,7 +28,7 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(pick)() {
     PickInfo pickInfo = {};
 
     PickInfo* pickInfoPtr = &pickInfo;
-    optixu::trace<PickRayPayloadSignature>(
+    PickRayPayloadSignature::trace(
         plp.f->travHandle, origin, direction,
         0.0f, FLT_MAX, 0.0f, 0xFF, OPTIX_RAY_FLAG_NONE,
         PickRayType::Primary, maxNumRayTypes, PickRayType::Primary,

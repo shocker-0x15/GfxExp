@@ -33,7 +33,7 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(setupGBuffers)() {
 
     HitPointParams* hitPointParamsPtr = &hitPointParams;
     PickInfo* pickInfoPtr = &pickInfo;
-    optixu::trace<PrimaryRayPayloadSignature>(
+    PrimaryRayPayloadSignature::trace(
         plp.f->travHandle, origin, direction,
         0.0f, FLT_MAX, 0.0f, 0xFF, OPTIX_RAY_FLAG_NONE,
         GBufferRayType::Primary, maxNumRayTypes, GBufferRayType::Primary,

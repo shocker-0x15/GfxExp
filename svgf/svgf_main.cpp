@@ -2075,14 +2075,14 @@ int32_t main(int32_t argc, const char* argv[]) try {
             // JP: ピクセルごとの輝度の分散を求める。
             // EN: Compute the variance of the luminance for each pixel.
             curGPUTimer.estimateVariance.start(cuStream);
-            gpuEnv.kernelEstimateVariance(
-                cuStream, gpuEnv.kernelEstimateVariance.calcGridDim(renderTargetSizeX, renderTargetSizeY));
+            gpuEnv.kernelEstimateVariance.launchWithThreadDim(
+                cuStream, cudau::dim3(renderTargetSizeX, renderTargetSizeY));
             curGPUTimer.estimateVariance.stop(cuStream);
 
             if (bufferTypeToDisplay == shared::BufferToDisplay::NoisyBeauty ||
                 bufferTypeToDisplay == shared::BufferToDisplay::Variance) {
-                gpuEnv.kernelDebugVisualize(
-                    cuStream, gpuEnv.kernelDebugVisualize.calcGridDim(renderTargetSizeX, renderTargetSizeY),
+                gpuEnv.kernelDebugVisualize.launchWithThreadDim(
+                    cuStream, cudau::dim3(renderTargetSizeX, renderTargetSizeY),
                     bufferTypeToDisplay,
                     0.5f, std::pow(10.0f, motionVectorScale),
                     numFilteringStages);
@@ -2093,8 +2093,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
             // EN: Apply the a-trous filter to lighting and its variance multiple times.
             curGPUTimer.aTrousFilter.start(cuStream);
             for (uint32_t filterStageIndex = 0; filterStageIndex < numFilteringStages; ++filterStageIndex) {
-                gpuEnv.kernelApplyATrousFilter_box3x3(
-                    cuStream, gpuEnv.kernelApplyATrousFilter_box3x3.calcGridDim(renderTargetSizeX, renderTargetSizeY),
+                gpuEnv.kernelApplyATrousFilter_box3x3.launchWithThreadDim(
+                    cuStream, cudau::dim3(renderTargetSizeX, renderTargetSizeY),
                     filterStageIndex);
             }
             curGPUTimer.aTrousFilter.stop(cuStream);
@@ -2103,8 +2103,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
         }
         else {
             if (enableTemporalAccumulation) {
-                gpuEnv.kernelFeedbackNoisyLighting(
-                    cuStream, gpuEnv.kernelFeedbackNoisyLighting.calcGridDim(renderTargetSizeX, renderTargetSizeY));
+                gpuEnv.kernelFeedbackNoisyLighting.launchWithThreadDim(
+                    cuStream, cudau::dim3(renderTargetSizeX, renderTargetSizeY));
             }
         }
 
@@ -2122,8 +2122,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
             bufferTypeToDisplay == shared::BufferToDisplay::Normal ||
             bufferTypeToDisplay == shared::BufferToDisplay::MotionVector ||
             bufferTypeToDisplay == shared::BufferToDisplay::SampleCount) {
-            gpuEnv.kernelDebugVisualize(
-                cuStream, gpuEnv.kernelDebugVisualize.calcGridDim(renderTargetSizeX, renderTargetSizeY),
+            gpuEnv.kernelDebugVisualize.launchWithThreadDim(
+                cuStream, cudau::dim3(renderTargetSizeX, renderTargetSizeY),
                 bufferTypeToDisplay,
                 0.5f, std::pow(10.0f, motionVectorScale),
                 numFilteringStages);

@@ -279,7 +279,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_raygen_generic() {
 
             constexpr PathTracingRayType pathTraceRayType = useNRC ?
                 PathTracingRayType::NRC : PathTracingRayType::Baseline;
-            optixu::trace<PathTraceRayPayloadSignature<useNRC>>(
+            PathTraceRayPayloadSignature<useNRC>::trace(
                 plp.f->travHandle, rayOrg, rayDir,
                 0.0f, FLT_MAX, 0.0f, 0xFF, OPTIX_RAY_FLAG_NONE,
                 pathTraceRayType, maxNumRayTypes, pathTraceRayType,
