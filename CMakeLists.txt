@@ -15,14 +15,14 @@ set(
     "${CMAKE_SOURCE_DIR}/cmake"
     ${CMAKE_MODULE_PATH})
 find_package(CUDAToolkit 11.6 REQUIRED)
-find_package(OptiX74)
+find_package(OptiX75)
 include("copy_files")
 include("nvcuda_compile_ptx")
 
-if (OptiX74_FOUND)
-    set(OPTIX_INCLUDE_DIR "${OPTIX74_INCLUDE_DIR}")
+if (OptiX75_FOUND)
+    set(OPTIX_INCLUDE_DIR "${OPTIX75_INCLUDE_DIR}")
 else()
-    message(FATAL_ERROR "OptiX SDK 7.4 not found.")
+    message(FATAL_ERROR "OptiX SDK 7.5 not found.")
 endif()
 
 
