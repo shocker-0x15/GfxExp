@@ -1,4 +1,4 @@
-#include "../path_tracing_shared.h"
+ï»¿#include "../path_tracing_shared.h"
 
 using namespace shared;
 
@@ -9,7 +9,7 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(setupGBuffers)() {
     float jx = 0.5f;
     float jy = 0.5f;
     if (plp.f->enableJittering) {
-        // JP: ƒWƒbƒ^[‚ð‚©‚¯‚é‚ÆŒ»ó‚ÌŽÀ‘•‚Å‚ÍUnbiased—vŒ‚ð–ž‚½‚³‚È‚¢‚©‚à‚µ‚ê‚È‚¢B—vŒŸ“¢B
+        // JP: ã‚¸ãƒƒã‚¿ãƒ¼ã‚’ã‹ã‘ã‚‹ã¨ç¾çŠ¶ã®å®Ÿè£…ã§ã¯Unbiasedè¦ä»¶ã‚’æº€ãŸã•ãªã„ã‹ã‚‚ã—ã‚Œãªã„ã€‚è¦æ¤œè¨Žã€‚
         // EN: Jittering may break the requirements for unbiasedness with the current implementation.
         //     Need more consideration.
         PCG32RNG rng = plp.s->rngBuffer.read(launchIndex);
@@ -71,7 +71,7 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(setupGBuffers)() {
         launchIndex.y == plp.f->mousePosition.y)
         *plp.f->pickInfo = pickInfo;
 
-    // JP: ƒfƒmƒCƒU[‚É•K—v‚Èî•ñ‚ðo—ÍB
+    // JP: ãƒ‡ãƒŽã‚¤ã‚¶ãƒ¼ã«å¿…è¦ãªæƒ…å ±ã‚’å‡ºåŠ›ã€‚
     // EN: Output information required for the denoiser.
     float3 firstHitNormal = transpose(camera.orientation) * hitPointParams.normalInWorld;
     firstHitNormal.x *= -1;
@@ -150,7 +150,7 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
     hitPointParams->texCoord = texCoord;
     hitPointParams->materialSlot = geomInst.materialSlot;
 
-    // JP: ƒ}ƒEƒX‚ªæ‚Á‚Ä‚¢‚éƒsƒNƒZƒ‹‚Ìî•ñ‚ðo—Í‚·‚éB
+    // JP: ãƒžã‚¦ã‚¹ãŒä¹—ã£ã¦ã„ã‚‹ãƒ”ã‚¯ã‚»ãƒ«ã®æƒ…å ±ã‚’å‡ºåŠ›ã™ã‚‹ã€‚
     // EN: Export the information of the pixel on which the mouse is.
     if (launchIndex.x == plp.f->mousePosition.x &&
         launchIndex.y == plp.f->mousePosition.y) {
@@ -197,7 +197,7 @@ CUDA_DEVICE_KERNEL void RT_MS_NAME(setupGBuffers)() {
     hitPointParams->texCoord = make_float2(u, v);
     hitPointParams->materialSlot = 0xFFFFFFFF;
 
-    // JP: ƒ}ƒEƒX‚ªæ‚Á‚Ä‚¢‚éƒsƒNƒZƒ‹‚Ìî•ñ‚ðo—Í‚·‚éB
+    // JP: ãƒžã‚¦ã‚¹ãŒä¹—ã£ã¦ã„ã‚‹ãƒ”ã‚¯ã‚»ãƒ«ã®æƒ…å ±ã‚’å‡ºåŠ›ã™ã‚‹ã€‚
     // EN: Export the information of the pixel on which the mouse is.
     if (launchIndex.x == plp.f->mousePosition.x &&
         launchIndex.y == plp.f->mousePosition.y) {

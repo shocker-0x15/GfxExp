@@ -1590,6 +1590,102 @@ namespace shared {
 
 
 
+    template <typename T, bool oobCheck>
+    class ROBufferTemplate {
+        const T* m_data;
+
+    public:
+        CUDA_COMMON_FUNCTION ROBufferTemplate() : m_data(nullptr) {}
+        CUDA_COMMON_FUNCTION ROBufferTemplate(const T* data, uint32_t) :
+            m_data(data) {}
+
+        template <std::integral I>
+        CUDA_COMMON_FUNCTION const T &operator[](I idx) const {
+            return m_data[idx];
+        }
+    };
+
+    template <typename T>
+    class ROBufferTemplate<T, true> {
+        const T* m_data;
+        uint32_t m_numElements;
+
+    public:
+        CUDA_COMMON_FUNCTION ROBufferTemplate() : m_data(nullptr), m_numElements(0) {}
+        CUDA_COMMON_FUNCTION ROBufferTemplate(const T* data, uint32_t numElements) :
+            m_data(data), m_numElements(numElements) {}
+
+        CUDA_COMMON_FUNCTION uint32_t getNumElements() const {
+            return m_numElements;
+        }
+
+        template <std::integral I>
+        CUDA_COMMON_FUNCTION const T &operator[](I idx) const {
+            Assert(idx < m_numElements, "Buffer 0x%p OOB Access: %u >= %u\n",
+                   m_data, static_cast<uint32_t>(idx), m_numElements);
+            return m_data[idx];
+        }
+    };
+
+
+
+    template <typename T, bool oobCheck>
+    class RWBufferTemplate {
+        T* m_data;
+
+    public:
+        CUDA_COMMON_FUNCTION RWBufferTemplate() : m_data(nullptr) {}
+        CUDA_COMMON_FUNCTION RWBufferTemplate(T* data, uint32_t) :
+            m_data(data) {}
+
+        template <std::integral I>
+        CUDA_COMMON_FUNCTION T &operator[](I idx) {
+            return m_data[idx];
+        }
+        template <std::integral I>
+        CUDA_COMMON_FUNCTION const T &operator[](I idx) const {
+            return m_data[idx];
+        }
+    };
+
+    template <typename T>
+    class RWBufferTemplate<T, true> {
+        T* m_data;
+        uint32_t m_numElements;
+
+    public:
+        CUDA_COMMON_FUNCTION RWBufferTemplate() : m_data(nullptr), m_numElements(0) {}
+        CUDA_COMMON_FUNCTION RWBufferTemplate(T* data, uint32_t numElements) :
+            m_data(data), m_numElements(numElements) {}
+
+        CUDA_COMMON_FUNCTION uint32_t getNumElements() const {
+            return m_numElements;
+        }
+
+        template <std::integral I>
+        CUDA_COMMON_FUNCTION T &operator[](I idx) {
+            Assert(idx < m_numElements, "Buffer 0x%p OOB Access: %u >= %u\n",
+                   m_data, static_cast<uint32_t>(idx), m_numElements);
+            return m_data[idx];
+        }
+        template <std::integral I>
+        CUDA_COMMON_FUNCTION const T &operator[](I idx) const {
+            Assert(idx < m_numElements, "Buffer 0x%p OOB Access: %u >= %u\n",
+                   m_data, static_cast<uint32_t>(idx), m_numElements);
+            return m_data[idx];
+        }
+    };
+
+
+
+    static constexpr bool enableBufferOobCheck = true;
+    template <typename T>
+    using ROBuffer = ROBufferTemplate<T, enableBufferOobCheck>;
+    template <typename T>
+    using RWBuffer = RWBufferTemplate<T, enableBufferOobCheck>;
+
+
+
     class PCG32RNG {
         uint64_t state;
 
@@ -2300,8 +2396,8 @@ namespace shared {
     };
 
     struct GeometryInstanceData {
-        const Vertex* vertexBuffer;
-        const Triangle* triangleBuffer;
+        ROBuffer<Vertex> vertexBuffer;
+        ROBuffer<Triangle> triangleBuffer;
         LightDistribution emitterPrimDist;
         uint32_t materialSlot;
         uint32_t geomInstSlot;
@@ -2313,7 +2409,7 @@ namespace shared {
         Matrix3x3 normalMatrix;
         float uniformScale;
 
-        const uint32_t* geomInstSlots;
+        ROBuffer<uint32_t> geomInstSlots;
         LightDistribution lightGeomInstDist;
     };
 }

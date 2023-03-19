@@ -132,7 +132,8 @@ struct GPUEnvironment {
         CUDADRV_CHECK(cuModuleGetGlobal(&plpPtrForDebugVisualizeModule, &plpSize, debugVisualizeModule, "plp"));
         Assert(sizeof(shared::PipelineLaunchParameters) == plpSize, "Unexpected plp size.");
 
-        optixContext = optixu::Context::create(cuContext/*, 4, DEBUG_SELECT(true, false)*/);
+        optixContext = optixu::Context::create(
+            cuContext/*, 4, DEBUG_SELECT(optixu::EnableValidation::Yes, optixu::EnableValidation::No)*/);
 
         optixDefaultMaterial = optixContext.createMaterial();
         optixu::Module emptyModule;
@@ -150,7 +151,7 @@ struct GPUEnvironment {
                          }),
                 optixu::calcSumDwords<float2>(),
                 "plp", sizeof(shared::PipelineLaunchParameters),
-                false, OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_LEVEL_INSTANCING,
+                OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_LEVEL_INSTANCING,
                 OPTIX_EXCEPTION_FLAG_STACK_OVERFLOW | OPTIX_EXCEPTION_FLAG_TRACE_DEPTH |
                 DEBUG_SELECT(OPTIX_EXCEPTION_FLAG_DEBUG, OPTIX_EXCEPTION_FLAG_NONE),
                 OPTIX_PRIMITIVE_TYPE_FLAGS_TRIANGLE);
@@ -219,7 +220,7 @@ struct GPUEnvironment {
                          }),
                 optixu::calcSumDwords<float2>(),
                 "plp", sizeof(shared::PipelineLaunchParameters),
-                false, OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_LEVEL_INSTANCING,
+                OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_LEVEL_INSTANCING,
                 OPTIX_EXCEPTION_FLAG_STACK_OVERFLOW | OPTIX_EXCEPTION_FLAG_TRACE_DEPTH |
                 DEBUG_SELECT(OPTIX_EXCEPTION_FLAG_DEBUG, OPTIX_EXCEPTION_FLAG_NONE),
                 OPTIX_PRIMITIVE_TYPE_FLAGS_TRIANGLE);
@@ -1309,8 +1310,10 @@ int32_t main(int32_t argc, const char* argv[]) try {
         staticPlp.lighting_variance_buffers[1] = lighting_variance_buffers[1].getSurfaceObject(0);
         staticPlp.prevNoisyLightingBuffer = prevNoisyLightingBuffer.getSurfaceObject(0);
 
-        staticPlp.materialDataBuffer = scene.materialDataBuffer.getDevicePointer();
-        staticPlp.geometryInstanceDataBuffer = scene.geomInstDataBuffer.getDevicePointer();
+        staticPlp.materialDataBuffer = shared::ROBuffer(
+            scene.materialDataBuffer.getDevicePointer(), scene.materialDataBuffer.numElements());
+        staticPlp.geometryInstanceDataBuffer = shared::ROBuffer(
+            scene.geomInstDataBuffer.getDevicePointer(), scene.geomInstDataBuffer.numElements());
         envLightImportanceMap.getDeviceType(&staticPlp.envLightImportanceMap);
         staticPlp.envLightTexture = envLightTexture;
     }
@@ -1922,7 +1925,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
         perFramePlp.numAccumFrames = numAccumFrames;
         perFramePlp.frameIndex = frameIndex;
-        perFramePlp.instanceDataBuffer = curInstDataBuffer.getDevicePointer();
+        perFramePlp.instanceDataBuffer = shared::ROBuffer(
+            curInstDataBuffer.getDevicePointer(), curInstDataBuffer.numElements());
         perFramePlp.envLightPowerCoeff = std::pow(10.0f, log10EnvLightPowerCoeff);
         perFramePlp.envLightRotation = envLightRotation;
         perFramePlp.mousePosition = int2(static_cast<int32_t>(g_mouseX),

@@ -40,6 +40,8 @@ std::filesystem::path getExecutableDirectory();
 
 std::string readTxtFile(const std::filesystem::path& filepath);
 
+std::vector<char> readBinaryFile(const std::filesystem::path &filepath);
+
 
 
 template <typename RealType>
@@ -789,13 +791,15 @@ struct Scene {
             GeometryGroup* geomGroup = geomGroups[i];
             geomGroup->optixGas.setConfiguration(
                 optixu::ASTradeoff::PreferFastTrace,
-                false, false, false);
+                optixu::AllowUpdate::No, optixu::AllowCompaction::No, optixu::AllowRandomVertexAccess::No);
             geomGroup->optixGas.prepareForBuild(&asSizes);
             geomGroup->optixGasMem.initialize(cuContext, bufferType, asSizes.outputSizeInBytes, 1);
             asScratchSize = std::max(asSizes.tempSizeInBytes, asScratchSize);
         }
 
-        ias.setConfiguration(optixu::ASTradeoff::PreferFastTrace, false, false, false);
+        ias.setConfiguration(
+            optixu::ASTradeoff::PreferFastTrace,
+            optixu::AllowUpdate::No, optixu::AllowCompaction::No, optixu::AllowRandomInstanceAccess::No);
         ias.prepareForBuild(&asSizes);
         iasMem.initialize(cuContext, bufferType, asSizes.outputSizeInBytes, 1);
         asScratchSize = std::max(asSizes.tempSizeInBytes, asScratchSize);

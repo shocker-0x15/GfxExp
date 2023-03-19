@@ -1,6 +1,6 @@
 ﻿/*
 
-   Copyright 2022 Shin Watanabe
+   Copyright 2023 Shin Watanabe
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -46,7 +46,14 @@ typedef unsigned long long CUsurfObject;
 #else
 #include <cstdint>
 #include <cfloat>
+#if defined(CUDAUPlatform_Windows)
+#   pragma warning(push)
+#   pragma warning(disable:4819)
+#endif
 #include <cuda.h>
+#if defined(CUDAUPlatform_Windows)
+#   pragma warning(pop)
+#endif
 #endif
 
 #if !defined(__CUDA_ARCH__)
@@ -592,7 +599,7 @@ namespace cudau {
             return ret;
         }
 
-        operator std::vector<T>() {
+        operator std::vector<T>() const {
             std::vector<T> ret(numElements());
             read(ret);
             return std::move(ret);
@@ -609,7 +616,8 @@ namespace cudau {
 
     template <typename HeadType, typename... TailTypes>
     void addArgPointer(ConstVoidPtr* argPointer, CUdeviceptr* pointer, HeadType &&head, TailTypes&&... tails) {
-        if constexpr (is_TypedBuffer_v<std::remove_const_t<std::remove_reference_t<HeadType>>>) {
+        using RawHeadType = std::remove_const_t<std::remove_reference_t<HeadType>>;
+        if constexpr (is_TypedBuffer_v<RawHeadType> || std::is_same_v<RawHeadType, Buffer>) {
             *pointer = head.getCUdeviceptr();
             *argPointer = pointer;
         }

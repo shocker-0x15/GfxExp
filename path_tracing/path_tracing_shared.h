@@ -134,8 +134,8 @@ namespace shared {
         optixu::NativeBlockBuffer2D<GBuffer1> GBuffer1[2];
         optixu::NativeBlockBuffer2D<GBuffer2> GBuffer2[2];
 
-        const MaterialData* materialDataBuffer;
-        const GeometryInstanceData* geometryInstanceDataBuffer;
+        ROBuffer<MaterialData> materialDataBuffer;
+        ROBuffer<GeometryInstanceData> geometryInstanceDataBuffer;
         LightDistribution lightInstDist;
         RegularConstantContinuousDistribution2D envLightImportanceMap;
         CUtexObject envLightTexture;
@@ -150,7 +150,7 @@ namespace shared {
         uint32_t numAccumFrames;
         uint32_t frameIndex;
 
-        const InstanceData* instanceDataBuffer;
+        ROBuffer<InstanceData> instanceDataBuffer;
 
         PerspectiveCamera camera;
         PerspectiveCamera prevCamera;
@@ -465,7 +465,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool evaluateVisibility(
         dist = 1e+10f;
 
     float visibility = 1.0f;
-    optixu::trace<shared::VisibilityRayPayloadSignature>(
+    shared::VisibilityRayPayloadSignature::trace(
         plp.f->travHandle,
         shadingPoint, shadowRayDir, 0.0f, dist * 0.9999f, 0.0f,
         0xFF, OPTIX_RAY_FLAG_NONE,

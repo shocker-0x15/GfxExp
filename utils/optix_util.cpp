@@ -1,6 +1,6 @@
 ﻿/*
 
-   Copyright 2022 Shin Watanabe
+   Copyright 2023 Shin Watanabe
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -34,24 +34,8 @@ namespace optixu {
 
 
 
-    // Define common interfaces.
-#define OPTIXU_PREPROCESS_OBJECT(Type) \
-    Context Type::getContext() const { \
-        return m->getContext()->getPublicType(); \
-    } \
-    void Type::setName(const std::string &name) const { \
-        m->setName(name); \
-    } \
-    const char* Type::getName() const { \
-        return m->getRegisteredName(); \
-    }
-    OPTIXU_PREPROCESS_OBJECTS();
-#undef OPTIXU_PREPROCESS_OBJECT
-
-
-
     // static
-    Context Context::create(CUcontext cuContext, uint32_t logLevel, bool enableValidation) {
+    Context Context::create(CUcontext cuContext, uint32_t logLevel, EnableValidation enableValidation) {
         return (new _Context(cuContext, logLevel, enableValidation))->getPublicType();
     }
 
@@ -70,6 +54,31 @@ namespace optixu {
             OPTIX_CHECK(optixDeviceContextSetLogCallback(m->rawContext, &logCallBack, nullptr, logLevel));
     }
 
+    void Context::setName(const std::string &name) const {
+        m->setName(name);
+    }
+
+    const char* Context::getName() const {
+        return m->getRegisteredName();
+    }
+
+
+
+    template <typename T>
+    Context Object<T>::getContext() const {
+        return m->getContext()->getPublicType();
+    }
+
+    template <typename T>
+    void Object<T>::setName(const std::string &name) const {
+        m->setName(name);
+    }
+
+    template <typename T>
+    const char* Object<T>::getName() const {
+        return m->getRegisteredName();
+    }
+
 
 
     Material Context::createMaterial() const {
@@ -85,7 +94,9 @@ namespace optixu {
     }
 
     Denoiser Context::createDenoiser(
-        OptixDenoiserModelKind modelKind, bool guideAlbedo, bool guideNormal) const {
+        OptixDenoiserModelKind modelKind,
+        GuideAlbedo guideAlbedo,
+        GuideNormal guideNormal) const {
         return (new _Denoiser(m, modelKind, guideAlbedo, guideNormal))->getPublicType();
     }
 
@@ -238,6 +249,10 @@ namespace optixu {
         m = nullptr;
     }
 
+    OpacityMicroMapArray Scene::createOpacityMicroMapArray() const {
+        return (new _OpacityMicroMapArray(m))->getPublicType();
+    }
+
     GeometryInstance Scene::createGeometryInstance(GeometryType geomType) const {
         m->throwRuntimeError(
             geomType == GeometryType::Triangles ||
@@ -326,6 +341,100 @@ namespace optixu {
 
 
 
+    void OpacityMicroMapArray::destroy() {
+        if (m)
+            delete m;
+        m = nullptr;
+    }
+
+    void OpacityMicroMapArray::setConfiguration(OptixOpacityMicromapFlags config) const {
+        bool changed = false;
+        changed = m->flags != config;
+        m->flags = config;
+
+        if (changed) {
+            m->memoryUsageComputed = false;
+            m->available = false;
+        }
+    }
+
+    void OpacityMicroMapArray::computeMemoryUsage(
+        const OptixOpacityMicromapHistogramEntry* microMapHistogramEntries,
+        uint32_t numMicroMapHistogramEntries,
+        OptixMicromapBufferSizes* memoryRequirement) const {
+        m->microMapHistogramEntries.resize(numMicroMapHistogramEntries);
+        std::copy_n(microMapHistogramEntries, numMicroMapHistogramEntries, m->microMapHistogramEntries.data());
+
+        m->buildInput = {};
+        m->buildInput.flags = m->flags;
+        m->buildInput.micromapHistogramEntries = m->microMapHistogramEntries.data();
+        m->buildInput.numMicromapHistogramEntries = static_cast<uint32_t>(m->microMapHistogramEntries.size());
+        OPTIX_CHECK(optixOpacityMicromapArrayComputeMemoryUsage(
+            m->getRawContext(), &m->buildInput, &m->memoryRequirement));
+
+        *memoryRequirement = m->memoryRequirement;
+
+        m->memoryUsageComputed = true;
+        m->available = false;
+    }
+
+    void OpacityMicroMapArray::setBuffers(
+        const BufferView &rawOmmBuffer, const BufferView &perMicroMapDescBuffer,
+        const BufferView &outputBuffer) const {
+        m->throwRuntimeError(
+            outputBuffer.sizeInBytes() >= m->memoryRequirement.outputSizeInBytes,
+            "Size of the given buffer is not enough.");
+        m->rawOmmBuffer = rawOmmBuffer;
+        m->perMicroMapDescBuffer = perMicroMapDescBuffer;
+        m->outputBuffer = outputBuffer;
+
+        m->buildInput.inputBuffer = m->rawOmmBuffer.getCUdeviceptr();
+        m->buildInput.perMicromapDescBuffer = m->perMicroMapDescBuffer.getCUdeviceptr();
+        m->buildInput.perMicromapDescStrideInBytes = m->perMicroMapDescBuffer.stride();
+
+        m->buffersSet = true;
+        m->available = false;
+    }
+
+    void OpacityMicroMapArray::markDirty() const {
+        m->memoryUsageComputed = false;
+        m->available = false;
+    }
+
+    void OpacityMicroMapArray::rebuild(
+        CUstream stream, const BufferView &scratchBuffer) const {
+        m->throwRuntimeError(
+            m->memoryUsageComputed, "You need to call computeMemoryUsage() before rebuild.");
+        m->throwRuntimeError(
+            m->buffersSet, "You need to call setBuffers() before rebuild.");
+        m->throwRuntimeError(
+            scratchBuffer.sizeInBytes() >= m->memoryRequirement.tempSizeInBytes,
+            "Size of the given scratch buffer is not enough.");
+
+        OptixMicromapBuffers buffers = {};
+        buffers.output = m->outputBuffer.getCUdeviceptr();
+        buffers.outputSizeInBytes = m->memoryRequirement.outputSizeInBytes;
+        buffers.temp = scratchBuffer.getCUdeviceptr();
+        buffers.tempSizeInBytes = m->memoryRequirement.tempSizeInBytes;
+        OPTIX_CHECK(optixOpacityMicromapArrayBuild(m->getRawContext(), stream, &m->buildInput, &buffers));
+
+        m->available = true;
+    }
+
+    bool OpacityMicroMapArray::isReady() const {
+        return m->isReady();
+    }
+
+    BufferView OpacityMicroMapArray::getOutputBuffer() const {
+        return m->getBuffer();
+    }
+
+    OptixOpacityMicromapFlags OpacityMicroMapArray::getConfiguration() const {
+        return m->flags;
+    }
+
+
+
     void GeometryInstance::Priv::fillBuildInput(OptixBuildInput* input, CUdeviceptr preTransform) const {
         *input = OptixBuildInput{};
 
@@ -374,6 +483,20 @@ namespace optixu {
             }
             triArray.indexFormat = geom.indexFormat;
             triArray.primitiveIndexOffset = primitiveIndexOffset;
+
+            if (geom.opacityMicroMapArray) {
+                OptixBuildInputOpacityMicromap &ommInput = triArray.opacityMicromap;
+                ommInput.opacityMicromapArray = geom.opacityMicroMapArray->getBuffer().getCUdeviceptr();
+                ommInput.micromapUsageCounts = geom.opacityMicroMapUsageCounts.data();
+                ommInput.numMicromapUsageCounts = static_cast<uint32_t>(geom.opacityMicroMapUsageCounts.size());
+                ommInput.indexingMode = geom.opacityMicroMapIndexingMode;
+                if (ommInput.indexingMode == OPTIX_OPACITY_MICROMAP_ARRAY_INDEXING_MODE_INDEXED) {
+                    ommInput.indexBuffer = geom.opacityMicroMapIndexBuffer.getCUdeviceptr();
+                    ommInput.indexStrideInBytes = geom.opacityMicroMapIndexBuffer.stride();
+                    ommInput.indexSizeInBytes = geom.opacityMicroMapIndexSize;
+                    ommInput.indexOffset = geom.opacityMicroMapIndexOffset;
+                }
+            }
 
             triArray.numSbtRecords = static_cast<uint32_t>(buildInputFlags.size());
             if (triArray.numSbtRecords > 1) {
@@ -596,6 +719,22 @@ namespace optixu {
 
             if (geom.indexFormat != OPTIX_INDICES_FORMAT_NONE)
                 triArray.indexBuffer = geom.triangleBuffer.getCUdeviceptr();
+
+            if (geom.opacityMicroMapArray) {
+                // TODO: どの情報が更新可能なのか調べる。
+                throwRuntimeError(geom.opacityMicroMapArray->isReady(), "OMM array is not ready.");
+                OptixBuildInputOpacityMicromap &ommInput = triArray.opacityMicromap;
+                ommInput.opacityMicromapArray = geom.opacityMicroMapArray->getBuffer().getCUdeviceptr();
+                ommInput.micromapUsageCounts = geom.opacityMicroMapUsageCounts.data();
+                ommInput.numMicromapUsageCounts = static_cast<uint32_t>(geom.opacityMicroMapUsageCounts.size());
+                ommInput.indexingMode = geom.opacityMicroMapIndexingMode;
+                if (ommInput.indexingMode == OPTIX_OPACITY_MICROMAP_ARRAY_INDEXING_MODE_INDEXED) {
+                    ommInput.indexBuffer = geom.opacityMicroMapIndexBuffer.getCUdeviceptr();
+                    ommInput.indexStrideInBytes = geom.opacityMicroMapIndexBuffer.stride();
+                    ommInput.indexSizeInBytes = geom.opacityMicroMapIndexSize;
+                    ommInput.indexOffset = geom.opacityMicroMapIndexOffset;
+                }
+            }
 
             if (triArray.numSbtRecords > 1)
                 triArray.sbtIndexOffsetBuffer = geom.materialIndexBuffer.getCUdeviceptr();
@@ -890,6 +1029,41 @@ namespace optixu {
         geom.indexFormat = format;
     }
 
+    void GeometryInstance::setOpacityMicroMapArray(
+        OpacityMicroMapArray opacityMicroMapArray,
+        const OptixOpacityMicromapUsageCount* ommUsageCounts, uint32_t numOmmUsageCounts,
+        const BufferView &ommIndexBuffer,
+        IndexSize indexSize, uint32_t indexOffset) const {
+        uint32_t indexSizeInBytes = 1 << static_cast<uint32_t>(indexSize);
+        m->throwRuntimeError(
+            std::holds_alternative<Priv::TriangleGeometry>(m->geometry),
+            "This geometry instance was created not for triangles.");
+        m->throwRuntimeError(
+            indexSize == IndexSize::k2Bytes || indexSize == IndexSize::k4Bytes,
+            "Invalid index offset size.");
+        m->throwRuntimeError(
+            !ommIndexBuffer.isValid() || ommIndexBuffer.stride() >= indexSizeInBytes,
+            "Buffer's stride is smaller than the given index offset size.");
+        auto &geom = std::get<Priv::TriangleGeometry>(m->geometry);
+        geom.opacityMicroMapArray = extract(opacityMicroMapArray);
+        if (opacityMicroMapArray) {
+            geom.opacityMicroMapIndexBuffer = ommIndexBuffer;
+            geom.opacityMicroMapIndexingMode = ommIndexBuffer.isValid() ?
+                OPTIX_OPACITY_MICROMAP_ARRAY_INDEXING_MODE_INDEXED :
+                OPTIX_OPACITY_MICROMAP_ARRAY_INDEXING_MODE_LINEAR;
+            geom.opacityMicroMapIndexSize = indexSizeInBytes;
+            geom.opacityMicroMapIndexOffset = indexOffset;
+            geom.opacityMicroMapUsageCounts.resize(numOmmUsageCounts);
+            std::copy_n(ommUsageCounts, numOmmUsageCounts, geom.opacityMicroMapUsageCounts.data());
+        }
+        else {
+            geom.opacityMicroMapIndexBuffer = BufferView();
+            geom.opacityMicroMapIndexingMode = OPTIX_OPACITY_MICROMAP_ARRAY_INDEXING_MODE_NONE;
+            geom.opacityMicroMapIndexSize = 0;
+            geom.opacityMicroMapUsageCounts.clear();
+        }
+    }
+
     void GeometryInstance::setSegmentIndexBuffer(const BufferView &segmentIndexBuffer) const {
         m->throwRuntimeError(
             std::holds_alternative<Priv::CurveGeometry>(m->geometry),
@@ -906,7 +1080,7 @@ namespace optixu {
         geom.endcapFlags = endcapFlags;
     }
 
-    void GeometryInstance::setSingleRadius(bool useSingleRadius) const {
+    void GeometryInstance::setSingleRadius(UseSingleRadius useSingleRadius) const {
         m->throwRuntimeError(
             std::holds_alternative<Priv::SphereGeometry>(m->geometry),
             "This geometry instance was created not for spheres.");
@@ -932,7 +1106,8 @@ namespace optixu {
     }
 
     void GeometryInstance::setNumMaterials(
-        uint32_t numMaterials, const BufferView &matIndexBuffer, uint32_t indexSize) const {
+        uint32_t numMaterials, const BufferView &matIndexBuffer, IndexSize indexSize) const {
+        uint32_t indexSizeInBytes = 1 << static_cast<uint32_t>(indexSize);
         m->throwRuntimeError(
             !std::holds_alternative<Priv::CurveGeometry>(m->geometry),
             "Geometry instance for curves is not allowed to have multiple materials.");
@@ -942,27 +1117,26 @@ namespace optixu {
             (numMaterials == 1) != matIndexBuffer.isValid(),
             "Material index offset buffer must be provided when multiple materials are used.");
         m->throwRuntimeError(
-            indexSize >= 1 && indexSize <= 4,
-            "Invalid index offset size.");
-        if (matIndexBuffer.isValid())
-            m->throwRuntimeError(
-                matIndexBuffer.stride() >= indexSize,
-                "Buffer's stride is smaller than the given index offset size.");
+            indexSizeInBytes >= 1 && indexSizeInBytes <= 4,
+            "Invalid index size.");
+        m->throwRuntimeError(
+            !matIndexBuffer.isValid() || matIndexBuffer.stride() >= indexSizeInBytes,
+            "Buffer's stride is smaller than the given index offset size.");
         m->buildInputFlags.resize(numMaterials, OPTIX_GEOMETRY_FLAG_NONE);
         if (std::holds_alternative<Priv::TriangleGeometry>(m->geometry)) {
             auto &geom = std::get<Priv::TriangleGeometry>(m->geometry);
             geom.materialIndexBuffer = matIndexBuffer;
-            geom.materialIndexSize = indexSize;
+            geom.materialIndexSize = indexSizeInBytes;
         }
         else if (std::holds_alternative<Priv::SphereGeometry>(m->geometry)) {
             auto &geom = std::get<Priv::SphereGeometry>(m->geometry);
             geom.materialIndexBuffer = matIndexBuffer;
-            geom.materialIndexSize = indexSize;
+            geom.materialIndexSize = indexSizeInBytes;
         }
         else if (std::holds_alternative<Priv::CustomPrimitiveGeometry>(m->geometry)) {
             auto &geom = std::get<Priv::CustomPrimitiveGeometry>(m->geometry);
             geom.materialIndexBuffer = matIndexBuffer;
-            geom.materialIndexSize = indexSize;
+            geom.materialIndexSize = indexSizeInBytes;
         }
         else {
             optixuAssert_ShouldNotBeCalled();
@@ -1077,6 +1251,22 @@ namespace optixu {
         return geom.triangleBuffer;
     }
 
+    OpacityMicroMapArray GeometryInstance::getOpacityMicroMapArray(
+        BufferView* ommIndexBuffer,
+        IndexSize* indexSize, uint32_t* indexOffset) const {
+        m->throwRuntimeError(
+            std::holds_alternative<Priv::TriangleGeometry>(m->geometry),
+            "This geometry instance was created not for triangles.");
+        const auto &geom = std::get<Priv::TriangleGeometry>(m->geometry);
+        if (ommIndexBuffer)
+            *ommIndexBuffer = geom.opacityMicroMapIndexBuffer;
+        if (indexSize)
+            *indexSize = convertToIndexSizeEnum(geom.opacityMicroMapIndexSize);
+        if (indexOffset)
+            *indexOffset = geom.opacityMicroMapIndexOffset;
+        return geom.opacityMicroMapArray->getPublicType();
+    }
+
     BufferView GeometryInstance::getSegmentIndexBuffer() const {
         m->throwRuntimeError(
             std::holds_alternative<Priv::CurveGeometry>(m->geometry),
@@ -1101,34 +1291,34 @@ namespace optixu {
         return m->primitiveIndexOffset;
     }
 
-    uint32_t GeometryInstance::getNumMaterials(BufferView* matIndexBuffer, uint32_t* indexSize) const {
+    uint32_t GeometryInstance::getNumMaterials(BufferView* matIndexBuffer, IndexSize* indexSize) const {
         if (matIndexBuffer || indexSize) {
             if (std::holds_alternative<Priv::TriangleGeometry>(m->geometry)) {
                 const auto &geom = std::get<Priv::TriangleGeometry>(m->geometry);
                 if (matIndexBuffer)
                     *matIndexBuffer = geom.materialIndexBuffer;
                 if (indexSize)
-                    *indexSize = geom.materialIndexSize;
+                    *indexSize = convertToIndexSizeEnum(geom.materialIndexSize);
             }
             else if (std::holds_alternative<Priv::SphereGeometry>(m->geometry)) {
                 const auto &geom = std::get<Priv::SphereGeometry>(m->geometry);
                 if (matIndexBuffer)
                     *matIndexBuffer = geom.materialIndexBuffer;
                 if (indexSize)
-                    *indexSize = geom.materialIndexSize;
+                    *indexSize = convertToIndexSizeEnum(geom.materialIndexSize);
             }
             else if (std::holds_alternative<Priv::CustomPrimitiveGeometry>(m->geometry)) {
                 const auto &geom = std::get<Priv::CustomPrimitiveGeometry>(m->geometry);
                 if (matIndexBuffer)
                     *matIndexBuffer = geom.materialIndexBuffer;
                 if (indexSize)
-                    *indexSize = geom.materialIndexSize;
+                    *indexSize = convertToIndexSizeEnum(geom.materialIndexSize);
             }
             else {
                 if (matIndexBuffer)
                     *matIndexBuffer = BufferView();
                 if (indexSize)
-                    *indexSize = 0;
+                    *indexSize = IndexSize::None;
             }
         }
         return static_cast<uint32_t>(m->materials.size());
@@ -1226,9 +1416,11 @@ namespace optixu {
 
     void GeometryAccelerationStructure::setConfiguration(
         ASTradeoff tradeoff,
-        bool allowUpdate,
-        bool allowCompaction,
-        bool allowRandomVertexAccess) const {
+        AllowUpdate allowUpdate,
+        AllowCompaction allowCompaction,
+        AllowRandomVertexAccess allowRandomVertexAccess,
+        AllowOpacityMicroMapUpdate allowOpacityMicroMapUpdate,
+        AllowDisableOpacityMicroMaps allowDisableOpacityMicroMaps) const {
         m->throwRuntimeError(
             m->geomType != GeometryType::CustomPrimitives || !allowRandomVertexAccess,
             "Random vertex access is the feature only for triangle/curve/sphere GAS.");
@@ -1241,6 +1433,10 @@ namespace optixu {
         m->allowCompaction = allowCompaction;
         changed |= m->allowRandomVertexAccess != allowRandomVertexAccess;
         m->allowRandomVertexAccess = allowRandomVertexAccess;
+        changed |= m->allowOpacityMicroMapUpdate != allowOpacityMicroMapUpdate;
+        m->allowOpacityMicroMapUpdate = allowOpacityMicroMapUpdate;
+        changed |= m->allowDisableOpacityMicroMaps != allowDisableOpacityMicroMaps;
+        m->allowDisableOpacityMicroMaps = allowDisableOpacityMicroMaps;
 
         if (changed)
             m->markDirty();
@@ -1364,7 +1560,9 @@ namespace optixu {
         m->buildOptions.buildFlags |=
             (m->allowUpdate ? OPTIX_BUILD_FLAG_ALLOW_UPDATE : 0)
             | (m->allowCompaction ? OPTIX_BUILD_FLAG_ALLOW_COMPACTION : 0)
-            | (m->allowRandomVertexAccess ? OPTIX_BUILD_FLAG_ALLOW_RANDOM_VERTEX_ACCESS : 0);
+            | (m->allowRandomVertexAccess ? OPTIX_BUILD_FLAG_ALLOW_RANDOM_VERTEX_ACCESS : 0)
+            | (m->allowOpacityMicroMapUpdate ? OPTIX_BUILD_FLAG_ALLOW_OPACITY_MICROMAP_UPDATE : 0)
+            | (m->allowDisableOpacityMicroMaps ? OPTIX_BUILD_FLAG_ALLOW_DISABLE_OPACITY_MICROMAPS : 0);
 
         uint32_t numBuildInputs = static_cast<uint32_t>(m->buildInputs.size());
         if (numBuildInputs > 0)
@@ -1595,17 +1793,23 @@ namespace optixu {
 
     void GeometryAccelerationStructure::getConfiguration(
         ASTradeoff* tradeOff,
-        bool* allowUpdate,
-        bool* allowCompaction,
-        bool* allowRandomVertexAccess) const {
+        AllowUpdate* allowUpdate,
+        AllowCompaction* allowCompaction,
+        AllowRandomVertexAccess* allowRandomVertexAccess,
+        AllowOpacityMicroMapUpdate* allowOpacityMicroMapUpdate,
+        AllowDisableOpacityMicroMaps* allowDisableOpacityMicroMaps) const {
         if (tradeOff)
             *tradeOff = m->tradeoff;
         if (allowUpdate)
-            *allowUpdate = m->allowUpdate;
+            *allowUpdate = AllowUpdate(m->allowUpdate);
         if (allowCompaction)
-            *allowCompaction = m->allowCompaction;
+            *allowCompaction = AllowCompaction(m->allowCompaction);
         if (allowRandomVertexAccess)
-            *allowRandomVertexAccess = m->allowRandomVertexAccess;
+            *allowRandomVertexAccess = AllowRandomVertexAccess(m->allowRandomVertexAccess);
+        if (allowOpacityMicroMapUpdate)
+            *allowOpacityMicroMapUpdate = AllowOpacityMicroMapUpdate(m->allowOpacityMicroMapUpdate);
+        if (allowDisableOpacityMicroMaps)
+            *allowDisableOpacityMicroMaps = AllowDisableOpacityMicroMaps(m->allowDisableOpacityMicroMaps);
     }
 
     void GeometryAccelerationStructure::getMotionOptions(
@@ -2269,9 +2473,9 @@ namespace optixu {
 
     void InstanceAccelerationStructure::setConfiguration(
         ASTradeoff tradeoff,
-        bool allowUpdate,
-        bool allowCompaction,
-        bool allowRandomInstanceAccess) const {
+        AllowUpdate allowUpdate,
+        AllowCompaction allowCompaction,
+        AllowRandomInstanceAccess allowRandomInstanceAccess) const {
         bool changed = false;
         changed |= m->tradeoff != tradeoff;
         m->tradeoff = tradeoff;
@@ -2528,16 +2732,17 @@ namespace optixu {
 
     void InstanceAccelerationStructure::getConfiguration(
         ASTradeoff* tradeOff,
-        bool* allowUpdate,
-        bool* allowCompaction,
-        bool* allowRandomInstanceAccess) const {
+        AllowUpdate* allowUpdate,
+        AllowCompaction* allowCompaction,
+        AllowRandomInstanceAccess* allowRandomInstanceAccess) const {
         if (tradeOff)
             *tradeOff = m->tradeoff;
         if (allowUpdate)
-            *allowUpdate = m->allowUpdate;
+            *allowUpdate = AllowUpdate(m->allowUpdate);
         if (allowCompaction)
-            *allowCompaction = m->allowCompaction;
-        *allowRandomInstanceAccess = m->allowRandomInstanceAccess;
+            *allowCompaction = AllowCompaction(m->allowCompaction);
+        if (allowRandomInstanceAccess)
+            *allowRandomInstanceAccess = AllowRandomInstanceAccess(m->allowRandomInstanceAccess);
     }
 
     void InstanceAccelerationStructure::getMotionOptions(
@@ -2768,10 +2973,10 @@ namespace optixu {
     void Pipeline::setPipelineOptions(
         uint32_t numPayloadValuesInDwords, uint32_t numAttributeValuesInDwords,
         const char* launchParamsVariableName, size_t sizeOfLaunchParams,
-        bool useMotionBlur,
         OptixTraversableGraphFlags traversableGraphFlags,
         OptixExceptionFlags exceptionFlags,
-        OptixPrimitiveTypeFlags supportedPrimitiveTypeFlags) const {
+        OptixPrimitiveTypeFlags supportedPrimitiveTypeFlags,
+        UseMotionBlur useMotionBlur, UseOpacityMicroMaps useOpacityMicroMaps) const {
         m->throwRuntimeError(
             !m->pipelineLinked,
             "Changing pipeline options after linking is not supported yet.");
@@ -2783,6 +2988,7 @@ namespace optixu {
         m->pipelineCompileOptions.numAttributeValues = numAttributeValuesInDwords;
         m->pipelineCompileOptions.pipelineLaunchParamsVariableName = launchParamsVariableName;
         m->pipelineCompileOptions.usesMotionBlur = useMotionBlur;
+        m->pipelineCompileOptions.allowOpacityMicromaps = useOpacityMicroMaps;
         m->pipelineCompileOptions.traversableGraphFlags = traversableGraphFlags;
         m->pipelineCompileOptions.exceptionFlags = exceptionFlags;
         m->pipelineCompileOptions.usesPrimitiveTypeFlags = supportedPrimitiveTypeFlags;
@@ -2945,7 +3151,8 @@ namespace optixu {
         OptixPrimitiveType curveType, OptixCurveEndcapFlags endcapFlags,
         Module module_CH, const char* entryFunctionNameCH,
         Module module_AH, const char* entryFunctionNameAH,
-        ASTradeoff tradeoff, bool allowUpdate, bool allowCompaction, bool allowRandomVertexAccess,
+        ASTradeoff tradeoff, AllowUpdate allowUpdate, AllowCompaction allowCompaction,
+        AllowRandomVertexAccess allowRandomVertexAccess,
         const PayloadType &payloadType) const {
         m->throwRuntimeError(
             curveType != OPTIX_PRIMITIVE_TYPE_ROUND_LINEAR ||
@@ -3004,7 +3211,8 @@ namespace optixu {
     ProgramGroup Pipeline::createHitProgramGroupForSphereIS(
         Module module_CH, const char* entryFunctionNameCH,
         Module module_AH, const char* entryFunctionNameAH,
-        ASTradeoff tradeoff, bool allowUpdate, bool allowCompaction, bool allowRandomVertexAccess,
+        ASTradeoff tradeoff, AllowUpdate allowUpdate, AllowCompaction allowCompaction,
+        AllowRandomVertexAccess allowRandomVertexAccess,
         const PayloadType &payloadType) const {
         _Module* _module_CH = extract(module_CH);
         _Module* _module_AH = extract(module_AH);
@@ -3596,7 +3804,7 @@ namespace optixu {
 
     void Denoiser::invoke(
         CUstream stream, const DenoisingTask &task,
-        const DenoiserInputBuffers &inputBuffers, bool isFirstFrame,
+        const DenoiserInputBuffers &inputBuffers, IsFirstFrame isFirstFrame,
         OptixDenoiserAlphaMode alphaMode, CUdeviceptr normalizer, float blendFactor,
         const BufferView &denoisedBeauty, const BufferView* denoisedAovs,
         const BufferView &internalGuideLayerForNextFrame) const {

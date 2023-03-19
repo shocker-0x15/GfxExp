@@ -1,6 +1,6 @@
 ﻿/*
 
-   Copyright 2022 Shin Watanabe
+   Copyright 2023 Shin Watanabe
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -31,6 +31,20 @@ EN:
 - In Visual Studio, does the CUDA property "Use Fast Math" not work for ptx compilation??
 
 変更履歴 / Update History:
+- !!BREAKING
+  JP: - Opacity Micro-Mapをサポート。
+      - インデックスサイズ指定用のenum classを定義。
+  EN: - Supported opacity micro-map.
+      - Defined an enum class to specify index sizes.
+
+- !!BREAKING
+  JP: - OptiX 7.6.0をサポート。
+      - ホスト側APIのbool引数それぞれの個別の型を定義。
+      - Pipeline::setPipelineOptions()の引数の順序を変更。
+  EN: - Supported OptiX 7.6.0.
+      - Defined a dedicated type for each bool parameter of the host-side API.
+      - Changed the order of parameters of Pipeline::setPipelineOptions().
+
 - !!BREAKING
   JP: - AnnotatedPayloadSignatureテンプレート型を定義。ペイロードアノテーションはこの型経由で行う。
         PayloadSignature::createPayloadType()を削除。
@@ -213,10 +227,17 @@ TODO:
 #include <vector>
 #include <initializer_list>
 #endif
-#include <optix.h>
 
+#if defined(OPTIXU_Platform_Windows_MSVC)
+#   pragma warning(push)
+#   pragma warning(disable:4819)
+#endif
+#include <optix.h>
 #if !defined(__CUDA_ARCH__)
 #include <optix_stubs.h>
+#endif
+#if defined(OPTIXU_Platform_Windows_MSVC)
+#   pragma warning(pop)
 #endif
 
 #ifdef _DEBUG
@@ -430,6 +451,8 @@ namespace optixu {
         static constexpr uint32_t numParameters = sizeof...(PayloadTypes);
         static constexpr uint32_t numDwords =
             static_cast<uint32_t>(detail::calcSumDwords<PayloadTypes...>());
+        static_assert(numDwords <= detail::maxNumPayloadsInDwords,
+                      "Maximum number of payloads is " OPTIXU_STR_MAX_NUM_PAYLOADS " in dwords.");
         static constexpr uint32_t _arraySize = numParameters > 0 ? numParameters : 1u;
         static constexpr uint32_t sizesInDwords[_arraySize] = {
             static_cast<uint32_t>(detail::getNumDwords<PayloadTypes>())...
@@ -494,6 +517,7 @@ namespace optixu {
         static constexpr uint32_t numParameters = sizeof...(AttributeTypes);
         static constexpr uint32_t numDwords =
             static_cast<uint32_t>(detail::calcSumDwords<AttributeTypes...>());
+        static_assert(numDwords <= 8, "Maximum number of attributes is 8 dwords.");
         static constexpr uint32_t sizesInDwords[numParameters] = {
             static_cast<uint32_t>(detail::getNumDwords<AttributeTypes>())...
         };
@@ -514,6 +538,7 @@ namespace optixu {
         static constexpr uint32_t numParameters = sizeof...(ExceptionDetailTypes);
         static constexpr uint32_t numDwords =
             static_cast<uint32_t>(detail::calcSumDwords<ExceptionDetailTypes...>());
+        static_assert(numDwords <= 8, "Maximum number of exception details is 8 dwords.");
         static constexpr uint32_t sizesInDwords[numParameters] = {
             static_cast<uint32_t>(detail::getNumDwords<ExceptionDetailTypes>())...
         };
@@ -562,9 +587,9 @@ namespace optixu {
         template <typename Func, typename Type, uint32_t offsetInDst, uint32_t srcSlot>
         RT_DEVICE_FUNCTION RT_INLINE void getValue(
             Type* value) {
-            if (!value)
+            if (!value) // hope calls for this function are removed when value is compile-time nullptr.
                 return;
-            *(reinterpret_cast<uint32_t*>(value) + offsetInDst) = Func::get<srcSlot>();
+            *(reinterpret_cast<uint32_t*>(value) + offsetInDst) = Func::template get<srcSlot>();
             if constexpr (offsetInDst + 1 < getNumDwords<Type>())
                 getValue<Func, Type, offsetInDst + 1, srcSlot + 1>(value);
         }
@@ -582,7 +607,7 @@ namespace optixu {
         template <typename Func, typename Type, uint32_t offsetInSrc, uint32_t dstSlot>
         RT_DEVICE_FUNCTION RT_INLINE void setValue(
             const Type* value) {
-            if (!value)
+            if (!value) // hope calls for this function are removed when value is compile-time nullptr.
                 return;
             Func::set<dstSlot>(*(reinterpret_cast<const uint32_t*>(value) + offsetInSrc));
             if constexpr (offsetInSrc + 1 < getNumDwords<Type>())
@@ -621,13 +646,14 @@ namespace optixu {
             uint32_t SBToffset, uint32_t SBTstride, uint32_t missSBTIndex,
             uint32_t* const* payloads,
             std::index_sequence<I...>) {
-            optixTrace(payloadTypeID,
-                       handle,
-                       origin, direction,
-                       tmin, tmax, rayTime,
-                       visibilityMask, rayFlags,
-                       SBToffset, SBTstride, missSBTIndex,
-                       *payloads[I]...);
+            optixTrace(
+                payloadTypeID,
+                handle,
+                origin, direction,
+                tmin, tmax, rayTime,
+                visibilityMask, rayFlags,
+                SBToffset, SBTstride, missSBTIndex,
+                *payloads[I]...);
         }
 
         template <size_t... I>
@@ -762,14 +788,6 @@ namespace optixu {
         };
     }
 
-    /*
-    JP: 右辺値参照でペイロードを受け取れば右辺値も受け取れて、かつ値の書き換えも反映できる。
-        が、optixTraceに仕様をあわせることと、テンプレート引数の整合性チェックを簡単にするため、
-        ただの参照で受け取る。
-    EN: Taking payloads as rvalue reference makes it possible to take rvalue while reflecting value changes.
-        However take them as normal reference to ease consistency check of template arguments and for
-        conforming optixTrace.
-    */
     template <typename... PayloadTypes>
     template <OptixPayloadTypeID payloadTypeID>
     RT_DEVICE_FUNCTION RT_INLINE void PayloadSignature<PayloadTypes...>::
@@ -780,8 +798,6 @@ namespace optixu {
             OptixVisibilityMask visibilityMask, OptixRayFlags rayFlags,
             uint32_t SBToffset, uint32_t SBTstride, uint32_t missSBTIndex,
             PayloadTypes &... payloads) {
-        static_assert(numDwords <= detail::maxNumPayloadsInDwords,
-                      "Maximum number of payloads is " OPTIXU_STR_MAX_NUM_PAYLOADS " in dwords.");
         if constexpr (numDwords == 0) {
             optixTrace(
                 payloadTypeID,
@@ -807,8 +823,6 @@ namespace optixu {
     template <typename... PayloadTypes>
     RT_DEVICE_FUNCTION RT_INLINE void PayloadSignature<PayloadTypes...>::
         get(PayloadTypes*... payloads) {
-        static_assert(numDwords <= detail::maxNumPayloadsInDwords,
-                      "Maximum number of payloads is " OPTIXU_STR_MAX_NUM_PAYLOADS " in dwords.");
         static_assert(numDwords > 0, "Calling this function for this signature has no effect.");
         if constexpr (numDwords > 0)
             detail::getValues<detail::PayloadFunc, 0>(payloads...);
@@ -817,8 +831,6 @@ namespace optixu {
     template <typename... PayloadTypes>
     RT_DEVICE_FUNCTION RT_INLINE void PayloadSignature<PayloadTypes...>::
         set(const PayloadTypes*... payloads) {
-        static_assert(numDwords <= detail::maxNumPayloadsInDwords,
-                      "Maximum number of payloads is " OPTIXU_STR_MAX_NUM_PAYLOADS " in dwords.");
         static_assert(numDwords > 0, "Calling this function for this signature has no effect.");
         if constexpr (numDwords > 0)
             detail::setValues<detail::PayloadFunc, 0>(payloads...);
@@ -847,7 +859,6 @@ namespace optixu {
         reportIntersection(
             float hitT, uint32_t hitKind,
             const AttributeTypes &... attributes) {
-        static_assert(numDwords <= 8, "Maximum number of attributes is 8 dwords.");
         if constexpr (numDwords == 0) {
             optixReportIntersection(hitT, hitKind);
         }
@@ -861,7 +872,6 @@ namespace optixu {
     template <typename... AttributeTypes>
     RT_DEVICE_FUNCTION RT_INLINE void AttributeSignature<AttributeTypes...>::
         get(AttributeTypes*... attributes) {
-        static_assert(numDwords <= 8, "Maximum number of attributes is 8 dwords.");
         static_assert(numDwords > 0, "Calling this function for this signature has no effect.");
         if constexpr (numDwords > 0)
             detail::getValues<detail::AttributeFunc, 0>(attributes...);
@@ -874,7 +884,6 @@ namespace optixu {
         throwException(
             int32_t exceptionCode,
             const ExceptionDetailTypes &... exDetails) {
-        static_assert(numDwords <= 8, "Maximum number of exception details is 8 dwords.");
         if constexpr (numDwords == 0) {
             optixThrowException(exceptionCode);
         }
@@ -888,7 +897,6 @@ namespace optixu {
     template <typename... ExceptionDetailTypes>
     RT_DEVICE_FUNCTION RT_INLINE void ExceptionDetailSignature<ExceptionDetailTypes...>::
         get(ExceptionDetailTypes*... exDetails) {
-        static_assert(numDwords <= 8, "Maximum number of exception details is 8 dwords.");
         static_assert(numDwords > 0, "Calling this function for this signature has no effect.");
         if constexpr (numDwords > 0)
             detail::getValues<detail::ExceptionDetailFunc, 0>(exDetails...);
@@ -923,6 +931,8 @@ namespace optixu {
               |              +-- GAS
               |              |
               |              +-- GeomInst
+              |              |
+              |              +-- OMMArray
               |
               +-- Denoiser
 
@@ -976,9 +986,9 @@ namespace optixu {
     */
 
 #define OPTIXU_PREPROCESS_OBJECTS() \
-    OPTIXU_PREPROCESS_OBJECT(Context); \
     OPTIXU_PREPROCESS_OBJECT(Material); \
     OPTIXU_PREPROCESS_OBJECT(Scene); \
+    OPTIXU_PREPROCESS_OBJECT(OpacityMicroMapArray); \
     OPTIXU_PREPROCESS_OBJECT(GeometryInstance); \
     OPTIXU_PREPROCESS_OBJECT(GeometryAccelerationStructure); \
     OPTIXU_PREPROCESS_OBJECT(Transform); \
@@ -993,6 +1003,13 @@ namespace optixu {
 #define OPTIXU_PREPROCESS_OBJECT(Type) class Type
     OPTIXU_PREPROCESS_OBJECTS();
 #undef OPTIXU_PREPROCESS_OBJECT
+
+    enum class IndexSize {
+        k1Byte = 0,
+        k2Bytes,
+        k4Bytes,
+        None,
+    };
 
     enum class GeometryType {
         Triangles = 0,
@@ -1058,37 +1075,71 @@ namespace optixu {
         return detail::calcSumDwords<Types...>();
     }
 
+    template <typename BaseType>
+    class TypedBool {
+        bool m_value;
+
+    public:
+        struct Bool {
+            bool b;
+        };
+
+        constexpr TypedBool(const TypedBool &b) : m_value(b.m_value) {}
+        constexpr TypedBool(Bool b) : m_value(b.b) {}
+        constexpr explicit TypedBool(bool b) : m_value(b) {}
+
+        constexpr operator bool() const {
+            return m_value;
+        }
+        constexpr bool operator==(const TypedBool &r) const {
+            return m_value == r.m_value;
+        }
+        constexpr bool operator!=(const TypedBool &r) const {
+            return m_value != r.m_value;
+        }
+
+        static constexpr Bool True{ true };
+        static constexpr Bool False{ false };
+        static constexpr Bool Yes{ true };
+        static constexpr Bool No{ false };
+    };
 
 
-#define OPTIXU_PIMPL() \
-public: \
-    class Priv; \
-private: \
-    Priv* m = nullptr
 
-#define OPTIXU_COMMON_FUNCTIONS(SelfType) \
-    operator bool() const { return m; } \
-    bool operator==(const SelfType &r) const { return m == r.m; } \
-    bool operator!=(const SelfType &r) const { return m != r.m; } \
-    bool operator<(const SelfType &r) const { \
-        static_assert(std::is_same<decltype(r), decltype(*this)>::value, \
-                      "This function can be defined only for the self type."); \
-        return m < r.m; \
-    } \
-    Context getContext() const; \
-    void setName(const std::string &name) const; \
-    const char* getName() const;
+#define OPTIXU_DECLARE_TYPED_BOOL(Name) \
+    using Name = TypedBool<struct _ ## Name>
+
+    OPTIXU_DECLARE_TYPED_BOOL(EnableValidation);
+    OPTIXU_DECLARE_TYPED_BOOL(GuideAlbedo);
+    OPTIXU_DECLARE_TYPED_BOOL(GuideNormal);
+    OPTIXU_DECLARE_TYPED_BOOL(UseSingleRadius);
+    OPTIXU_DECLARE_TYPED_BOOL(AllowUpdate);
+    OPTIXU_DECLARE_TYPED_BOOL(AllowCompaction);
+    OPTIXU_DECLARE_TYPED_BOOL(AllowRandomVertexAccess);
+    OPTIXU_DECLARE_TYPED_BOOL(AllowOpacityMicroMapUpdate);
+    OPTIXU_DECLARE_TYPED_BOOL(AllowDisableOpacityMicroMaps);
+    OPTIXU_DECLARE_TYPED_BOOL(AllowRandomInstanceAccess);
+    OPTIXU_DECLARE_TYPED_BOOL(UseMotionBlur);
+    OPTIXU_DECLARE_TYPED_BOOL(UseOpacityMicroMaps);
+    OPTIXU_DECLARE_TYPED_BOOL(IsFirstFrame);
+
+#undef OPTIXU_DECLARE_TYPED_BOOL
 
 
 
     class Context {
-        OPTIXU_PIMPL();
+    public:
+        class Priv;
+    private:
+        Priv* m = nullptr;
 
     public:
         [[nodiscard]]
-        static Context create(CUcontext cuContext, uint32_t logLevel = 4, bool enableValidation = false);
+        static Context create(
+            CUcontext cuContext,
+            uint32_t logLevel = 4,
+            EnableValidation enableValidation = EnableValidation::No);
         void destroy();
-        OPTIXU_COMMON_FUNCTIONS(Context);
 
         CUcontext getCUcontext() const;
 
@@ -1101,17 +1152,56 @@ private: \
         [[nodiscard]]
         Scene createScene() const;
         [[nodiscard]]
-        Denoiser createDenoiser(OptixDenoiserModelKind modelKind, bool guideAlbedo, bool guideNormal) const;
+        Denoiser createDenoiser(
+            OptixDenoiserModelKind modelKind,
+            GuideAlbedo guideAlbedo,
+            GuideNormal guideNormal) const;
+
+        operator bool() const { return m; }
+        bool operator==(const Context &r) const { return m == r.m; }
+        bool operator!=(const Context &r) const { return m != r.m; }
+        bool operator<(const Context &r) const {
+            return m < r.m;
+        }
+
+        void setName(const std::string &name) const;
+        const char* getName() const;
     };
 
 
 
-    class Material {
-        OPTIXU_PIMPL();
+    template <typename T>
+    class Object {
+    public:
+        class Priv;
+
+    protected:
+        Priv* m = nullptr;
 
     public:
+        explicit operator bool() const {
+            return m;
+        }
+        bool operator==(const T &r) const {
+            return m == r.m;
+        }
+        bool operator!=(const T &r) const {
+            return m != r.m;
+        }
+        bool operator<(const T &r) const {
+            return m < r.m;
+        }
+
+        Context getContext() const;
+        void setName(const std::string &name) const;
+        const char* getName() const;
+    };
+
+
+
+    class Material : public Object<Material> {
+    public:
         void destroy();
-        OPTIXU_COMMON_FUNCTIONS(Material);
 
         // JP: 以下のAPIを呼んだ場合はシェーダーバインディングテーブルを更新する必要がある。
         //     パイプラインのmarkHitGroupShaderBindingTableDirty()を呼べばローンチ時にセットアップされる。
@@ -1140,17 +1230,18 @@ private: \
 
 
 
-    class Scene {
-        OPTIXU_PIMPL();
-
+    class Scene : public Object<Scene> {
     public:
         void destroy();
-        OPTIXU_COMMON_FUNCTIONS(Scene);
 
         [[nodiscard]]
-        GeometryInstance createGeometryInstance(GeometryType geomType = GeometryType::Triangles) const;
+        OpacityMicroMapArray createOpacityMicroMapArray() const;
         [[nodiscard]]
-        GeometryAccelerationStructure createGeometryAccelerationStructure(GeometryType geomType = GeometryType::Triangles) const;
+        GeometryInstance createGeometryInstance(
+            GeometryType geomType = GeometryType::Triangles) const;
+        [[nodiscard]]
+        GeometryAccelerationStructure createGeometryAccelerationStructure(
+            GeometryType geomType = GeometryType::Triangles) const;
         [[nodiscard]]
         Transform createTransform() const;
         [[nodiscard]]
@@ -1169,12 +1260,42 @@ private: \
 
 
 
-    class GeometryInstance {
-        OPTIXU_PIMPL();
-
+    class OpacityMicroMapArray : public Object<OpacityMicroMapArray> {
     public:
         void destroy();
-        OPTIXU_COMMON_FUNCTIONS(GeometryInstance);
+
+        // JP: 以下のAPIを呼んだ場合はOMM Arrayが自動でdirty状態になる。
+        // EN: Calling the following APIs automatically marks the OMM array dirty.
+        void setConfiguration(OptixOpacityMicromapFlags config) const;
+        void computeMemoryUsage(
+            const OptixOpacityMicromapHistogramEntry* microMapHistogramEntries,
+            uint32_t numMicroMapHistogramEntries,
+            OptixMicromapBufferSizes* memoryRequirement) const;
+        void setBuffers(
+            const BufferView &rawOmmBuffer, const BufferView &perMicroMapDescBuffer,
+            const BufferView &outputBuffer) const;
+
+        // JP: OMM Arrayをdirty状態にする。
+        // EN: Mark the OMM array dirty.
+        void markDirty() const;
+
+        // JP: OMM Arrayをリビルドした場合、それを参照するGASのリビルド、もしくはアップデートが必要。
+        //     アップデートを使う場合は予めGASの設定でOMM Arrayのアップデートを許可する必要がある。
+        // EN: If the OMM array is rebuilt, GASs refering the OMM array need to be rebuilt or updated.
+        //     Allowing OMM array update is required in the GAS setttings when using updating.
+        void rebuild(CUstream stream, const BufferView &scratchBuffer) const;
+
+        bool isReady() const;
+        BufferView getOutputBuffer() const;
+
+        OptixOpacityMicromapFlags getConfiguration() const;
+    };
+
+
+
+    class GeometryInstance : public Object<GeometryInstance> {
+    public:
+        void destroy();
 
         /*
         JP: 以下のAPIを呼んだ場合は所属するGASのmarkDirty()を呼ぶ必要がある。
@@ -1192,15 +1313,20 @@ private: \
         void setTriangleBuffer(
             const BufferView &triangleBuffer,
             OptixIndicesFormat format = OPTIX_INDICES_FORMAT_UNSIGNED_INT3) const;
+        void setOpacityMicroMapArray(
+            OpacityMicroMapArray opacityMicroMapArray,
+            const OptixOpacityMicromapUsageCount* ommUsageCounts, uint32_t numOmmUsageCounts,
+            const BufferView &ommIndexBuffer,
+            IndexSize indexSize = IndexSize::k4Bytes, uint32_t indexOffset = 0) const;
         void setSegmentIndexBuffer(const BufferView &segmentIndexBuffer) const;
         void setCurveEndcapFlags(OptixCurveEndcapFlags endcapFlags) const;
-        void setSingleRadius(bool useSingleRadius) const;
+        void setSingleRadius(UseSingleRadius useSingleRadius) const;
         void setCustomPrimitiveAABBBuffer(
             const BufferView &primitiveAABBBuffer, uint32_t motionStep = 0) const;
         void setPrimitiveIndexOffset(uint32_t offset) const;
         void setNumMaterials(
             uint32_t numMaterials, const BufferView &matIndexBuffer,
-            uint32_t indexSize = sizeof(uint32_t)) const;
+            IndexSize indexSize = IndexSize::k4Bytes) const;
         void setGeometryFlags(uint32_t matIdx, OptixGeometryFlags flags) const;
 
         /*
@@ -1226,10 +1352,13 @@ private: \
         BufferView getWidthBuffer(uint32_t motionStep = 0);
         BufferView getRadiusBuffer(uint32_t motionStep = 0);
         BufferView getTriangleBuffer(OptixIndicesFormat* format = nullptr) const;
+        OpacityMicroMapArray getOpacityMicroMapArray(
+            BufferView* ommIndexBuffer = nullptr,
+            IndexSize* indexSize = nullptr, uint32_t* indexOffset = nullptr) const;
         BufferView getSegmentIndexBuffer() const;
         BufferView getCustomPrimitiveAABBBuffer(uint32_t motionStep = 0) const;
         uint32_t getPrimitiveIndexOffset() const;
-        uint32_t getNumMaterials(BufferView* matIndexBuffer = nullptr, uint32_t* indexSize = nullptr) const;
+        uint32_t getNumMaterials(BufferView* matIndexBuffer = nullptr, IndexSize* indexSize = nullptr) const;
         OptixGeometryFlags getGeometryFlags(uint32_t matIdx) const;
         Material getMaterial(uint32_t matSetIdx, uint32_t matIdx) const;
         void getUserData(void* data, uint32_t* size, uint32_t* alignment) const;
@@ -1241,20 +1370,21 @@ private: \
 
 
 
-    class GeometryAccelerationStructure {
-        OPTIXU_PIMPL();
-
+    class GeometryAccelerationStructure : public Object<GeometryAccelerationStructure> {
     public:
         void destroy();
-        OPTIXU_COMMON_FUNCTIONS(GeometryAccelerationStructure);
 
         // JP: 以下のAPIを呼んだ場合はGASが自動でdirty状態になる。
         //     子の数が変更される場合はヒットグループのシェーダーバインディングテーブルレイアウトも無効化される。
         // EN: Calling the following APIs automatically marks the GAS dirty.
         //     Changing the number of children invalidates the shader binding table layout of hit group.
         void setConfiguration(
-            ASTradeoff tradeoff, bool allowUpdate, bool allowCompaction,
-            bool allowRandomVertexAccess) const;
+            ASTradeoff tradeoff,
+            AllowUpdate allowUpdate = AllowUpdate::No,
+            AllowCompaction allowCompaction = AllowCompaction::No,
+            AllowRandomVertexAccess allowRandomVertexAccess = AllowRandomVertexAccess::No,
+            AllowOpacityMicroMapUpdate allowOpacityMicroMapUpdate = AllowOpacityMicroMapUpdate::No,
+            AllowDisableOpacityMicroMaps allowDisableOpacityMicroMaps = AllowDisableOpacityMicroMaps::No) const;
         void setMotionOptions(
             uint32_t numKeys, float timeBegin, float timeEnd, OptixMotionFlags flags) const;
         void addChild(
@@ -1325,8 +1455,10 @@ private: \
         OptixTraversableHandle getHandle() const;
 
         void getConfiguration(
-            ASTradeoff* tradeOff, bool* allowUpdate, bool* allowCompaction,
-            bool* allowRandomVertexAccess) const;
+            ASTradeoff* tradeOff, AllowUpdate* allowUpdate, AllowCompaction* allowCompaction,
+            AllowRandomVertexAccess* allowRandomVertexAccess,
+            AllowOpacityMicroMapUpdate* allowOpacityMicroMapUpdate,
+            AllowDisableOpacityMicroMaps* allowDisableOpacityMicroMaps) const;
         void getMotionOptions(uint32_t* numKeys, float* timeBegin, float* timeEnd, OptixMotionFlags* flags) const;
         uint32_t getNumChildren() const;
         uint32_t findChildIndex(GeometryInstance geomInst, CUdeviceptr preTransform = 0) const;
@@ -1348,12 +1480,9 @@ private: \
 
 
 
-    class Transform {
-        OPTIXU_PIMPL();
-
+    class Transform : public Object<Transform> {
     public:
         void destroy();
-        OPTIXU_COMMON_FUNCTIONS(Transform);
 
         // JP: 以下のAPIを呼んだ場合はTransformが自動でdirty状態になる。
         // EN: Calling the following APIs automatically marks the transform dirty.
@@ -1398,12 +1527,9 @@ private: \
 
 
 
-    class Instance {
-        OPTIXU_PIMPL();
-
+    class Instance : public Object<Instance> {
     public:
         void destroy();
-        OPTIXU_COMMON_FUNCTIONS(Instance);
 
         // JP: 所属するIASのmarkDirty()を呼ぶ必要がある。
         // EN: Calling markDirty() of a IAS to which the instance belongs is required.
@@ -1441,20 +1567,17 @@ private: \
           基本的にインスタンスバッファーとASのメモリ(コンパクション版にもなり得る)
           は同じ寿命で扱ったほうが良さそう。
     */
-    class InstanceAccelerationStructure {
-        OPTIXU_PIMPL();
-
+    class InstanceAccelerationStructure : public Object<InstanceAccelerationStructure> {
     public:
         void destroy();
-        OPTIXU_COMMON_FUNCTIONS(InstanceAccelerationStructure);
 
         // JP: 以下のAPIを呼んだ場合はIASが自動でdirty状態になる。
         // EN: Calling the following APIs automatically marks the IAS dirty.
         void setConfiguration(
             ASTradeoff tradeoff,
-            bool allowUpdate,
-            bool allowCompaction,
-            bool allowRandomInstanceAccess) const;
+            AllowUpdate allowUpdate = AllowUpdate::No,
+            AllowCompaction allowCompaction = AllowCompaction::No,
+            AllowRandomInstanceAccess allowRandomInstanceAccess = AllowRandomInstanceAccess::No) const;
         void setMotionOptions(uint32_t numKeys, float timeBegin, float timeEnd, OptixMotionFlags flags) const;
         void addChild(Instance instance) const;
         void removeChildAt(uint32_t index) const;
@@ -1491,9 +1614,9 @@ private: \
 
         void getConfiguration(
             ASTradeoff* tradeOff,
-            bool* allowUpdate,
-            bool* allowCompaction,
-            bool* allowRandomInstanceAccess) const;
+            AllowUpdate* allowUpdate,
+            AllowCompaction* allowCompaction,
+            AllowRandomInstanceAccess* allowRandomInstanceAccess) const;
         void getMotionOptions(
             uint32_t* numKeys, float* timeBegin, float* timeEnd, OptixMotionFlags* flags) const;
         uint32_t getNumChildren() const;
@@ -1503,20 +1626,18 @@ private: \
 
 
 
-    class Pipeline {
-        OPTIXU_PIMPL();
-
+    class Pipeline : public Object<Pipeline> {
     public:
         void destroy();
-        OPTIXU_COMMON_FUNCTIONS(Pipeline);
 
         void setPipelineOptions(
             uint32_t numPayloadValuesInDwords, uint32_t numAttributeValuesInDwords,
             const char* launchParamsVariableName, size_t sizeOfLaunchParams,
-            bool useMotionBlur,
             OptixTraversableGraphFlags traversableGraphFlags,
             OptixExceptionFlags exceptionFlags,
-            OptixPrimitiveTypeFlags supportedPrimitiveTypeFlags) const;
+            OptixPrimitiveTypeFlags supportedPrimitiveTypeFlags,
+            UseMotionBlur useMotionBlur = UseMotionBlur::No,
+            UseOpacityMicroMaps useOpacityMicroMaps = UseOpacityMicroMaps::No) const;
 
         [[nodiscard]]
         Module createModuleFromPTXString(
@@ -1549,13 +1670,19 @@ private: \
             OptixPrimitiveType curveType, OptixCurveEndcapFlags endcapFlags,
             Module module_CH, const char* entryFunctionNameCH,
             Module module_AH, const char* entryFunctionNameAH,
-            ASTradeoff tradeoff, bool allowUpdate, bool allowCompaction, bool allowRandomVertexAccess,
+            ASTradeoff tradeoff,
+            AllowUpdate allowUpdate = AllowUpdate::No,
+            AllowCompaction allowCompaction = AllowCompaction::No,
+            AllowRandomVertexAccess allowRandomVertexAccess = AllowRandomVertexAccess::No,
             const PayloadType &payloadType = PayloadType()) const;
         [[nodiscard]]
         ProgramGroup createHitProgramGroupForSphereIS(
             Module module_CH, const char* entryFunctionNameCH,
             Module module_AH, const char* entryFunctionNameAH,
-            ASTradeoff tradeoff, bool allowUpdate, bool allowCompaction, bool allowRandomVertexAccess,
+            ASTradeoff tradeoff,
+            AllowUpdate allowUpdate = AllowUpdate::No,
+            AllowCompaction allowCompaction = AllowCompaction::No,
+            AllowRandomVertexAccess allowRandomVertexAccess = AllowRandomVertexAccess::No,
             const PayloadType &payloadType = PayloadType()) const;
         [[nodiscard]]
         ProgramGroup createHitProgramGroupForCustomIS(
@@ -1637,22 +1764,16 @@ private: \
 
     // JP: Moduleの寿命はそれを参照するあらゆるProgramGroupの寿命よりも長い必要がある。
     // EN: The lifetime of a module must extend to the lifetime of any ProgramGroup that reference that module.
-    class Module {
-        OPTIXU_PIMPL();
-
+    class Module : public Object<Module> {
     public:
         void destroy();
-        OPTIXU_COMMON_FUNCTIONS(Module);
     };
 
 
 
-    class ProgramGroup {
-        OPTIXU_PIMPL();
-
+    class ProgramGroup : public Object<ProgramGroup> {
     public:
         void destroy();
-        OPTIXU_COMMON_FUNCTIONS(ProgramGroup);
 
         void getStackSize(OptixStackSizes* sizes) const;
     };
@@ -1690,12 +1811,9 @@ private: \
         uint32_t numAovs;
     };
 
-    class Denoiser {
-        OPTIXU_PIMPL();
-
+    class Denoiser : public Object<Denoiser> {
     public:
         void destroy();
-        OPTIXU_COMMON_FUNCTIONS(Denoiser);
 
         void prepare(
             uint32_t imageWidth, uint32_t imageHeight, uint32_t tileWidth, uint32_t tileHeight,
@@ -1709,16 +1827,11 @@ private: \
             const BufferView &scratchBuffer, CUdeviceptr normalizer) const;
         void invoke(
             CUstream stream, const DenoisingTask &task,
-            const DenoiserInputBuffers &inputBuffers, bool isFirstFrame,
+            const DenoiserInputBuffers &inputBuffers, IsFirstFrame isFirstFrame,
             OptixDenoiserAlphaMode alphaMode, CUdeviceptr normalizer, float blendFactor,
             const BufferView &denoisedBeauty, const BufferView* denoisedAovs,
             const BufferView &internalGuideLayerForNextFrame) const;
     };
-
-
-
-#undef OPTIXU_COMMON_FUNCTIONS
-#undef OPTIXU_PIMPL
 
 #endif // #if !defined(__CUDA_ARCH__)
     // END: Host-side API

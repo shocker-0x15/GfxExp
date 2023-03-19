@@ -90,8 +90,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void buildCellReservoirsAndTemporalReuse(uint32
     const float minSquaredDistance = sqLength(0.5f * plp.s->gridCellSize);
 
     uint32_t bufferIndex = plp.f->bufferIndex;
-    Reservoir<LightSample>* curReservoirs = plp.s->reservoirs[bufferIndex];
-    ReservoirInfo* curReservoirInfos = plp.s->reservoirInfos[bufferIndex];
+    RWBuffer<Reservoir<LightSample>> curReservoirs = plp.s->reservoirs[bufferIndex];
+    RWBuffer<ReservoirInfo> curReservoirInfos = plp.s->reservoirInfos[bufferIndex];
 
     PCG32RNG rng = plp.s->lightSlotRngs[linearThreadIndex];
 
@@ -177,8 +177,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void buildCellReservoirsAndTemporalReuse(uint32
     //     the current frame and the other is the accumulation of the previous frames.
     if constexpr (useTemporalReuse) {
         uint32_t prevBufferIndex = (bufferIndex + 1) % 2;
-        const Reservoir<LightSample>* prevReservoirs = plp.s->reservoirs[prevBufferIndex];
-        const ReservoirInfo* prevReservoirInfos = plp.s->reservoirInfos[prevBufferIndex];
+        RWBuffer<Reservoir<LightSample>> prevReservoirs = plp.s->reservoirs[prevBufferIndex];
+        RWBuffer<ReservoirInfo> prevReservoirInfos = plp.s->reservoirInfos[prevBufferIndex];
 
         uint32_t selfStreamLength = reservoir.getStreamLength();
         if (recPDFEstimate == 0.0f)

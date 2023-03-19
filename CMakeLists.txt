@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.18)
+cmake_minimum_required(VERSION 3.26)
 project(
     GfxExp_cmake
     VERSION 1.0
@@ -14,15 +14,15 @@ set(
     CMAKE_MODULE_PATH
     "${CMAKE_SOURCE_DIR}/cmake"
     ${CMAKE_MODULE_PATH})
-find_package(CUDAToolkit 11.6 REQUIRED)
-find_package(OptiX75)
+find_package(CUDAToolkit 12.1 REQUIRED)
+find_package(OptiX76)
 include("copy_files")
 include("nvcuda_compile_ptx")
 
-if (OptiX75_FOUND)
-    set(OPTIX_INCLUDE_DIR "${OPTIX75_INCLUDE_DIR}")
+if (OptiX76_FOUND)
+    set(OPTIX_INCLUDE_DIR "${OPTIX76_INCLUDE_DIR}")
 else()
-    message(FATAL_ERROR "OptiX SDK 7.5 not found.")
+    message(FATAL_ERROR "OptiX SDK 7.6 not found.")
 endif()
 
 
@@ -120,7 +120,7 @@ function(set_common_sources)
         "$<$<CONFIG:Debug>:-G>"
         "$<$<CONFIG:Debug>:-D_DEBUG=1>"
         "--gpu-architecture=compute_52"
-        "-std=c++17"
+        "-std=c++20"
         "-cudart" "shared"
         "--use_fast_math"
         "--relocatable-device-code=true"

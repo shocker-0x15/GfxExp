@@ -127,7 +127,8 @@ struct GPUEnvironment {
         CUDADRV_CHECK(cuCtxCreate(&cuContext, 0, 0));
         CUDADRV_CHECK(cuCtxSetCurrent(cuContext));
 
-        optixContext = optixu::Context::create(cuContext/*, 4, DEBUG_SELECT(true, false)*/);
+        optixContext = optixu::Context::create(
+            cuContext/*, 4, DEBUG_SELECT(optixu::EnableValidation::Yes, optixu::EnableValidation::No)*/);
 
         CUDADRV_CHECK(cuModuleLoad(
             &cudaModule,
@@ -160,7 +161,7 @@ struct GPUEnvironment {
                          }),
                 optixu::calcSumDwords<float2>(),
                 "plp", sizeof(shared::PipelineLaunchParameters),
-                false, OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_LEVEL_INSTANCING,
+                OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_LEVEL_INSTANCING,
                 OPTIX_EXCEPTION_FLAG_STACK_OVERFLOW | OPTIX_EXCEPTION_FLAG_TRACE_DEPTH |
                 DEBUG_SELECT(OPTIX_EXCEPTION_FLAG_DEBUG, OPTIX_EXCEPTION_FLAG_NONE),
                 OPTIX_PRIMITIVE_TYPE_FLAGS_TRIANGLE);
@@ -223,7 +224,7 @@ struct GPUEnvironment {
                          }),
                 optixu::calcSumDwords<float2>(),
                 "plp", sizeof(shared::PipelineLaunchParameters),
-                false, OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_LEVEL_INSTANCING,
+                OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_LEVEL_INSTANCING,
                 OPTIX_EXCEPTION_FLAG_STACK_OVERFLOW | OPTIX_EXCEPTION_FLAG_TRACE_DEPTH |
                 DEBUG_SELECT(OPTIX_EXCEPTION_FLAG_DEBUG, OPTIX_EXCEPTION_FLAG_NONE),
                 OPTIX_PRIMITIVE_TYPE_FLAGS_TRIANGLE);
@@ -1327,7 +1328,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
     constexpr uint32_t tileWidth = useTiledDenoising ? 256 : 0;
     constexpr uint32_t tileHeight = useTiledDenoising ? 256 : 0;
     optixu::Denoiser denoiser = gpuEnv.optixContext.createDenoiser(
-        OPTIX_DENOISER_MODEL_KIND_TEMPORAL, true, true);
+        OPTIX_DENOISER_MODEL_KIND_TEMPORAL,
+        optixu::GuideAlbedo::Yes, optixu::GuideNormal::Yes);
     optixu::DenoiserSizes denoiserSizes;
     uint32_t numTasks;
     denoiser.prepare(
@@ -1419,8 +1421,10 @@ int32_t main(int32_t argc, const char* argv[]) try {
         staticPlp.GBuffer2[0] = gBuffer2[0].getSurfaceObject(0);
         staticPlp.GBuffer2[1] = gBuffer2[1].getSurfaceObject(0);
 
-        staticPlp.materialDataBuffer = scene.materialDataBuffer.getDevicePointer();
-        staticPlp.geometryInstanceDataBuffer = scene.geomInstDataBuffer.getDevicePointer();
+        staticPlp.materialDataBuffer = shared::ROBuffer(
+            scene.materialDataBuffer.getDevicePointer(), scene.materialDataBuffer.numElements());
+        staticPlp.geometryInstanceDataBuffer = shared::ROBuffer(
+            scene.geomInstDataBuffer.getDevicePointer(), scene.geomInstDataBuffer.numElements());
         envLightImportanceMap.getDeviceType(&staticPlp.envLightImportanceMap);
         staticPlp.envLightTexture = envLightTexture;
 
@@ -1435,17 +1439,26 @@ int32_t main(int32_t argc, const char* argv[]) try {
         }
         staticPlp.offsetToSelectUnbiasedTile = reinterpret_cast<uint32_t*>(offsetToSelectUnbiasedTileOnDevice);
         staticPlp.offsetToSelectTrainingPath = reinterpret_cast<uint32_t*>(offsetToSelectTrainingPathOnDevice);
-        staticPlp.inferenceRadianceQueryBuffer = inferenceRadianceQueryBuffer.getDevicePointer();
-        staticPlp.inferenceTerminalInfoBuffer = inferenceTerminalInfoBuffer.getDevicePointer();
-        staticPlp.inferredRadianceBuffer = inferredRadianceBuffer.getDevicePointer();
-        staticPlp.perFrameContributionBuffer = perFrameContributionBuffer.getDevicePointer();
+        staticPlp.inferenceRadianceQueryBuffer = shared::RWBuffer(
+            inferenceRadianceQueryBuffer.getDevicePointer(), inferenceRadianceQueryBuffer.numElements());
+        staticPlp.inferenceTerminalInfoBuffer = shared::RWBuffer(
+            inferenceTerminalInfoBuffer.getDevicePointer(), inferenceTerminalInfoBuffer.numElements());
+        staticPlp.inferredRadianceBuffer = shared::RWBuffer(
+            inferredRadianceBuffer.getDevicePointer(), inferredRadianceBuffer.numElements());
+        staticPlp.perFrameContributionBuffer = shared::RWBuffer(
+            perFrameContributionBuffer.getDevicePointer(), perFrameContributionBuffer.numElements());
         for (int i = 0; i < 2; ++i) {
-            staticPlp.trainRadianceQueryBuffer[i] = trainRadianceQueryBuffer[i].getDevicePointer();
-            staticPlp.trainTargetBuffer[i] = trainTargetBuffer[i].getDevicePointer();
+            staticPlp.trainRadianceQueryBuffer[i] = shared::RWBuffer(
+                trainRadianceQueryBuffer[i].getDevicePointer(), trainRadianceQueryBuffer[i].numElements());
+            staticPlp.trainTargetBuffer[i] = shared::RWBuffer(
+                trainTargetBuffer[i].getDevicePointer(), trainTargetBuffer[i].numElements());
         }
-        staticPlp.trainVertexInfoBuffer = trainVertexInfoBuffer.getDevicePointer();
-        staticPlp.trainSuffixTerminalInfoBuffer = trainSuffixTerminalInfoBuffer.getDevicePointer();
-        staticPlp.dataShufflerBuffer = dataShufflerBuffer.getDevicePointer();
+        staticPlp.trainVertexInfoBuffer = shared::RWBuffer(
+            trainVertexInfoBuffer.getDevicePointer(), trainVertexInfoBuffer.numElements());
+        staticPlp.trainSuffixTerminalInfoBuffer = shared::RWBuffer(
+            trainSuffixTerminalInfoBuffer.getDevicePointer(), trainSuffixTerminalInfoBuffer.numElements());
+        staticPlp.dataShufflerBuffer = shared::RWBuffer(
+            dataShufflerBuffer.getDevicePointer(), dataShufflerBuffer.numElements());
 
         staticPlp.beautyAccumBuffer = beautyAccumBuffer.getSurfaceObject(0);
         staticPlp.albedoAccumBuffer = albedoAccumBuffer.getSurfaceObject(0);
@@ -1626,10 +1639,14 @@ int32_t main(int32_t argc, const char* argv[]) try {
             staticPlp.GBuffer1[1] = gBuffer1[1].getSurfaceObject(0);
             staticPlp.GBuffer2[0] = gBuffer2[0].getSurfaceObject(0);
             staticPlp.GBuffer2[1] = gBuffer2[1].getSurfaceObject(0);
-            staticPlp.inferenceRadianceQueryBuffer = inferenceRadianceQueryBuffer.getDevicePointer();
-            staticPlp.inferenceTerminalInfoBuffer = inferenceTerminalInfoBuffer.getDevicePointer();
-            staticPlp.inferredRadianceBuffer = inferredRadianceBuffer.getDevicePointer();
-            staticPlp.perFrameContributionBuffer = perFrameContributionBuffer.getDevicePointer();
+            staticPlp.inferenceRadianceQueryBuffer = shared::RWBuffer(
+                inferenceRadianceQueryBuffer.getDevicePointer(), inferenceRadianceQueryBuffer.numElements());
+            staticPlp.inferenceTerminalInfoBuffer = shared::RWBuffer(
+                inferenceTerminalInfoBuffer.getDevicePointer(), inferenceTerminalInfoBuffer.numElements());
+            staticPlp.inferredRadianceBuffer = shared::RWBuffer(
+                inferredRadianceBuffer.getDevicePointer(), inferredRadianceBuffer.numElements());
+            staticPlp.perFrameContributionBuffer = shared::RWBuffer(
+                perFrameContributionBuffer.getDevicePointer(), perFrameContributionBuffer.numElements());
             staticPlp.beautyAccumBuffer = beautyAccumBuffer.getSurfaceObject(0);
             staticPlp.albedoAccumBuffer = albedoAccumBuffer.getSurfaceObject(0);
             staticPlp.normalAccumBuffer = normalAccumBuffer.getSurfaceObject(0);
@@ -2008,7 +2025,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
                         OptixDenoiserModelKind modelKind = useTemporalDenosier ?
                             OPTIX_DENOISER_MODEL_KIND_TEMPORAL :
                             OPTIX_DENOISER_MODEL_KIND_HDR;
-                        denoiser = gpuEnv.optixContext.createDenoiser(modelKind, true, true);
+                        denoiser = gpuEnv.optixContext.createDenoiser(
+                            modelKind,
+                            optixu::GuideAlbedo::Yes, optixu::GuideNormal::Yes);
 
                         optixu::DenoiserSizes denoiserSizes;
                         uint32_t numTasks;
@@ -2166,7 +2185,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
         perFramePlp.numAccumFrames = numAccumFrames;
         perFramePlp.frameIndex = frameIndex;
-        perFramePlp.instanceDataBuffer = scene.instDataBuffer[bufferIndex].getDevicePointer();
+        perFramePlp.instanceDataBuffer = shared::ROBuffer(
+            scene.instDataBuffer[bufferIndex].getDevicePointer(),
+            scene.instDataBuffer[bufferIndex].numElements());
         perFramePlp.radianceScale = std::pow(10.0f, log10RadianceScale);
         perFramePlp.envLightPowerCoeff = std::pow(10.0f, log10EnvLightPowerCoeff);
         perFramePlp.envLightRotation = envLightRotation;
@@ -2355,7 +2376,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
             for (int i = 0; i < denoisingTasks.size(); ++i)
                 denoiser.invoke(
                     cuStream, denoisingTasks[i], inputBuffers,
-                    newSequence, OPTIX_DENOISER_ALPHA_MODE_COPY, hdrNormalizer, 0.0f,
+                    optixu::IsFirstFrame(newSequence), OPTIX_DENOISER_ALPHA_MODE_COPY, hdrNormalizer, 0.0f,
                     linearDenoisedBeautyBuffer, nullptr,
                     optixu::BufferView());
         }

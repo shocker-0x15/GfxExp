@@ -89,15 +89,15 @@ Programs here use [OptiX Utility](https://github.com/shocker-0x15/OptiX_Utility)
 現状以下の環境で動作を確認しています。\
 I've confirmed that the program runs correctly in the following environment.
 
-* Windows 10 (21H2) & Visual Studio Community 2022 (17.3.4)
-* Core i9-9900K, 32GB, RTX 3080 10GB
-* NVIDIA Driver 516.94 (Note that versions around 510-512 had several OptiX issues.)
+* Windows 10 (22H2) & Visual Studio Community 2022 (17.5.2)
+* Core i9-9900K, 32GB, RTX 4080 16GB
+* NVIDIA Driver 531.29 (Note that versions around 510-512 had several OptiX issues.)
 
 動作させるにあたっては以下のライブラリが必要です。\
 It requires the following libraries.
 
-* CUDA 11.6 Update 2
-* OptiX 7.5.0 (requires Maxwell or later generation NVIDIA GPU)
+* CUDA 12.1
+* OptiX 7.6.0 (requires Maxwell or later generation NVIDIA GPU)
 
 ## オープンソースソフトウェア / Open Source Software
 - [Open Asset Import Library (assimp)](https://github.com/assimp/assimp)
@@ -111,4 +111,4 @@ It requires the following libraries.
 - [Tiny OpenEXR image library (tinyexr)](https://github.com/syoyo/tinyexr)
 
 ----
-2022 [@Shocker_0x15](https://twitter.com/Shocker_0x15)
+2023 [@Shocker_0x15](https://twitter.com/Shocker_0x15)

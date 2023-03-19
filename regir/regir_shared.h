@@ -186,17 +186,17 @@ namespace shared {
         optixu::NativeBlockBuffer2D<GBuffer1> GBuffer1[2];
         optixu::NativeBlockBuffer2D<GBuffer2> GBuffer2[2];
 
-        Reservoir<LightSample>* reservoirs[2];
-        ReservoirInfo* reservoirInfos[2];
-        PCG32RNG* lightSlotRngs;
-        uint32_t* perCellNumAccesses;
-        uint32_t* lastAccessFrameIndices;
+        RWBuffer<Reservoir<LightSample>> reservoirs[2];
+        RWBuffer<ReservoirInfo> reservoirInfos[2];
+        RWBuffer<PCG32RNG> lightSlotRngs;
+        RWBuffer<uint32_t> perCellNumAccesses;
+        RWBuffer<uint32_t> lastAccessFrameIndices;
         float3 gridOrigin;
         float3 gridCellSize;
         uint3 gridDimension;
 
-        const MaterialData* materialDataBuffer;
-        const GeometryInstanceData* geometryInstanceDataBuffer;
+        ROBuffer<MaterialData> materialDataBuffer;
+        ROBuffer<GeometryInstanceData> geometryInstanceDataBuffer;
         LightDistribution lightInstDist;
         RegularConstantContinuousDistribution2D envLightImportanceMap;
         CUtexObject envLightTexture;
@@ -211,7 +211,7 @@ namespace shared {
         uint32_t numAccumFrames;
         uint32_t frameIndex;
 
-        const InstanceData* instanceDataBuffer;
+        ROBuffer<InstanceData> instanceDataBuffer;
 
         PerspectiveCamera camera;
         PerspectiveCamera prevCamera;

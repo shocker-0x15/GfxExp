@@ -179,8 +179,8 @@ namespace shared {
         optixu::NativeBlockBuffer2D<Lighting_Variance> lighting_variance_buffers[2];
         optixu::NativeBlockBuffer2D<Lighting_Variance> prevNoisyLightingBuffer;
 
-        const MaterialData* materialDataBuffer;
-        const GeometryInstanceData* geometryInstanceDataBuffer;
+        ROBuffer<MaterialData> materialDataBuffer;
+        ROBuffer<GeometryInstanceData> geometryInstanceDataBuffer;
         LightDistribution lightInstDist;
         RegularConstantContinuousDistribution2D envLightImportanceMap;
         CUtexObject envLightTexture;
@@ -203,7 +203,7 @@ namespace shared {
         uint32_t numAccumFrames;
         uint32_t frameIndex;
 
-        const InstanceData* instanceDataBuffer;
+        ROBuffer<InstanceData> instanceDataBuffer;
 
         float envLightPowerCoeff;
         float envLightRotation;

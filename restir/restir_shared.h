@@ -194,21 +194,21 @@ namespace shared {
         optixu::NativeBlockBuffer2D<GBuffer1> GBuffer1[2];
         optixu::NativeBlockBuffer2D<GBuffer2> GBuffer2[2];
 
-        const MaterialData* materialDataBuffer;
-        const GeometryInstanceData* geometryInstanceDataBuffer;
+        ROBuffer<MaterialData> materialDataBuffer;
+        ROBuffer<GeometryInstanceData> geometryInstanceDataBuffer;
         LightDistribution lightInstDist;
         RegularConstantContinuousDistribution2D envLightImportanceMap;
         CUtexObject envLightTexture;
 
         // only for rearchitected ver.
         int2 numTiles;
-        PCG32RNG* lightPreSamplingRngs;
-        PreSampledLight* preSampledLights;
+        RWBuffer<PCG32RNG> lightPreSamplingRngs;
+        RWBuffer<PreSampledLight> preSampledLights;
 
         optixu::BlockBuffer2D<Reservoir<LightSample>, 0> reservoirBuffer[2];
         optixu::NativeBlockBuffer2D<ReservoirInfo> reservoirInfoBuffer[2];
         optixu::NativeBlockBuffer2D<SampleVisibility> sampleVisibilityBuffer[2];
-        const float2* spatialNeighborDeltas; // only for rearchitected ver.
+        ROBuffer<float2> spatialNeighborDeltas; // only for rearchitected ver.
 
         optixu::NativeBlockBuffer2D<float4> beautyAccumBuffer;
         optixu::NativeBlockBuffer2D<float4> albedoAccumBuffer;
@@ -220,7 +220,7 @@ namespace shared {
         uint32_t numAccumFrames;
         uint32_t frameIndex;
 
-        const InstanceData* instanceDataBuffer;
+        ROBuffer<InstanceData> instanceDataBuffer;
 
         PerspectiveCamera camera;
         PerspectiveCamera prevCamera;

@@ -55,6 +55,23 @@ std::string readTxtFile(const std::filesystem::path& filepath) {
     return std::string(sstream.str());
 }
 
+std::vector<char> readBinaryFile(const std::filesystem::path &filepath) {
+    std::vector<char> ret;
+
+    std::ifstream ifs;
+    ifs.open(filepath, std::ios::in | std::ios::binary | std::ios::ate);
+    if (ifs.fail())
+        return std::move(ret);
+
+    std::streamsize fileSize = ifs.tellg();
+    ifs.seekg(0, std::ios::beg);
+
+    ret.resize(fileSize);
+    ifs.read(ret.data(), fileSize);
+
+    return std::move(ret);
+}
+
 
 
 template <typename RealType>
@@ -874,10 +891,10 @@ static BumpMapTextureType getBumpMapType(cudau::ArrayElementType elemType) {
 }
 
 static BumpMapTextureType getBumpMapType(GLenum glFormat) {
-    if (glFormat == 0x8CF1 ||
+    if (glFormat == 0x83F1 ||
         glFormat == 0x83F2 ||
         glFormat == 0x83F3 ||
-        glFormat == 0x838C)
+        glFormat == 0x8E8C)
         return BumpMapTextureType::NormalMap_BC;
     else if (glFormat == 0x8DBB ||
              glFormat == 0x8DBC)
@@ -1808,8 +1825,10 @@ static GeometryInstance* createGeometryInstance(
     scene->geomInstSlotFinder.setInUse(geomInst->geomInstSlot);
 
     shared::GeometryInstanceData geomInstData = {};
-    geomInstData.vertexBuffer = geomInst->vertexBuffer.getDevicePointer();
-    geomInstData.triangleBuffer = geomInst->triangleBuffer.getDevicePointer();
+    geomInstData.vertexBuffer = shared::ROBuffer(
+        geomInst->vertexBuffer.getDevicePointer(), geomInst->vertexBuffer.numElements());
+    geomInstData.triangleBuffer = shared::ROBuffer(
+        geomInst->triangleBuffer.getDevicePointer(), geomInst->triangleBuffer.numElements());
     geomInst->emitterPrimDist.getDeviceType(&geomInstData.emitterPrimDist);
     geomInstData.materialSlot = mat->materialSlot;
     geomInstData.geomInstSlot = geomInst->geomInstSlot;
@@ -2289,7 +2308,8 @@ Instance* createInstance(
     instData.prevTransform = finalTransform;
     instData.normalMatrix = transpose(inverse(finalTransform.getUpperLeftMatrix()));
     instData.uniformScale = uniformScale;
-    instData.geomInstSlots = inst->geomInstSlots.getDevicePointer();
+    instData.geomInstSlots = shared::ROBuffer<uint32_t>(
+        inst->geomInstSlots.getDevicePointer(), inst->geomInstSlots.numElements());
     inst->lightGeomInstDist.getDeviceType(&instData.lightGeomInstDist);
     instDataOnHost[inst->instSlot] = instData;
 

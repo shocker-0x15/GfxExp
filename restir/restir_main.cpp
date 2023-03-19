@@ -129,7 +129,8 @@ struct GPUEnvironment {
         CUDADRV_CHECK(cuCtxCreate(&cuContext, 0, 0));
         CUDADRV_CHECK(cuCtxSetCurrent(cuContext));
 
-        optixContext = optixu::Context::create(cuContext/*, 4, DEBUG_SELECT(true, false)*/);
+        optixContext = optixu::Context::create(
+            cuContext/*, 4, DEBUG_SELECT(optixu::EnableValidation::Yes, optixu::EnableValidation::No)*/);
 
         CUDADRV_CHECK(cuModuleLoad(
             &perPixelRISModule,
@@ -159,7 +160,7 @@ struct GPUEnvironment {
                          }),
                 optixu::calcSumDwords<float2>(),
                 "plp", sizeof(shared::PipelineLaunchParameters),
-                false, OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_LEVEL_INSTANCING,
+                OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_LEVEL_INSTANCING,
                 OPTIX_EXCEPTION_FLAG_STACK_OVERFLOW | OPTIX_EXCEPTION_FLAG_TRACE_DEPTH |
                 DEBUG_SELECT(OPTIX_EXCEPTION_FLAG_DEBUG, OPTIX_EXCEPTION_FLAG_NONE),
                 OPTIX_PRIMITIVE_TYPE_FLAGS_TRIANGLE);
@@ -216,7 +217,7 @@ struct GPUEnvironment {
                          }),
                 optixu::calcSumDwords<float2>(),
                 "plp", sizeof(shared::PipelineLaunchParameters),
-                false, OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_LEVEL_INSTANCING,
+                OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_LEVEL_INSTANCING,
                 OPTIX_EXCEPTION_FLAG_STACK_OVERFLOW | OPTIX_EXCEPTION_FLAG_TRACE_DEPTH |
                 DEBUG_SELECT(OPTIX_EXCEPTION_FLAG_DEBUG, OPTIX_EXCEPTION_FLAG_NONE),
                 OPTIX_PRIMITIVE_TYPE_FLAGS_TRIANGLE);
@@ -282,7 +283,7 @@ struct GPUEnvironment {
                          }),
                 optixu::calcSumDwords<float2>(),
                 "plp", sizeof(shared::PipelineLaunchParameters),
-                false, OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_LEVEL_INSTANCING,
+                OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_LEVEL_INSTANCING,
                 OPTIX_EXCEPTION_FLAG_STACK_OVERFLOW | OPTIX_EXCEPTION_FLAG_TRACE_DEPTH |
                 DEBUG_SELECT(OPTIX_EXCEPTION_FLAG_DEBUG, OPTIX_EXCEPTION_FLAG_NONE),
                 OPTIX_PRIMITIVE_TYPE_FLAGS_TRIANGLE);
@@ -1310,7 +1311,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
     constexpr uint32_t tileWidth = useTiledDenoising ? 256 : 0;
     constexpr uint32_t tileHeight = useTiledDenoising ? 256 : 0;
     optixu::Denoiser denoiser = gpuEnv.optixContext.createDenoiser(
-        OPTIX_DENOISER_MODEL_KIND_TEMPORAL, true, true);
+        OPTIX_DENOISER_MODEL_KIND_TEMPORAL,
+        optixu::GuideAlbedo::Yes, optixu::GuideNormal::Yes);
     optixu::DenoiserSizes denoiserSizes;
     uint32_t numTasks;
     denoiser.prepare(
@@ -1451,15 +1453,19 @@ int32_t main(int32_t argc, const char* argv[]) try {
         staticPlp.GBuffer2[0] = gBuffer2[0].getSurfaceObject(0);
         staticPlp.GBuffer2[1] = gBuffer2[1].getSurfaceObject(0);
 
-        staticPlp.materialDataBuffer = scene.materialDataBuffer.getDevicePointer();
-        staticPlp.geometryInstanceDataBuffer = scene.geomInstDataBuffer.getDevicePointer();
+        staticPlp.materialDataBuffer = shared::ROBuffer(
+            scene.materialDataBuffer.getDevicePointer(), scene.materialDataBuffer.numElements());
+        staticPlp.geometryInstanceDataBuffer = shared::ROBuffer(
+            scene.geomInstDataBuffer.getDevicePointer(), scene.geomInstDataBuffer.numElements());
         envLightImportanceMap.getDeviceType(&staticPlp.envLightImportanceMap);
         staticPlp.envLightTexture = envLightTexture;
 
         staticPlp.numTiles = int2((renderTargetSizeX + shared::tileSizeX - 1) / shared::tileSizeX,
                                   (renderTargetSizeY + shared::tileSizeY - 1) / shared::tileSizeY);
-        staticPlp.lightPreSamplingRngs = lightPreSamplingRngs.getDevicePointer();
-        staticPlp.preSampledLights = preSampledLights.getDevicePointer();
+        staticPlp.lightPreSamplingRngs = shared::RWBuffer(
+            lightPreSamplingRngs.getDevicePointer(), lightPreSamplingRngs.numElements());
+        staticPlp.preSampledLights = shared::RWBuffer(
+            preSampledLights.getDevicePointer(), preSampledLights.numElements());
 
         staticPlp.reservoirBuffer[0] = reservoirBuffer[0].getBlockBuffer2D();
         staticPlp.reservoirBuffer[1] = reservoirBuffer[1].getBlockBuffer2D();
@@ -1467,7 +1473,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
         staticPlp.reservoirInfoBuffer[1] = reservoirInfoBuffer[1].getSurfaceObject(0);
         staticPlp.sampleVisibilityBuffer[0] = sampleVisibilityBuffer[0].getSurfaceObject(0);
         staticPlp.sampleVisibilityBuffer[1] = sampleVisibilityBuffer[1].getSurfaceObject(0);
-        staticPlp.spatialNeighborDeltas = spatialNeighborDeltas.getDevicePointer();
+        staticPlp.spatialNeighborDeltas = shared::ROBuffer(
+            spatialNeighborDeltas.getDevicePointer(), spatialNeighborDeltas.numElements());
 
         staticPlp.beautyAccumBuffer = beautyAccumBuffer.getSurfaceObject(0);
         staticPlp.albedoAccumBuffer = albedoAccumBuffer.getSurfaceObject(0);
@@ -2023,7 +2030,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
                         OptixDenoiserModelKind modelKind = useTemporalDenosier ?
                             OPTIX_DENOISER_MODEL_KIND_TEMPORAL :
                             OPTIX_DENOISER_MODEL_KIND_HDR;
-                        denoiser = gpuEnv.optixContext.createDenoiser(modelKind, true, true);
+                        denoiser = gpuEnv.optixContext.createDenoiser(
+                            modelKind,
+                            optixu::GuideAlbedo::Yes, optixu::GuideNormal::Yes);
 
                         optixu::DenoiserSizes denoiserSizes;
                         uint32_t numTasks;
@@ -2189,7 +2198,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
         perFramePlp.numAccumFrames = numAccumFrames;
         perFramePlp.frameIndex = frameIndex;
-        perFramePlp.instanceDataBuffer = curInstDataBuffer.getDevicePointer();
+        perFramePlp.instanceDataBuffer = shared::ROBuffer(
+            curInstDataBuffer.getDevicePointer(), curInstDataBuffer.numElements());
         perFramePlp.envLightPowerCoeff = std::pow(10.0f, log10EnvLightPowerCoeff);
         perFramePlp.envLightRotation = envLightRotation;
         perFramePlp.spatialNeighborRadius = curRendererConfigs->spatialNeighborRadius;
@@ -2400,7 +2410,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
             for (int i = 0; i < denoisingTasks.size(); ++i)
                 denoiser.invoke(
                     cuStream, denoisingTasks[i], inputBuffers,
-                    newSequence, OPTIX_DENOISER_ALPHA_MODE_COPY, hdrNormalizer, 0.0f,
+                    optixu::IsFirstFrame(newSequence), OPTIX_DENOISER_ALPHA_MODE_COPY, hdrNormalizer, 0.0f,
                     linearDenoisedBeautyBuffer, nullptr,
                     optixu::BufferView());
         }

@@ -233,8 +233,8 @@ namespace shared {
         optixu::NativeBlockBuffer2D<GBuffer1> GBuffer1[2];
         optixu::NativeBlockBuffer2D<GBuffer2> GBuffer2[2];
 
-        const MaterialData* materialDataBuffer;
-        const GeometryInstanceData* geometryInstanceDataBuffer;
+        ROBuffer<MaterialData> materialDataBuffer;
+        ROBuffer<GeometryInstanceData> geometryInstanceDataBuffer;
         LightDistribution lightInstDist;
         RegularConstantContinuousDistribution2D envLightImportanceMap;
         CUtexObject envLightTexture;
@@ -248,15 +248,15 @@ namespace shared {
         float3* targetAvg[2];
         uint32_t* offsetToSelectUnbiasedTile;
         uint32_t* offsetToSelectTrainingPath;
-        RadianceQuery* inferenceRadianceQueryBuffer; // image size + #(training suffix)
-        TerminalInfo* inferenceTerminalInfoBuffer; // image size
-        float3* inferredRadianceBuffer; // image size + #(training suffix)
-        float3* perFrameContributionBuffer; // image size
-        RadianceQuery* trainRadianceQueryBuffer[2]; // #(training vertex)
-        float3* trainTargetBuffer[2]; // #(training vertex)
-        TrainingVertexInfo* trainVertexInfoBuffer; // #(training vertex)
-        TrainingSuffixTerminalInfo* trainSuffixTerminalInfoBuffer; // #(training suffix)
-        LinearCongruentialGenerator* dataShufflerBuffer; // numTrainingDataPerFrame
+        RWBuffer<RadianceQuery> inferenceRadianceQueryBuffer; // image size + #(training suffix)
+        RWBuffer<TerminalInfo> inferenceTerminalInfoBuffer; // image size
+        RWBuffer<float3> inferredRadianceBuffer; // image size + #(training suffix)
+        RWBuffer<float3> perFrameContributionBuffer; // image size
+        RWBuffer<RadianceQuery> trainRadianceQueryBuffer[2]; // #(training vertex)
+        RWBuffer<float3> trainTargetBuffer[2]; // #(training vertex)
+        RWBuffer<TrainingVertexInfo> trainVertexInfoBuffer; // #(training vertex)
+        RWBuffer<TrainingSuffixTerminalInfo> trainSuffixTerminalInfoBuffer; // #(training suffix)
+        RWBuffer<LinearCongruentialGenerator> dataShufflerBuffer; // numTrainingDataPerFrame
 
         optixu::NativeBlockBuffer2D<float4> beautyAccumBuffer;
         optixu::NativeBlockBuffer2D<float4> albedoAccumBuffer;
@@ -268,7 +268,7 @@ namespace shared {
         uint32_t numAccumFrames;
         uint32_t frameIndex;
 
-        const InstanceData* instanceDataBuffer;
+        ROBuffer<InstanceData> instanceDataBuffer;
 
         PerspectiveCamera camera;
         PerspectiveCamera prevCamera;
@@ -588,7 +588,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool evaluateVisibility(
         dist = 1e+10f;
 
     float visibility = 1.0f;
-    optixu::trace<shared::VisibilityRayPayloadSignature>(
+    shared::VisibilityRayPayloadSignature::trace(
         plp.f->travHandle,
         shadingPoint, shadowRayDir, 0.0f, dist * 0.9999f, 0.0f,
         0xFF, OPTIX_RAY_FLAG_NONE,
