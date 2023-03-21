@@ -41,38 +41,38 @@ namespace shared {
     struct PerspectiveCamera {
         float aspect;
         float fovY;
-        float3 position;
+        Point3D position;
         Matrix3x3 orientation;
-        float2 subPixelOffset;
+        Vector2D subPixelOffset;
 
-        CUDA_COMMON_FUNCTION float2 calcScreenPosition(const float3 &posInWorld) const {
-            Matrix3x3 invOri = inverse(orientation);
-            float3 posInView = invOri * (posInWorld - position);
-            float2 posAtZ1 = make_float2(posInView.x / posInView.z, posInView.y / posInView.z);
+        CUDA_COMMON_FUNCTION Point2D calcScreenPosition(const Point3D &posInWorld) const {
+            Matrix3x3 invOri = invert(orientation);
+            Point3D posInView(invOri * (posInWorld - position));
+            Point2D posAtZ1(posInView.x / posInView.z, posInView.y / posInView.z);
             float h = 2 * std::tan(fovY / 2);
             float w = aspect * h;
-            return make_float2(1 - (posAtZ1.x + 0.5f * w) / w,
-                               1 - (posAtZ1.y + 0.5f * h) / h);
+            return Point2D(1 - (posAtZ1.x + 0.5f * w) / w,
+                           1 - (posAtZ1.y + 0.5f * h) / h);
         }
     };
 
 
 
     struct HitPointParams {
-        float3 albedo;
-        float3 positionInWorld;
-        float3 prevPositionInWorld;
-        float3 normalInWorld;
-        float2 texCoord;
+        RGB albedo;
+        Point3D positionInWorld;
+        Point3D prevPositionInWorld;
+        Normal3D normalInWorld;
+        Point2D texCoord;
         uint32_t materialSlot;
     };
 
 
 
     struct LightSample {
-        float3 emittance;
-        float3 position;
-        float3 normal;
+        RGB emittance;
+        Point3D position;
+        Normal3D normal;
         unsigned int atInfinity : 1;
     };
 
@@ -98,10 +98,10 @@ namespace shared {
         uint32_t geomInstSlot;
         uint32_t primIndex;
         uint32_t matSlot;
-        float3 positionInWorld;
-        float3 normalInWorld;
-        float3 albedo;
-        float3 emittance;
+        Point3D positionInWorld;
+        Normal3D normalInWorld;
+        RGB albedo;
+        RGB emittance;
         unsigned int hit : 1;
     };
 
@@ -109,30 +109,30 @@ namespace shared {
 
     struct GBuffer0 {
         // TODO: 位置はデプスなどから復元したほうが効率的。
-        float3 positionInWorld;
+        Point3D positionInWorld;
         float texCoord_x;
     };
 
     struct GBuffer1 {
-        float3 normalInWorld;
+        Normal3D normalInWorld;
         float texCoord_y;
     };
 
     struct GBuffer2 {
-        float2 prevScreenPos;
+        Point2D prevScreenPos;
         uint32_t instSlot;
         uint32_t materialSlot;
     };
 
     struct Albedo {
-        float3 dhReflectance;
+        RGB dhReflectance;
         uint32_t dummy;
     };
 
     struct Lighting_Variance {
         union {
-            float3 noisyLighting;
-            float3 denoisedLighting;
+            RGB noisyLighting;
+            RGB denoisedLighting;
         };
         float variance;
 
@@ -149,15 +149,15 @@ namespace shared {
 
 
     struct PathTraceWriteOnlyPayload {
-        float3 nextOrigin;
-        float3 nextDirection;
+        Point3D nextOrigin;
+        Vector3D nextDirection;
     };
 
     struct PathTraceReadWritePayload {
         PCG32RNG rng;
         float initImportance;
-        float3 alpha;
-        float3 contribution;
+        RGB alpha;
+        RGB contribution;
         float prevDirPDensity;
         unsigned int maxLengthTerminate : 1;
         unsigned int terminate : 1;
@@ -276,13 +276,13 @@ RT_PIPELINE_LAUNCH_PARAMETERS shared::PipelineLaunchParameters plp;
 
 template <bool useSolidAngleSampling>
 CUDA_DEVICE_FUNCTION CUDA_INLINE void sampleLight(
-    const float3 &shadingPoint,
+    const Point3D &shadingPoint,
     float ul, bool sampleEnvLight, float u0, float u1,
     shared::LightSample* lightSample, float* areaPDensity) {
     using namespace shared;
     CUtexObject texEmittance = 0;
-    float3 emittance = make_float3(0.0f, 0.0f, 0.0f);
-    float2 texCoord;
+    RGB emittance(0.0f, 0.0f, 0.0f);
+    Point2D texCoord;
     if (sampleEnvLight) {
         float u, v;
         float uvPDF;
@@ -293,12 +293,12 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void sampleLight(
         float posPhi = phi - plp.f->envLightRotation;
         posPhi = posPhi - floorf(posPhi / (2 * Pi)) * 2 * Pi;
 
-        float3 direction = fromPolarYUp(posPhi, theta);
-        float3 position = make_float3(direction.x, direction.y, direction.z);
+        Vector3D direction = fromPolarYUp(posPhi, theta);
+        Point3D position(direction.x, direction.y, direction.z);
         lightSample->position = position;
         lightSample->atInfinity = true;
 
-        lightSample->normal = -position;
+        lightSample->normal = Normal3D(-position);
 
         // JP: テクスチャー空間中のPDFを面積に関するものに変換する。
         // EN: convert the PDF in texture space to one with respect to area.
@@ -309,7 +309,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void sampleLight(
         // JP: 環境マップテクスチャーの値に係数をかけて、通常の光源と同じように返り値を光束発散度
         //     として扱えるようにする。
         // EN: Multiply a coefficient to make the return value possible to be handled as luminous emittance.
-        emittance = make_float3(Pi * plp.f->envLightPowerCoeff);
+        emittance = RGB(Pi * plp.f->envLightPowerCoeff);
         texCoord.x = u;
         texCoord.y = v;
     }
@@ -362,32 +362,32 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void sampleLight(
             geomInst.vertexBuffer[tri.index1],
             geomInst.vertexBuffer[tri.index2]
         };
-        const float3 p[3] = {
+        const Point3D p[3] = {
             inst.transform * v[0].position,
             inst.transform * v[1].position,
             inst.transform * v[2].position,
         };
 
-        float3 geomNormal = cross(p[1] - p[0], p[2] - p[0]);
+        Normal3D geomNormal(cross(p[1] - p[0], p[2] - p[0]));
 
         float t0, t1, t2;
         if constexpr (useSolidAngleSampling) {
             // Uniform sampling in solid angle subtended by the triangle for the shading point.
             float dist;
-            float3 dir;
+            Vector3D dir;
             float dirPDF;
             {
-                const auto project = [](const float3 &vA, const float3 &vB) {
+                const auto project = [](const Vector3D &vA, const Vector3D &vB) {
                     return normalize(vA - dot(vA, vB) * vB);
                 };
 
                 // TODO: ? compute in the local coordinates.
-                float3 A = normalize(p[0] - shadingPoint);
-                float3 B = normalize(p[1] - shadingPoint);
-                float3 C = normalize(p[2] - shadingPoint);
-                float3 cAB = normalize(cross(A, B));
-                float3 cBC = normalize(cross(B, C));
-                float3 cCA = normalize(cross(C, A));
+                Vector3D A = normalize(p[0] - shadingPoint);
+                Vector3D B = normalize(p[1] - shadingPoint);
+                Vector3D C = normalize(p[2] - shadingPoint);
+                Vector3D cAB = normalize(cross(A, B));
+                Vector3D cBC = normalize(cross(B, C));
+                Vector3D cCA = normalize(cross(C, A));
                 //float cos_a = dot(B, C);
                 //float cos_b = dot(C, A);
                 float cos_c = dot(A, B);
@@ -405,21 +405,21 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void sampleLight(
                 float vv = s + sinAlpha * cos_c;
                 float q = ((vv * t - uu * s) * cosAlpha - vv) / ((vv * s + uu * t) * sinAlpha);
 
-                float3 cHat = q * A + std::sqrt(1 - pow2(q)) * project(C, A);
+                Vector3D cHat = q * A + std::sqrt(1 - pow2(q)) * project(C, A);
                 float z = 1 - u1 * (1 - dot(cHat, B));
-                float3 P = z * B + std::sqrt(1 - pow2(z)) * project(cHat, B);
+                Vector3D P = z * B + std::sqrt(1 - pow2(z)) * project(cHat, B);
 
                 const auto restoreBarycentrics = [&geomNormal]
-                (const float3 &org, const float3 &dir,
-                 const float3 &pA, const float3 &pB, const float3 &pC,
+                (const Point3D &org, const Vector3D &dir,
+                 const Point3D &pA, const Point3D &pB, const Point3D &pC,
                  float* dist, float* b1, float* b2) {
-                     float3 eAB = pB - pA;
-                     float3 eAC = pC - pA;
-                     float3 pVec = cross(dir, eAC);
+                     Vector3D eAB = pB - pA;
+                     Vector3D eAC = pC - pA;
+                     Vector3D pVec = cross(dir, eAC);
                      float recDet = 1.0f / dot(eAB, pVec);
-                     float3 tVec = org - pA;
+                     Vector3D tVec = org - pA;
                      *b1 = dot(tVec, pVec) * recDet;
-                     float3 qVec = cross(tVec, eAB);
+                     Vector3D qVec = cross(tVec, eAB);
                      *b2 = dot(dir, qVec) * recDet;
                      *dist = dot(eAC, qVec) * recDet;
                 };
@@ -458,30 +458,30 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void sampleLight(
 
         if (mat.emittance) {
             texEmittance = mat.emittance;
-            emittance = make_float3(1.0f, 1.0f, 1.0f);
+            emittance = RGB(1.0f, 1.0f, 1.0f);
             texCoord = t0 * v[0].texCoord + t1 * v[1].texCoord + t2 * v[2].texCoord;
         }
     }
 
     if (texEmittance) {
         float4 texValue = tex2DLod<float4>(texEmittance, texCoord.x, texCoord.y, 0.0f);
-        emittance *= make_float3(texValue);
+        emittance *= RGB(texValue.x, texValue.y, texValue.z);
     }
     lightSample->emittance = emittance;
 }
 
 template <typename RayType, bool withVisibility>
-CUDA_DEVICE_FUNCTION CUDA_INLINE float3 performDirectLighting(
-    const float3 &shadingPoint, const float3 &vOutLocal, const ReferenceFrame &shadingFrame, const BSDF &bsdf,
-    const shared::LightSample &lightSample) {
+CUDA_DEVICE_FUNCTION CUDA_INLINE RGB performDirectLighting(
+    const Point3D &shadingPoint, const Vector3D &vOutLocal, const ReferenceFrame &shadingFrame,
+    const BSDF &bsdf, const shared::LightSample &lightSample) {
     using namespace shared;
-    float3 shadowRayDir = lightSample.atInfinity ?
-        lightSample.position :
+    Vector3D shadowRayDir = lightSample.atInfinity ?
+        Vector3D(lightSample.position) :
         (lightSample.position - shadingPoint);
-    float dist2 = sqLength(shadowRayDir);
+    float dist2 = shadowRayDir.sqLength();
     float dist = std::sqrt(dist2);
     shadowRayDir /= dist;
-    float3 shadowRayDirLocal = shadingFrame.toLocal(shadowRayDir);
+    Vector3D shadowRayDirLocal = shadingFrame.toLocal(shadowRayDir);
 
     float lpCos = dot(-shadowRayDir, lightSample.normal);
     float spCos = shadowRayDirLocal.z;
@@ -492,32 +492,32 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE float3 performDirectLighting(
             dist = 1e+10f;
         shared::VisibilityRayPayloadSignature::trace(
             plp.f->travHandle,
-            shadingPoint, shadowRayDir, 0.0f, dist * 0.9999f, 0.0f,
+            shadingPoint.toNative(), shadowRayDir.toNative(), 0.0f, dist * 0.9999f, 0.0f,
             0xFF, OPTIX_RAY_FLAG_NONE,
             RayType::Visibility, shared::maxNumRayTypes, RayType::Visibility,
             visibility);
     }
 
     if (visibility > 0 && lpCos > 0) {
-        float3 Le = lightSample.emittance / Pi; // assume diffuse emitter.
-        float3 fsValue = bsdf.evaluate(vOutLocal, shadowRayDirLocal);
+        RGB Le = lightSample.emittance / Pi; // assume diffuse emitter.
+        RGB fsValue = bsdf.evaluate(vOutLocal, shadowRayDirLocal);
         float G = lpCos * std::fabs(spCos) / dist2;
-        float3 ret = fsValue * Le * G;
+        RGB ret = fsValue * Le * G;
         return ret;
     }
     else {
-        return make_float3(0.0f, 0.0f, 0.0f);
+        return RGB(0.0f, 0.0f, 0.0f);
     }
 }
 
 template <typename RayType>
 CUDA_DEVICE_FUNCTION CUDA_INLINE bool evaluateVisibility(
-    const float3 &shadingPoint, const shared::LightSample &lightSample) {
+    const Point3D &shadingPoint, const shared::LightSample &lightSample) {
     using namespace shared;
-    float3 shadowRayDir = lightSample.atInfinity ?
-        lightSample.position :
+    Vector3D shadowRayDir = lightSample.atInfinity ?
+        Vector3D(lightSample.position) :
         (lightSample.position - shadingPoint);
-    float dist2 = sqLength(shadowRayDir);
+    float dist2 = shadowRayDir.sqLength();
     float dist = std::sqrt(dist2);
     shadowRayDir /= dist;
     if (lightSample.atInfinity)
@@ -526,7 +526,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool evaluateVisibility(
     float visibility = 1.0f;
     shared::VisibilityRayPayloadSignature::trace(
         plp.f->travHandle,
-        shadingPoint, shadowRayDir, 0.0f, dist * 0.9999f, 0.0f,
+        shadingPoint.toNative(), shadowRayDir.toNative(), 0.0f, dist * 0.9999f, 0.0f,
         0xFF, OPTIX_RAY_FLAG_NONE,
         RayType::Visibility, shared::maxNumRayTypes, RayType::Visibility,
         visibility);
@@ -539,28 +539,28 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void computeSurfacePoint(
     const shared::InstanceData &inst,
     const shared::GeometryInstanceData &geomInst,
     uint32_t primIndex, float b1, float b2,
-    const float3 &referencePoint,
-    float3* positionInWorld, float3* shadingNormalInWorld, float3* texCoord0DirInWorld,
-    float3* geometricNormalInWorld, float2* texCoord,
+    const Point3D &referencePoint,
+    Point3D* positionInWorld, Normal3D* shadingNormalInWorld, Vector3D* texCoord0DirInWorld,
+    Normal3D* geometricNormalInWorld, Point2D* texCoord,
     float* hypAreaPDensity) {
     using namespace shared;
     const Triangle &tri = geomInst.triangleBuffer[primIndex];
     const Vertex &v0 = geomInst.vertexBuffer[tri.index0];
     const Vertex &v1 = geomInst.vertexBuffer[tri.index1];
     const Vertex &v2 = geomInst.vertexBuffer[tri.index2];
-    const float3 p[3] = {
-        optixTransformPointFromObjectToWorldSpace(v0.position),
-        optixTransformPointFromObjectToWorldSpace(v1.position),
-        optixTransformPointFromObjectToWorldSpace(v2.position),
+    const Point3D p[3] = {
+        transformPointFromObjectToWorldSpace(v0.position),
+        transformPointFromObjectToWorldSpace(v1.position),
+        transformPointFromObjectToWorldSpace(v2.position),
     };
     float b0 = 1 - (b1 + b2);
 
     // JP: ヒットポイントのローカル座標中の各値を計算する。
     // EN: Compute hit point properties in the local coordinates.
     *positionInWorld = b0 * p[0] + b1 * p[1] + b2 * p[2];
-    float3 shadingNormal = b0 * v0.normal + b1 * v1.normal + b2 * v2.normal;
-    float3 texCoord0Dir = b0 * v0.texCoord0Dir + b1 * v1.texCoord0Dir + b2 * v2.texCoord0Dir;
-    float3 geometricNormal = cross(p[1] - p[0], p[2] - p[0]);
+    Normal3D shadingNormal = b0 * v0.normal + b1 * v1.normal + b2 * v2.normal;
+    Vector3D texCoord0Dir = b0 * v0.texCoord0Dir + b1 * v1.texCoord0Dir + b2 * v2.texCoord0Dir;
+    Normal3D geometricNormal(cross(p[1] - p[0], p[2] - p[0]));
     float area;
     if constexpr (computeHypotheticalAreaPDensity && !useSolidAngleSampling)
         area = 0.5f * length(geometricNormal);
@@ -570,15 +570,15 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void computeSurfacePoint(
 
     // JP: ローカル座標中の値をワールド座標中の値へと変換する。
     // EN: Convert the local properties to ones in world coordinates.
-    *shadingNormalInWorld = normalize(optixTransformNormalFromObjectToWorldSpace(shadingNormal));
-    *texCoord0DirInWorld = normalize(optixTransformVectorFromObjectToWorldSpace(texCoord0Dir));
+    *shadingNormalInWorld = normalize(transformNormalFromObjectToWorldSpace(shadingNormal));
+    *texCoord0DirInWorld = normalize(transformVectorFromObjectToWorldSpace(texCoord0Dir));
     *geometricNormalInWorld = normalize(geometricNormal);
-    if (!allFinite(*shadingNormalInWorld)) {
-        *shadingNormalInWorld = make_float3(0, 0, 1);
-        *texCoord0DirInWorld = make_float3(1, 0, 0);
+    if (!shadingNormalInWorld->allFinite()) {
+        *shadingNormalInWorld = Normal3D(0, 0, 1);
+        *texCoord0DirInWorld = Vector3D(1, 0, 0);
     }
-    if (!allFinite(*texCoord0DirInWorld)) {
-        float3 bitangent;
+    if (!texCoord0DirInWorld->allFinite()) {
+        Vector3D bitangent;
         makeCoordinateSystem(*shadingNormalInWorld, texCoord0DirInWorld, &bitangent);
     }
 
@@ -599,18 +599,18 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void computeSurfacePoint(
         lightProb *= geomInst.emitterPrimDist.evaluatePMF(primIndex);
         if constexpr (useSolidAngleSampling) {
             // TODO: ? compute in the local coordinates.
-            float3 A = normalize(p[0] - referencePoint);
-            float3 B = normalize(p[1] - referencePoint);
-            float3 C = normalize(p[2] - referencePoint);
-            float3 cAB = normalize(cross(A, B));
-            float3 cBC = normalize(cross(B, C));
-            float3 cCA = normalize(cross(C, A));
+            Vector3D A = normalize(p[0] - referencePoint);
+            Vector3D B = normalize(p[1] - referencePoint);
+            Vector3D C = normalize(p[2] - referencePoint);
+            Vector3D cAB = normalize(cross(A, B));
+            Vector3D cBC = normalize(cross(B, C));
+            Vector3D cCA = normalize(cross(C, A));
             float cosAlpha = -dot(cAB, cCA);
             float cosBeta = -dot(cBC, cAB);
             float cosGamma = -dot(cCA, cBC);
             float sphArea = std::acos(cosAlpha) + std::acos(cosBeta) + std::acos(cosGamma) - Pi;
             float dirPDF = 1.0f / sphArea;
-            float3 refDir = referencePoint - *positionInWorld;
+            Vector3D refDir = referencePoint - *positionInWorld;
             float dist2ToRefPoint = sqLength(refDir);
             refDir /= std::sqrt(dist2ToRefPoint);
             float lpCos = dot(refDir, *geometricNormalInWorld);

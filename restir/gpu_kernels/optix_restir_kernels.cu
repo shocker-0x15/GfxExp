@@ -27,17 +27,17 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void performInitialAndTemporalRIS() {
 
     GBuffer0 gBuffer0 = plp.s->GBuffer0[curBufIdx].read(launchIndex);
     GBuffer1 gBuffer1 = plp.s->GBuffer1[curBufIdx].read(launchIndex);
-    float3 positionInWorld = gBuffer0.positionInWorld;
-    float3 shadingNormalInWorld = gBuffer1.normalInWorld;
-    float2 texCoord = make_float2(gBuffer0.texCoord_x, gBuffer1.texCoord_y);
+    Point3D positionInWorld = gBuffer0.positionInWorld;
+    Normal3D shadingNormalInWorld = gBuffer1.normalInWorld;
+    Point2D texCoord(gBuffer0.texCoord_x, gBuffer1.texCoord_y);
 
     PCG32RNG rng = plp.s->rngBuffer.read(launchIndex);
 
     const MaterialData &mat = plp.s->materialDataBuffer[materialSlot];
 
     // TODO?: Use true geometric normal.
-    float3 geometricNormalInWorld = shadingNormalInWorld;
-    float3 vOut = plp.f->camera.position - positionInWorld;
+    Normal3D geometricNormalInWorld = shadingNormalInWorld;
+    Vector3D vOut = plp.f->camera.position - positionInWorld;
     float frontHit = dot(vOut, geometricNormalInWorld) >= 0.0f ? 1.0f : -1.0f;
 
     BSDF bsdf;
@@ -46,7 +46,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void performInitialAndTemporalRIS() {
     positionInWorld = offsetRayOriginNaive(positionInWorld, frontHit * geometricNormalInWorld);
     float dist = length(vOut);
     vOut /= dist;
-    float3 vOutLocal = shadingFrame.toLocal(vOut);
+    Vector3D vOutLocal = shadingFrame.toLocal(vOut);
 
     uint32_t curResIndex = plp.currentReservoirIndex;
     Reservoir<LightSample> reservoir;
@@ -93,7 +93,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void performInitialAndTemporalRIS() {
             positionInWorld,
             ul, sampleEnvLight, rng.getFloat0cTo1o(), rng.getFloat0cTo1o(),
             &lightSample, &probDensity);
-        float3 cont = performDirectLighting<ReSTIRRayType, false>(
+        RGB cont = performDirectLighting<ReSTIRRayType, false>(
             positionInWorld, vOutLocal, shadingFrame, bsdf,
             lightSample);
         probDensity *= probToSampleCurLightType;
@@ -141,7 +141,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void performInitialAndTemporalRIS() {
         uint32_t combinedStreamLength = selfStreamLength;
         uint32_t maxPrevStreamLength = 20 * selfStreamLength;
 
-        float2 motionVector = gBuffer2.motionVector;
+        Vector2D motionVector = gBuffer2.motionVector;
         int2 nbCoord = make_int2(launchIndex.x + 0.5f - motionVector.x,
                                  launchIndex.y + 0.5f - motionVector.y);
 
@@ -160,7 +160,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void performInitialAndTemporalRIS() {
             // TODO: アニメーションやジッタリングがある場合には前フレームの対応ピクセルのターゲットPDFは
             //       変わってしまっているはず。この場合にはUnbiasedにするにはもうちょっと工夫がいる？
             LightSample nbLightSample = neighbor.getSample();
-            float3 cont = performDirectLighting<ReSTIRRayType, false>(
+            RGB cont = performDirectLighting<ReSTIRRayType, false>(
                 positionInWorld, vOutLocal, shadingFrame, bsdf, nbLightSample);
             float targetDensity = convertToWeight(cont);
 
@@ -196,7 +196,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void performInitialAndTemporalRIS() {
             // JP: まずは現在のピクセルのターゲットPDFに対応する量を計算。
             // EN: First, calculate a quantity corresponding to the current pixel's target PDF.
             {
-                float3 cont = performDirectLighting<ReSTIRRayType, false>(
+                RGB cont = performDirectLighting<ReSTIRRayType, false>(
                     positionInWorld, vOutLocal, shadingFrame, bsdf, selectedLightSample);
                 float targetDensityForSelf = convertToWeight(cont);
                 if constexpr (useMIS_RIS) {
@@ -219,15 +219,15 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void performInitialAndTemporalRIS() {
                 if (nbMaterialSlot != 0xFFFFFFFF) {
                     GBuffer0 nbGBuffer0 = plp.s->GBuffer0[prevBufIdx].read(nbCoord);
                     GBuffer1 nbGBuffer1 = plp.s->GBuffer1[prevBufIdx].read(nbCoord);
-                    float3 nbPositionInWorld = nbGBuffer0.positionInWorld;
-                    float3 nbShadingNormalInWorld = nbGBuffer1.normalInWorld;
-                    float2 nbTexCoord = make_float2(nbGBuffer0.texCoord_x, nbGBuffer1.texCoord_y);
+                    Point3D nbPositionInWorld = nbGBuffer0.positionInWorld;
+                    Normal3D nbShadingNormalInWorld = nbGBuffer1.normalInWorld;
+                    Point2D nbTexCoord(nbGBuffer0.texCoord_x, nbGBuffer1.texCoord_y);
 
                     const MaterialData &nbMat = plp.s->materialDataBuffer[nbMaterialSlot];
 
                     // TODO?: Use true geometric normal.
-                    float3 nbGeometricNormalInWorld = nbShadingNormalInWorld;
-                    float3 nbVOut = plp.f->camera.position - nbPositionInWorld;
+                    Normal3D nbGeometricNormalInWorld = nbShadingNormalInWorld;
+                    Vector3D nbVOut = plp.f->camera.position - nbPositionInWorld;
                     float nbFrontHit = dot(nbVOut, nbGeometricNormalInWorld) >= 0.0f ? 1.0f : -1.0f;
 
                     BSDF nbBsdf;
@@ -236,7 +236,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void performInitialAndTemporalRIS() {
                     nbPositionInWorld = offsetRayOriginNaive(nbPositionInWorld, nbFrontHit * nbGeometricNormalInWorld);
                     float nbDist = length(nbVOut);
                     nbVOut /= nbDist;
-                    float3 nbVOutLocal = nbShadingFrame.toLocal(nbVOut);
+                    Vector3D nbVOutLocal = nbShadingFrame.toLocal(nbVOut);
 
                     const Reservoir<LightSample> /*&*/neighbor = plp.s->reservoirBuffer[prevResIndex][nbCoord];
 
@@ -244,7 +244,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void performInitialAndTemporalRIS() {
                     //     Temporal Reuseでは前フレームのストリーム長を現在のピクセルの20倍に制限する。
                     // EN: To prevent the weight for previous frames to grow unlimitedly,
                     //     limit the previous frame's weight by 20x of the current pixel's one.
-                    float3 cont = performDirectLighting<ReSTIRRayType, false>(
+                    RGB cont = performDirectLighting<ReSTIRRayType, false>(
                         nbPositionInWorld, nbVOutLocal, nbShadingFrame, nbBsdf, selectedLightSample);
                     float nbTargetDensity = convertToWeight(cont);
                     uint32_t nbStreamLength = min(neighbor.getStreamLength(), maxPrevStreamLength);
@@ -312,17 +312,17 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void performSpatialRIS() {
 
     GBuffer0 gBuffer0 = plp.s->GBuffer0[bufIdx].read(launchIndex);
     GBuffer1 gBuffer1 = plp.s->GBuffer1[bufIdx].read(launchIndex);
-    float3 positionInWorld = gBuffer0.positionInWorld;
-    float3 shadingNormalInWorld = gBuffer1.normalInWorld;
-    float2 texCoord = make_float2(gBuffer0.texCoord_x, gBuffer1.texCoord_y);
+    Point3D positionInWorld = gBuffer0.positionInWorld;
+    Normal3D shadingNormalInWorld = gBuffer1.normalInWorld;
+    Point2D texCoord(gBuffer0.texCoord_x, gBuffer1.texCoord_y);
 
     PCG32RNG rng = plp.s->rngBuffer.read(launchIndex);
 
     const MaterialData &mat = plp.s->materialDataBuffer[materialSlot];
 
     // TODO?: Use true geometric normal.
-    float3 geometricNormalInWorld = shadingNormalInWorld;
-    float3 vOut = plp.f->camera.position - positionInWorld;
+    Normal3D geometricNormalInWorld = shadingNormalInWorld;
+    Vector3D vOut = plp.f->camera.position - positionInWorld;
     float frontHit = dot(vOut, geometricNormalInWorld) >= 0.0f ? 1.0f : -1.0f;
 
     BSDF bsdf;
@@ -331,7 +331,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void performSpatialRIS() {
     positionInWorld = offsetRayOriginNaive(positionInWorld, frontHit * geometricNormalInWorld);
     float dist = length(vOut);
     vOut /= dist;
-    float3 vOutLocal = shadingFrame.toLocal(vOut);
+    Vector3D vOutLocal = shadingFrame.toLocal(vOut);
 
     uint32_t srcResIndex = plp.currentReservoirIndex;
     uint32_t dstResIndex = (srcResIndex + 1) % 2;
@@ -361,7 +361,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void performSpatialRIS() {
         float radius = plp.f->spatialNeighborRadius;
         float deltaX, deltaY;
         if (plp.f->useLowDiscrepancyNeighbors) {
-            float2 delta = plp.s->spatialNeighborDeltas[(plp.spatialNeighborBaseIndex + nIdx) % 1024];
+            Vector2D delta = plp.s->spatialNeighborDeltas[(plp.spatialNeighborBaseIndex + nIdx) % 1024];
             deltaX = radius * delta.x;
             deltaY = radius * delta.y;
         }
@@ -388,7 +388,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void performSpatialRIS() {
             // EN: Calculate the probability density at the "current" pixel of the candidate sample
             //     the neighboring pixel holds.
             LightSample nbLightSample = neighbor.getSample();
-            float3 cont = performDirectLighting<ReSTIRRayType, false>(
+            RGB cont = performDirectLighting<ReSTIRRayType, false>(
                 positionInWorld, vOutLocal, shadingFrame, bsdf, nbLightSample);
             float targetDensity = convertToWeight(cont);
 
@@ -426,7 +426,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void performSpatialRIS() {
             // EN: First, calculate a quantity corresponding to the current pixel's target PDF.
             bool visibility = true;
             {
-                float3 cont;
+                RGB cont;
                 if (plp.f->reuseVisibility)
                     cont = performDirectLighting<ReSTIRRayType, true>(
                         positionInWorld, vOutLocal, shadingFrame, bsdf, selectedLightSample);
@@ -454,7 +454,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void performSpatialRIS() {
                 float radius = plp.f->spatialNeighborRadius;
                 float deltaX, deltaY;
                 if (plp.f->useLowDiscrepancyNeighbors) {
-                    float2 delta = plp.s->spatialNeighborDeltas[(plp.spatialNeighborBaseIndex + nIdx) % 1024];
+                    Vector2D delta = plp.s->spatialNeighborDeltas[(plp.spatialNeighborBaseIndex + nIdx) % 1024];
                     deltaX = radius * delta.x;
                     deltaY = radius * delta.y;
                 }
@@ -480,15 +480,15 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void performSpatialRIS() {
 
                     GBuffer0 nbGBuffer0 = plp.s->GBuffer0[bufIdx].read(nbCoord);
                     GBuffer1 nbGBuffer1 = plp.s->GBuffer1[bufIdx].read(nbCoord);
-                    float3 nbPositionInWorld = nbGBuffer0.positionInWorld;
-                    float3 nbShadingNormalInWorld = nbGBuffer1.normalInWorld;
-                    float2 nbTexCoord = make_float2(nbGBuffer0.texCoord_x, nbGBuffer1.texCoord_y);
+                    Point3D nbPositionInWorld = nbGBuffer0.positionInWorld;
+                    Normal3D nbShadingNormalInWorld = nbGBuffer1.normalInWorld;
+                    Point2D nbTexCoord(nbGBuffer0.texCoord_x, nbGBuffer1.texCoord_y);
 
                     const MaterialData &nbMat = plp.s->materialDataBuffer[nbMaterialSlot];
 
                     // TODO?: Use true geometric normal.
-                    float3 nbGeometricNormalInWorld = nbShadingNormalInWorld;
-                    float3 nbVOut = plp.f->camera.position - nbPositionInWorld;
+                    Normal3D nbGeometricNormalInWorld = nbShadingNormalInWorld;
+                    Vector3D nbVOut = plp.f->camera.position - nbPositionInWorld;
                     float nbFrontHit = dot(nbVOut, nbGeometricNormalInWorld) >= 0.0f ? 1.0f : -1.0f;
 
                     BSDF nbBsdf;
@@ -497,13 +497,13 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void performSpatialRIS() {
                     nbPositionInWorld = offsetRayOriginNaive(nbPositionInWorld, nbFrontHit * nbGeometricNormalInWorld);
                     float nbDist = length(nbVOut);
                     nbVOut /= nbDist;
-                    float3 nbVOutLocal = nbShadingFrame.toLocal(nbVOut);
+                    Vector3D nbVOutLocal = nbShadingFrame.toLocal(nbVOut);
 
                     const Reservoir<LightSample> /*&*/neighbor = plp.s->reservoirBuffer[srcResIndex][nbCoord];
 
                     // TODO: ウェイトの条件さえ満たしていれば、MISウェイト計算にはVisibilityはなくても良い？
                     //       要検討。
-                    float3 cont;
+                    RGB cont;
                     if (plp.f->reuseVisibility)
                         cont = performDirectLighting<ReSTIRRayType, true>(
                             nbPositionInWorld, nbVOutLocal, nbShadingFrame, nbBsdf, selectedLightSample);
@@ -566,28 +566,28 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(shading)() {
     GBuffer0 gBuffer0 = plp.s->GBuffer0[bufIdx].read(launchIndex);
     GBuffer1 gBuffer1 = plp.s->GBuffer1[bufIdx].read(launchIndex);
     GBuffer2 gBuffer2 = plp.s->GBuffer2[bufIdx].read(launchIndex);
-    float2 texCoord = make_float2(gBuffer0.texCoord_x, gBuffer1.texCoord_y);
+    Point2D texCoord(gBuffer0.texCoord_x, gBuffer1.texCoord_y);
     uint32_t materialSlot = gBuffer2.materialSlot;
 
     const PerspectiveCamera &camera = plp.f->camera;
 
-    float3 contribution = make_float3(0.01f, 0.01f, 0.01f);
+    RGB contribution(0.01f, 0.01f, 0.01f);
     if (materialSlot != 0xFFFFFFFF) {
-        float3 positionInWorld = gBuffer0.positionInWorld;
-        float3 shadingNormalInWorld = gBuffer1.normalInWorld;
+        Point3D positionInWorld = gBuffer0.positionInWorld;
+        Normal3D shadingNormalInWorld = gBuffer1.normalInWorld;
 
         const MaterialData &mat = plp.s->materialDataBuffer[materialSlot];
 
         // TODO?: Use true geometric normal.
-        float3 geometricNormalInWorld = shadingNormalInWorld;
-        float3 vOut = normalize(camera.position - positionInWorld);
+        Normal3D geometricNormalInWorld = shadingNormalInWorld;
+        Vector3D vOut = normalize(camera.position - positionInWorld);
         float frontHit = dot(vOut, geometricNormalInWorld) >= 0.0f ? 1.0f : -1.0f;
 
         BSDF bsdf;
         bsdf.setup(mat, texCoord);
         ReferenceFrame shadingFrame(shadingNormalInWorld);
         positionInWorld = offsetRayOriginNaive(positionInWorld, frontHit * geometricNormalInWorld);
-        float3 vOutLocal = shadingFrame.toLocal(vOut);
+        Vector3D vOutLocal = shadingFrame.toLocal(vOut);
 
         uint32_t curResIndex = plp.currentReservoirIndex;
         const Reservoir<LightSample> /*&*/reservoir = plp.s->reservoirBuffer[curResIndex][launchIndex];
@@ -595,12 +595,12 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(shading)() {
 
         // JP: 光源を直接見ている場合の寄与を蓄積。
         // EN: Accumulate the contribution from a light source directly seeing.
-        contribution = make_float3(0.0f);
+        contribution = RGB(0.0f);
         if (vOutLocal.z > 0) {
-            float3 emittance = make_float3(0.0f, 0.0f, 0.0f);
+            RGB emittance(0.0f, 0.0f, 0.0f);
             if (mat.emittance) {
                 float4 texValue = tex2DLod<float4>(mat.emittance, texCoord.x, texCoord.y, 0.0f);
-                emittance = make_float3(texValue);
+                emittance = RGB(getXYZ(texValue));
             }
             contribution += emittance / Pi;
         }
@@ -608,7 +608,7 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(shading)() {
         // JP: 最終的に残ったサンプルとそのウェイトを使ってシェーディングを実行する。
         // EN: Perform shading using the sample survived in the end and its weight.
         const LightSample &lightSample = reservoir.getSample();
-        float3 directCont = make_float3(0.0f);
+        RGB directCont(0.0f);
         float recPDFEstimate = reservoirInfo.recPDFEstimate;
         if (recPDFEstimate > 0 && isfinite(recPDFEstimate)) {
             bool visDone = plp.f->reuseVisibility &&
@@ -629,15 +629,15 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(shading)() {
         if (plp.s->envLightTexture && plp.f->enableEnvLight) {
             float u = texCoord.x, v = texCoord.y;
             float4 texValue = tex2DLod<float4>(plp.s->envLightTexture, u, v, 0.0f);
-            float3 luminance = plp.f->envLightPowerCoeff * make_float3(texValue);
+            RGB luminance = plp.f->envLightPowerCoeff * RGB(getXYZ(texValue));
             contribution = luminance;
         }
     }
 
-    float3 prevColorResult = make_float3(0.0f, 0.0f, 0.0f);
+    RGB prevColorResult(0.0f, 0.0f, 0.0f);
     if (plp.f->numAccumFrames > 0)
-        prevColorResult = getXYZ(plp.s->beautyAccumBuffer.read(launchIndex));
+        prevColorResult = RGB(getXYZ(plp.s->beautyAccumBuffer.read(launchIndex)));
     float curWeight = 1.0f / (1 + plp.f->numAccumFrames);
-    float3 colorResult = (1 - curWeight) * prevColorResult + curWeight * contribution;
-    plp.s->beautyAccumBuffer.write(launchIndex, make_float4(colorResult, 1.0f));
+    RGB colorResult = (1 - curWeight) * prevColorResult + curWeight * contribution;
+    plp.s->beautyAccumBuffer.write(launchIndex, make_float4(colorResult.toNative(), 1.0f));
 }

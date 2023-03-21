@@ -733,13 +733,15 @@ struct FlattenedNode {
     std::vector<uint32_t> meshIndices;
 };
 
-static void computeFlattenedNodes(const aiScene* scene, const Matrix4x4 &parentXfm, const aiNode* curNode,
-                                  std::vector<FlattenedNode> &flattenedNodes) {
+static void computeFlattenedNodes(
+    const aiScene* scene, const Matrix4x4 &parentXfm, const aiNode* curNode,
+    std::vector<FlattenedNode> &flattenedNodes) {
     aiMatrix4x4 curAiXfm = curNode->mTransformation;
-    Matrix4x4 curXfm = Matrix4x4(float4(curAiXfm.a1, curAiXfm.a2, curAiXfm.a3, curAiXfm.a4),
-                                 float4(curAiXfm.b1, curAiXfm.b2, curAiXfm.b3, curAiXfm.b4),
-                                 float4(curAiXfm.c1, curAiXfm.c2, curAiXfm.c3, curAiXfm.c4),
-                                 float4(curAiXfm.d1, curAiXfm.d2, curAiXfm.d3, curAiXfm.d4));
+    Matrix4x4 curXfm = Matrix4x4(
+        Vector4D(curAiXfm.a1, curAiXfm.a2, curAiXfm.a3, curAiXfm.a4),
+        Vector4D(curAiXfm.b1, curAiXfm.b2, curAiXfm.b3, curAiXfm.b4),
+        Vector4D(curAiXfm.c1, curAiXfm.c2, curAiXfm.c3, curAiXfm.c4),
+        Vector4D(curAiXfm.d1, curAiXfm.d2, curAiXfm.d3, curAiXfm.d4));
     FlattenedNode flattenedNode;
     flattenedNode.transform = parentXfm * transpose(curXfm);
     flattenedNode.meshIndices.resize(curNode->mNumMeshes);
@@ -1372,20 +1374,21 @@ static void createNormalTexture(
 
 static void createEmittanceTexture(
     CUcontext cuContext,
-    const std::filesystem::path &emittancePath, const float3 &immEmittance,
+    const std::filesystem::path &emittancePath, const RGB &immEmittance,
     Material* mat,
     bool* needsDegamma, bool* isHDR) {
     *needsDegamma = false;
     *isHDR = false;
     if (emittancePath.empty()) {
         mat->texEmittance = 0;
-        if (immEmittance != float3(0.0f, 0.0f, 0.0f))
-            createFx3ImmTexture(cuContext, immEmittance, false, &mat->emittance, nullptr);
+        if (any(immEmittance != RGB(0.0f, 0.0f, 0.0f)))
+            createFx3ImmTexture(cuContext, immEmittance.toNative(), false, &mat->emittance, nullptr);
     }
     else {
         hpprintf("  Reading: %s ... ", emittancePath.string().c_str());
-        if (loadTexture(emittancePath, float4(immEmittance, 1.0f), cuContext,
-                        &mat->emittance, needsDegamma, isHDR))
+        if (loadTexture(
+            emittancePath, float4(immEmittance.toNative(), 1.0f), cuContext,
+            &mat->emittance, needsDegamma, isHDR))
             hpprintf("done.\n");
         else
             hpprintf("failed.\n");
@@ -1408,9 +1411,9 @@ static shared::TexDimInfo calcDimInfo(const cudau::Array &cuArray, bool isLeftHa
 
 static Material* createLambertMaterial(
     CUcontext cuContext, Scene* scene,
-    const std::filesystem::path &reflectancePath, const float3 &immReflectance,
+    const std::filesystem::path &reflectancePath, const RGB &immReflectance,
     const std::filesystem::path &normalPath,
-    const std::filesystem::path &emittancePath, const float3 &immEmittance) {
+    const std::filesystem::path &emittancePath, const RGB &immEmittance) {
     shared::MaterialData* matDataOnHost = scene->materialDataBuffer.getMappedPointer();
 
     cudau::TextureSampler sampler_sRGB;
@@ -1441,14 +1444,15 @@ static Material* createLambertMaterial(
     auto &body = std::get<Material::Lambert>(mat->body);
     if (!reflectancePath.empty()) {
         hpprintf("  Reading: %s ... ", reflectancePath.string().c_str());
-        if (loadTexture(reflectancePath, float4(immReflectance, 1.0f), cuContext,
-                        &body.reflectance, &needsDegamma))
+        if (loadTexture(
+            reflectancePath, float4(immReflectance.toNative(), 1.0f), cuContext,
+            &body.reflectance, &needsDegamma))
             hpprintf("done.\n");
         else
             hpprintf("failed.\n");
     }
     if (!body.reflectance) {
-        createFx3ImmTexture(cuContext, immReflectance, true, &body.reflectance, nullptr);
+        createFx3ImmTexture(cuContext, immReflectance.toNative(), true, &body.reflectance, nullptr);
         needsDegamma = true;
     }
     if (needsDegamma)
@@ -1507,11 +1511,11 @@ static Material* createLambertMaterial(
 
 static Material* createDiffuseAndSpecularMaterial(
     CUcontext cuContext, Scene* scene,
-    const std::filesystem::path &diffuseColorPath, const float3 &immDiffuseColor,
-    const std::filesystem::path &specularColorPath, const float3 &immSpecularColor,
+    const std::filesystem::path &diffuseColorPath, const RGB &immDiffuseColor,
+    const std::filesystem::path &specularColorPath, const RGB &immSpecularColor,
     float immSmoothness,
     const std::filesystem::path &normalPath,
-    const std::filesystem::path &emittancePath, const float3 &immEmittance) {
+    const std::filesystem::path &emittancePath, const RGB &immEmittance) {
     shared::MaterialData* matDataOnHost = scene->materialDataBuffer.getMappedPointer();
 
     cudau::TextureSampler sampler_sRGB;
@@ -1543,14 +1547,15 @@ static Material* createDiffuseAndSpecularMaterial(
 
     if (!diffuseColorPath.empty()) {
         hpprintf("  Reading: %s ... ", diffuseColorPath.string().c_str());
-        if (loadTexture(diffuseColorPath, float4(immDiffuseColor, 1.0f), cuContext,
-                        &body.diffuse, &needsDegamma))
+        if (loadTexture(
+            diffuseColorPath, float4(immDiffuseColor.toNative(), 1.0f), cuContext,
+            &body.diffuse, &needsDegamma))
             hpprintf("done.\n");
         else
             hpprintf("failed.\n");
     }
     if (!body.diffuse) {
-        createFx3ImmTexture(cuContext, immDiffuseColor, true, &body.diffuse, nullptr);
+        createFx3ImmTexture(cuContext, immDiffuseColor.toNative(), true, &body.diffuse, nullptr);
         needsDegamma = true;
     }
     if (needsDegamma)
@@ -1560,14 +1565,15 @@ static Material* createDiffuseAndSpecularMaterial(
 
     if (!specularColorPath.empty()) {
         hpprintf("  Reading: %s ... ", specularColorPath.string().c_str());
-        if (loadTexture(specularColorPath, float4(immSpecularColor, 1.0f), cuContext,
-                        &body.specular, &needsDegamma))
+        if (loadTexture(
+            specularColorPath, float4(immSpecularColor.toNative(), 1.0f), cuContext,
+            &body.specular, &needsDegamma))
             hpprintf("done.\n");
         else
             hpprintf("failed.\n");
     }
     if (!body.specular) {
-        createFx3ImmTexture(cuContext, immSpecularColor, true, &body.specular, nullptr);
+        createFx3ImmTexture(cuContext, immSpecularColor.toNative(), true, &body.specular, nullptr);
         needsDegamma = true;
     }
     if (needsDegamma)
@@ -1640,7 +1646,7 @@ static Material* createSimplePBRMaterial(
     const std::filesystem::path &occlusion_roughness_metallicPath,
     const float3 &immOcclusion_roughness_metallic,
     const std::filesystem::path &normalPath,
-    const std::filesystem::path &emittancePath, const float3 &immEmittance) {
+    const std::filesystem::path &emittancePath, const RGB &immEmittance) {
     shared::MaterialData* matDataOnHost = scene->materialDataBuffer.getMappedPointer();
 
     cudau::TextureSampler sampler_sRGB;
@@ -1895,7 +1901,7 @@ void createTriangleMeshes(
     shared::MaterialData* matDataOnHost = scene->materialDataBuffer.getMappedPointer();
     for (uint32_t matIdx = 0; matIdx < aiscene->mNumMaterials; ++matIdx) {
         std::filesystem::path emittancePath;
-        float3 immEmittance = float3(0.0f);
+        RGB immEmittance(0.0f);
 
         const aiMaterial* aiMat = aiscene->mMaterials[matIdx];
         aiString strValue;
@@ -1907,11 +1913,11 @@ void createTriangleMeshes(
         hpprintf("%s:\n", matName.c_str());
 
         std::filesystem::path reflectancePath;
-        float3 immReflectance;
+        RGB immReflectance;
         std::filesystem::path diffuseColorPath;
-        float3 immDiffuseColor;
+        RGB immDiffuseColor;
         std::filesystem::path specularColorPath;
-        float3 immSpecularColor;
+        RGB immSpecularColor;
         float immSmoothness;
         if constexpr (useLambertMaterial) {
             if (aiMat->Get(AI_MATKEY_TEXTURE_DIFFUSE(0), strValue) == aiReturn_SUCCESS) {
@@ -1923,7 +1929,7 @@ void createTriangleMeshes(
                     color[1] = 0.0f;
                     color[2] = 1.0f;
                 }
-                immReflectance = float3(color[0], color[1], color[2]);
+                immReflectance = RGB(color[0], color[1], color[2]);
             }
             (void)diffuseColorPath;
             (void)immDiffuseColor;
@@ -1941,7 +1947,7 @@ void createTriangleMeshes(
                     color[1] = 0.0f;
                     color[2] = 0.0f;
                 }
-                immDiffuseColor = float3(color[0], color[1], color[2]);
+                immDiffuseColor = RGB(color[0], color[1], color[2]);
             }
 
             if (aiMat->Get(AI_MATKEY_TEXTURE_SPECULAR(0), strValue) == aiReturn_SUCCESS) {
@@ -1953,7 +1959,7 @@ void createTriangleMeshes(
                     color[1] = 0.0f;
                     color[2] = 0.0f;
                 }
-                immSpecularColor = float3(color[0], color[1], color[2]);
+                immSpecularColor = RGB(color[0], color[1], color[2]);
             }
 
             // JP: 極端に鋭いスペキュラーにするとNEEで寄与が一切サンプルできなくなってしまう。
@@ -1989,7 +1995,7 @@ void createTriangleMeshes(
         if (aiMat->Get(AI_MATKEY_TEXTURE_EMISSIVE(0), strValue) == aiReturn_SUCCESS)
             emittancePath = dirPath / strValue.C_Str();
         else if (aiMat->Get(AI_MATKEY_COLOR_EMISSIVE, color, nullptr) == aiReturn_SUCCESS)
-            immEmittance = float3(color[0], color[1], color[2]);
+            immEmittance = RGB(color[0], color[1], color[2]);
 
         Material* mat;
         if (matConv == MaterialConvention::Traditional) {
@@ -2018,8 +2024,8 @@ void createTriangleMeshes(
             //     specular texture as occlusion, roughness, metallic.
             mat = createSimplePBRMaterial(
                 cuContext, scene,
-                diffuseColorPath, float4(immDiffuseColor, 1.0f),
-                specularColorPath, immSpecularColor,
+                diffuseColorPath, float4(immDiffuseColor.toNative(), 1.0f),
+                specularColorPath, immSpecularColor.toNative(),
                 normalPath,
                 emittancePath, immEmittance);
         }
@@ -2040,15 +2046,15 @@ void createTriangleMeshes(
                 aitc0dir = aiMesh->mTangents[vIdx];
             if (!aiMesh->mTangents || !std::isfinite(aitc0dir.x)) {
                 const auto makeCoordinateSystem = []
-                (const float3 &normal, float3* tangent, float3* bitangent) {
+                (const Normal3D &normal, Vector3D* tangent, Vector3D* bitangent) {
                     float sign = normal.z >= 0 ? 1.0f : -1.0f;
                     const float a = -1 / (sign + normal.z);
                     const float b = normal.x * normal.y * a;
-                    *tangent = make_float3(1 + sign * normal.x * normal.x * a, sign * b, -sign * normal.x);
-                    *bitangent = make_float3(b, sign + normal.y * normal.y * a, -normal.y);
+                    *tangent = Vector3D(1 + sign * normal.x * normal.x * a, sign * b, -sign * normal.x);
+                    *bitangent = Vector3D(b, sign + normal.y * normal.y * a, -normal.y);
                 };
-                float3 tangent, bitangent;
-                makeCoordinateSystem(float3(ain.x, ain.y, ain.z), &tangent, &bitangent);
+                Vector3D tangent, bitangent;
+                makeCoordinateSystem(Normal3D(ain.x, ain.y, ain.z), &tangent, &bitangent);
                 aitc0dir = aiVector3D(tangent.x, tangent.y, tangent.z);
             }
             const aiVector3D ait = aiMesh->mTextureCoords[0] ?
@@ -2056,10 +2062,10 @@ void createTriangleMeshes(
                 aiVector3D(0.0f, 0.0f, 0.0f);
 
             shared::Vertex v;
-            v.position = float3(aip.x, aip.y, aip.z);
-            v.normal = normalize(float3(ain.x, ain.y, ain.z));
-            v.texCoord0Dir = normalize(float3(aitc0dir.x, aitc0dir.y, aitc0dir.z));
-            v.texCoord = float2(ait.x, ait.y);
+            v.position = Point3D(aip.x, aip.y, aip.z);
+            v.normal = normalize(Normal3D(ain.x, ain.y, ain.z));
+            v.texCoord0Dir = normalize(Vector3D(aitc0dir.x, aitc0dir.y, aitc0dir.z));
+            v.texCoord = Point2D(ait.x, ait.y);
             vertices[vIdx] = v;
         }
 
@@ -2122,9 +2128,9 @@ void createTriangleMeshes(
 void createRectangleLight(
     const std::string &meshName,
     float width, float depth,
-    const float3 &reflectance,
+    const RGB &reflectance,
     const std::filesystem::path &emittancePath,
-    const float3 &immEmittance,
+    const RGB &immEmittance,
     const Matrix4x4 &transform,
     CUcontext cuContext, Scene* scene, bool allocateGfxResource) {
     Material* material;
@@ -2132,16 +2138,16 @@ void createRectangleLight(
         material = createLambertMaterial(cuContext, scene, "", reflectance, "", emittancePath, immEmittance);
     else
         material = createDiffuseAndSpecularMaterial(
-            cuContext, scene, "", reflectance, "", float3(0.0f), 0.3f,
+            cuContext, scene, "", reflectance, "", RGB(0.0f), 0.3f,
             "",
             emittancePath, immEmittance);
     scene->materials.push_back(material);
 
     std::vector<shared::Vertex> vertices = {
-        shared::Vertex{float3(-0.5f * width, 0.0f, -0.5f * depth), float3(0, -1, 0), float3(1, 0, 0), float2(0.0f, 1.0f)},
-        shared::Vertex{float3(0.5f * width, 0.0f, -0.5f * depth), float3(0, -1, 0), float3(1, 0, 0), float2(1.0f, 1.0f)},
-        shared::Vertex{float3(0.5f * width, 0.0f, 0.5f * depth), float3(0, -1, 0), float3(1, 0, 0), float2(1.0f, 0.0f)},
-        shared::Vertex{float3(-0.5f * width, 0.0f, 0.5f * depth), float3(0, -1, 0), float3(1, 0, 0), float2(0.0f, 0.0f)},
+        shared::Vertex{Point3D(-0.5f * width, 0.0f, -0.5f * depth), Normal3D(0, -1, 0), Vector3D(1, 0, 0), Point2D(0.0f, 1.0f)},
+        shared::Vertex{Point3D(0.5f * width, 0.0f, -0.5f * depth), Normal3D(0, -1, 0), Vector3D(1, 0, 0), Point2D(1.0f, 1.0f)},
+        shared::Vertex{Point3D(0.5f * width, 0.0f, 0.5f * depth), Normal3D(0, -1, 0), Vector3D(1, 0, 0), Point2D(1.0f, 0.0f)},
+        shared::Vertex{Point3D(-0.5f * width, 0.0f, 0.5f * depth), Normal3D(0, -1, 0), Vector3D(1, 0, 0), Point2D(0.0f, 0.0f)},
     };
     std::vector<shared::Triangle> triangles = {
         shared::Triangle{0, 1, 2},
@@ -2167,17 +2173,17 @@ void createRectangleLight(
 void createSphereLight(
     const std::string &meshName,
     float radius,
-    const float3 &reflectance,
+    const RGB &reflectance,
     const std::filesystem::path &emittancePath,
-    const float3 &immEmittance,
-    const float3 &position,
+    const RGB &immEmittance,
+    const Point3D &position,
     CUcontext cuContext, Scene* scene, bool allocateGfxResource) {
     Material* material;
     if constexpr (useLambertMaterial)
         material = createLambertMaterial(cuContext, scene, "", reflectance, "", emittancePath, immEmittance);
     else
         material = createDiffuseAndSpecularMaterial(
-            cuContext, scene, "", reflectance, "", float3(0.0f), 0.3f,
+            cuContext, scene, "", reflectance, "", RGB(0.0f), 0.3f,
             "",
             emittancePath, immEmittance);
     scene->materials.push_back(material);
@@ -2192,36 +2198,41 @@ void createSphereLight(
     std::vector<shared::Triangle> triangles(numTriangles);
     uint32_t vIdx = 0;
     uint32_t triIdx = 0;
-    vertices[vIdx++] = shared::Vertex{ float3(0, radius, 0), float3(0, 1, 0), float3(1, 0, 0), float2(0, 0) };
+    vertices[vIdx++] = shared::Vertex{
+        Point3D(0, radius, 0),
+        Normal3D(0, 1, 0),
+        Vector3D(1, 0, 0),
+        Point2D(0, 0)
+    };
     {
         float zenith = zenithDelta;
-        float2 texCoord = float2(0, zenith / pi_v<float>);
+        Point2D texCoord(0, zenith / pi_v<float>);
         for (int aIdx = 0; aIdx < numAzimuthSegments; ++aIdx) {
             float azimuth = aIdx * azimushDelta;
-            float3 n = float3(std::cos(azimuth) * std::sin(zenith),
-                              std::cos(zenith),
-                              std::sin(azimuth) * std::sin(zenith));
-            float3 tc0Dir = float3(-std::sin(azimuth), 0, std::cos(azimuth));
+            Normal3D n(std::cos(azimuth) * std::sin(zenith),
+                       std::cos(zenith),
+                       std::sin(azimuth) * std::sin(zenith));
+            Vector3D tc0Dir(-std::sin(azimuth), 0, std::cos(azimuth));
             uint32_t lrIdx = 1 + aIdx;
             uint32_t llIdx = 1 + (aIdx + 1) % numAzimuthSegments;
             uint32_t uIdx = 0;
             texCoord.x = azimuth / (2 * pi_v<float>);
-            vertices[vIdx++] = shared::Vertex{ radius * n, n, tc0Dir, texCoord };
+            vertices[vIdx++] = shared::Vertex{ Point3D(radius * n), n, tc0Dir, texCoord };
             triangles[triIdx++] = shared::Triangle{ llIdx, lrIdx, uIdx };
         }
     }
     for (int zIdx = 1; zIdx < numZenithSegments - 1; ++zIdx) {
         float zenith = (zIdx + 1) * zenithDelta;
-        float2 texCoord = float2(0, zenith / pi_v<float>);
+        Point2D texCoord(0, zenith / pi_v<float>);
         uint32_t baseVIdx = vIdx;
         for (int aIdx = 0; aIdx < numAzimuthSegments; ++aIdx) {
             float azimuth = aIdx * azimushDelta;
-            float3 n = float3(std::cos(azimuth) * std::sin(zenith),
-                              std::cos(zenith),
-                              std::sin(azimuth) * std::sin(zenith));
-            float3 tc0Dir = float3(-std::sin(azimuth), 0, std::cos(azimuth));
+            Normal3D n(std::cos(azimuth) * std::sin(zenith),
+                       std::cos(zenith),
+                       std::sin(azimuth) * std::sin(zenith));
+            Vector3D tc0Dir(-std::sin(azimuth), 0, std::cos(azimuth));
             texCoord.x = azimuth / (2 * pi_v<float>);
-            vertices[vIdx++] = shared::Vertex{ radius * n, n, tc0Dir, texCoord };
+            vertices[vIdx++] = shared::Vertex{ Point3D(radius * n), n, tc0Dir, texCoord };
             uint32_t lrIdx = baseVIdx + aIdx;
             uint32_t llIdx = baseVIdx + (aIdx + 1) % numAzimuthSegments;
             uint32_t ulIdx = baseVIdx - numAzimuthSegments + (aIdx + 1) % numAzimuthSegments;
@@ -2230,7 +2241,12 @@ void createSphereLight(
             triangles[triIdx++] = shared::Triangle{ llIdx, urIdx, ulIdx };
         }
     }
-    vertices[vIdx++] = shared::Vertex{ float3(0, -radius, 0), float3(0, -1, 0), float3(1, 0, 0), float2(0, 1) };
+    vertices[vIdx++] = shared::Vertex{
+        Point3D(0, -radius, 0),
+        Normal3D(0, -1, 0),
+        Vector3D(1, 0, 0),
+        Point2D(0, 1)
+    };
     {
         for (int aIdx = 0; aIdx < numAzimuthSegments; ++aIdx) {
             uint32_t lIdx = numVertices - 1;
@@ -2264,7 +2280,7 @@ Instance* createInstance(
 
     Matrix4x4 finalTransform = transform * geomGroupInst.transform;
 
-    float3 scale;
+    Vector3D scale;
     finalTransform.decompose(&scale, nullptr, nullptr);
     float uniformScale = scale.x;
 
@@ -2306,7 +2322,7 @@ Instance* createInstance(
     shared::InstanceData instData = {};
     instData.transform = finalTransform;
     instData.prevTransform = finalTransform;
-    instData.normalMatrix = transpose(inverse(finalTransform.getUpperLeftMatrix()));
+    instData.normalMatrix = transpose(invert(finalTransform.getUpperLeftMatrix()));
     instData.uniformScale = uniformScale;
     instData.geomInstSlots = shared::ROBuffer<uint32_t>(
         inst->geomInstSlots.getDevicePointer(), inst->geomInstSlots.numElements());
@@ -2325,7 +2341,7 @@ Instance* createInstance(
 
     inst->prevMatM2W = finalTransform;
     inst->matM2W = finalTransform;
-    inst->nMatM2W = transpose(inverse(finalTransform.getUpperLeftMatrix()));
+    inst->nMatM2W = transpose(invert(finalTransform.getUpperLeftMatrix()));
 
     return inst;
 }
@@ -2356,9 +2372,9 @@ void loadEnvironmentalTexture(
                 textureData[idx + 0] = std::max(textureData[idx + 0], 0.0f);
                 textureData[idx + 1] = std::max(textureData[idx + 1], 0.0f);
                 textureData[idx + 2] = std::max(textureData[idx + 2], 0.0f);
-                float3 value(textureData[idx + 0],
-                             textureData[idx + 1],
-                             textureData[idx + 2]);
+                RGB value(textureData[idx + 0],
+                          textureData[idx + 1],
+                          textureData[idx + 2]);
                 importanceData[y * width + x] = sRGB_calcLuminance(value) * sinTheta;
             }
         }
@@ -2536,15 +2552,15 @@ void saveImage(const std::filesystem::path &filepath, uint32_t width, uint32_t h
             if (config.alphaForOverride >= 0.0f)
                 src.w = config.alphaForOverride;
             if (config.applyToneMap) {
-                float3 rgb = make_float3(src);
-                if (!allFinite(rgb))
-                    rgb = make_float3(0.0f, 0.0f, 0.0f);
+                RGB rgb(getXYZ(src));
+                if (!rgb.allFinite())
+                    rgb = RGB(0.0f, 0.0f, 0.0f);
                 float lum = sRGB_calcLuminance(rgb);
                 float lumT = simpleToneMap_s(config.brightnessScale * lum);
                 float s = lum > 0.0f ? lumT / lum : 0.0f;
-                src.x = rgb.x * s;
-                src.y = rgb.y * s;
-                src.z = rgb.z * s;
+                src.x = rgb.r * s;
+                src.y = rgb.g * s;
+                src.z = rgb.b * s;
             }
             if (config.apply_sRGB_gammaCorrection) {
                 src.x = sRGB_gamma_s(src.x);

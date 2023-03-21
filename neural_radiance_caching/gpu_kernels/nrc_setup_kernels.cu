@@ -35,9 +35,9 @@ CUDA_DEVICE_KERNEL void preprocessNRC(
         *plp.s->offsetToSelectUnbiasedTile = offsetToSelectUnbiasedTile;
         *plp.s->offsetToSelectTrainingPath = offsetToSelectTrainingPath;
 
-        plp.s->targetMinMax[bufIdx][0] = float3AsOrderedInt(make_float3(INFINITY)); // min
-        plp.s->targetMinMax[bufIdx][1] = float3AsOrderedInt(make_float3(-INFINITY)); // max
-        *plp.s->targetAvg[bufIdx] = make_float3(0.0f); // max
+        plp.s->targetMinMax[bufIdx][0] = RGBAsOrderedInt(RGB(INFINITY)); // min
+        plp.s->targetMinMax[bufIdx][1] = RGBAsOrderedInt(RGB(-INFINITY)); // max
+        *plp.s->targetAvg[bufIdx] = RGB(0.0f); // max
     }
 
     TrainingSuffixTerminalInfo terminalInfo;
@@ -64,10 +64,10 @@ CUDA_DEVICE_KERNEL void accumulateInferredRadianceValues() {
     //     complete a pixel.
     //     Network prediction is not used in the case where the path ended with Russian roulette or traced
     //     to infinity.
-    float3 directCont = plp.s->perFrameContributionBuffer[linearIndex];
-    float3 radiance = make_float3(0.0f, 0.0f, 0.0f);
+    RGB directCont = plp.s->perFrameContributionBuffer[linearIndex];
+    RGB radiance(0.0f, 0.0f, 0.0f);
     if (terminalInfo.hasQuery) {
-        radiance = max(plp.s->inferredRadianceBuffer[linearIndex], make_float3(0.0f, 0.0f, 0.0f));
+        radiance = max(plp.s->inferredRadianceBuffer[linearIndex], RGB(0.0f, 0.0f, 0.0f));
         if (plp.f->radianceScale > 0)
             radiance /= plp.f->radianceScale;
 
@@ -76,17 +76,17 @@ CUDA_DEVICE_KERNEL void accumulateInferredRadianceValues() {
             radiance *= (terminalQuery.diffuseReflectance + terminalQuery.specularReflectance);
         }
     }
-    float3 indirectCont = terminalInfo.alpha * radiance;
-    float3 contribution = directCont + indirectCont;
+    RGB indirectCont = terminalInfo.alpha * radiance;
+    RGB contribution = directCont + indirectCont;
 
     uint2 pixelIndex = make_uint2(linearIndex % plp.s->imageSize.x,
                                   linearIndex / plp.s->imageSize.x);
-    float3 prevColorResult = make_float3(0.0f, 0.0f, 0.0f);
+    RGB prevColorResult(0.0f, 0.0f, 0.0f);
     if (plp.f->numAccumFrames > 0)
-        prevColorResult = getXYZ(plp.s->beautyAccumBuffer.read(pixelIndex));
+        prevColorResult = RGB(getXYZ(plp.s->beautyAccumBuffer.read(pixelIndex)));
     float curWeight = 1.0f / (1 + plp.f->numAccumFrames);
-    float3 colorResult = (1 - curWeight) * prevColorResult + curWeight * contribution;
-    plp.s->beautyAccumBuffer.write(pixelIndex, make_float4(colorResult, 1.0f));
+    RGB colorResult = (1 - curWeight) * prevColorResult + curWeight * contribution;
+    plp.s->beautyAccumBuffer.write(pixelIndex, make_float4(colorResult.toNative(), 1.0f));
 }
 
 CUDA_DEVICE_KERNEL void propagateRadianceValues() {
@@ -98,10 +98,10 @@ CUDA_DEVICE_KERNEL void propagateRadianceValues() {
     if (terminalInfo.prevVertexDataIndex == invalidVertexDataIndex)
         return;
 
-    float3 contribution = make_float3(0.0f, 0.0f, 0.0f);
+    RGB contribution(0.0f, 0.0f, 0.0f);
     if (terminalInfo.hasQuery) {
         uint32_t offset = plp.s->imageSize.x * plp.s->imageSize.y;
-        contribution = max(plp.s->inferredRadianceBuffer[offset + linearIndex], make_float3(0.0f, 0.0f, 0.0f));
+        contribution = max(plp.s->inferredRadianceBuffer[offset + linearIndex], RGB(0.0f, 0.0f, 0.0f));
         if (plp.f->radianceScale > 0)
             contribution /= plp.f->radianceScale;
 
@@ -118,13 +118,13 @@ CUDA_DEVICE_KERNEL void propagateRadianceValues() {
     uint32_t lastTrainDataIndex = terminalInfo.prevVertexDataIndex;
     while (lastTrainDataIndex != invalidVertexDataIndex) {
         const TrainingVertexInfo &vertexInfo = plp.s->trainVertexInfoBuffer[lastTrainDataIndex];
-        float3 &targetValue = plp.s->trainTargetBuffer[0][lastTrainDataIndex];
-        float3 indirectCont = vertexInfo.localThroughput * contribution;
+        RGB &targetValue = plp.s->trainTargetBuffer[0][lastTrainDataIndex];
+        RGB indirectCont = vertexInfo.localThroughput * contribution;
         contribution = targetValue + indirectCont;
 
         if constexpr (useReflectanceFactorization) {
             const RadianceQuery &query = plp.s->trainRadianceQueryBuffer[0][lastTrainDataIndex];
-            float3 refFactor = query.diffuseReflectance + query.specularReflectance;
+            RGB refFactor = query.diffuseReflectance + query.specularReflectance;
             targetValue = safeDivide(contribution, refFactor);
         }
         else {
@@ -150,7 +150,7 @@ CUDA_DEVICE_KERNEL void shuffleTrainingData() {
         // EN: Wrap around for the case where the path tracer generates too few samples.
         uint32_t srcIdx = linearIndex % numTrainingData;
         RadianceQuery query = plp.s->trainRadianceQueryBuffer[0][srcIdx];
-        float3 targetValue = plp.s->trainTargetBuffer[0][srcIdx];
+        RGB targetValue = plp.s->trainTargetBuffer[0][srcIdx];
 
         if (!query.isValid()) {
             printf("p: (%g, %g, %g), n: (%g, %g), v: (%g, %g), "
@@ -159,39 +159,39 @@ CUDA_DEVICE_KERNEL void shuffleTrainingData() {
                    query.normal_phi, query.normal_theta,
                    query.vOut_phi, query.vOut_theta,
                    query.roughness,
-                   query.diffuseReflectance.x, query.diffuseReflectance.y, query.diffuseReflectance.z,
-                   query.specularReflectance.x, query.specularReflectance.y, query.specularReflectance.z);
-            query.position = make_float3(0.0f);
+                   query.diffuseReflectance.r, query.diffuseReflectance.g, query.diffuseReflectance.b,
+                   query.specularReflectance.r, query.specularReflectance.g, query.specularReflectance.b);
+            query.position = Point3D(0.0f);
             query.normal_phi = 0.0f;
             query.normal_theta = 0.0f;
             query.vOut_phi = 0.0f;
             query.vOut_theta = 0.0f;
             query.roughness = 0.0f;
-            query.diffuseReflectance = query.specularReflectance = make_float3(0.0f);
+            query.diffuseReflectance = query.specularReflectance = RGB(0.0f);
         }
-        if (!allFinite(targetValue)) {
-            printf("tgt: (%g, %g, %g)\n", targetValue.x, targetValue.y, targetValue.z);
-            targetValue = make_float3(0.0f);
+        if (!targetValue.allFinite()) {
+            printf("tgt: (%g, %g, %g)\n", targetValue.r, targetValue.g, targetValue.b);
+            targetValue = RGB(0.0f);
         }
 
-        CUDA_SHARED_MEM uint32_t sm_pool[3 * sizeof(float3) / sizeof(uint32_t)];
-        auto &sm_minRadiance = reinterpret_cast<float3AsOrderedInt &>(sm_pool[0]);
-        auto &sm_maxRadiance = reinterpret_cast<float3AsOrderedInt &>(sm_pool[3]);
-        auto &sm_avgRadiance = reinterpret_cast<float3 &>(sm_pool[6]);
+        CUDA_SHARED_MEM uint32_t sm_pool[3 * sizeof(RGB) / sizeof(uint32_t)];
+        auto &sm_minRadiance = reinterpret_cast<RGBAsOrderedInt &>(sm_pool[0]);
+        auto &sm_maxRadiance = reinterpret_cast<RGBAsOrderedInt &>(sm_pool[3]);
+        auto &sm_avgRadiance = reinterpret_cast<RGB &>(sm_pool[6]);
         if (threadIdx.x == 0) {
-            sm_minRadiance = float3AsOrderedInt(make_float3(INFINITY));
-            sm_maxRadiance = float3AsOrderedInt(make_float3(-INFINITY));
-            sm_avgRadiance = make_float3(0.0f);
+            sm_minRadiance = RGBAsOrderedInt(RGB(INFINITY));
+            sm_maxRadiance = RGBAsOrderedInt(RGB(-INFINITY));
+            sm_avgRadiance = RGB(0.0f);
         }
         __syncthreads();
-        atomicMin_float3_block(&sm_minRadiance, targetValue);
-        atomicMax_float3_block(&sm_maxRadiance, targetValue);
-        atomicAdd_float3_block(&sm_avgRadiance, targetValue / numTrainingDataPerFrame);
+        atomicMin_RGB_block(&sm_minRadiance, targetValue);
+        atomicMax_RGB_block(&sm_maxRadiance, targetValue);
+        atomicAdd_RGB_block(&sm_avgRadiance, targetValue / numTrainingDataPerFrame);
         __syncthreads();
         if (threadIdx.x == 0) {
-            atomicMin_float3(&plp.s->targetMinMax[bufIdx][0], sm_minRadiance);
-            atomicMax_float3(&plp.s->targetMinMax[bufIdx][1], sm_maxRadiance);
-            atomicAdd_float3(plp.s->targetAvg[bufIdx], sm_avgRadiance);
+            atomicMin_RGB(&plp.s->targetMinMax[bufIdx][0], sm_minRadiance);
+            atomicMax_RGB(&plp.s->targetMinMax[bufIdx][1], sm_maxRadiance);
+            atomicAdd_RGB(plp.s->targetAvg[bufIdx], sm_avgRadiance);
         }
 
         // JP: ロス関数の計算にあるゼロ除算を防ぐためのイプシロンが支配的にならないよう、
@@ -200,7 +200,7 @@ CUDA_DEVICE_KERNEL void shuffleTrainingData() {
         //     the epsilon to avoid division by zero in the loss function calculation does not dominate.
         if (plp.f->radianceScale > 0)
             targetValue *= plp.f->radianceScale;
-        targetValue = min(targetValue, make_float3(1e+6f));
+        targetValue = min(targetValue, RGB(1e+6f));
 
         plp.s->trainRadianceQueryBuffer[1][dstIdx] = query;
         plp.s->trainTargetBuffer[1][dstIdx] = targetValue;
@@ -208,6 +208,6 @@ CUDA_DEVICE_KERNEL void shuffleTrainingData() {
     else {
         RadianceQuery query = {};
         plp.s->trainRadianceQueryBuffer[1][linearIndex] = query;
-        plp.s->trainTargetBuffer[1][linearIndex] = make_float3(0.0f, 0.0f, 0.0f);
+        plp.s->trainTargetBuffer[1][linearIndex] = RGB(0.0f, 0.0f, 0.0f);
     }
 }

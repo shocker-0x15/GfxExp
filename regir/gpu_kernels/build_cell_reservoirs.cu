@@ -3,8 +3,8 @@
 
 using namespace shared;
 
-CUDA_DEVICE_FUNCTION CUDA_INLINE float3 sampleIntensity(
-    const float3 &cellCenter, const float3 &halfCellSize, float minSquaredDistance,
+CUDA_DEVICE_FUNCTION CUDA_INLINE RGB sampleIntensity(
+    const Point3D &cellCenter, const Vector3D &halfCellSize, float minSquaredDistance,
     float uLight, bool sampleEnvLight, float uPos0, float uPos1,
     LightSample* lightSample, float* probDensity) {
     sampleLight<false>(
@@ -23,14 +23,14 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE float3 sampleIntensity(
         lightSample->position.z < cellCenter.z - halfCellSize.z ||
         lightSample->position.z > cellCenter.z + halfCellSize.z;
     if (isOutsideCell) {
-        float3 shadowRayDir = lightSample->atInfinity ?
-            lightSample->position :
+        Vector3D shadowRayDir = lightSample->atInfinity ?
+            Vector3D(lightSample->position) :
             (lightSample->position - cellCenter);
         // JP: 光源点を含む平面への垂直距離を求める。
         // EN: Calculate the perpendicular distance to a plane on which the light point is.
         float perpDistance = dot(-shadowRayDir, lightSample->normal);
 
-        dist2 = sqLength(shadowRayDir);
+        dist2 = shadowRayDir.sqLength();
         float dist = std::sqrt(dist2);
 
         /*
@@ -58,12 +58,12 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE float3 sampleIntensity(
     }
 
     if (lpCos > 0.0f) {
-        float3 Le = lightSample->emittance / Pi;
-        float3 ret = Le * (lpCos / dist2);
+        RGB Le = lightSample->emittance / Pi;
+        RGB ret = Le * (lpCos / dist2);
         return ret;
     }
     else {
-        return make_float3(0.0f, 0.0f, 0.0f);
+        return RGB(0.0f, 0.0f, 0.0f);
     }
 }
 
@@ -82,12 +82,12 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void buildCellReservoirsAndTemporalReuse(uint32
     uint32_t iz = cellLinearIndex / (plp.s->gridDimension.x * plp.s->gridDimension.y);
     uint32_t iy = (cellLinearIndex % (plp.s->gridDimension.x * plp.s->gridDimension.y)) / plp.s->gridDimension.x;
     uint32_t ix = cellLinearIndex % plp.s->gridDimension.x;
-    float3 cellCenter = plp.s->gridOrigin + make_float3(
+    Point3D cellCenter = plp.s->gridOrigin + Vector3D(
         (ix + 0.5f) * plp.s->gridCellSize.x,
         (iy + 0.5f) * plp.s->gridCellSize.y,
         (iz + 0.5f) * plp.s->gridCellSize.z);
-    const float3 halfCellSize = 0.5f * plp.s->gridCellSize;
-    const float minSquaredDistance = sqLength(0.5f * plp.s->gridCellSize);
+    const Vector3D halfCellSize = 0.5f * plp.s->gridCellSize;
+    const float minSquaredDistance = (0.5f * plp.s->gridCellSize).sqLength();
 
     uint32_t bufferIndex = plp.f->bufferIndex;
     RWBuffer<Reservoir<LightSample>> curReservoirs = plp.s->reservoirs[bufferIndex];
@@ -143,7 +143,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void buildCellReservoirsAndTemporalReuse(uint32
         //     Target PDF doesn't require to be normalized.
         LightSample lightSample;
         float areaPDensity;
-        float3 cont = sampleIntensity(
+        RGB cont = sampleIntensity(
             cellCenter, halfCellSize, minSquaredDistance,
             uLight, sampleEnvLight, rng.getFloat0cTo1o(), rng.getFloat0cTo1o(),
             &lightSample, &areaPDensity);

@@ -11,8 +11,9 @@ CUDA_DEVICE_KERNEL void copyToLinearBuffers(
     float4* linearNormalBuffer,
     float2* linearMotionVectorBuffer,
     uint2 imageSize) {
-    uint2 launchIndex = make_uint2(blockDim.x * blockIdx.x + threadIdx.x,
-                                   blockDim.y * blockIdx.y + threadIdx.y);
+    uint2 launchIndex = make_uint2(
+        blockDim.x * blockIdx.x + threadIdx.x,
+        blockDim.y * blockIdx.y + threadIdx.y);
     if (launchIndex.x >= imageSize.x ||
         launchIndex.y >= imageSize.y)
         return;
@@ -20,18 +21,18 @@ CUDA_DEVICE_KERNEL void copyToLinearBuffers(
     uint32_t linearIndex = launchIndex.y * imageSize.x + launchIndex.x;
     linearColorBuffer[linearIndex] = colorAccumBuffer.read(launchIndex);
     linearAlbedoBuffer[linearIndex] = albedoAccumBuffer.read(launchIndex);
-    float3 normal = getXYZ(normalAccumBuffer.read(launchIndex));
+    Normal3D normal(getXYZ(normalAccumBuffer.read(launchIndex)));
     if (normal.x != 0 || normal.y != 0 || normal.z != 0)
-        normal = normalize(normal);
-    linearNormalBuffer[linearIndex] = make_float4(normal, 1.0f);
+        normal.normalize();
+    linearNormalBuffer[linearIndex] = make_float4(normal.toNative(), 1.0f);
     float4 motionVector = motionVectorBuffer.read(launchIndex);
     linearMotionVectorBuffer[linearIndex] = make_float2(motionVector.x, motionVector.y);
 }
 
 CUDA_DEVICE_FUNCTION CUDA_INLINE uint32_t calcCellLinearIndex(
-    const float3 &gridOrigin, const float3 &gridCellSize, const uint3 &gridDimension,
-    const float3 &positionInWorld) {
-    float3 relPos = positionInWorld - gridOrigin;
+    const Point3D &gridOrigin, const Vector3D &gridCellSize, const uint3 &gridDimension,
+    const Point3D &positionInWorld) {
+    Point3D relPos(positionInWorld - gridOrigin);
     uint32_t ix = min(max(static_cast<uint32_t>(relPos.x / gridCellSize.x), 0u),
                       gridDimension.x - 1);
     uint32_t iy = min(max(static_cast<uint32_t>(relPos.y / gridCellSize.y), 0u),
@@ -59,9 +60,9 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE uint32_t getFNV1Hash32(const T &x) {
     return hash;
 }
 
-CUDA_DEVICE_FUNCTION CUDA_INLINE float3 calcCellColor(
-    const float3 &gridOrigin, const float3 &gridCellSize, const uint3 &gridDimension,
-    const float3 &positionInWorld) {
+CUDA_DEVICE_FUNCTION CUDA_INLINE RGB calcCellColor(
+    const Point3D &gridOrigin, const Vector3D &gridCellSize, const uint3 &gridDimension,
+    const Point3D &positionInWorld) {
     uint32_t cellLinearIndex = calcCellLinearIndex(gridOrigin, gridCellSize, gridDimension, positionInWorld);
 
     uint32_t hash = getFNV1Hash32(cellLinearIndex);
@@ -75,14 +76,15 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE float3 calcCellColor(
 
 CUDA_DEVICE_KERNEL void visualizeToOutputBuffer(
     optixu::NativeBlockBuffer2D<shared::GBuffer0> gBuffer0, uint32_t visualizeCell,
-    float3 gridOrigin, float3 gridCellSize, uint3 gridDimension,
+    Point3D gridOrigin, Vector3D gridCellSize, uint3 gridDimension,
     void* linearBuffer,
     shared::BufferToDisplay bufferTypeToDisplay,
     float motionVectorOffset, float motionVectorScale,
     optixu::NativeBlockBuffer2D<float4> outputBuffer,
     uint2 imageSize) {
-    uint2 launchIndex = make_uint2(blockDim.x * blockIdx.x + threadIdx.x,
-                                   blockDim.y * blockIdx.y + threadIdx.y);
+    uint2 launchIndex = make_uint2(
+        blockDim.x * blockIdx.x + threadIdx.x,
+        blockDim.y * blockIdx.y + threadIdx.y);
     if (launchIndex.x >= imageSize.x ||
         launchIndex.y >= imageSize.y)
         return;
@@ -96,10 +98,10 @@ CUDA_DEVICE_KERNEL void visualizeToOutputBuffer(
         value = typedLinearBuffer[linearIndex];
         if (visualizeCell) {
             shared::GBuffer0 gb0 = gBuffer0.read(launchIndex);
-            float3 cellColor = calcCellColor(gridOrigin, gridCellSize, gridDimension, gb0.positionInWorld);
-            value.x *= cellColor.x;
-            value.y *= cellColor.y;
-            value.z *= cellColor.z;
+            RGB cellColor = calcCellColor(gridOrigin, gridCellSize, gridDimension, gb0.positionInWorld);
+            value.x *= cellColor.r;
+            value.y *= cellColor.g;
+            value.z *= cellColor.b;
         }
         break;
     }

@@ -30,7 +30,7 @@ CUDA_DEVICE_KERNEL void performLightPreSampling() {
 
     PreSampledLight preSampledLight;
     sampleLight<false>(
-        make_float3(0.0f),
+        Point3D(0.0f),
         rng.getFloat0cTo1o(), sampleEnvLight, rng.getFloat0cTo1o(), rng.getFloat0cTo1o(),
         &preSampledLight.sample, &preSampledLight.areaPDensity);
     preSampledLight.areaPDensity *= probToSampleCurLightType;
@@ -50,9 +50,9 @@ CUDA_DEVICE_KERNEL void performPerPixelRIS() {
     GBuffer1 gBuffer1 = plp.s->GBuffer1[curBufIdx].read(launchIndex);
     GBuffer2 gBuffer2 = plp.s->GBuffer2[curBufIdx].read(launchIndex);
 
-    float3 positionInWorld = gBuffer0.positionInWorld;
-    float3 shadingNormalInWorld = gBuffer1.normalInWorld;
-    float2 texCoord = make_float2(gBuffer0.texCoord_x, gBuffer1.texCoord_y);
+    Point3D positionInWorld = gBuffer0.positionInWorld;
+    Normal3D shadingNormalInWorld = gBuffer1.normalInWorld;
+    Point2D texCoord(gBuffer0.texCoord_x, gBuffer1.texCoord_y);
     uint32_t materialSlot = gBuffer2.materialSlot;
 
     // JP: タイルごとに共通のライトサブセットを選択することでメモリアクセスのコヒーレンシーを改善する。
@@ -71,8 +71,8 @@ CUDA_DEVICE_KERNEL void performPerPixelRIS() {
     const MaterialData &mat = plp.s->materialDataBuffer[materialSlot];
 
     // TODO?: Use true geometric normal.
-    float3 geometricNormalInWorld = shadingNormalInWorld;
-    float3 vOut = plp.f->camera.position - positionInWorld;
+    Normal3D geometricNormalInWorld = shadingNormalInWorld;
+    Vector3D vOut = plp.f->camera.position - positionInWorld;
     float frontHit = dot(vOut, geometricNormalInWorld) >= 0.0f ? 1.0f : -1.0f;
 
     BSDF bsdf;
@@ -81,7 +81,7 @@ CUDA_DEVICE_KERNEL void performPerPixelRIS() {
     positionInWorld = offsetRayOriginNaive(positionInWorld, frontHit * geometricNormalInWorld);
     float dist = length(vOut);
     vOut /= dist;
-    float3 vOutLocal = shadingFrame.toLocal(vOut);
+    Vector3D vOutLocal = shadingFrame.toLocal(vOut);
 
     uint32_t curResIndex = plp.currentReservoirIndex;
     Reservoir<LightSample> reservoir;
@@ -99,7 +99,7 @@ CUDA_DEVICE_KERNEL void performPerPixelRIS() {
         //     ターゲットPDFは正規化されていなくても良い。
         // EN: Generate a candidate sample then calculate the target PDF for it.
         //     Target PDF doesn't require to be normalized.
-        float3 cont = performDirectLighting<ReSTIRRayType, false>(
+        RGB cont = performDirectLighting<ReSTIRRayType, false>(
             positionInWorld, vOutLocal, shadingFrame, bsdf,
             preSampledLight.sample);
         float targetDensity = convertToWeight(cont);

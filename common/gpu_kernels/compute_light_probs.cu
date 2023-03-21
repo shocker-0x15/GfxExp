@@ -30,14 +30,14 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE float computeTriangleImportance(
         geomInst->vertexBuffer[tri.index2]
     };
 
-    float3 normal = cross(v[1].position - v[0].position, v[2].position - v[0].position);
+    Normal3D normal(cross(v[1].position - v[0].position, v[2].position - v[0].position));
     float area = 0.5f * length(normal);
 
     // TODO: もっと正確な、少なくとも保守的な推定の実装。テクスチャー空間中の面積に応じてMIPレベルを選択する？
-    float3 emittanceEstimate = make_float3(0.0f, 0.0f, 0.0f);
-    emittanceEstimate += getXYZ(tex2DLod<float4>(mat.emittance, v[0].texCoord.x, v[0].texCoord.y, 0));
-    emittanceEstimate += getXYZ(tex2DLod<float4>(mat.emittance, v[1].texCoord.x, v[1].texCoord.y, 0));
-    emittanceEstimate += getXYZ(tex2DLod<float4>(mat.emittance, v[2].texCoord.x, v[2].texCoord.y, 0));
+    RGB emittanceEstimate(0.0f, 0.0f, 0.0f);
+    emittanceEstimate += RGB(getXYZ(tex2DLod<float4>(mat.emittance, v[0].texCoord.x, v[0].texCoord.y, 0)));
+    emittanceEstimate += RGB(getXYZ(tex2DLod<float4>(mat.emittance, v[1].texCoord.x, v[1].texCoord.y, 0)));
+    emittanceEstimate += RGB(getXYZ(tex2DLod<float4>(mat.emittance, v[2].texCoord.x, v[2].texCoord.y, 0)));
     emittanceEstimate /= 3;
 
     float importance = sRGB_calcLuminance(emittanceEstimate) * area;
@@ -134,7 +134,7 @@ CUDA_DEVICE_KERNEL void computeGeomInstProbBuffer(
 CUDA_DEVICE_FUNCTION CUDA_INLINE float computeInstImportance(
     const InstanceData* instanceDataBuffer, uint32_t instIndex) {
     const InstanceData &inst = instanceDataBuffer[instIndex];
-    float3 scale;
+    Vector3D scale;
     inst.transform.decompose(&scale, nullptr, nullptr);
     float uniformScale = scale.x;
     float importance = pow2(uniformScale) * inst.lightGeomInstDist.integral();

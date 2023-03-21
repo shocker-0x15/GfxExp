@@ -408,7 +408,7 @@ static float g_cameraDirectionalMovingSpeed;
 static float g_cameraTiltSpeed;
 static Quaternion g_cameraOrientation;
 static Quaternion g_tempCameraOrientation;
-static float3 g_cameraPosition;
+static Point3D g_cameraPosition;
 static std::filesystem::path g_envLightTexturePath;
 
 static PositionEncoding g_positionEncoding = PositionEncoding::HashGrid;
@@ -426,14 +426,14 @@ struct MeshGeometryInfo {
 struct RectangleGeometryInfo {
     float dimX;
     float dimZ;
-    float3 emittance;
+    RGB emittance;
     std::filesystem::path emitterTexPath;
 };
 
 struct MeshInstanceInfo {
     std::string name;
-    float3 beginPosition;
-    float3 endPosition;
+    Point3D beginPosition;
+    Point3D endPosition;
     float beginScale;
     float endScale;
     Quaternion beginOrientation;
@@ -451,15 +451,15 @@ static void parseCommandline(int32_t argc, const char* argv[]) {
 
     Quaternion camOrientation = Quaternion();
 
-    float3 beginPosition = float3(0.0f, 0.0f, 0.0f);
-    float3 endPosition = float3(NAN, NAN, NAN);
+    Point3D beginPosition(0.0f, 0.0f, 0.0f);
+    Point3D endPosition(NAN, NAN, NAN);
     Quaternion beginOrientation = Quaternion();
     Quaternion endOrientation = Quaternion(NAN, NAN, NAN, NAN);
     float beginScale = 1.0f;
     float endScale = NAN;
     float frequency = 5.0f;
     float initTime = 0.0f;
-    float3 emittance = float3(0.0f, 0.0f, 0.0f);
+    RGB emittance(0.0f, 0.0f, 0.0f);
     std::filesystem::path rectEmitterTexPath;
 
     for (int i = 0; i < argc; ++i) {
@@ -505,7 +505,7 @@ static void parseCommandline(int32_t argc, const char* argv[]) {
                 hpprintf("Invalid option.\n");
                 exit(EXIT_FAILURE);
             }
-            g_cameraPosition = float3(atof(argv[i + 1]), atof(argv[i + 2]), atof(argv[i + 3]));
+            g_cameraPosition = Point3D(atof(argv[i + 1]), atof(argv[i + 2]), atof(argv[i + 3]));
             i += 3;
         }
         else if (strncmp(arg, "-cam-roll", 10) == 0 ||
@@ -542,8 +542,8 @@ static void parseCommandline(int32_t argc, const char* argv[]) {
                 printf("Invalid option.\n");
                 exit(EXIT_FAILURE);
             }
-            emittance = float3(atof(argv[i + 1]), atof(argv[i + 2]), atof(argv[i + 3]));
-            if (!allFinite(emittance)) {
+            emittance = RGB(atof(argv[i + 1]), atof(argv[i + 2]), atof(argv[i + 3]));
+            if (!emittance.allFinite()) {
                 printf("Invalid value.\n");
                 exit(EXIT_FAILURE);
             }
@@ -597,7 +597,7 @@ static void parseCommandline(int32_t argc, const char* argv[]) {
             rect.emitterTexPath = rectEmitterTexPath;
             g_meshInfos[name] = info;
 
-            emittance = float3(0.0f, 0.0f, 0.0f);
+            emittance = RGB(0.0f, 0.0f, 0.0f);
             rectEmitterTexPath = "";
 
             i += 2;
@@ -607,8 +607,8 @@ static void parseCommandline(int32_t argc, const char* argv[]) {
                 printf("Invalid option.\n");
                 exit(EXIT_FAILURE);
             }
-            beginPosition = float3(atof(argv[i + 1]), atof(argv[i + 2]), atof(argv[i + 3]));
-            if (!allFinite(beginPosition)) {
+            beginPosition = Point3D(atof(argv[i + 1]), atof(argv[i + 2]), atof(argv[i + 3]));
+            if (!beginPosition.allFinite()) {
                 printf("Invalid value.\n");
                 exit(EXIT_FAILURE);
             }
@@ -636,8 +636,8 @@ static void parseCommandline(int32_t argc, const char* argv[]) {
                 printf("Invalid option.\n");
                 exit(EXIT_FAILURE);
             }
-            endPosition = float3(atof(argv[i + 1]), atof(argv[i + 2]), atof(argv[i + 3]));
-            if (!allFinite(endPosition)) {
+            endPosition = Point3D(atof(argv[i + 1]), atof(argv[i + 2]), atof(argv[i + 3]));
+            if (!endPosition.allFinite()) {
                 printf("Invalid value.\n");
                 exit(EXIT_FAILURE);
             }
@@ -695,15 +695,15 @@ static void parseCommandline(int32_t argc, const char* argv[]) {
             info.beginPosition = beginPosition;
             info.beginOrientation = beginOrientation;
             info.beginScale = beginScale;
-            info.endPosition = allFinite(endPosition) ? endPosition : beginPosition;
+            info.endPosition = endPosition.allFinite() ? endPosition : beginPosition;
             info.endOrientation = endOrientation.allFinite() ? endOrientation : beginOrientation;
             info.endScale = std::isfinite(endScale) ? endScale : beginScale;
             info.frequency = frequency;
             info.initTime = initTime;
             g_meshInstInfos.push_back(info);
 
-            beginPosition = float3(0.0f, 0.0f, 0.0f);
-            endPosition = float3(NAN, NAN, NAN);
+            beginPosition = Point3D(0.0f, 0.0f, 0.0f);
+            endPosition = Point3D(NAN, NAN, NAN);
             beginOrientation = Quaternion();
             endOrientation = Quaternion(NAN, NAN, NAN, NAN);
             beginScale = 1.0f;
@@ -1019,19 +1019,21 @@ int32_t main(int32_t argc, const char* argv[]) try {
         if (std::holds_alternative<MeshGeometryInfo>(info)) {
             const auto &meshInfo = std::get<MeshGeometryInfo>(info);
 
-            createTriangleMeshes(it->first,
-                                 meshInfo.path, meshInfo.matConv,
-                                 scale4x4(meshInfo.preScale),
-                                 gpuEnv.cuContext, &scene);
+            createTriangleMeshes(
+                it->first,
+                meshInfo.path, meshInfo.matConv,
+                scale4x4(meshInfo.preScale),
+                gpuEnv.cuContext, &scene);
         }
         else if (std::holds_alternative<RectangleGeometryInfo>(info)) {
             const auto &rectInfo = std::get<RectangleGeometryInfo>(info);
 
-            createRectangleLight(it->first,
-                                 rectInfo.dimX, rectInfo.dimZ,
-                                 float3(0.01f),
-                                 rectInfo.emitterTexPath, rectInfo.emittance, Matrix4x4(),
-                                 gpuEnv.cuContext, &scene);
+            createRectangleLight(
+                it->first,
+                rectInfo.dimX, rectInfo.dimZ,
+                RGB(0.01f),
+                rectInfo.emitterTexPath, rectInfo.emittance, Matrix4x4(),
+                gpuEnv.cuContext, &scene);
         }
     }
 
@@ -1048,7 +1050,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
             scene.initialSceneAabb.unify(instXfm * groupInst.transform * groupInst.geomGroup->aabb);
 
-            if (info.beginPosition != info.endPosition ||
+            if (any(info.beginPosition != info.endPosition) ||
                 info.beginOrientation != info.endOrientation ||
                 info.beginScale != info.endScale) {
                 auto controller = new InstanceController(
@@ -1061,7 +1063,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         }
     }
 
-    float3 sceneDim = scene.initialSceneAabb.maxP - scene.initialSceneAabb.minP;
+    Vector3D sceneDim = scene.initialSceneAabb.maxP - scene.initialSceneAabb.minP;
     g_cameraPositionalMovingSpeed = 0.003f * std::max({ sceneDim.x, sceneDim.y, sceneDim.z });
     g_cameraDirectionalMovingSpeed = 0.0015f;
     g_cameraTiltSpeed = 0.025f;
@@ -1106,8 +1108,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
     
     cudau::TypedBuffer<uint32_t> numTrainingData[2];
     cudau::TypedBuffer<uint2> tileSize[2];
-    cudau::TypedBuffer<float3AsOrderedInt> targetMinMax[2];
-    cudau::TypedBuffer<float3> targetAvg[2];
+    cudau::TypedBuffer<RGBAsOrderedInt> targetMinMax[2];
+    cudau::TypedBuffer<RGB> targetAvg[2];
     for (int i = 0; i < 2; ++i) {
         numTrainingData[i].initialize(gpuEnv.cuContext, Scene::bufferType, 1, 0);
         tileSize[i].initialize(gpuEnv.cuContext, Scene::bufferType, 1, uint2(8, 8));
@@ -1122,7 +1124,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
     CUDADRV_CHECK(cuMemAlloc(&offsetToSelectTrainingPathOnDevice, sizeof(uint32_t)));
 
     cudau::TypedBuffer<shared::RadianceQuery> trainRadianceQueryBuffer[2];
-    cudau::TypedBuffer<float3> trainTargetBuffer[2];
+    cudau::TypedBuffer<RGB> trainTargetBuffer[2];
     cudau::TypedBuffer<shared::TrainingVertexInfo> trainVertexInfoBuffer;
     cudau::TypedBuffer<shared::TrainingSuffixTerminalInfo> trainSuffixTerminalInfoBuffer;
     cudau::TypedBuffer<shared::LinearCongruentialGenerator> dataShufflerBuffer;
@@ -1179,8 +1181,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
     cudau::TypedBuffer<shared::RadianceQuery> inferenceRadianceQueryBuffer;
     cudau::TypedBuffer<shared::TerminalInfo> inferenceTerminalInfoBuffer;
-    cudau::TypedBuffer<float3> inferredRadianceBuffer;
-    cudau::TypedBuffer<float3> perFrameContributionBuffer;
+    cudau::TypedBuffer<RGB> inferredRadianceBuffer;
+    cudau::TypedBuffer<RGB> perFrameContributionBuffer;
 
     const auto initializeScreenRelatedBuffers = [&]() {
         uint32_t numPixels = renderTargetSizeX * renderTargetSizeY;
@@ -1506,10 +1508,10 @@ int32_t main(int32_t argc, const char* argv[]) try {
     initPickInfo.geomInstSlot = 0xFFFFFFFF;
     initPickInfo.matSlot = 0xFFFFFFFF;
     initPickInfo.primIndex = 0xFFFFFFFF;
-    initPickInfo.positionInWorld = make_float3(0.0f);
-    initPickInfo.albedo = make_float3(0.0f);
-    initPickInfo.emittance = make_float3(0.0f);
-    initPickInfo.normalInWorld = make_float3(0.0f);
+    initPickInfo.positionInWorld = Point3D(0.0f);
+    initPickInfo.albedo = RGB(0.0f);
+    initPickInfo.emittance = RGB(0.0f);
+    initPickInfo.normalInWorld = Normal3D(0.0f);
     cudau::TypedBuffer<shared::PickInfo> pickInfos[2];
     pickInfos[0].initialize(gpuEnv.cuContext, Scene::bufferType, 1, initPickInfo);
     pickInfos[1].initialize(gpuEnv.cuContext, Scene::bufferType, 1, initPickInfo);
@@ -1708,10 +1710,10 @@ int32_t main(int32_t argc, const char* argv[]) try {
             }
 
             float deltaAngle = std::sqrt(deltaX * deltaX + deltaY * deltaY);
-            float3 axis = float3(deltaY, -deltaX, 0);
+            Vector3D axis(deltaY, -deltaX, 0);
             axis /= deltaAngle;
             if (deltaAngle == 0.0f)
-                axis = float3(1, 0, 0);
+                axis = Vector3D(1, 0, 0);
 
             g_cameraOrientation = g_cameraOrientation * qRotateZ(g_cameraTiltSpeed * tiltZ);
             g_tempCameraOrientation =
@@ -1719,7 +1721,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
                 qRotate(g_cameraDirectionalMovingSpeed * deltaAngle, axis);
             g_cameraPosition +=
                 g_tempCameraOrientation.toMatrix3x3() *
-                (g_cameraPositionalMovingSpeed * float3(trackX, trackY, trackZ));
+                (g_cameraPositionalMovingSpeed * Vector3D(trackX, trackY, trackZ));
             if (g_buttonRotate.getState() == false && g_buttonRotate.getTime() == frameIndex) {
                 g_cameraOrientation = g_tempCameraOrientation;
                 deltaX = 0;
@@ -1869,39 +1871,39 @@ int32_t main(int32_t argc, const char* argv[]) try {
                         pickInfoOnHost.normalInWorld.y,
                         pickInfoOnHost.normalInWorld.z);
             ImGui::Text("Albedo: %.3f, %.3f, %.3f",
-                        pickInfoOnHost.albedo.x,
-                        pickInfoOnHost.albedo.y,
-                        pickInfoOnHost.albedo.z);
+                        pickInfoOnHost.albedo.r,
+                        pickInfoOnHost.albedo.g,
+                        pickInfoOnHost.albedo.b);
             ImGui::Text("Emittance: %.3f, %.3f, %.3f",
-                        pickInfoOnHost.emittance.x,
-                        pickInfoOnHost.emittance.y,
-                        pickInfoOnHost.emittance.z);
+                        pickInfoOnHost.emittance.r,
+                        pickInfoOnHost.emittance.g,
+                        pickInfoOnHost.emittance.b);
 
             ImGui::Separator();
 
             uint32_t numTrainingDataOnHost = 0;
             uint2 tileSizeOnHost = uint2(0, 0);
-            float3AsOrderedInt targetMinMaxAsOrderedIntOnHost[2];
-            float3 targetAvgOnHost;
+            RGBAsOrderedInt targetMinMaxAsOrderedIntOnHost[2];
+            RGB targetAvgOnHost;
             if (useNRC) {
                 numTrainingData[bufferIndex].read(&numTrainingDataOnHost, 1, cuStream);
                 tileSize[bufferIndex].read(&tileSizeOnHost, 1, cuStream);
                 targetMinMax[bufferIndex].read(targetMinMaxAsOrderedIntOnHost, 2, cuStream);
                 targetAvg[bufferIndex].read(&targetAvgOnHost, 1, cuStream);
             }
-            float3 targetMinMaxOnHost[2] = {
-                static_cast<float3>(targetMinMaxAsOrderedIntOnHost[0]),
-                static_cast<float3>(targetMinMaxAsOrderedIntOnHost[1])
+            RGB targetMinMaxOnHost[2] = {
+                static_cast<RGB>(targetMinMaxAsOrderedIntOnHost[0]),
+                static_cast<RGB>(targetMinMaxAsOrderedIntOnHost[1])
             };
             ImGui::Text("#Training Data: %6u", numTrainingDataOnHost);
             ImGui::Text("Tile Size: %2u x %2u", tileSizeOnHost.x, tileSizeOnHost.y);
             ImGui::Text("Target Range:");
             ImGui::Text("  Min: %10.4f, %10.4f, %10.4f",
-                        targetMinMaxOnHost[0].x, targetMinMaxOnHost[0].y, targetMinMaxOnHost[0].z);
+                        targetMinMaxOnHost[0].r, targetMinMaxOnHost[0].g, targetMinMaxOnHost[0].b);
             ImGui::Text("  Max: %10.4f, %10.4f, %10.4f",
-                        targetMinMaxOnHost[1].x, targetMinMaxOnHost[1].y, targetMinMaxOnHost[1].z);
+                        targetMinMaxOnHost[1].r, targetMinMaxOnHost[1].g, targetMinMaxOnHost[1].b);
             ImGui::Text("  Avg: %10.4f, %10.4f, %10.4f",
-                        targetAvgOnHost.x, targetAvgOnHost.y, targetAvgOnHost.z);
+                        targetAvgOnHost.r, targetAvgOnHost.g, targetAvgOnHost.b);
             bool prevShowLossValue = showLossValue;
             ImGui::Checkbox("Show Loss", &showLossValue);
             if (showLossValue && prevShowLossValue) {

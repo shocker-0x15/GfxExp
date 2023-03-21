@@ -377,7 +377,7 @@ static float g_cameraDirectionalMovingSpeed;
 static float g_cameraTiltSpeed;
 static Quaternion g_cameraOrientation;
 static Quaternion g_tempCameraOrientation;
-static float3 g_cameraPosition;
+static Point3D g_cameraPosition;
 static std::filesystem::path g_envLightTexturePath;
 
 static bool g_takeScreenShot = false;
@@ -391,14 +391,14 @@ struct MeshGeometryInfo {
 struct RectangleGeometryInfo {
     float dimX;
     float dimZ;
-    float3 emittance;
+    RGB emittance;
     std::filesystem::path emitterTexPath;
 };
 
 struct MeshInstanceInfo {
     std::string name;
-    float3 beginPosition;
-    float3 endPosition;
+    Point3D beginPosition;
+    Point3D endPosition;
     float beginScale;
     float endScale;
     Quaternion beginOrientation;
@@ -416,15 +416,15 @@ static void parseCommandline(int32_t argc, const char* argv[]) {
 
     Quaternion camOrientation = Quaternion();
 
-    float3 beginPosition = float3(0.0f, 0.0f, 0.0f);
-    float3 endPosition = float3(NAN, NAN, NAN);
+    Point3D beginPosition(0.0f, 0.0f, 0.0f);
+    Point3D endPosition(NAN, NAN, NAN);
     Quaternion beginOrientation = Quaternion();
     Quaternion endOrientation = Quaternion(NAN, NAN, NAN, NAN);
     float beginScale = 1.0f;
     float endScale = NAN;
     float frequency = 5.0f;
     float initTime = 0.0f;
-    float3 emittance = float3(0.0f, 0.0f, 0.0f);
+    RGB emittance(0.0f, 0.0f, 0.0f);
     std::filesystem::path rectEmitterTexPath;
 
     for (int i = 0; i < argc; ++i) {
@@ -470,7 +470,7 @@ static void parseCommandline(int32_t argc, const char* argv[]) {
                 hpprintf("Invalid option.\n");
                 exit(EXIT_FAILURE);
             }
-            g_cameraPosition = float3(atof(argv[i + 1]), atof(argv[i + 2]), atof(argv[i + 3]));
+            g_cameraPosition = Point3D(atof(argv[i + 1]), atof(argv[i + 2]), atof(argv[i + 3]));
             i += 3;
         }
         else if (strncmp(arg, "-cam-roll", 10) == 0 ||
@@ -507,8 +507,8 @@ static void parseCommandline(int32_t argc, const char* argv[]) {
                 printf("Invalid option.\n");
                 exit(EXIT_FAILURE);
             }
-            emittance = float3(atof(argv[i + 1]), atof(argv[i + 2]), atof(argv[i + 3]));
-            if (!allFinite(emittance)) {
+            emittance = RGB(atof(argv[i + 1]), atof(argv[i + 2]), atof(argv[i + 3]));
+            if (!emittance.allFinite()) {
                 printf("Invalid value.\n");
                 exit(EXIT_FAILURE);
             }
@@ -562,7 +562,7 @@ static void parseCommandline(int32_t argc, const char* argv[]) {
             rect.emitterTexPath = rectEmitterTexPath;
             g_meshInfos[name] = info;
 
-            emittance = float3(0.0f, 0.0f, 0.0f);
+            emittance = RGB(0.0f, 0.0f, 0.0f);
             rectEmitterTexPath = "";
 
             i += 2;
@@ -572,8 +572,8 @@ static void parseCommandline(int32_t argc, const char* argv[]) {
                 printf("Invalid option.\n");
                 exit(EXIT_FAILURE);
             }
-            beginPosition = float3(atof(argv[i + 1]), atof(argv[i + 2]), atof(argv[i + 3]));
-            if (!allFinite(beginPosition)) {
+            beginPosition = Point3D(atof(argv[i + 1]), atof(argv[i + 2]), atof(argv[i + 3]));
+            if (!beginPosition.allFinite()) {
                 printf("Invalid value.\n");
                 exit(EXIT_FAILURE);
             }
@@ -601,8 +601,8 @@ static void parseCommandline(int32_t argc, const char* argv[]) {
                 printf("Invalid option.\n");
                 exit(EXIT_FAILURE);
             }
-            endPosition = float3(atof(argv[i + 1]), atof(argv[i + 2]), atof(argv[i + 3]));
-            if (!allFinite(endPosition)) {
+            endPosition = Point3D(atof(argv[i + 1]), atof(argv[i + 2]), atof(argv[i + 3]));
+            if (!endPosition.allFinite()) {
                 printf("Invalid value.\n");
                 exit(EXIT_FAILURE);
             }
@@ -660,15 +660,15 @@ static void parseCommandline(int32_t argc, const char* argv[]) {
             info.beginPosition = beginPosition;
             info.beginOrientation = beginOrientation;
             info.beginScale = beginScale;
-            info.endPosition = allFinite(endPosition) ? endPosition : beginPosition;
+            info.endPosition = endPosition.allFinite() ? endPosition : beginPosition;
             info.endOrientation = endOrientation.allFinite() ? endOrientation : beginOrientation;
             info.endScale = std::isfinite(endScale) ? endScale : beginScale;
             info.frequency = frequency;
             info.initTime = initTime;
             g_meshInstInfos.push_back(info);
 
-            beginPosition = float3(0.0f, 0.0f, 0.0f);
-            endPosition = float3(NAN, NAN, NAN);
+            beginPosition = Point3D(0.0f, 0.0f, 0.0f);
+            endPosition = Point3D(NAN, NAN, NAN);
             beginOrientation = Quaternion();
             endOrientation = Quaternion(NAN, NAN, NAN, NAN);
             beginScale = 1.0f;
@@ -946,19 +946,21 @@ int32_t main(int32_t argc, const char* argv[]) try {
         if (std::holds_alternative<MeshGeometryInfo>(info)) {
             const auto &meshInfo = std::get<MeshGeometryInfo>(info);
 
-            createTriangleMeshes(it->first,
-                                 meshInfo.path, meshInfo.matConv,
-                                 scale4x4(meshInfo.preScale),
-                                 gpuEnv.cuContext, &scene);
+            createTriangleMeshes(
+                it->first,
+                meshInfo.path, meshInfo.matConv,
+                scale4x4(meshInfo.preScale),
+                gpuEnv.cuContext, &scene);
         }
         else if (std::holds_alternative<RectangleGeometryInfo>(info)) {
             const auto &rectInfo = std::get<RectangleGeometryInfo>(info);
 
-            createRectangleLight(it->first,
-                                 rectInfo.dimX, rectInfo.dimZ,
-                                 float3(0.01f),
-                                 rectInfo.emitterTexPath, rectInfo.emittance, Matrix4x4(),
-                                 gpuEnv.cuContext, &scene);
+            createRectangleLight(
+                it->first,
+                rectInfo.dimX, rectInfo.dimZ,
+                RGB(0.01f),
+                rectInfo.emitterTexPath, rectInfo.emittance, Matrix4x4(),
+                gpuEnv.cuContext, &scene);
         }
     }
 
@@ -975,7 +977,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
             scene.initialSceneAabb.unify(instXfm * groupInst.transform * groupInst.geomGroup->aabb);
 
-            if (info.beginPosition != info.endPosition ||
+            if (any(info.beginPosition != info.endPosition) ||
                 info.beginOrientation != info.endOrientation ||
                 info.beginScale != info.endScale) {
                 auto controller = new InstanceController(
@@ -988,7 +990,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         }
     }
 
-    float3 sceneDim = scene.initialSceneAabb.maxP - scene.initialSceneAabb.minP;
+    Vector3D sceneDim = scene.initialSceneAabb.maxP - scene.initialSceneAabb.minP;
     g_cameraPositionalMovingSpeed = 0.003f * std::max({ sceneDim.x, sceneDim.y, sceneDim.z });
     g_cameraDirectionalMovingSpeed = 0.0015f;
     g_cameraTiltSpeed = 0.025f;
@@ -1028,8 +1030,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
     uint3 gridDimension;
     uint32_t numCells;
     uint32_t numLightSlots;
-    float3 gridOrigin;
-    float3 gridCellSize;
+    Point3D gridOrigin;
+    Vector3D gridCellSize;
     cudau::TypedBuffer<shared::Reservoir<shared::LightSample>> reservoirs[2];
     cudau::TypedBuffer<shared::ReservoirInfo> reservoirInfos[2];
     cudau::TypedBuffer<shared::PCG32RNG> lightSlotRngs;
@@ -1042,7 +1044,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         numCells = gridDimension.x * gridDimension.y * gridDimension.z;
         numLightSlots = numCells * shared::kNumLightSlotsPerCell;
         gridOrigin = gridAabb.minP;
-        gridCellSize = (gridAabb.maxP - gridAabb.minP) / float3(gridDimension);
+        gridCellSize = (gridAabb.maxP - gridAabb.minP) / Vector3D(gridDimension.x, gridDimension.y, gridDimension.z);
         for (int i = 0; i < 2; ++i) {
             reservoirs[i].initialize(gpuEnv.cuContext, Scene::bufferType, numLightSlots);
             reservoirInfos[i].initialize(gpuEnv.cuContext, Scene::bufferType, numLightSlots);
@@ -1379,10 +1381,10 @@ int32_t main(int32_t argc, const char* argv[]) try {
     initPickInfo.geomInstSlot = 0xFFFFFFFF;
     initPickInfo.matSlot = 0xFFFFFFFF;
     initPickInfo.primIndex = 0xFFFFFFFF;
-    initPickInfo.positionInWorld = make_float3(0.0f);
-    initPickInfo.albedo = make_float3(0.0f);
-    initPickInfo.emittance = make_float3(0.0f);
-    initPickInfo.normalInWorld = make_float3(0.0f);
+    initPickInfo.positionInWorld = Point3D(0.0f);
+    initPickInfo.albedo = RGB(0.0f);
+    initPickInfo.emittance = RGB(0.0f);
+    initPickInfo.normalInWorld = Normal3D(0.0f);
     cudau::TypedBuffer<shared::PickInfo> pickInfos[2];
     pickInfos[0].initialize(gpuEnv.cuContext, Scene::bufferType, 1, initPickInfo);
     pickInfos[1].initialize(gpuEnv.cuContext, Scene::bufferType, 1, initPickInfo);
@@ -1558,10 +1560,10 @@ int32_t main(int32_t argc, const char* argv[]) try {
             }
 
             float deltaAngle = std::sqrt(deltaX * deltaX + deltaY * deltaY);
-            float3 axis = float3(deltaY, -deltaX, 0);
+            Vector3D axis(deltaY, -deltaX, 0);
             axis /= deltaAngle;
             if (deltaAngle == 0.0f)
-                axis = float3(1, 0, 0);
+                axis = Vector3D(1, 0, 0);
 
             g_cameraOrientation = g_cameraOrientation * qRotateZ(g_cameraTiltSpeed * tiltZ);
             g_tempCameraOrientation =
@@ -1569,7 +1571,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
                 qRotate(g_cameraDirectionalMovingSpeed * deltaAngle, axis);
             g_cameraPosition +=
                 g_tempCameraOrientation.toMatrix3x3() *
-                (g_cameraPositionalMovingSpeed * float3(trackX, trackY, trackZ));
+                (g_cameraPositionalMovingSpeed * Vector3D(trackX, trackY, trackZ));
             if (g_buttonRotate.getState() == false && g_buttonRotate.getTime() == frameIndex) {
                 g_cameraOrientation = g_tempCameraOrientation;
                 deltaX = 0;
@@ -1716,13 +1718,13 @@ int32_t main(int32_t argc, const char* argv[]) try {
                         pickInfoOnHost.normalInWorld.y,
                         pickInfoOnHost.normalInWorld.z);
             ImGui::Text("Albedo: %.3f, %.3f, %.3f",
-                        pickInfoOnHost.albedo.x,
-                        pickInfoOnHost.albedo.y,
-                        pickInfoOnHost.albedo.z);
+                        pickInfoOnHost.albedo.r,
+                        pickInfoOnHost.albedo.g,
+                        pickInfoOnHost.albedo.b);
             ImGui::Text("Emittance: %.3f, %.3f, %.3f",
-                        pickInfoOnHost.emittance.x,
-                        pickInfoOnHost.emittance.y,
-                        pickInfoOnHost.emittance.z);
+                        pickInfoOnHost.emittance.r,
+                        pickInfoOnHost.emittance.g,
+                        pickInfoOnHost.emittance.b);
             ImGui::Text("Cell: %u", pickInfoOnHost.cellLinearIndex);
 
             ImGui::Separator();

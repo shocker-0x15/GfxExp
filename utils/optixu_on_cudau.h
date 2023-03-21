@@ -22,14 +22,48 @@ namespace optixu {
 #if defined(__CUDA_ARCH__) || defined(OPTIXU_Platform_CodeCompletion)
         static constexpr bool isNativeType =
             is_any_v<T,
-            float, float2, float3, float4,
-            int32_t, int2, int3, int4,
-            uint32_t, uint2, uint3, uint4>; // other types?
+            float, float2, float4,
+            int32_t, int2, int4,
+            uint32_t, uint2, uint4>; // other types?
         static constexpr size_t typeSize = sizeof(T);
-        static_assert(typeSize % sizeof(uint32_t) == 0 && typeSize >= 4 && typeSize <= 16,
+        static_assert(typeSize == 4 || typeSize == 8 || typeSize == 16,
                       "Unsupported size of type.");
 #endif
         CUsurfObject m_surfObject;
+
+#if defined(__CUDA_ARCH__) || defined(OPTIXU_Platform_CodeCompletion)
+        template <typename U>
+        RT_DEVICE_FUNCTION void write(
+            uint32_t xAddr, uint32_t yAddr, const U &value, cudaSurfaceBoundaryMode boundaryMode) const {
+            if constexpr (sizeof(U) == 4) {
+                union Alias {
+                    U targetType;
+                    uint32_t uiValue;
+                    RT_DEVICE_FUNCTION Alias() {}
+                } u;
+                u.targetType = value;
+                surf2Dwrite(u.uiValue, m_surfObject, xAddr, yAddr, boundaryMode);
+            }
+            if constexpr (sizeof(U) == 8) {
+                union Alias {
+                    U targetType;
+                    uint2 uiValue;
+                    RT_DEVICE_FUNCTION Alias() {}
+                } u;
+                u.targetType = value;
+                surf2Dwrite(u.uiValue, m_surfObject, xAddr, yAddr, boundaryMode);
+            }
+            if constexpr (sizeof(U) == 12 || sizeof(U) == 16) {
+                union Alias {
+                    U targetType;
+                    uint4 uiValue;
+                    RT_DEVICE_FUNCTION Alias() {}
+                } u;
+                u.targetType = value;
+                surf2Dwrite(u.uiValue, m_surfObject, xAddr, yAddr, boundaryMode);
+            }
+        }
+#endif
 
     public:
         RT_COMMON_FUNCTION NativeBlockBuffer2D() : m_surfObject(0) {}
@@ -64,16 +98,7 @@ namespace optixu {
                     u.uiValue = surf2Dread<uint2>(m_surfObject, idx.x * sizeof(uint2), idx.y, boundaryMode);
                     return u.targetType;
                 }
-                if constexpr (sizeof(T) == 12) {
-                    union U {
-                        T targetType;
-                        uint3 uiValue;
-                        RT_DEVICE_FUNCTION U() {}
-                    } u;
-                    u.uiValue = surf2Dread<uint3>(m_surfObject, idx.x * sizeof(uint3), idx.y, boundaryMode);
-                    return u.targetType;
-                }
-                if constexpr (sizeof(T) == 16) {
+                if constexpr (sizeof(T) == 12 || sizeof(T) == 16) {
                     union U {
                         T targetType;
                         uint4 uiValue;
@@ -86,51 +111,11 @@ namespace optixu {
             return T();
         }
         RT_DEVICE_FUNCTION void write(uint2 idx, const T &value, cudaSurfaceBoundaryMode boundaryMode = cudaBoundaryModeTrap) const {
-            if constexpr (isNativeType) {
-                surf2Dwrite(value, m_surfObject, idx.x * sizeof(T), idx.y, boundaryMode);
-            }
-            else {
-                if constexpr (sizeof(T) == 4) {
-                    union U {
-                        T targetType;
-                        uint32_t uiValue;
-                        RT_DEVICE_FUNCTION U() {}
-                    } u;
-                    u.targetType = value;
-                    surf2Dwrite(u.uiValue, m_surfObject, idx.x * sizeof(uint32_t), idx.y, boundaryMode);
-                }
-                if constexpr (sizeof(T) == 8) {
-                    union U {
-                        T targetType;
-                        uint2 uiValue;
-                        RT_DEVICE_FUNCTION U() {}
-                    } u;
-                    u.targetType = value;
-                    surf2Dwrite(u.uiValue, m_surfObject, idx.x * sizeof(uint2), idx.y, boundaryMode);
-                }
-                if constexpr (sizeof(T) == 12) {
-                    union U {
-                        T targetType;
-                        uint3 uiValue;
-                        RT_DEVICE_FUNCTION U() {}
-                    } u;
-                    u.targetType = value;
-                    surf2Dwrite(u.uiValue, m_surfObject, idx.x * sizeof(uint3), idx.y, boundaryMode);
-                }
-                if constexpr (sizeof(T) == 16) {
-                    union U {
-                        T targetType;
-                        uint4 uiValue;
-                        RT_DEVICE_FUNCTION U() {}
-                    } u;
-                    u.targetType = value;
-                    surf2Dwrite(u.uiValue, m_surfObject, idx.x * sizeof(uint4), idx.y, boundaryMode);
-                }
-            }
+            write(idx.x * sizeof(T), idx.y, value, boundaryMode);
         }
         template <size_t offsetInBytes, typename U>
         RT_DEVICE_FUNCTION void writePartially(uint2 idx, U value, cudaSurfaceBoundaryMode boundaryMode = cudaBoundaryModeTrap) const {
-            surf2Dwrite(value, m_surfObject, idx.x * sizeof(T) + offsetInBytes, idx.y, boundaryMode);
+            write(idx.x * sizeof(T) + offsetInBytes, idx.y, value, boundaryMode);
         }
 
         RT_DEVICE_FUNCTION T read(int2 idx, cudaSurfaceBoundaryMode boundaryMode = cudaBoundaryModeTrap) const {

@@ -548,21 +548,21 @@ struct InstanceController {
 
     float curScale;
     Quaternion curOrientation;
-    float3 curPosition;
+    Point3D curPosition;
 
     float beginScale;
     Quaternion beginOrientation;
-    float3 beginPosition;
+    Point3D beginPosition;
     float endScale;
     Quaternion endOrientation;
-    float3 endPosition;
+    Point3D endPosition;
     float time;
     float frequency;
 
     InstanceController(
         Instance* _inst,
-        float _beginScale, const Quaternion &_beginOrienatation, const float3 &_beginPosition,
-        float _endScale, const Quaternion &_endOrienatation, const float3 &_endPosition,
+        float _beginScale, const Quaternion &_beginOrienatation, const Point3D &_beginPosition,
+        float _endScale, const Quaternion &_endOrienatation, const Point3D &_endPosition,
         float _frequency, float initTime) :
         inst(_inst),
         beginScale(_beginScale), beginOrientation(_beginOrienatation), beginPosition(_beginPosition),
@@ -584,12 +584,12 @@ struct InstanceController {
         inst->matM2W =
             Matrix4x4(curOrientation.toMatrix3x3() * scale3x3(curScale), curPosition) *
             inst->geomGroupInst.transform;
-        inst->nMatM2W = transpose(inverse(inst->matM2W.getUpperLeftMatrix()));
+        inst->nMatM2W = transpose(invert(inst->matM2W.getUpperLeftMatrix()));
 
         Matrix4x4 tMatM2W = transpose(inst->matM2W);
         inst->optixInst.setTransform(reinterpret_cast<const float*>(&tMatM2W));
 
-        float3 scale;
+        Vector3D scale;
         inst->matM2W.decompose(&scale, nullptr, nullptr);
         float uniformScale = scale.x;
 
@@ -1105,19 +1105,19 @@ void createTriangleMeshes(
 void createRectangleLight(
     const std::string &meshName,
     float width, float depth,
-    const float3 &reflectance,
+    const RGB &reflectance,
     const std::filesystem::path &emittancePath,
-    const float3 &immEmittance,
+    const RGB &immEmittance,
     const Matrix4x4 &transform,
     CUcontext cuContext, Scene* scene, bool allocateGfxResource = false);
 
 void createSphereLight(
     const std::string &meshName,
     float radius,
-    const float3 &reflectance,
+    const RGB &reflectance,
     const std::filesystem::path &emittancePath,
-    const float3 &immEmittance,
-    const float3 &position,
+    const RGB &immEmittance,
+    const Point3D &position,
     CUcontext cuContext, Scene* scene, bool allocateGfxResource = false);
 
 Instance* createInstance(

@@ -13,8 +13,9 @@ CUDA_DEVICE_KERNEL void copyToLinearBuffers(
     float4* linearNormalBuffer,
     float2* linearMotionVectorBuffer,
     uint2 imageSize) {
-    uint2 launchIndex = make_uint2(blockDim.x * blockIdx.x + threadIdx.x,
-                                   blockDim.y * blockIdx.y + threadIdx.y);
+    uint2 launchIndex = make_uint2(
+        blockDim.x * blockIdx.x + threadIdx.x,
+        blockDim.y * blockIdx.y + threadIdx.y);
     if (launchIndex.x >= imageSize.x ||
         launchIndex.y >= imageSize.y)
         return;
@@ -22,10 +23,10 @@ CUDA_DEVICE_KERNEL void copyToLinearBuffers(
     uint32_t linearIndex = launchIndex.y * imageSize.x + launchIndex.x;
     linearColorBuffer[linearIndex] = colorAccumBuffer.read(launchIndex);
     linearAlbedoBuffer[linearIndex] = albedoAccumBuffer.read(launchIndex);
-    float3 normal = getXYZ(normalAccumBuffer.read(launchIndex));
+    Normal3D normal(getXYZ(normalAccumBuffer.read(launchIndex)));
     if (normal.x != 0 || normal.y != 0 || normal.z != 0)
-        normal = normalize(normal);
-    linearNormalBuffer[linearIndex] = make_float4(normal, 1.0f);
+        normal.normalize();
+    linearNormalBuffer[linearIndex] = make_float4(normal.toNative(), 1.0f);
     float4 motionVector = motionVectorBuffer.read(launchIndex);
     linearMotionVectorBuffer[linearIndex] = make_float2(motionVector.x, motionVector.y);
 }
@@ -37,8 +38,9 @@ CUDA_DEVICE_KERNEL void visualizeToOutputBuffer(
     void* linearBuffer, BufferToDisplay bufferTypeToDisplay,
     float motionVectorOffset, float motionVectorScale,
     optixu::NativeBlockBuffer2D<float4> outputBuffer) {
-    uint2 launchIndex = make_uint2(blockDim.x * blockIdx.x + threadIdx.x,
-                                   blockDim.y * blockIdx.y + threadIdx.y);
+    uint2 launchIndex = make_uint2(
+        blockDim.x * blockIdx.x + threadIdx.x,
+        blockDim.y * blockIdx.y + threadIdx.y);
     if (launchIndex.x >= plp.s->imageSize.x ||
         launchIndex.y >= plp.s->imageSize.y)
         return;
@@ -52,9 +54,9 @@ CUDA_DEVICE_KERNEL void visualizeToOutputBuffer(
         if (bufferTypeToDisplay == BufferToDisplay::DirectlyVisualizedPrediction) {
             const TerminalInfo &terminalInfo = plp.s->inferenceTerminalInfoBuffer[linearIndex];
 
-            float3 radiance = make_float3(0.0f, 0.0f, 0.0f);
+            RGB radiance(0.0f, 0.0f, 0.0f);
             if (terminalInfo.hasQuery) {
-                radiance = max(plp.s->inferredRadianceBuffer[linearIndex], make_float3(0.0f, 0.0f, 0.0f));
+                radiance = max(plp.s->inferredRadianceBuffer[linearIndex], RGB(0.0f, 0.0f, 0.0f));
                 if (plp.f->radianceScale > 0)
                     radiance /= plp.f->radianceScale;
 
@@ -63,7 +65,7 @@ CUDA_DEVICE_KERNEL void visualizeToOutputBuffer(
                     radiance *= (terminalQuery.diffuseReflectance + terminalQuery.specularReflectance);
                 }
             }
-            value = make_float4(terminalInfo.alpha * radiance, 1.0f);
+            value = make_float4((terminalInfo.alpha * radiance).toNative(), 1.0f);
         }
         else {
             auto typedLinearBuffer = reinterpret_cast<const float4*>(linearBuffer);
@@ -87,18 +89,19 @@ CUDA_DEVICE_KERNEL void visualizeToOutputBuffer(
     case BufferToDisplay::Flow: {
         auto typedLinearBuffer = reinterpret_cast<const float2*>(linearBuffer);
         float2 f2Value = typedLinearBuffer[linearIndex];
-        value = make_float4(fminf(fmaxf(motionVectorScale * f2Value.x + motionVectorOffset, 0.0f), 1.0f),
-                            fminf(fmaxf(motionVectorScale * f2Value.y + motionVectorOffset, 0.0f), 1.0f),
-                            motionVectorOffset, 1.0f);
+        value = make_float4(
+            fminf(fmaxf(motionVectorScale * f2Value.x + motionVectorOffset, 0.0f), 1.0f),
+            fminf(fmaxf(motionVectorScale * f2Value.y + motionVectorOffset, 0.0f), 1.0f),
+            motionVectorOffset, 1.0f);
         break;
     }
     case BufferToDisplay::RenderingPathLength: {
         const TerminalInfo &terminalInfo = plp.s->inferenceTerminalInfoBuffer[linearIndex];
         float t = fminf((terminalInfo.pathLength - 1) / 5.0f, 1.0f);
-        const float3 R = make_float3(1.0f, 0.0f, 0.0f);
-        const float3 G = make_float3(0.0f, 1.0f, 0.0f);
-        const float3 B = make_float3(0.0f, 0.0f, 1.0f);
-        float3 v = make_float3(0.0f);
+        const RGB R(1.0f, 0.0f, 0.0f);
+        const RGB G(0.0f, 1.0f, 0.0f);
+        const RGB B(0.0f, 0.0f, 1.0f);
+        RGB v(0.0f);
         if (t < 0.5f) {
             float tt = 2 * t;
             v = B * (1.0f - tt) + G * tt;
@@ -107,7 +110,7 @@ CUDA_DEVICE_KERNEL void visualizeToOutputBuffer(
             float tt = 2 * (t - 0.5f);
             v = G * (1.0f - tt) + R * tt;
         }
-        value = make_float4(v, 1.0f);
+        value = make_float4(v.toNative(), 1.0f);
         break;
     }
     default:

@@ -9,19 +9,19 @@ CUDA_DEVICE_KERNEL void RT_AH_NAME(visibility)() {
 
 
 
-CUDA_DEVICE_FUNCTION CUDA_INLINE void convertToPolar(const float3 &dir, float* phi, float* theta) {
+CUDA_DEVICE_FUNCTION CUDA_INLINE void convertToPolar(const Vector3D &dir, float* phi, float* theta) {
     float z = std::fmin(std::fmax(dir.z, -1.0f), 1.0f);
     *theta = std::acos(z);
     *phi = std::atan2(dir.y, dir.x);
 }
 
 CUDA_DEVICE_FUNCTION CUDA_INLINE void createRadianceQuery(
-    const float3 &positionInWorld, const float3 &normalInWorld, const float3 &scatteredDirInWorld,
-    float roughness, const float3 &diffuseReflectance, const float3 &specularReflectance,
+    const Point3D &positionInWorld, const Normal3D &normalInWorld, const Vector3D &scatteredDirInWorld,
+    float roughness, const RGB &diffuseReflectance, const RGB &specularReflectance,
     RadianceQuery* query) {
     float phi, theta;
     query->position = plp.s->sceneAABB->normalize(positionInWorld);
-    convertToPolar(normalInWorld, &phi, &theta);
+    convertToPolar(Vector3D(normalInWorld), &phi, &theta);
     query->normal_phi = phi;
     query->normal_theta = theta;
     convertToPolar(scatteredDirInWorld, &phi, &theta);
@@ -34,8 +34,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void createRadianceQuery(
 
 static constexpr bool useSolidAngleSampling = false;
 
-CUDA_DEVICE_FUNCTION CUDA_INLINE float3 performNextEventEstimation(
-    const float3 &shadingPoint, const float3 &vOutLocal, const ReferenceFrame &shadingFrame, const BSDF &bsdf,
+CUDA_DEVICE_FUNCTION CUDA_INLINE RGB performNextEventEstimation(
+    const Point3D &shadingPoint, const Vector3D &vOutLocal, const ReferenceFrame &shadingFrame, const BSDF &bsdf,
     PCG32RNG &rng) {
     float uLight = rng.getFloat0cTo1o();
     bool selectEnvLight = false;
@@ -64,19 +64,19 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE float3 performNextEventEstimation(
         &lightSample, &areaPDensity);
     areaPDensity *= probToSampleCurLightType;
 
-    float3 shadowRay = lightSample.atInfinity ?
-        lightSample.position :
+    Vector3D shadowRay = lightSample.atInfinity ?
+        Vector3D(lightSample.position) :
         (lightSample.position - shadingPoint);
-    float dist2 = sqLength(shadowRay);
+    float dist2 = shadowRay.sqLength();
     shadowRay /= std::sqrt(dist2);
-    float3 vInLocal = shadingFrame.toLocal(shadowRay);
+    Vector3D vInLocal = shadingFrame.toLocal(shadowRay);
     float lpCos = std::fabs(dot(shadowRay, lightSample.normal));
     float bsdfPDensity = bsdf.evaluatePDF(vOutLocal, vInLocal) * lpCos / dist2;
     if (!isfinite(bsdfPDensity))
         bsdfPDensity = 0.0f;
     float lightPDensity = areaPDensity;
     float misWeight = pow2(lightPDensity) / (pow2(bsdfPDensity) + pow2(lightPDensity));
-    float3 ret = make_float3(0.0f);
+    RGB ret(0.0f);
     if (areaPDensity > 0.0f)
         ret = performDirectLighting<PathTracingRayType, true>(
             shadingPoint, vOutLocal, shadingFrame, bsdf, lightSample) * (misWeight / areaPDensity);
@@ -99,9 +99,9 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_raygen_generic() {
     GBuffer1 gBuffer1 = plp.s->GBuffer1[bufIdx].read(launchIndex);
     GBuffer2 gBuffer2 = plp.s->GBuffer2[bufIdx].read(launchIndex);
 
-    float3 positionInWorld = gBuffer0.positionInWorld;
-    float3 shadingNormalInWorld = gBuffer1.normalInWorld;
-    float2 texCoord = make_float2(gBuffer0.texCoord_x, gBuffer1.texCoord_y);
+    Point3D positionInWorld = gBuffer0.positionInWorld;
+    Normal3D shadingNormalInWorld = gBuffer1.normalInWorld;
+    Point2D texCoord(gBuffer0.texCoord_x, gBuffer1.texCoord_y);
     uint32_t materialSlot = gBuffer2.materialSlot;
 
     const PerspectiveCamera &camera = plp.f->camera;
@@ -137,28 +137,28 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_raygen_generic() {
     }
 
     bool useEnvLight = plp.s->envLightTexture && plp.f->enableEnvLight;
-    float3 contribution = make_float3(0.001f, 0.001f, 0.001f);
+    RGB contribution(0.001f, 0.001f, 0.001f);
     bool renderingPathEndsWithCache = false;
     uint32_t pathLength = 1;
     if (materialSlot != 0xFFFFFFFF) {
-        float3 alpha = make_float3(1.0f);
+        RGB alpha(1.0f);
         float initImportance = sRGB_calcLuminance(alpha);
         PCG32RNG rng = plp.s->rngBuffer.read(launchIndex);
 
         // JP: 最初の交点におけるシェーディング。
         // EN: Shading on the first hit.
-        float3 vIn;
+        Vector3D vIn;
         float dirPDensity;
         float primaryPathSpread;
-        float3 localThroughput;
+        RGB localThroughput;
         uint32_t trainDataIndex;
         {
             const MaterialData &mat = plp.s->materialDataBuffer[materialSlot];
 
             // TODO?: Use true geometric normal.
-            float3 geometricNormalInWorld = shadingNormalInWorld;
-            float3 vOut = camera.position - positionInWorld;
-            float primaryDist2 = sqLength(vOut);
+            Normal3D geometricNormalInWorld = shadingNormalInWorld;
+            Vector3D vOut = camera.position - positionInWorld;
+            float primaryDist2 = vOut.sqLength();
             vOut /= std::sqrt(primaryDist2);
             float primaryDotVN = dot(vOut, geometricNormalInWorld);
             float frontHit = primaryDotVN >= 0.0f ? 1.0f : -1.0f;
@@ -168,14 +168,14 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_raygen_generic() {
 
             ReferenceFrame shadingFrame(shadingNormalInWorld);
             positionInWorld = offsetRayOriginNaive(positionInWorld, frontHit * geometricNormalInWorld);
-            float3 vOutLocal = shadingFrame.toLocal(vOut);
+            Vector3D vOutLocal = shadingFrame.toLocal(vOut);
 
             // JP: 光源を直接見ている場合の寄与を蓄積。
             // EN: Accumulate the contribution from a light source directly seeing.
-            contribution = make_float3(0.0f);
+            contribution = RGB(0.0f);
             if (vOutLocal.z > 0 && mat.emittance) {
                 float4 texValue = tex2DLod<float4>(mat.emittance, texCoord.x, texCoord.y, 0.0f);
-                float3 emittance = make_float3(texValue);
+                RGB emittance(getXYZ(texValue));
                 contribution += alpha * emittance / Pi;
             }
 
@@ -183,12 +183,12 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_raygen_generic() {
             bsdf.setup(mat, texCoord);
 
             // Next event estimation (explicit light sampling) on the first hit.
-            float3 directContNEE = performNextEventEstimation(
+            RGB directContNEE = performNextEventEstimation(
                 positionInWorld, vOutLocal, shadingFrame, bsdf, rng);
             contribution += alpha * directContNEE;
 
             // generate a next ray.
-            float3 vInLocal;
+            Vector3D vInLocal;
             localThroughput = bsdf.sampleThroughput(
                 vOutLocal, rng.getFloat0cTo1o(), rng.getFloat0cTo1o(),
                 &vInLocal, &dirPDensity);
@@ -203,7 +203,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_raygen_generic() {
 
                     if (trainDataIndex < trainBufferSize) {
                         float roughness;
-                        float3 diffuseReflectance, specularReflectance;
+                        RGB diffuseReflectance, specularReflectance;
                         bsdf.getSurfaceParameters(
                             &diffuseReflectance, &specularReflectance, &roughness);
 
@@ -261,8 +261,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_raygen_generic() {
             rwPayload.trainingSuffixEndsWithCache = false;
         }
         rwPayload.pathLength = pathLength;
-        float3 rayOrg = positionInWorld;
-        float3 rayDir = vIn;
+        Point3D rayOrg = positionInWorld;
+        Vector3D rayDir = vIn;
         while (true) {
             bool isValidSampling = rwPayload.prevDirPDensity > 0.0f && isfinite(rwPayload.prevDirPDensity);
             if (!isValidSampling)
@@ -280,7 +280,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_raygen_generic() {
             constexpr PathTracingRayType pathTraceRayType = useNRC ?
                 PathTracingRayType::NRC : PathTracingRayType::Baseline;
             PathTraceRayPayloadSignature<useNRC>::trace(
-                plp.f->travHandle, rayOrg, rayDir,
+                plp.f->travHandle, rayOrg.toNative(), rayDir.toNative(),
                 0.0f, FLT_MAX, 0.0f, 0xFF, OPTIX_RAY_FLAG_NONE,
                 pathTraceRayType, maxNumRayTypes, pathTraceRayType,
                 woPayloadPtr, rwPayloadPtr);
@@ -311,7 +311,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_raygen_generic() {
         if (useEnvLight) {
             float u = texCoord.x, v = texCoord.y;
             float4 texValue = tex2DLod<float4>(plp.s->envLightTexture, u, v, 0.0f);
-            float3 luminance = plp.f->envLightPowerCoeff * make_float3(texValue);
+            RGB luminance = plp.f->envLightPowerCoeff * RGB(getXYZ(texValue));
             contribution = luminance;
         }
     }
@@ -323,7 +323,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_raygen_generic() {
         // EN: When a ray goes infinity or the path ends with Russain roulette.
         if (!renderingPathEndsWithCache) {
             TerminalInfo terminalInfo;
-            terminalInfo.alpha = make_float3(0.0f, 0.0f, 0.0f);
+            terminalInfo.alpha = RGB(0.0f, 0.0f, 0.0f);
             terminalInfo.pathLength = pathLength;
             terminalInfo.hasQuery = false;
             terminalInfo.isTrainingPixel = isTrainingPath;
@@ -337,12 +337,12 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_raygen_generic() {
         (void)renderingPathEndsWithCache;
         (void)pathLength;
 
-        float3 prevColorResult = make_float3(0.0f, 0.0f, 0.0f);
+        RGB prevColorResult = RGB(0.0f, 0.0f, 0.0f);
         if (plp.f->numAccumFrames > 0)
-            prevColorResult = getXYZ(plp.s->beautyAccumBuffer.read(launchIndex));
+            prevColorResult = RGB(getXYZ(plp.s->beautyAccumBuffer.read(launchIndex)));
         float curWeight = 1.0f / (1 + plp.f->numAccumFrames);
-        float3 colorResult = (1 - curWeight) * prevColorResult + curWeight * contribution;
-        plp.s->beautyAccumBuffer.write(launchIndex, make_float4(colorResult, 1.0f));
+        RGB colorResult = (1 - curWeight) * prevColorResult + curWeight * contribution;
+        plp.s->beautyAccumBuffer.write(launchIndex, make_float4(colorResult.toNative(), 1.0f));
     }
 }
 
@@ -360,14 +360,14 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_closestHit_generic() {
     PathTraceRayPayloadSignature<useNRC>::get(&woPayload, &rwPayload);
     PCG32RNG &rng = rwPayload->rng;
 
-    const float3 rayOrigin = optixGetWorldRayOrigin();
+    const Point3D rayOrigin(optixGetWorldRayOrigin());
 
     auto hp = HitPointParameter::get();
-    float3 positionInWorld;
-    float3 shadingNormalInWorld;
-    float3 texCoord0DirInWorld;
-    float3 geometricNormalInWorld;
-    float2 texCoord;
+    Point3D positionInWorld;
+    Normal3D shadingNormalInWorld;
+    Vector3D texCoord0DirInWorld;
+    Normal3D geometricNormalInWorld;
+    Point2D texCoord;
     float hypAreaPDensity;
     computeSurfacePoint<true, useSolidAngleSampling>(
         inst, geomInst, hp.primIndex, hp.b1, hp.b2,
@@ -377,15 +377,15 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_closestHit_generic() {
 
     const MaterialData &mat = plp.s->materialDataBuffer[geomInst.materialSlot];
 
-    float3 vOut = normalize(-optixGetWorldRayDirection());
+    Vector3D vOut = normalize(-Vector3D(optixGetWorldRayDirection()));
     float frontHit = dot(vOut, geometricNormalInWorld) >= 0.0f ? 1.0f : -1.0f;
 
     ReferenceFrame shadingFrame(shadingNormalInWorld, texCoord0DirInWorld);
-    float3 modLocalNormal = mat.readModifiedNormal(mat.normal, mat.normalDimInfo, texCoord);
+    Normal3D modLocalNormal = mat.readModifiedNormal(mat.normal, mat.normalDimInfo, texCoord);
     if (plp.f->enableBumpMapping)
         applyBumpMapping(modLocalNormal, &shadingFrame);
     positionInWorld = offsetRayOrigin(positionInWorld, frontHit * geometricNormalInWorld);
-    float3 vOutLocal = shadingFrame.toLocal(vOut);
+    Vector3D vOutLocal = shadingFrame.toLocal(vOut);
     //if (!allFinite(vOutLocal)) {
     //    printf("(%g, %g, %g), (%g, %g, %g), (%g, %g, %g)\n",
     //           shadingFrame.tangent.x, shadingFrame.tangent.y, shadingFrame.tangent.z,
@@ -393,18 +393,18 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_closestHit_generic() {
     //           shadingFrame.normal.x, shadingFrame.normal.y, shadingFrame.normal.z);
     //}
 
-    float dist2 = squaredDistance(rayOrigin, positionInWorld);
+    float dist2 = sqDistance(rayOrigin, positionInWorld);
     if constexpr (useNRC)
         rwPayload->curSqrtPathSpread += std::sqrt(dist2 / (rwPayload->prevDirPDensity * std::fabs(vOutLocal.z)));
 
     // Implicit Light Sampling
     if (vOutLocal.z > 0 && mat.emittance) {
         float4 texValue = tex2DLod<float4>(mat.emittance, texCoord.x, texCoord.y, 0.0f);
-        float3 emittance = make_float3(texValue);
+        RGB emittance(getXYZ(texValue));
         float lightPDensity = hypAreaPDensity * dist2 / vOutLocal.z;
         float bsdfPDensity = rwPayload->prevDirPDensity;
         float misWeight = pow2(bsdfPDensity) / (pow2(bsdfPDensity) + pow2(lightPDensity));
-        float3 directContImplicit = emittance * (misWeight / Pi);
+        RGB directContImplicit = emittance * (misWeight / Pi);
         rwPayload->contribution += rwPayload->alpha * directContImplicit;
 
         if constexpr (useNRC) {
@@ -467,7 +467,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_closestHit_generic() {
             uint32_t linearIndex = launchIndex.y * plp.s->imageSize.x + launchIndex.x;
 
             float roughness;
-            float3 diffuseReflectance, specularReflectance;
+            RGB diffuseReflectance, specularReflectance;
             bsdf.getSurfaceParameters(
                 &diffuseReflectance, &specularReflectance, &roughness);
 
@@ -529,18 +529,18 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_closestHit_generic() {
     }
 
     // Next Event Estimation (Explicit Light Sampling)
-    float3 directContNEE = performNextEventEstimation(
+    RGB directContNEE = performNextEventEstimation(
         positionInWorld, vOutLocal, shadingFrame, bsdf, rng);
     rwPayload->contribution += rwPayload->alpha * directContNEE;
 
     // generate a next ray.
-    float3 vInLocal;
+    Vector3D vInLocal;
     float dirPDensity;
-    float3 localThroughput = bsdf.sampleThroughput(
+    RGB localThroughput = bsdf.sampleThroughput(
         vOutLocal, rng.getFloat0cTo1o(), rng.getFloat0cTo1o(),
         &vInLocal, &dirPDensity);
     rwPayload->alpha *= localThroughput;
-    float3 vIn = shadingFrame.fromLocal(vInLocal);
+    Vector3D vIn = shadingFrame.fromLocal(vInLocal);
 
     woPayload->nextOrigin = positionInWorld;
     woPayload->nextDirection = vIn;
@@ -558,7 +558,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_closestHit_generic() {
             // TODO?: 訓練データ数の正確な推定のためにtrainingSuffixEndsWithCacheのチェックをここに持ってくる？
 
             float roughness;
-            float3 diffuseReflectance, specularReflectance;
+            RGB diffuseReflectance, specularReflectance;
             bsdf.getSurfaceParameters(
                 &diffuseReflectance, &specularReflectance, &roughness);
 
@@ -615,23 +615,23 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_miss_generic() {
     PathTraceReadWritePayload<useNRC>* rwPayload;
     PathTraceRayPayloadSignature<useNRC>::get(nullptr, &rwPayload);
 
-    float3 rayDir = normalize(optixGetWorldRayDirection());
+    Vector3D rayDir = normalize(Vector3D(optixGetWorldRayDirection()));
     float posPhi, theta;
     toPolarYUp(rayDir, &posPhi, &theta);
 
     float phi = posPhi + plp.f->envLightRotation;
     phi = phi - floorf(phi / (2 * Pi)) * 2 * Pi;
-    float2 texCoord = make_float2(phi / (2 * Pi), theta / Pi);
+    Point2D texCoord(phi / (2 * Pi), theta / Pi);
 
     // Implicit Light Sampling
     float4 texValue = tex2DLod<float4>(plp.s->envLightTexture, texCoord.x, texCoord.y, 0.0f);
-    float3 luminance = plp.f->envLightPowerCoeff * make_float3(texValue);
+    RGB luminance = plp.f->envLightPowerCoeff * RGB(getXYZ(texValue));
     float uvPDF = plp.s->envLightImportanceMap.evaluatePDF(texCoord.x, texCoord.y);
     float hypAreaPDensity = uvPDF / (2 * Pi * Pi * std::sin(theta));
     float lightPDensity = probToSampleEnvLight * hypAreaPDensity;
     float bsdfPDensity = rwPayload->prevDirPDensity;
     float misWeight = pow2(bsdfPDensity) / (pow2(bsdfPDensity) + pow2(lightPDensity));
-    float3 directContImplicit = misWeight * luminance;
+    RGB directContImplicit = misWeight * luminance;
     rwPayload->contribution += rwPayload->alpha * directContImplicit;
 
     if constexpr (useNRC) {
@@ -693,9 +693,9 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(visualizePrediction)() {
     GBuffer1 gBuffer1 = plp.s->GBuffer1[bufIdx].read(launchIndex);
     GBuffer2 gBuffer2 = plp.s->GBuffer2[bufIdx].read(launchIndex);
 
-    float3 positionInWorld = gBuffer0.positionInWorld;
-    float3 shadingNormalInWorld = gBuffer1.normalInWorld;
-    float2 texCoord = make_float2(gBuffer0.texCoord_x, gBuffer1.texCoord_y);
+    Point3D positionInWorld = gBuffer0.positionInWorld;
+    Normal3D shadingNormalInWorld = gBuffer1.normalInWorld;
+    Point2D texCoord(gBuffer0.texCoord_x, gBuffer1.texCoord_y);
     uint32_t materialSlot = gBuffer2.materialSlot;
 
     const PerspectiveCamera &camera = plp.f->camera;
@@ -704,9 +704,9 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(visualizePrediction)() {
         const MaterialData &mat = plp.s->materialDataBuffer[materialSlot];
 
         // TODO?: Use true geometric normal.
-        float3 geometricNormalInWorld = shadingNormalInWorld;
-        float3 vOut = camera.position - positionInWorld;
-        float primaryDist2 = sqLength(vOut);
+        Normal3D geometricNormalInWorld = shadingNormalInWorld;
+        Vector3D vOut = camera.position - positionInWorld;
+        float primaryDist2 = vOut.sqLength();
         vOut /= std::sqrt(primaryDist2);
         float primaryDotVN = dot(vOut, geometricNormalInWorld);
         float frontHit = primaryDotVN >= 0.0f ? 1.0f : -1.0f;
@@ -718,7 +718,7 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(visualizePrediction)() {
         bsdf.setup(mat, texCoord);
 
         float roughness;
-        float3 diffuseReflectance, specularReflectance;
+        RGB diffuseReflectance, specularReflectance;
         bsdf.getSurfaceParameters(
             &diffuseReflectance, &specularReflectance, &roughness);
 
@@ -736,13 +736,13 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(visualizePrediction)() {
         //if (useEnvLight) {
         //    float u = texCoord.x, v = texCoord.y;
         //    float4 texValue = tex2DLod<float4>(plp.s->envLightTexture, u, v, 0.0f);
-        //    float3 luminance = plp.f->envLightPowerCoeff * make_float3(texValue);
+        //    RGB luminance = plp.f->envLightPowerCoeff * RGB(getXYZ(texValue));
         //    contribution = luminance;
         //}
     }
 
     TerminalInfo terminalInfo;
-    terminalInfo.alpha = make_float3(1.0f);
+    terminalInfo.alpha = RGB(1.0f);
     terminalInfo.pathLength = 1;
     terminalInfo.hasQuery = materialSlot != 0xFFFFFFFF;
     terminalInfo.isTrainingPixel = false;

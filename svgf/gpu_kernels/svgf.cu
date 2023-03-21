@@ -12,7 +12,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE float calcDepthWeight(
 }
 
 CUDA_DEVICE_FUNCTION CUDA_INLINE float calcNormalWeight(
-    const float3 &nbNormal, const float3 &normal) {
+    const Normal3D &nbNormal, const Normal3D &normal) {
     constexpr float sigma_n = 128;
     return std::pow(std::fmax(0.0f, dot(nbNormal, normal)), sigma_n);
 }
@@ -74,7 +74,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void estimateVariance_generic() {
         float vnbDepth = perFrameTemporalSet.depthBuffer.read(glPix(pix + make_int2(0, dy)));
         float dzdx = (hnbDepth - depth) * dx;
         float dzdy = (vnbDepth - depth) * dy;
-        float3 normal = perFrameTemporalSet.GBuffer1.read(glPix(pix)).normalInWorld;
+        Normal3D normal = perFrameTemporalSet.GBuffer1.read(glPix(pix)).normalInWorld;
 
         // 7x7 Bilateral Filter driven by depth and normal.
         float sumWeights = centerWeight;
@@ -98,7 +98,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void estimateVariance_generic() {
                 float nbDepth = perFrameTemporalSet.depthBuffer.read(glPix(nbPix));
                 if (nbDepth == 1.0f)
                     continue;
-                float3 nbNormal = perFrameTemporalSet.GBuffer1.read(glPix(nbPix)).normalInWorld;
+                Normal3D nbNormal = perFrameTemporalSet.GBuffer1.read(glPix(nbPix)).normalInWorld;
 
                 float wz = calcDepthWeight(nbDepth, depth, dzdx, dzdy, j, i);
                 float wn = calcNormalWeight(nbNormal, normal);
@@ -269,7 +269,7 @@ CUDA_DEVICE_FUNCTION void applyATrousFilter_generic(uint32_t filterStageIndex) {
     float vnbDepth = perFrameTemporalSet.depthBuffer.read(glPix(pix + make_int2(0, dy)));
     float dzdx = (hnbDepth - depth) * dx;
     float dzdy = (vnbDepth - depth) * dy;
-    float3 normal = perFrameTemporalSet.GBuffer1.read(glPix(pix)).normalInWorld;
+    Normal3D normal = perFrameTemporalSet.GBuffer1.read(glPix(pix)).normalInWorld;
 
     // JP: 安定化のため分散は3x3のガウシアンフィルターにかける。
     // EN: Apply 3x3 Gaussian filter to variance for stabilization.
@@ -322,7 +322,7 @@ CUDA_DEVICE_FUNCTION void applyATrousFilter_generic(uint32_t filterStageIndex) {
         float nbDepth = perFrameTemporalSet.depthBuffer.read(glPix(nbPix));
         if (nbDepth == 1.0f)
             continue;
-        float3 nbNormal = perFrameTemporalSet.GBuffer1.read(glPix(nbPix)).normalInWorld;
+        Normal3D nbNormal = perFrameTemporalSet.GBuffer1.read(glPix(nbPix)).normalInWorld;
 
         float wz = calcDepthWeight(nbDepth, depth, dzdx, dzdy, offset.x, offset.y);
         float wn = calcNormalWeight(nbNormal, normal);
@@ -355,8 +355,9 @@ CUDA_DEVICE_KERNEL void applyATrousFilter_box3x3(uint32_t filterStageIndex) {
 
 // for the case where SVGF is disabled and temporal accumulation is enabled.
 CUDA_DEVICE_KERNEL void feedbackNoisyLighting() {
-    int2 launchIndex = make_int2(blockDim.x * blockIdx.x + threadIdx.x,
-                                 blockDim.y * blockIdx.y + threadIdx.y);
+    int2 launchIndex = make_int2(
+        blockDim.x * blockIdx.x + threadIdx.x,
+        blockDim.y * blockIdx.y + threadIdx.y);
     int2 pix = make_int2(launchIndex.x, launchIndex.y);
     int2 imageSize = plp.s->imageSize;
     bool valid = pix.x >= 0 && pix.y >= 0 && pix.x < imageSize.x && pix.y < imageSize.y;
@@ -373,8 +374,9 @@ CUDA_DEVICE_KERNEL void feedbackNoisyLighting() {
 
 
 CUDA_DEVICE_KERNEL void fillBackground(uint32_t numFilteringStages) {
-    int2 launchIndex = make_int2(blockDim.x * blockIdx.x + threadIdx.x,
-                                 blockDim.y * blockIdx.y + threadIdx.y);
+    int2 launchIndex = make_int2(
+        blockDim.x * blockIdx.x + threadIdx.x,
+        blockDim.y * blockIdx.y + threadIdx.y);
     int2 imageSize = plp.s->imageSize;
     int2 pix = make_int2(launchIndex.x, launchIndex.y);
     bool valid = pix.x >= 0 && pix.y >= 0 && pix.x < imageSize.x && pix.y < imageSize.y;
@@ -406,12 +408,12 @@ CUDA_DEVICE_KERNEL void fillBackground(uint32_t numFilteringStages) {
         float vh = 2 * std::tan(tgtCamera.fovY * 0.5f);
         float vw = tgtCamera.aspect * vh;
 
-        float3 direction = normalize(tgtCamera.orientation * make_float3(vw * (0.5f - x), vh * (0.5f - y), 1));
+        Vector3D direction = normalize(tgtCamera.orientation * Vector3D(vw * (0.5f - x), vh * (0.5f - y), 1));
         return direction;
     };
 
     auto const computeEnvMapTexCoord = [&]
-    (const float3 &direction) {
+    (const Vector3D &direction) {
         float posPhi, posTheta;
         toPolarYUp(direction, &posPhi, &posTheta);
 
@@ -423,32 +425,32 @@ CUDA_DEVICE_KERNEL void fillBackground(uint32_t numFilteringStages) {
         u -= floorf(u);
         float v = posTheta / Pi;
 
-        return make_float2(u, v);
+        return Point2D(u, v);
     };
 
-    float3 finalLighting = make_float3(0.001f, 0.001f, 0.001f);
+    RGB finalLighting(0.001f, 0.001f, 0.001f);
     if (useEnvLight) {
-        float3 direction = computeEnvDirection(curPerFrameTemporalSet.camera, pix, true);
-        float2 texCoord = computeEnvMapTexCoord(direction);
+        Vector3D direction = computeEnvDirection(curPerFrameTemporalSet.camera, pix, true);
+        Point2D texCoord = computeEnvMapTexCoord(direction);
         float4 texValue = tex2DLod<float4>(
             plp.s->envLightTexture, texCoord.x, texCoord.y, 0.0f);
-        finalLighting = plp.f->envLightPowerCoeff * make_float3(texValue);
+        finalLighting = plp.f->envLightPowerCoeff * RGB(getXYZ(texValue));
     }
 
-    float3 direction = computeEnvDirection(curPerFrameTemporalSet.camera, pix, false);
+    Vector3D direction = computeEnvDirection(curPerFrameTemporalSet.camera, pix, false);
     const PerspectiveCamera &prevCamera = prevPerFrameTemporalSet.camera;
     direction = transpose(prevCamera.orientation) * direction;
     direction /= direction.z;
     float vh = 2 * std::tan(prevCamera.fovY * 0.5f);
     float vw = prevCamera.aspect * vh;
-    float2 prevScreenPos = make_float2(0.5f - direction.x / vw, 0.5f - direction.y / vh);
+    Point2D prevScreenPos(0.5f - direction.x / vw, 0.5f - direction.y / vh);
 
     Lighting_Variance lighting_var;
     lighting_var.denoisedLighting = finalLighting;
     lighting_var.variance = 0.0f;
 
     Albedo albedo;
-    albedo.dhReflectance = make_float3(1.0f, 1.0f, 1.0f);
+    albedo.dhReflectance = RGB(1.0f, 1.0f, 1.0f);
 
     dst_lighting_variance_buffer.write(pix, lighting_var);
     plp.s->albedoBuffer.write(pix, albedo);
@@ -458,9 +460,9 @@ CUDA_DEVICE_KERNEL void fillBackground(uint32_t numFilteringStages) {
 
 
 CUDA_DEVICE_FUNCTION void reprojectPreviousAccumulation(
-    const optixu::NativeBlockBuffer2D<float4> &prevFinalLightingBuffer, float2 prevScreenPos,
-    float3* prevFinalLighting, bool* outOfScreen) {
-    *prevFinalLighting = make_float3(0.0f, 0.0f, 0.0f);
+    const optixu::NativeBlockBuffer2D<float4> &prevFinalLightingBuffer, Point2D prevScreenPos,
+    RGB* prevFinalLighting, bool* outOfScreen) {
+    *prevFinalLighting = RGB(0.0f, 0.0f, 0.0f);
     *outOfScreen = (prevScreenPos.x < 0.0f || prevScreenPos.y < 0.0f ||
                     prevScreenPos.x >= 1.0f || prevScreenPos.y >= 1.0f);
     if (*outOfScreen)
@@ -468,9 +470,9 @@ CUDA_DEVICE_FUNCTION void reprojectPreviousAccumulation(
 
     int2 imageSize = plp.s->imageSize;
 
-    float2 prevViewportPos = make_float2(imageSize.x * prevScreenPos.x, imageSize.y * prevScreenPos.y);
-    int2 prevPixPos = make_int2(prevViewportPos);
-    float2 fDelta = prevViewportPos - (make_float2(prevPixPos) + make_float2(0.5f));
+    Point2D prevViewportPos(imageSize.x * prevScreenPos.x, imageSize.y * prevScreenPos.y);
+    int2 prevPixPos = make_int2(prevViewportPos.x, prevViewportPos.y);
+    Vector2D fDelta = prevViewportPos - (Point2D(prevPixPos.x, prevPixPos.y) + Point2D(0.5f));
     int2 delta = make_int2(fDelta.x < 0 ? -1 : 1,
                            fDelta.y < 0 ? -1 : 1);
 
@@ -497,25 +499,25 @@ CUDA_DEVICE_FUNCTION void reprojectPreviousAccumulation(
     // Base
     {
         float weight = (1 - s) * (1 - t);
-        *prevFinalLighting += weight * make_float3(prevFinalLightingBuffer.read(glPix(basePos)));
+        *prevFinalLighting += weight * RGB(getXYZ(prevFinalLightingBuffer.read(glPix(basePos))));
         sumWeights += weight;
     }
     // dx
     {
         float weight = s * (1 - t);
-        *prevFinalLighting += weight * make_float3(prevFinalLightingBuffer.read(glPix(dxPos)));
+        *prevFinalLighting += weight * RGB(getXYZ(prevFinalLightingBuffer.read(glPix(dxPos))));
         sumWeights += weight;
     }
     // dy
     {
         float weight = (1 - s) * t;
-        *prevFinalLighting += weight * make_float3(prevFinalLightingBuffer.read(glPix(dyPos)));
+        *prevFinalLighting += weight * RGB(getXYZ(prevFinalLightingBuffer.read(glPix(dyPos))));
         sumWeights += weight;
     }
     // dxdy
     {
         float weight = s * t;
-        *prevFinalLighting += weight * make_float3(prevFinalLightingBuffer.read(glPix(dxdyPos)));
+        *prevFinalLighting += weight * RGB(getXYZ(prevFinalLightingBuffer.read(glPix(dxdyPos))));
         sumWeights += weight;
     }
 
@@ -523,8 +525,9 @@ CUDA_DEVICE_FUNCTION void reprojectPreviousAccumulation(
 }
 
 CUDA_DEVICE_KERNEL void applyAlbedoModulationAndTemporalAntiAliasing(uint32_t numFilteringStages) {
-    int2 launchIndex = make_int2(blockDim.x * blockIdx.x + threadIdx.x,
-                                 blockDim.y * blockIdx.y + threadIdx.y);
+    int2 launchIndex = make_int2(
+        blockDim.x * blockIdx.x + threadIdx.x,
+        blockDim.y * blockIdx.y + threadIdx.y);
     int2 imageSize = plp.s->imageSize;
     int2 pix = make_int2(launchIndex.x, launchIndex.y);
     bool valid = pix.x >= 0 && pix.y >= 0 && pix.x < imageSize.x && pix.y < imageSize.y;
@@ -545,7 +548,7 @@ CUDA_DEVICE_KERNEL void applyAlbedoModulationAndTemporalAntiAliasing(uint32_t nu
 
     Lighting_Variance src_lighting_var = src_lighting_variance_buffer.read(pix);
     Albedo albedo = plp.s->albedoBuffer.read(pix);
-    float3 finalLighting = src_lighting_var.denoisedLighting;
+    RGB finalLighting = src_lighting_var.denoisedLighting;
     if (plp.f->modulateAlbedo)
         finalLighting *= albedo.dhReflectance;
 
@@ -554,16 +557,16 @@ CUDA_DEVICE_KERNEL void applyAlbedoModulationAndTemporalAntiAliasing(uint32_t nu
             prevPerFrameTemporalSet.finalLightingBuffer;
 
         GBuffer2 gBuffer2 = curPerFrameTemporalSet.GBuffer2.read(glPix(pix));
-        float3 prevFinalLighting;
+        RGB prevFinalLighting;
         bool prevWasOutOfScreen;
         reprojectPreviousAccumulation(
             prevFinalLightingBuffer, gBuffer2.prevScreenPos,
             &prevFinalLighting, &prevWasOutOfScreen);
 
-        float3 nbBoxMin = finalLighting;
-        float3 nbBoxMax = finalLighting;
-        float3 nbCrossMin = finalLighting;
-        float3 nbCrossMax = finalLighting;
+        RGB nbBoxMin = finalLighting;
+        RGB nbBoxMax = finalLighting;
+        RGB nbCrossMin = finalLighting;
+        RGB nbCrossMax = finalLighting;
         for (int i = -1; i <= 1; ++i) {
             for (int j = -1; j <= 1; ++j) {
                 if (i == 0 && j == 0)
@@ -572,7 +575,7 @@ CUDA_DEVICE_KERNEL void applyAlbedoModulationAndTemporalAntiAliasing(uint32_t nu
                                        clamp<int32_t>(pix.y + i, 0, imageSize.y - 1));
                 Lighting_Variance nbSrc_lighting_var = src_lighting_variance_buffer.read(nbPix);
                 Albedo nbAlbedo = plp.s->albedoBuffer.read(nbPix);
-                float3 nbValue = nbSrc_lighting_var.denoisedLighting;
+                RGB nbValue = nbSrc_lighting_var.denoisedLighting;
                 if (plp.f->modulateAlbedo)
                     nbValue *= nbAlbedo.dhReflectance;
 
@@ -584,8 +587,8 @@ CUDA_DEVICE_KERNEL void applyAlbedoModulationAndTemporalAntiAliasing(uint32_t nu
                 }
             }
         }
-        float3 nbMin = 0.5f * (nbBoxMin + nbCrossMin);
-        float3 nbMax = 0.5f * (nbBoxMax + nbCrossMax);
+        RGB nbMin = 0.5f * (nbBoxMin + nbCrossMin);
+        RGB nbMax = 0.5f * (nbBoxMax + nbCrossMax);
         prevFinalLighting = clamp(prevFinalLighting, nbMin, nbMax);
 
         float curWeight = 1.0f / plp.f->taaHistoryLength; // Exponential Moving Average
@@ -597,5 +600,5 @@ CUDA_DEVICE_KERNEL void applyAlbedoModulationAndTemporalAntiAliasing(uint32_t nu
 
     const optixu::NativeBlockBuffer2D<float4> &curFinalLightingBuffer =
         curPerFrameTemporalSet.finalLightingBuffer;
-    curFinalLightingBuffer.write(glPix(pix), make_float4(finalLighting, 1.0f));
+    curFinalLightingBuffer.write(glPix(pix), make_float4(finalLighting.toNative(), 1.0f));
 }

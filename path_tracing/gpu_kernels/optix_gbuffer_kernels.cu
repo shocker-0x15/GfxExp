@@ -22,14 +22,14 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(setupGBuffers)() {
     float vh = 2 * std::tan(camera.fovY * 0.5f);
     float vw = camera.aspect * vh;
 
-    float3 origin = camera.position;
-    float3 direction = normalize(camera.orientation * make_float3(vw * (0.5f - x), vh * (0.5f - y), 1));
+    Point3D origin = camera.position;
+    Vector3D direction = normalize(camera.orientation * Vector3D(vw * (0.5f - x), vh * (0.5f - y), 1));
 
     HitPointParams hitPointParams;
-    hitPointParams.positionInWorld = make_float3(NAN);
-    hitPointParams.prevPositionInWorld = make_float3(NAN);
-    hitPointParams.normalInWorld = make_float3(NAN);
-    hitPointParams.texCoord = make_float2(NAN);
+    hitPointParams.positionInWorld = Point3D(NAN);
+    hitPointParams.prevPositionInWorld = Point3D(NAN);
+    hitPointParams.normalInWorld = Normal3D(NAN);
+    hitPointParams.texCoord = Point2D(NAN);
     hitPointParams.materialSlot = 0xFFFFFFFF;
 
     PickInfo pickInfo = {};
@@ -37,20 +37,20 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(setupGBuffers)() {
     HitPointParams* hitPointParamsPtr = &hitPointParams;
     PickInfo* pickInfoPtr = &pickInfo;
     PrimaryRayPayloadSignature::trace(
-        plp.f->travHandle, origin, direction,
+        plp.f->travHandle, origin.toNative(), direction.toNative(),
         0.0f, FLT_MAX, 0.0f, 0xFF, OPTIX_RAY_FLAG_NONE,
         GBufferRayType::Primary, maxNumRayTypes, GBufferRayType::Primary,
         hitPointParamsPtr, pickInfoPtr);
 
 
 
-    float2 curRasterPos = make_float2(launchIndex.x + 0.5f, launchIndex.y + 0.5f);
-    float2 prevRasterPos =
+    Point2D curRasterPos(launchIndex.x + 0.5f, launchIndex.y + 0.5f);
+    Point2D prevRasterPos =
         plp.f->prevCamera.calcScreenPosition(hitPointParams.prevPositionInWorld)
-        * make_float2(plp.s->imageSize.x, plp.s->imageSize.y);
-    float2 motionVector = curRasterPos - prevRasterPos;
+        * Point2D(plp.s->imageSize.x, plp.s->imageSize.y);
+    Vector2D motionVector = curRasterPos - prevRasterPos;
     if (plp.f->resetFlowBuffer || isnan(hitPointParams.prevPositionInWorld.x))
-        motionVector = make_float2(0.0f, 0.0f);
+        motionVector = Vector2D(0.0f, 0.0f);
 
     GBuffer0 gBuffer0;
     gBuffer0.positionInWorld = hitPointParams.positionInWorld;
@@ -73,19 +73,19 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(setupGBuffers)() {
 
     // JP: デノイザーに必要な情報を出力。
     // EN: Output information required for the denoiser.
-    float3 firstHitNormal = transpose(camera.orientation) * hitPointParams.normalInWorld;
+    Normal3D firstHitNormal = transpose(camera.orientation) * hitPointParams.normalInWorld;
     firstHitNormal.x *= -1;
-    float3 prevAlbedoResult = make_float3(0.0f, 0.0f, 0.0f);
-    float3 prevNormalResult = make_float3(0.0f, 0.0f, 0.0f);
+    RGB prevAlbedoResult(0.0f, 0.0f, 0.0f);
+    Normal3D prevNormalResult(0.0f, 0.0f, 0.0f);
     if (plp.f->numAccumFrames > 0) {
-        prevAlbedoResult = getXYZ(plp.s->albedoAccumBuffer.read(launchIndex));
-        prevNormalResult = getXYZ(plp.s->normalAccumBuffer.read(launchIndex));
+        prevAlbedoResult = RGB(getXYZ(plp.s->albedoAccumBuffer.read(launchIndex)));
+        prevNormalResult = Normal3D(getXYZ(plp.s->normalAccumBuffer.read(launchIndex)));
     }
     float curWeight = 1.0f / (1 + plp.f->numAccumFrames);
-    float3 albedoResult = (1 - curWeight) * prevAlbedoResult + curWeight * hitPointParams.albedo;
-    float3 normalResult = (1 - curWeight) * prevNormalResult + curWeight * firstHitNormal;
-    plp.s->albedoAccumBuffer.write(launchIndex, make_float4(albedoResult, 1.0f));
-    plp.s->normalAccumBuffer.write(launchIndex, make_float4(normalResult, 1.0f));
+    RGB albedoResult = (1 - curWeight) * prevAlbedoResult + curWeight * hitPointParams.albedo;
+    Normal3D normalResult = (1 - curWeight) * prevNormalResult + curWeight * firstHitNormal;
+    plp.s->albedoAccumBuffer.write(launchIndex, make_float4(albedoResult.toNative(), 1.0f));
+    plp.s->normalAccumBuffer.write(launchIndex, make_float4(normalResult.toNative(), 1.0f));
 }
 
 CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
@@ -100,12 +100,12 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
     PrimaryRayPayloadSignature::get(&hitPointParams, &pickInfo);
 
     auto hp = HitPointParameter::get();
-    float3 positionInWorld;
-    float3 prevPositionInWorld;
-    float3 shadingNormalInWorld;
-    float3 texCoord0DirInWorld;
-    //float3 geometricNormalInWorld;
-    float2 texCoord;
+    Point3D positionInWorld;
+    Point3D prevPositionInWorld;
+    Normal3D shadingNormalInWorld;
+    Vector3D texCoord0DirInWorld;
+    //Normal3D geometricNormalInWorld;
+    Point2D texCoord;
     {
         const Triangle &tri = geomInst.triangleBuffer[hp.primIndex];
         const Vertex &v0 = geomInst.vertexBuffer[tri.index0];
@@ -114,20 +114,20 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
         float b1 = hp.b1;
         float b2 = hp.b2;
         float b0 = 1 - (b1 + b2);
-        float3 localP = b0 * v0.position + b1 * v1.position + b2 * v2.position;
+        Point3D localP = b0 * v0.position + b1 * v1.position + b2 * v2.position;
         shadingNormalInWorld = b0 * v0.normal + b1 * v1.normal + b2 * v2.normal;
         texCoord0DirInWorld = b0 * v0.texCoord0Dir + b1 * v1.texCoord0Dir + b2 * v2.texCoord0Dir;
-        //geometricNormalInWorld = cross(v1.position - v0.position, v2.position - v0.position);
+        //geometricNormalInWorld = Normal3D(cross(v1.position - v0.position, v2.position - v0.position));
         texCoord = b0 * v0.texCoord + b1 * v1.texCoord + b2 * v2.texCoord;
 
-        positionInWorld = optixTransformPointFromObjectToWorldSpace(localP);
+        positionInWorld = transformPointFromObjectToWorldSpace(localP);
         prevPositionInWorld = inst.prevTransform * localP;
-        shadingNormalInWorld = normalize(optixTransformNormalFromObjectToWorldSpace(shadingNormalInWorld));
-        texCoord0DirInWorld = normalize(optixTransformVectorFromObjectToWorldSpace(texCoord0DirInWorld));
-        //geometricNormalInWorld = normalize(optixTransformNormalFromObjectToWorldSpace(geometricNormalInWorld));
-        if (!allFinite(shadingNormalInWorld)) {
-            shadingNormalInWorld = make_float3(0, 0, 1);
-            texCoord0DirInWorld = make_float3(1, 0, 0);
+        shadingNormalInWorld = normalize(transformNormalFromObjectToWorldSpace(shadingNormalInWorld));
+        texCoord0DirInWorld = normalize(transformVectorFromObjectToWorldSpace(texCoord0DirInWorld));
+        //geometricNormalInWorld = normalize(transformNormalFromObjectToWorldSpace(geometricNormalInWorld));
+        if (!shadingNormalInWorld.allFinite()) {
+            shadingNormalInWorld = Normal3D(0, 0, 1);
+            texCoord0DirInWorld = Vector3D(1, 0, 0);
         }
     }
 
@@ -137,11 +137,11 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
     bsdf.setup(mat, texCoord);
     ReferenceFrame shadingFrame(shadingNormalInWorld, texCoord0DirInWorld);
     if (plp.f->enableBumpMapping) {
-        float3 modLocalNormal = mat.readModifiedNormal(mat.normal, mat.normalDimInfo, texCoord);
+        Normal3D modLocalNormal = mat.readModifiedNormal(mat.normal, mat.normalDimInfo, texCoord);
         applyBumpMapping(modLocalNormal, &shadingFrame);
     }
-    float3 vOut = -optixGetWorldRayDirection();
-    float3 vOutLocal = shadingFrame.toLocal(normalize(vOut));
+    Vector3D vOut(-Vector3D(optixGetWorldRayDirection()));
+    Vector3D vOutLocal = shadingFrame.toLocal(normalize(vOut));
 
     hitPointParams->albedo = bsdf.evaluateDHReflectanceEstimate(vOutLocal);
     hitPointParams->positionInWorld = positionInWorld;
@@ -162,10 +162,10 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
         pickInfo->positionInWorld = positionInWorld;
         pickInfo->normalInWorld = shadingFrame.normal;
         pickInfo->albedo = hitPointParams->albedo;
-        float3 emittance = make_float3(0.0f, 0.0f, 0.0f);
+        RGB emittance(0.0f, 0.0f, 0.0f);
         if (mat.emittance) {
             float4 texValue = tex2DLod<float4>(mat.emittance, texCoord.x, texCoord.y, 0.0f);
-            emittance = make_float3(texValue);
+            emittance = RGB(getXYZ(texValue));
         }
         pickInfo->emittance = emittance;
     }
@@ -174,11 +174,11 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
 CUDA_DEVICE_KERNEL void RT_MS_NAME(setupGBuffers)() {
     uint2 launchIndex = make_uint2(optixGetLaunchIndex().x, optixGetLaunchIndex().y);
 
-    float3 vOut = -optixGetWorldRayDirection();
-    float3 p = -vOut;
+    Vector3D vOut(-Vector3D(optixGetWorldRayDirection()));
+    Point3D p(-vOut);
 
     float posPhi, posTheta;
-    toPolarYUp(p, &posPhi, &posTheta);
+    toPolarYUp(Vector3D(p), &posPhi, &posTheta);
 
     float phi = posPhi + plp.f->envLightRotation;
 
@@ -190,11 +190,11 @@ CUDA_DEVICE_KERNEL void RT_MS_NAME(setupGBuffers)() {
     PickInfo* pickInfo;
     PrimaryRayPayloadSignature::get(&hitPointParams, &pickInfo);
 
-    hitPointParams->albedo = make_float3(0.0f, 0.0f, 0.0f);
+    hitPointParams->albedo = RGB(0.0f, 0.0f, 0.0f);
     hitPointParams->positionInWorld = p;
     hitPointParams->prevPositionInWorld = p;
-    hitPointParams->normalInWorld = vOut;
-    hitPointParams->texCoord = make_float2(u, v);
+    hitPointParams->normalInWorld = Normal3D(vOut);
+    hitPointParams->texCoord = Point2D(u, v);
     hitPointParams->materialSlot = 0xFFFFFFFF;
 
     // JP: マウスが乗っているピクセルの情報を出力する。
@@ -207,14 +207,14 @@ CUDA_DEVICE_KERNEL void RT_MS_NAME(setupGBuffers)() {
         pickInfo->matSlot = 0xFFFFFFFF;
         pickInfo->primIndex = 0xFFFFFFFF;
         pickInfo->positionInWorld = p;
-        pickInfo->albedo = make_float3(0.0f, 0.0f, 0.0f);
-        float3 emittance = make_float3(0.0f, 0.0f, 0.0f);
+        pickInfo->albedo = RGB(0.0f, 0.0f, 0.0f);
+        RGB emittance(0.0f, 0.0f, 0.0f);
         if (plp.s->envLightTexture && plp.f->enableEnvLight) {
             float4 texValue = tex2DLod<float4>(plp.s->envLightTexture, u, v, 0.0f);
-            emittance = make_float3(texValue);
+            emittance = RGB(getXYZ(texValue));
             emittance *= Pi * plp.f->envLightPowerCoeff;
         }
         pickInfo->emittance = emittance;
-        pickInfo->normalInWorld = vOut;
+        pickInfo->normalInWorld = Normal3D(vOut);
     }
 }

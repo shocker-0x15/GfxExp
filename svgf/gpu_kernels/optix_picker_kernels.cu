@@ -15,21 +15,21 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(pick)() {
     float vh = 2 * std::tan(camera.fovY * 0.5f);
     float vw = camera.aspect * vh;
 
-    float3 origin = camera.position;
-    float3 direction = normalize(camera.orientation * make_float3(vw * (0.5f - x), vh * (0.5f - y), 1));
+    Point3D origin = camera.position;
+    Vector3D direction = normalize(camera.orientation * Vector3D(vw * (0.5f - x), vh * (0.5f - y), 1));
 
     HitPointParams hitPointParams;
-    hitPointParams.positionInWorld = make_float3(NAN);
-    hitPointParams.prevPositionInWorld = make_float3(NAN);
-    hitPointParams.normalInWorld = make_float3(NAN);
-    hitPointParams.texCoord = make_float2(NAN);
+    hitPointParams.positionInWorld = Point3D(NAN);
+    hitPointParams.prevPositionInWorld = Point3D(NAN);
+    hitPointParams.normalInWorld = Normal3D(NAN);
+    hitPointParams.texCoord = Point2D(NAN);
     hitPointParams.materialSlot = 0xFFFFFFFF;
 
     PickInfo pickInfo = {};
 
     PickInfo* pickInfoPtr = &pickInfo;
     PickRayPayloadSignature::trace(
-        plp.f->travHandle, origin, direction,
+        plp.f->travHandle, origin.toNative(), direction.toNative(),
         0.0f, FLT_MAX, 0.0f, 0xFF, OPTIX_RAY_FLAG_NONE,
         PickRayType::Primary, maxNumRayTypes, PickRayType::Primary,
         pickInfoPtr);
@@ -48,11 +48,11 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(pick)() {
     PickRayPayloadSignature::get(&pickInfo);
 
     auto hp = HitPointParameter::get();
-    float3 positionInWorld;
-    float3 shadingNormalInWorld;
-    float3 texCoord0DirInWorld;
-    //float3 geometricNormalInWorld;
-    float2 texCoord;
+    Point3D positionInWorld;
+    Normal3D shadingNormalInWorld;
+    Vector3D texCoord0DirInWorld;
+    //Normal3D geometricNormalInWorld;
+    Point2D texCoord;
     {
         const Triangle &tri = geomInst.triangleBuffer[hp.primIndex];
         const Vertex &v0 = geomInst.vertexBuffer[tri.index0];
@@ -61,19 +61,19 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(pick)() {
         float b1 = hp.b1;
         float b2 = hp.b2;
         float b0 = 1 - (b1 + b2);
-        float3 localP = b0 * v0.position + b1 * v1.position + b2 * v2.position;
+        Point3D localP = b0 * v0.position + b1 * v1.position + b2 * v2.position;
         shadingNormalInWorld = b0 * v0.normal + b1 * v1.normal + b2 * v2.normal;
         texCoord0DirInWorld = b0 * v0.texCoord0Dir + b1 * v1.texCoord0Dir + b2 * v2.texCoord0Dir;
         //geometricNormalInWorld = cross(v1.position - v0.position, v2.position - v0.position);
         texCoord = b0 * v0.texCoord + b1 * v1.texCoord + b2 * v2.texCoord;
 
-        positionInWorld = optixTransformPointFromObjectToWorldSpace(localP);
-        shadingNormalInWorld = normalize(optixTransformNormalFromObjectToWorldSpace(shadingNormalInWorld));
-        texCoord0DirInWorld = normalize(optixTransformVectorFromObjectToWorldSpace(texCoord0DirInWorld));
-        //geometricNormalInWorld = normalize(optixTransformNormalFromObjectToWorldSpace(geometricNormalInWorld));
-        if (!allFinite(shadingNormalInWorld)) {
-            shadingNormalInWorld = make_float3(0, 0, 1);
-            texCoord0DirInWorld = make_float3(1, 0, 0);
+        positionInWorld = transformPointFromObjectToWorldSpace(localP);
+        shadingNormalInWorld = normalize(transformNormalFromObjectToWorldSpace(shadingNormalInWorld));
+        texCoord0DirInWorld = normalize(transformVectorFromObjectToWorldSpace(texCoord0DirInWorld));
+        //geometricNormalInWorld = normalize(transformNormalFromObjectToWorldSpace(geometricNormalInWorld));
+        if (!shadingNormalInWorld.allFinite()) {
+            shadingNormalInWorld = Normal3D(0, 0, 1);
+            texCoord0DirInWorld = Vector3D(1, 0, 0);
         }
     }
 
@@ -83,12 +83,12 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(pick)() {
     bsdf.setup(mat, texCoord);
     ReferenceFrame shadingFrame(shadingNormalInWorld, texCoord0DirInWorld);
     if (plp.f->enableBumpMapping) {
-        float3 modLocalNormal = mat.readModifiedNormal(mat.normal, mat.normalDimInfo, texCoord);
+        Normal3D modLocalNormal = mat.readModifiedNormal(mat.normal, mat.normalDimInfo, texCoord);
         applyBumpMapping(modLocalNormal, &shadingFrame);
     }
-    float3 vOut = -optixGetWorldRayDirection();
-    float3 vOutLocal = shadingFrame.toLocal(normalize(vOut));
-    float3 dhReflectance = bsdf.evaluateDHReflectanceEstimate(vOutLocal);
+    Vector3D vOut(-Vector3D(optixGetWorldRayDirection()));
+    Vector3D vOutLocal = shadingFrame.toLocal(normalize(vOut));
+    RGB dhReflectance = bsdf.evaluateDHReflectanceEstimate(vOutLocal);
 
     pickInfo->hit = true;
     pickInfo->instSlot = optixGetInstanceId();
@@ -98,10 +98,10 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(pick)() {
     pickInfo->positionInWorld = positionInWorld;
     pickInfo->normalInWorld = shadingFrame.normal;
     pickInfo->albedo = dhReflectance;
-    float3 emittance = make_float3(0.0f, 0.0f, 0.0f);
+    RGB emittance(0.0f, 0.0f, 0.0f);
     if (mat.emittance) {
         float4 texValue = tex2DLod<float4>(mat.emittance, texCoord.x, texCoord.y, 0.0f);
-        emittance = make_float3(texValue);
+        emittance = RGB(getXYZ(texValue));
     }
     pickInfo->emittance = emittance;
 }
@@ -109,11 +109,11 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(pick)() {
 CUDA_DEVICE_KERNEL void RT_MS_NAME(pick)() {
     uint2 launchIndex = make_uint2(optixGetLaunchIndex().x, optixGetLaunchIndex().y);
 
-    float3 vOut = -optixGetWorldRayDirection();
-    float3 p = -vOut;
+    Vector3D vOut(-Vector3D(optixGetWorldRayDirection()));
+    Point3D p(-vOut);
 
     float posPhi, posTheta;
-    toPolarYUp(p, &posPhi, &posTheta);
+    toPolarYUp(Vector3D(p), &posPhi, &posTheta);
 
     float phi = posPhi + plp.f->envLightRotation;
 
@@ -130,13 +130,13 @@ CUDA_DEVICE_KERNEL void RT_MS_NAME(pick)() {
     pickInfo->matSlot = 0xFFFFFFFF;
     pickInfo->primIndex = 0xFFFFFFFF;
     pickInfo->positionInWorld = p;
-    pickInfo->albedo = make_float3(0.0f, 0.0f, 0.0f);
-    float3 emittance = make_float3(0.0f, 0.0f, 0.0f);
+    pickInfo->albedo = RGB(0.0f, 0.0f, 0.0f);
+    RGB emittance(0.0f, 0.0f, 0.0f);
     if (plp.s->envLightTexture && plp.f->enableEnvLight) {
         float4 texValue = tex2DLod<float4>(plp.s->envLightTexture, u, v, 0.0f);
-        emittance = make_float3(texValue);
+        emittance = RGB(getXYZ(texValue));
         emittance *= Pi * plp.f->envLightPowerCoeff;
     }
     pickInfo->emittance = emittance;
-    pickInfo->normalInWorld = vOut;
+    pickInfo->normalInWorld = Normal3D(vOut);
 }

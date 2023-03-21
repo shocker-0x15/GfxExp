@@ -11,8 +11,9 @@ CUDA_DEVICE_KERNEL void copyToLinearBuffers(
     float4* linearNormalBuffer,
     float2* linearMotionVectorBuffer,
     uint2 imageSize) {
-    uint2 launchIndex = make_uint2(blockDim.x * blockIdx.x + threadIdx.x,
-                                   blockDim.y * blockIdx.y + threadIdx.y);
+    uint2 launchIndex = make_uint2(
+        blockDim.x * blockIdx.x + threadIdx.x,
+        blockDim.y * blockIdx.y + threadIdx.y);
     if (launchIndex.x >= imageSize.x ||
         launchIndex.y >= imageSize.y)
         return;
@@ -20,10 +21,10 @@ CUDA_DEVICE_KERNEL void copyToLinearBuffers(
     uint32_t linearIndex = launchIndex.y * imageSize.x + launchIndex.x;
     linearColorBuffer[linearIndex] = colorAccumBuffer.read(launchIndex);
     linearAlbedoBuffer[linearIndex] = albedoAccumBuffer.read(launchIndex);
-    float3 normal = getXYZ(normalAccumBuffer.read(launchIndex));
+    Normal3D normal(getXYZ(normalAccumBuffer.read(launchIndex)));
     if (normal.x != 0 || normal.y != 0 || normal.z != 0)
-        normal = normalize(normal);
-    linearNormalBuffer[linearIndex] = make_float4(normal, 1.0f);
+        normal.normalize();
+    linearNormalBuffer[linearIndex] = make_float4(normal.toNative(), 1.0f);
     float4 motionVector = motionVectorBuffer.read(launchIndex);
     linearMotionVectorBuffer[linearIndex] = make_float2(motionVector.x, motionVector.y);
 }
@@ -37,8 +38,9 @@ CUDA_DEVICE_KERNEL void visualizeToOutputBuffer(
     float motionVectorOffset, float motionVectorScale,
     optixu::NativeBlockBuffer2D<float4> outputBuffer,
     uint2 imageSize) {
-    uint2 launchIndex = make_uint2(blockDim.x * blockIdx.x + threadIdx.x,
-                                   blockDim.y * blockIdx.y + threadIdx.y);
+    uint2 launchIndex = make_uint2(
+        blockDim.x * blockIdx.x + threadIdx.x,
+        blockDim.y * blockIdx.y + threadIdx.y);
     if (launchIndex.x >= imageSize.x ||
         launchIndex.y >= imageSize.y)
         return;
@@ -68,9 +70,10 @@ CUDA_DEVICE_KERNEL void visualizeToOutputBuffer(
     case shared::BufferToDisplay::Flow: {
         auto typedLinearBuffer = reinterpret_cast<const float2*>(linearBuffer);
         float2 f2Value = typedLinearBuffer[linearIndex];
-        value = make_float4(fminf(fmaxf(motionVectorScale * f2Value.x + motionVectorOffset, 0.0f), 1.0f),
-                            fminf(fmaxf(motionVectorScale * f2Value.y + motionVectorOffset, 0.0f), 1.0f),
-                            motionVectorOffset, 1.0f);
+        value = make_float4(
+            fminf(fmaxf(motionVectorScale * f2Value.x + motionVectorOffset, 0.0f), 1.0f),
+            fminf(fmaxf(motionVectorScale * f2Value.y + motionVectorOffset, 0.0f), 1.0f),
+            motionVectorOffset, 1.0f);
         break;
     }
     default:
