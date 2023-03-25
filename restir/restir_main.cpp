@@ -2184,7 +2184,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         {
             CUdeviceptr probTexAddr =
                 staticPlpOnDevice + offsetof(shared::StaticPipelineLaunchParameters, lightInstDist);
-            scene.setupLightInstDistribtion(cuStream, probTexAddr, bufferIndex);
+            scene.setupLightInstDistribution(cuStream, probTexAddr, bufferIndex);
         }
         curGPUTimer.computePDFTexture.stop(cuStream);
 

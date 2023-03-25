@@ -58,7 +58,7 @@ class DiscreteDistribution1DTemplate {
     unsigned int m_isInitialized : 1;
 
 public:
-    DiscreteDistribution1DTemplate() : m_isInitialized(false), m_integral(0.0f) {}
+    DiscreteDistribution1DTemplate() : m_integral(0.0f), m_numValues(0), m_isInitialized(false) {}
     void initialize(CUcontext cuContext, cudau::BufferType type, const RealType* values, size_t numValues);
     void finalize() {
         if (!m_isInitialized)
@@ -992,7 +992,7 @@ struct Scene {
         CUDADRV_CHECK(cuStreamSynchronize(cuStream));
     }
 
-    void setupLightInstDistribtion(
+    void setupLightInstDistribution(
         CUstream cuStream, CUdeviceptr lightInstDistAddr, uint32_t instBufferIndex) {
         shared::LightDistribution dLightInstDist;
         lightInstDist.getDeviceType(&dLightInstDist);

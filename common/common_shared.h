@@ -1330,7 +1330,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE bool any(const Bool4D &v) {
 struct Vector4D {
     FloatType x, y, z, w;
 
-    CUDA_COMMON_FUNCTION Vector4D(FloatType v = 0) : x(v), y(v), z(v), w(w) {}
+    CUDA_COMMON_FUNCTION Vector4D(FloatType v = 0) : x(v), y(v), z(v), w(v) {}
     CUDA_COMMON_FUNCTION Vector4D(FloatType xx, FloatType yy, FloatType zz, FloatType ww) :
         x(xx), y(yy), z(zz), w(ww) {}
     CUDA_COMMON_FUNCTION Vector4D(const Vector3D &v, FloatType ww = 0) :
@@ -2863,12 +2863,12 @@ namespace shared {
 
         CUDA_COMMON_FUNCTION uint32_t numValues() const { return m_numValues; }
 
-        CUDA_COMMON_FUNCTION uint32_t setNumValues(uint32_t numValues) {
+        CUDA_COMMON_FUNCTION void setNumValues(uint32_t numValues) {
             m_numValues = numValues;
         }
 
 #if defined(__CUDA_ARCH__) || defined(OPTIXU_Platform_CodeCompletion)
-        CUDA_DEVICE_FUNCTION uint32_t setWeightAt(uint32_t index, RealType value) {
+        CUDA_DEVICE_FUNCTION void setWeightAt(uint32_t index, RealType value) const {
             m_weights[index] = value;
         }
 

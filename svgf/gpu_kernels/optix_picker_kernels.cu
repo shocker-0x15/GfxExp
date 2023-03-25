@@ -8,8 +8,8 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(pick)() {
         plp.f->temporalSets[curBufIdx];
 
     const PerspectiveCamera &camera = curPerFrameTemporalSet.camera;
-    float2 fPix = make_float2(plp.f->mousePosition.x + camera.subPixelOffset.x,
-                              plp.f->mousePosition.y + 1 - camera.subPixelOffset.y);
+    Point2D fPix(plp.f->mousePosition.x + camera.subPixelOffset.x,
+                 plp.f->mousePosition.y + 1 - camera.subPixelOffset.y);
     float x = fPix.x / plp.s->imageSize.x;
     float y = fPix.y / plp.s->imageSize.y;
     float vh = 2 * std::tan(camera.fovY * 0.5f);

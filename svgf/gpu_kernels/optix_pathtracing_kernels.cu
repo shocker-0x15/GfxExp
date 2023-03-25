@@ -97,7 +97,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void reprojectPreviousAccumulation(
         const PreviousNeighbor &prevNeighbor = prevNeighbors[i];
         if (prevNeighbor.instSlot != curInstSlot || prevNeighbor.matSlot != curMatSlot)
             return;
-        if (dot(prevNeighbor.normal, curNormalInWorld) <= 0.85)
+        if (dot(prevNeighbor.normal, curNormalInWorld) <= 0.85f)
             return;
         if ((prevNeighbor.position - curPosInWorld).sqLength() > 0.1f) // TODO: シーンスケールに対して相対的な指標にする。
             return;
