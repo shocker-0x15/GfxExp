@@ -110,6 +110,21 @@ struct GPUEnvironment {
 
             p.link(1, DEBUG_SELECT(OPTIX_COMPILE_DEBUG_LEVEL_FULL, OPTIX_COMPILE_DEBUG_LEVEL_NONE));
 
+            uint32_t maxDcStackSize = 0;
+            for (int i = 0; i < NumCallablePrograms; ++i) {
+                optixu::CallableProgramGroup program = pipeline.callablePrograms[i];
+                maxDcStackSize = std::max(maxDcStackSize, program.getDCStackSize());
+            }
+            uint32_t maxCcStackSize =
+                pipeline.entryPoints.at(GBufferEntryPoint::setupGBuffers).getStackSize() +
+                std::max(
+                    {
+                        pipeline.hitPrograms.at("hitgroup").getCHStackSize(),
+                        pipeline.programs.at("miss").getStackSize()
+                    });
+
+            p.setStackSize(0, maxDcStackSize, maxCcStackSize, 2);
+
             optixDefaultMaterial.setHitGroup(shared::GBufferRayType::Primary, pipeline.hitPrograms.at("hitgroup"));
             for (uint32_t rayType = shared::GBufferRayType::NumTypes; rayType < shared::maxNumRayTypes; ++rayType)
                 optixDefaultMaterial.setHitGroup(rayType, pipeline.hitPrograms.at("emptyHitGroup"));
@@ -176,6 +191,22 @@ struct GPUEnvironment {
             }
 
             p.link(2, DEBUG_SELECT(OPTIX_COMPILE_DEBUG_LEVEL_FULL, OPTIX_COMPILE_DEBUG_LEVEL_NONE));
+
+            uint32_t maxDcStackSize = 0;
+            for (int i = 0; i < NumCallablePrograms; ++i) {
+                optixu::CallableProgramGroup program = pipeline.callablePrograms[i];
+                maxDcStackSize = std::max(maxDcStackSize, program.getDCStackSize());
+            }
+            uint32_t maxCcStackSize =
+                pipeline.entryPoints.at(PathTracingEntryPoint::pathTraceBaseline).getStackSize() +
+                std::max(
+                    {
+                        pipeline.hitPrograms.at(RT_CH_NAME_STR("pathTraceBaseline")).getCHStackSize() +
+                        pipeline.hitPrograms.at(RT_AH_NAME_STR("visibility")).getAHStackSize(),
+                        pipeline.programs.at(RT_MS_NAME_STR("pathTraceBaseline")).getStackSize()
+                    });
+
+            p.setStackSize(0, maxDcStackSize, maxCcStackSize, 2);
 
             optixDefaultMaterial.setHitGroup(
                 shared::PathTracingRayType::Baseline, pipeline.hitPrograms.at(RT_CH_NAME_STR("pathTraceBaseline")));

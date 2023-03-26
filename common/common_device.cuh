@@ -730,8 +730,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void setupBSDFBody<DiffuseAndSpecularBRDF>(
         smoothness *= 0.5f;
     auto &bsdfBody = *reinterpret_cast<DiffuseAndSpecularBRDF*>(bodyData);
     bsdfBody = DiffuseAndSpecularBRDF(
-        RGB(diffuseColor.x, diffuseColor.y, diffuseColor.z),
-        RGB(specularF0Color.x, specularF0Color.y, specularF0Color.z),
+        RGB(getXYZ(diffuseColor)),
+        RGB(getXYZ(specularF0Color)),
         min(smoothness, 0.999f));
 }
 

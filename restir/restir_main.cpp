@@ -197,6 +197,21 @@ struct GPUEnvironment {
 
             p.link(1, DEBUG_SELECT(OPTIX_COMPILE_DEBUG_LEVEL_FULL, OPTIX_COMPILE_DEBUG_LEVEL_NONE));
 
+            uint32_t maxDcStackSize = 0;
+            for (int i = 0; i < NumCallablePrograms; ++i) {
+                optixu::CallableProgramGroup program = pipeline.callablePrograms[i];
+                maxDcStackSize = std::max(maxDcStackSize, program.getDCStackSize());
+            }
+            uint32_t maxCcStackSize =
+                pipeline.entryPoints.at(GBufferEntryPoint::setupGBuffers).getStackSize() +
+                std::max(
+                    {
+                        pipeline.hitPrograms.at("hitgroup").getCHStackSize(),
+                        pipeline.programs.at("miss").getStackSize()
+                    });
+
+            p.setStackSize(0, maxDcStackSize, maxCcStackSize, 2);
+
             optixDefaultMaterial.setHitGroup(shared::GBufferRayType::Primary, pipeline.hitPrograms.at("hitgroup"));
 
             size_t sbtSize;
@@ -261,6 +276,35 @@ struct GPUEnvironment {
             }
 
             p.link(1, DEBUG_SELECT(OPTIX_COMPILE_DEBUG_LEVEL_FULL, OPTIX_COMPILE_DEBUG_LEVEL_NONE));
+
+            uint32_t maxDcStackSize = 0;
+            for (int i = 0; i < NumCallablePrograms; ++i) {
+                optixu::CallableProgramGroup program = pipeline.callablePrograms[i];
+                maxDcStackSize = std::max(maxDcStackSize, program.getDCStackSize());
+            }
+            uint32_t maxCcStackSize = std::max({
+                std::max({
+                    pipeline.entryPoints.at(
+                        ReSTIREntryPoint::performInitialRIS).getStackSize(),
+                    pipeline.entryPoints.at(
+                        ReSTIREntryPoint::performInitialAndTemporalRISBiased).getStackSize(),
+                    pipeline.entryPoints.at(
+                        ReSTIREntryPoint::performInitialAndTemporalRISUnbiased).getStackSize()
+                    }) +
+                pipeline.hitPrograms.at("visibility").getAHStackSize(),
+                std::max({
+                    pipeline.entryPoints.at(
+                        ReSTIREntryPoint::performSpatialRISBiased).getStackSize(),
+                    pipeline.entryPoints.at(
+                        ReSTIREntryPoint::performSpatialRISUnbiased).getStackSize()
+                    }) +
+                pipeline.hitPrograms.at("visibility").getAHStackSize(),
+                pipeline.entryPoints.at(
+                    ReSTIREntryPoint::shading).getStackSize() +
+                pipeline.hitPrograms.at("visibility").getAHStackSize()
+                });
+
+            p.setStackSize(0, maxDcStackSize, maxCcStackSize, 2);
 
             optixDefaultMaterial.setHitGroup(
                 shared::ReSTIRRayType::Visibility, pipeline.hitPrograms.at("visibility"));
@@ -337,6 +381,43 @@ struct GPUEnvironment {
             }
 
             p.link(1, DEBUG_SELECT(OPTIX_COMPILE_DEBUG_LEVEL_FULL, OPTIX_COMPILE_DEBUG_LEVEL_NONE));
+
+            uint32_t maxDcStackSize = 0;
+            for (int i = 0; i < NumCallablePrograms; ++i) {
+                optixu::CallableProgramGroup program = pipeline.callablePrograms[i];
+                maxDcStackSize = std::max(maxDcStackSize, program.getDCStackSize());
+            }
+            uint32_t maxCcStackSize = std::max({
+                std::max({
+                    pipeline.entryPoints.at(
+                        RearchitectedReSTIREntryPoint::traceShadowRays).getStackSize(),
+                    pipeline.entryPoints.at(
+                        RearchitectedReSTIREntryPoint::traceShadowRaysWithTemporalReuseBiased).getStackSize(),
+                    pipeline.entryPoints.at(
+                        RearchitectedReSTIREntryPoint::traceShadowRaysWithSpatialReuseBiased).getStackSize(),
+                    pipeline.entryPoints.at(
+                        RearchitectedReSTIREntryPoint::traceShadowRaysWithSpatioTemporalReuseBiased).getStackSize(),
+                    pipeline.entryPoints.at(
+                        RearchitectedReSTIREntryPoint::traceShadowRaysWithTemporalReuseUnbiased).getStackSize(),
+                    pipeline.entryPoints.at(
+                        RearchitectedReSTIREntryPoint::traceShadowRaysWithSpatialReuseUnbiased).getStackSize(),
+                    pipeline.entryPoints.at(
+                        RearchitectedReSTIREntryPoint::traceShadowRaysWithSpatioTemporalReuseUnbiased).getStackSize(),
+                         }) +
+                pipeline.hitPrograms.at("visibility").getAHStackSize(),
+                std::max({
+                    pipeline.entryPoints.at(
+                        RearchitectedReSTIREntryPoint::shadeAndResample).getStackSize(),
+                    pipeline.entryPoints.at(
+                        RearchitectedReSTIREntryPoint::shadeAndResampleWithTemporalReuse).getStackSize(),
+                    pipeline.entryPoints.at(
+                        RearchitectedReSTIREntryPoint::shadeAndResampleWithSpatialReuse).getStackSize(),
+                    pipeline.entryPoints.at(
+                        RearchitectedReSTIREntryPoint::shadeAndResampleWithSpatiotemporalReuse).getStackSize(),
+                         })
+                });
+
+            p.setStackSize(0, maxDcStackSize, maxCcStackSize, 2);
 
             optixDefaultMaterial.setHitGroup(
                 shared::ReSTIRRayType::Visibility, pipeline.hitPrograms.at("visibility"));

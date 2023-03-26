@@ -197,6 +197,27 @@ struct GPUEnvironment {
 
             p.link(2, DEBUG_SELECT(OPTIX_COMPILE_DEBUG_LEVEL_FULL, OPTIX_COMPILE_DEBUG_LEVEL_NONE));
 
+            uint32_t maxDcStackSize = 0;
+            for (int i = 0; i < NumCallablePrograms; ++i) {
+                optixu::CallableProgramGroup program = pipeline.callablePrograms[i];
+                maxDcStackSize = std::max(maxDcStackSize, program.getDCStackSize());
+            }
+            uint32_t maxCcStackSize =
+                std::max(
+                    pipeline.entryPoints.at(
+                        PathTracingEntryPoint::pathTraceWithoutTemporalAccumulation).getStackSize(),
+                    pipeline.entryPoints.at(
+                        PathTracingEntryPoint::pathTraceWithTemporalAccumulation).getStackSize()
+                ) +
+                std::max(
+                    {
+                        pipeline.hitPrograms.at(RT_CH_NAME_STR("pathTrace")).getCHStackSize() +
+                        pipeline.hitPrograms.at(RT_AH_NAME_STR("visibility")).getAHStackSize(),
+                        pipeline.programs.at(RT_MS_NAME_STR("pathTrace")).getStackSize()
+                    });
+
+            p.setStackSize(0, maxDcStackSize, maxCcStackSize, 2);
+
             optixDefaultMaterial.setHitGroup(
                 shared::PathTracingRayType::Baseline, pipeline.hitPrograms.at(RT_CH_NAME_STR("pathTrace")));
             optixDefaultMaterial.setHitGroup(
@@ -258,6 +279,21 @@ struct GPUEnvironment {
             }
 
             p.link(1, DEBUG_SELECT(OPTIX_COMPILE_DEBUG_LEVEL_FULL, OPTIX_COMPILE_DEBUG_LEVEL_NONE));
+
+            uint32_t maxDcStackSize = 0;
+            for (int i = 0; i < NumCallablePrograms; ++i) {
+                optixu::CallableProgramGroup program = pipeline.callablePrograms[i];
+                maxDcStackSize = std::max(maxDcStackSize, program.getDCStackSize());
+            }
+            uint32_t maxCcStackSize =
+                pipeline.entryPoints.at(PickerEntryPoint::pick).getStackSize() +
+                std::max(
+                    {
+                        pipeline.hitPrograms.at(RT_CH_NAME_STR("pick")).getCHStackSize(),
+                        pipeline.programs.at(RT_MS_NAME_STR("pick")).getStackSize()
+                    });
+
+            p.setStackSize(0, maxDcStackSize, maxCcStackSize, 2);
 
             optixDefaultMaterial.setHitGroup(
                 shared::PickRayType::Primary, pipeline.hitPrograms.at(RT_CH_NAME_STR("pick")));
