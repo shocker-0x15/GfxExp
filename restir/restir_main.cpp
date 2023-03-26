@@ -105,9 +105,10 @@ struct GPUEnvironment {
     struct Pipeline {
         optixu::Pipeline optixPipeline;
         optixu::Module optixModule;
-        std::unordered_map<EntryPointType, optixu::ProgramGroup> entryPoints;
-        std::unordered_map<std::string, optixu::ProgramGroup> programs;
-        std::vector<optixu::ProgramGroup> callablePrograms;
+        std::unordered_map<EntryPointType, optixu::Program> entryPoints;
+        std::unordered_map<std::string, optixu::Program> programs;
+        std::unordered_map<std::string, optixu::HitProgramGroup> hitPrograms;
+        std::vector<optixu::CallableProgramGroup> callablePrograms;
         cudau::Buffer sbt;
         cudau::Buffer hitGroupSbt;
 
@@ -174,7 +175,7 @@ struct GPUEnvironment {
             pipeline.entryPoints[GBufferEntryPoint::setupGBuffers] = p.createRayGenProgram(
                 m, RT_RG_NAME_STR("setupGBuffers"));
 
-            pipeline.programs["hitgroup"] = p.createHitProgramGroupForTriangleIS(
+            pipeline.hitPrograms["hitgroup"] = p.createHitProgramGroupForTriangleIS(
                 m, RT_CH_NAME_STR("setupGBuffers"),
                 emptyModule, nullptr);
             pipeline.programs["miss"] = p.createMissProgram(
@@ -187,7 +188,7 @@ struct GPUEnvironment {
             p.setNumCallablePrograms(NumCallablePrograms);
             pipeline.callablePrograms.resize(NumCallablePrograms);
             for (int i = 0; i < NumCallablePrograms; ++i) {
-                optixu::ProgramGroup program = p.createCallableProgramGroup(
+                optixu::CallableProgramGroup program = p.createCallableProgramGroup(
                     m, callableProgramEntryPoints[i],
                     emptyModule, nullptr);
                 pipeline.callablePrograms[i] = program;
@@ -196,7 +197,7 @@ struct GPUEnvironment {
 
             p.link(1, DEBUG_SELECT(OPTIX_COMPILE_DEBUG_LEVEL_FULL, OPTIX_COMPILE_DEBUG_LEVEL_NONE));
 
-            optixDefaultMaterial.setHitGroup(shared::GBufferRayType::Primary, pipeline.programs.at("hitgroup"));
+            optixDefaultMaterial.setHitGroup(shared::GBufferRayType::Primary, pipeline.hitPrograms.at("hitgroup"));
 
             size_t sbtSize;
             p.generateShaderBindingTableLayout(&sbtSize);
@@ -242,7 +243,7 @@ struct GPUEnvironment {
                 p.createRayGenProgram(m, RT_RG_NAME_STR("shading"));
 
             pipeline.programs["emptyMiss"] = p.createMissProgram(emptyModule, nullptr);
-            pipeline.programs["visibility"] = p.createHitProgramGroupForTriangleIS(
+            pipeline.hitPrograms["visibility"] = p.createHitProgramGroupForTriangleIS(
                 emptyModule, nullptr,
                 m, RT_AH_NAME_STR("visibility"));
 
@@ -252,7 +253,7 @@ struct GPUEnvironment {
             p.setNumCallablePrograms(NumCallablePrograms);
             pipeline.callablePrograms.resize(NumCallablePrograms);
             for (int i = 0; i < NumCallablePrograms; ++i) {
-                optixu::ProgramGroup program = p.createCallableProgramGroup(
+                optixu::CallableProgramGroup program = p.createCallableProgramGroup(
                     m, callableProgramEntryPoints[i],
                     emptyModule, nullptr);
                 pipeline.callablePrograms[i] = program;
@@ -262,7 +263,7 @@ struct GPUEnvironment {
             p.link(1, DEBUG_SELECT(OPTIX_COMPILE_DEBUG_LEVEL_FULL, OPTIX_COMPILE_DEBUG_LEVEL_NONE));
 
             optixDefaultMaterial.setHitGroup(
-                shared::ReSTIRRayType::Visibility, pipeline.programs.at("visibility"));
+                shared::ReSTIRRayType::Visibility, pipeline.hitPrograms.at("visibility"));
 
             size_t sbtSize;
             p.generateShaderBindingTableLayout(&sbtSize);
@@ -318,7 +319,7 @@ struct GPUEnvironment {
                 p.createRayGenProgram(m, RT_RG_NAME_STR("shadeAndResampleWithSpatioTemporalReuse"));
 
             pipeline.programs["emptyMiss"] = p.createMissProgram(emptyModule, nullptr);
-            pipeline.programs["visibility"] = p.createHitProgramGroupForTriangleIS(
+            pipeline.hitPrograms["visibility"] = p.createHitProgramGroupForTriangleIS(
                 emptyModule, nullptr,
                 m, RT_AH_NAME_STR("visibility"));
 
@@ -328,7 +329,7 @@ struct GPUEnvironment {
             p.setNumCallablePrograms(NumCallablePrograms);
             pipeline.callablePrograms.resize(NumCallablePrograms);
             for (int i = 0; i < NumCallablePrograms; ++i) {
-                optixu::ProgramGroup program = p.createCallableProgramGroup(
+                optixu::CallableProgramGroup program = p.createCallableProgramGroup(
                     m, callableProgramEntryPoints[i],
                     emptyModule, nullptr);
                 pipeline.callablePrograms[i] = program;
@@ -338,7 +339,7 @@ struct GPUEnvironment {
             p.link(1, DEBUG_SELECT(OPTIX_COMPILE_DEBUG_LEVEL_FULL, OPTIX_COMPILE_DEBUG_LEVEL_NONE));
 
             optixDefaultMaterial.setHitGroup(
-                shared::ReSTIRRayType::Visibility, pipeline.programs.at("visibility"));
+                shared::ReSTIRRayType::Visibility, pipeline.hitPrograms.at("visibility"));
 
             size_t sbtSize;
             p.generateShaderBindingTableLayout(&sbtSize);

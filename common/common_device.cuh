@@ -317,7 +317,7 @@ public:
     }
 };
 
-template<>
+template <>
 CUDA_DEVICE_FUNCTION CUDA_INLINE void setupBSDFBody<LambertBRDF>(
     const shared::MaterialData &matData, Point2D texCoord, uint32_t* bodyData, shared::BSDFFlags /*flags*/) {
     float4 reflectance = sample<float4>(
@@ -710,7 +710,7 @@ public:
     }
 };
 
-template<>
+template <>
 CUDA_DEVICE_FUNCTION CUDA_INLINE void setupBSDFBody<DiffuseAndSpecularBRDF>(
     const shared::MaterialData &matData, Point2D texCoord, uint32_t* bodyData, shared::BSDFFlags flags) {
     float4 diffuseColor = sample<float4>(
@@ -735,7 +735,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void setupBSDFBody<DiffuseAndSpecularBRDF>(
         min(smoothness, 0.999f));
 }
 
-template<>
+template <>
 CUDA_DEVICE_FUNCTION CUDA_INLINE void setupBSDFBody<SimplePBR_BRDF>(
     const shared::MaterialData &matData, Point2D texCoord, uint32_t* bodyData, shared::BSDFFlags flags) {
     float4 baseColor_opacity = sample<float4>(

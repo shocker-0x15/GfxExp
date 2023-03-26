@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "cuda_util.h"
 #include "optix_util.h"

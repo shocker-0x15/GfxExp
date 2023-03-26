@@ -370,7 +370,7 @@ namespace optixu {
         SizeAlign userDataSizeAlign;
         std::vector<uint8_t> userData;
 
-        std::unordered_map<Key, _ProgramGroup*, Key::Hash> programs;
+        std::unordered_map<Key, _HitProgramGroup*, Key::Hash> programs;
 
     public:
         OPTIXU_OPAQUE_BRIDGE(Material);
@@ -1125,10 +1125,10 @@ namespace optixu {
         size_t sbtSize;
 
         std::unordered_map<KeyForBuiltinISModule, _Module*, KeyForBuiltinISModule::Hash> modulesForBuiltinIS;
-        _ProgramGroup* rayGenProgram;
-        _ProgramGroup* exceptionProgram;
-        std::vector<_ProgramGroup*> missPrograms;
-        std::vector<_ProgramGroup*> callablePrograms;
+        _Program* rayGenProgram;
+        _Program* exceptionProgram;
+        std::vector<_Program*> missPrograms;
+        std::vector<_CallableProgramGroup*> callablePrograms;
         BufferView sbt;
         void* sbtHostMem;
         BufferView hitGroupSbt;
@@ -1213,15 +1213,107 @@ namespace optixu {
 
 
     template <>
-    class Object<ProgramGroup>::Priv : public PrivateObject {
+    class Object<Program>::Priv : public PrivateObject {
         _Pipeline* pipeline;
         OptixProgramGroup rawGroup;
+        uint32_t stackSize;
 
     public:
-        OPTIXU_OPAQUE_BRIDGE(ProgramGroup);
+        OPTIXU_OPAQUE_BRIDGE(Program);
+
+        Priv(_Pipeline* pl, OptixProgramGroup _rawGroup, OptixProgramGroupKind kind) :
+            pipeline(pl), rawGroup(_rawGroup) {
+            OptixStackSizes stackSizes;
+            OPTIX_CHECK(optixProgramGroupGetStackSize(rawGroup, &stackSizes));
+            if (kind == OPTIX_PROGRAM_GROUP_KIND_RAYGEN)
+                stackSize = stackSizes.cssRG;
+            else if (kind == OPTIX_PROGRAM_GROUP_KIND_MISS)
+                stackSize = stackSizes.cssMS;
+            else if (kind == OPTIX_PROGRAM_GROUP_KIND_EXCEPTION)
+                stackSize = 0;
+            else
+                optixuAssert_ShouldNotBeCalled();
+        }
+        ~Priv() {
+            getContext()->unregisterName(this);
+        }
+
+        _Context* getContext() const override {
+            return pipeline->getContext();
+        }
+        const _Pipeline* getPipeline() const {
+            return pipeline;
+        }
+
+        OptixProgramGroup getRawProgramGroup() const {
+            return rawGroup;
+        }
+
+        void packHeader(uint8_t* record) const {
+            OPTIX_CHECK(optixSbtRecordPackHeader(rawGroup, record));
+        }
+    };
+
+
+
+    template <>
+    class Object<HitProgramGroup>::Priv : public PrivateObject {
+        _Pipeline* pipeline;
+        OptixProgramGroup rawGroup;
+        uint32_t stackSizeCH;
+        uint32_t stackSizeAH;
+        uint32_t stackSizeIS;
+
+    public:
+        OPTIXU_OPAQUE_BRIDGE(HitProgramGroup);
 
         Priv(_Pipeline* pl, OptixProgramGroup _rawGroup) :
-            pipeline(pl), rawGroup(_rawGroup) {}
+            pipeline(pl), rawGroup(_rawGroup) {
+            OptixStackSizes stackSizes;
+            OPTIX_CHECK(optixProgramGroupGetStackSize(rawGroup, &stackSizes));
+            stackSizeCH = stackSizes.cssCH;
+            stackSizeAH = stackSizes.cssAH;
+            stackSizeIS = stackSizes.cssIS;
+        }
+        ~Priv() {
+            getContext()->unregisterName(this);
+        }
+
+        _Context* getContext() const override {
+            return pipeline->getContext();
+        }
+        const _Pipeline* getPipeline() const {
+            return pipeline;
+        }
+
+        OptixProgramGroup getRawProgramGroup() const {
+            return rawGroup;
+        }
+
+        void packHeader(uint8_t* record) const {
+            OPTIX_CHECK(optixSbtRecordPackHeader(rawGroup, record));
+        }
+    };
+
+
+
+    template <>
+    class Object<CallableProgramGroup>::Priv : public PrivateObject {
+        _Pipeline* pipeline;
+        OptixProgramGroup rawGroup;
+        uint32_t stackSizeDC;
+        uint32_t stackSizeCC;
+
+    public:
+        OPTIXU_OPAQUE_BRIDGE(CallableProgramGroup);
+
+        Priv(_Pipeline* pl, OptixProgramGroup _rawGroup) :
+            pipeline(pl), rawGroup(_rawGroup) {
+            OptixStackSizes stackSizes;
+            OPTIX_CHECK(optixProgramGroupGetStackSize(rawGroup, &stackSizes));
+            stackSizeDC = stackSizes.dssDC;
+            stackSizeCC = stackSizes.cssCC;
+        }
         ~Priv() {
             getContext()->unregisterName(this);
         }

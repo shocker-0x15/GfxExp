@@ -104,9 +104,10 @@ struct GPUEnvironment {
     struct Pipeline {
         optixu::Pipeline optixPipeline;
         optixu::Module optixModule;
-        std::unordered_map<EntryPointType, optixu::ProgramGroup> entryPoints;
-        std::unordered_map<std::string, optixu::ProgramGroup> programs;
-        std::vector<optixu::ProgramGroup> callablePrograms;
+        std::unordered_map<EntryPointType, optixu::Program> entryPoints;
+        std::unordered_map<std::string, optixu::Program> programs;
+        std::unordered_map<std::string, optixu::HitProgramGroup> hitPrograms;
+        std::vector<optixu::CallableProgramGroup> callablePrograms;
         cudau::Buffer sbt;
         cudau::Buffer hitGroupSbt;
 
@@ -175,13 +176,13 @@ struct GPUEnvironment {
             pipeline.entryPoints[GBufferEntryPoint::setupGBuffers] = p.createRayGenProgram(
                 m, RT_RG_NAME_STR("setupGBuffers"));
 
-            pipeline.programs["hitgroup"] = p.createHitProgramGroupForTriangleIS(
+            pipeline.hitPrograms["hitgroup"] = p.createHitProgramGroupForTriangleIS(
                 m, RT_CH_NAME_STR("setupGBuffers"),
                 emptyModule, nullptr);
             pipeline.programs["miss"] = p.createMissProgram(
                 m, RT_MS_NAME_STR("setupGBuffers"));
 
-            pipeline.programs["emptyHitGroup"] = p.createEmptyHitProgramGroup();
+            pipeline.hitPrograms["emptyHitGroup"] = p.createEmptyHitProgramGroup();
 
             pipeline.setEntryPoint(GBufferEntryPoint::setupGBuffers);
             p.setNumMissRayTypes(shared::GBufferRayType::NumTypes);
@@ -190,7 +191,7 @@ struct GPUEnvironment {
             p.setNumCallablePrograms(NumCallablePrograms);
             pipeline.callablePrograms.resize(NumCallablePrograms);
             for (int i = 0; i < NumCallablePrograms; ++i) {
-                optixu::ProgramGroup program = p.createCallableProgramGroup(
+                optixu::CallableProgramGroup program = p.createCallableProgramGroup(
                     m, callableProgramEntryPoints[i],
                     emptyModule, nullptr);
                 pipeline.callablePrograms[i] = program;
@@ -199,9 +200,9 @@ struct GPUEnvironment {
 
             p.link(1, DEBUG_SELECT(OPTIX_COMPILE_DEBUG_LEVEL_FULL, OPTIX_COMPILE_DEBUG_LEVEL_NONE));
 
-            optixDefaultMaterial.setHitGroup(shared::GBufferRayType::Primary, pipeline.programs.at("hitgroup"));
+            optixDefaultMaterial.setHitGroup(shared::GBufferRayType::Primary, pipeline.hitPrograms.at("hitgroup"));
             for (uint32_t rayType = shared::GBufferRayType::NumTypes; rayType < shared::maxNumRayTypes; ++rayType)
-                optixDefaultMaterial.setHitGroup(rayType, pipeline.programs.at("emptyHitGroup"));
+                optixDefaultMaterial.setHitGroup(rayType, pipeline.hitPrograms.at("emptyHitGroup"));
 
             size_t sbtSize;
             p.generateShaderBindingTableLayout(&sbtSize);
@@ -244,17 +245,17 @@ struct GPUEnvironment {
 
             pipeline.programs[RT_MS_NAME_STR("pathTraceBaseline")] = p.createMissProgram(
                 m, RT_MS_NAME_STR("pathTraceBaseline"));
-            pipeline.programs[RT_CH_NAME_STR("pathTraceBaseline")] = p.createHitProgramGroupForTriangleIS(
+            pipeline.hitPrograms[RT_CH_NAME_STR("pathTraceBaseline")] = p.createHitProgramGroupForTriangleIS(
                 m, RT_CH_NAME_STR("pathTraceBaseline"),
                 emptyModule, nullptr);
 
             pipeline.programs[RT_MS_NAME_STR("pathTraceNRC")] = p.createMissProgram(
                 m, RT_MS_NAME_STR("pathTraceNRC"));
-            pipeline.programs[RT_CH_NAME_STR("pathTraceNRC")] = p.createHitProgramGroupForTriangleIS(
+            pipeline.hitPrograms[RT_CH_NAME_STR("pathTraceNRC")] = p.createHitProgramGroupForTriangleIS(
                 m, RT_CH_NAME_STR("pathTraceNRC"),
                 emptyModule, nullptr);
 
-            pipeline.programs[RT_AH_NAME_STR("visibility")] = p.createHitProgramGroupForTriangleIS(
+            pipeline.hitPrograms[RT_AH_NAME_STR("visibility")] = p.createHitProgramGroupForTriangleIS(
                 emptyModule, nullptr,
                 m, RT_AH_NAME_STR("visibility"));
 
@@ -270,7 +271,7 @@ struct GPUEnvironment {
             p.setNumCallablePrograms(NumCallablePrograms);
             pipeline.callablePrograms.resize(NumCallablePrograms);
             for (int i = 0; i < NumCallablePrograms; ++i) {
-                optixu::ProgramGroup program = p.createCallableProgramGroup(
+                optixu::CallableProgramGroup program = p.createCallableProgramGroup(
                     m, callableProgramEntryPoints[i],
                     emptyModule, nullptr);
                 pipeline.callablePrograms[i] = program;
@@ -280,11 +281,11 @@ struct GPUEnvironment {
             p.link(2, DEBUG_SELECT(OPTIX_COMPILE_DEBUG_LEVEL_FULL, OPTIX_COMPILE_DEBUG_LEVEL_NONE));
 
             optixDefaultMaterial.setHitGroup(
-                shared::PathTracingRayType::Baseline, pipeline.programs.at(RT_CH_NAME_STR("pathTraceBaseline")));
+                shared::PathTracingRayType::Baseline, pipeline.hitPrograms.at(RT_CH_NAME_STR("pathTraceBaseline")));
             optixDefaultMaterial.setHitGroup(
-                shared::PathTracingRayType::NRC, pipeline.programs.at(RT_CH_NAME_STR("pathTraceNRC")));
+                shared::PathTracingRayType::NRC, pipeline.hitPrograms.at(RT_CH_NAME_STR("pathTraceNRC")));
             optixDefaultMaterial.setHitGroup(
-                shared::PathTracingRayType::Visibility, pipeline.programs.at(RT_AH_NAME_STR("visibility")));
+                shared::PathTracingRayType::Visibility, pipeline.hitPrograms.at(RT_AH_NAME_STR("visibility")));
 
             size_t sbtSize;
             p.generateShaderBindingTableLayout(&sbtSize);

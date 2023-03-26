@@ -32,6 +32,10 @@ EN:
 
 変更履歴 / Update History:
 - !!BREAKING
+  JP: - ProgramGroupをProgram, HitProgramGroup, CallableProgramGroupに分割した。
+  EN: - Separated ProgramGroup into Program, HitProgramGroup, CallableProgramGroup.
+
+- !!BREAKING
   JP: - Opacity Micro-Mapをサポート。
       - インデックスサイズ指定用のenum classを定義。
   EN: - Supported opacity micro-map.
@@ -996,7 +1000,9 @@ namespace optixu {
     OPTIXU_PREPROCESS_OBJECT(InstanceAccelerationStructure); \
     OPTIXU_PREPROCESS_OBJECT(Pipeline); \
     OPTIXU_PREPROCESS_OBJECT(Module); \
-    OPTIXU_PREPROCESS_OBJECT(ProgramGroup); \
+    OPTIXU_PREPROCESS_OBJECT(Program); \
+    OPTIXU_PREPROCESS_OBJECT(HitProgramGroup); \
+    OPTIXU_PREPROCESS_OBJECT(CallableProgramGroup); \
     OPTIXU_PREPROCESS_OBJECT(Denoiser);
 
     // Forward Declarations
@@ -1213,14 +1219,14 @@ namespace optixu {
         //     In the case where user data size and/or alignment changes again after generating the layout of
         //     a shader binding table, the invalidation of the layout is required as well by calling
         //     scene's markShaderBindingTableLayoutDirty().
-        void setHitGroup(uint32_t rayType, ProgramGroup hitGroup) const;
+        void setHitGroup(uint32_t rayType, HitProgramGroup hitGroup) const;
         void setUserData(const void* data, uint32_t size, uint32_t alignment) const;
         template <typename T>
         void setUserData(const T &data) const {
             setUserData(&data, sizeof(T), alignof(T));
         }
 
-        ProgramGroup getHitGroup(Pipeline pipeline, uint32_t rayType) const;
+        HitProgramGroup getHitGroup(Pipeline pipeline, uint32_t rayType) const;
         void getUserData(void* data, uint32_t* size, uint32_t* alignment) const;
         template <typename T>
         void getUserData(T* data, uint32_t* size = nullptr, uint32_t* alignment = nullptr) const {
@@ -1653,20 +1659,20 @@ namespace optixu {
             const PayloadType* payloadTypes = nullptr, uint32_t numPayloadTypes = 0) const;
 
         [[nodiscard]]
-        ProgramGroup createRayGenProgram(Module module, const char* entryFunctionName) const;
+        Program createRayGenProgram(Module module, const char* entryFunctionName) const;
         [[nodiscard]]
-        ProgramGroup createExceptionProgram(Module module, const char* entryFunctionName) const;
+        Program createExceptionProgram(Module module, const char* entryFunctionName) const;
         [[nodiscard]]
-        ProgramGroup createMissProgram(
+        Program createMissProgram(
             Module module, const char* entryFunctionName,
             const PayloadType &payloadType = PayloadType()) const;
         [[nodiscard]]
-        ProgramGroup createHitProgramGroupForTriangleIS(
+        HitProgramGroup createHitProgramGroupForTriangleIS(
             Module module_CH, const char* entryFunctionNameCH,
             Module module_AH, const char* entryFunctionNameAH,
             const PayloadType &payloadType = PayloadType()) const;
         [[nodiscard]]
-        ProgramGroup createHitProgramGroupForCurveIS(
+        HitProgramGroup createHitProgramGroupForCurveIS(
             OptixPrimitiveType curveType, OptixCurveEndcapFlags endcapFlags,
             Module module_CH, const char* entryFunctionNameCH,
             Module module_AH, const char* entryFunctionNameAH,
@@ -1676,7 +1682,7 @@ namespace optixu {
             AllowRandomVertexAccess allowRandomVertexAccess = AllowRandomVertexAccess::No,
             const PayloadType &payloadType = PayloadType()) const;
         [[nodiscard]]
-        ProgramGroup createHitProgramGroupForSphereIS(
+        HitProgramGroup createHitProgramGroupForSphereIS(
             Module module_CH, const char* entryFunctionNameCH,
             Module module_AH, const char* entryFunctionNameAH,
             ASTradeoff tradeoff,
@@ -1685,15 +1691,15 @@ namespace optixu {
             AllowRandomVertexAccess allowRandomVertexAccess = AllowRandomVertexAccess::No,
             const PayloadType &payloadType = PayloadType()) const;
         [[nodiscard]]
-        ProgramGroup createHitProgramGroupForCustomIS(
+        HitProgramGroup createHitProgramGroupForCustomIS(
             Module module_CH, const char* entryFunctionNameCH,
             Module module_AH, const char* entryFunctionNameAH,
             Module module_IS, const char* entryFunctionNameIS,
             const PayloadType &payloadType = PayloadType()) const;
         [[nodiscard]]
-        ProgramGroup createEmptyHitProgramGroup() const;
+        HitProgramGroup createEmptyHitProgramGroup() const;
         [[nodiscard]]
-        ProgramGroup createCallableProgramGroup(
+        CallableProgramGroup createCallableProgramGroup(
             Module module_DC, const char* entryFunctionNameDC,
             Module module_CC, const char* entryFunctionNameCC,
             const PayloadType &payloadType = PayloadType()) const;
@@ -1720,10 +1726,10 @@ namespace optixu {
             and transfer, so double buffered SBT is required for safety
             in the case performing asynchronous update.
         */
-        void setRayGenerationProgram(ProgramGroup program) const;
-        void setExceptionProgram(ProgramGroup program) const;
-        void setMissProgram(uint32_t rayType, ProgramGroup program) const;
-        void setCallableProgram(uint32_t index, ProgramGroup program) const;
+        void setRayGenerationProgram(Program program) const;
+        void setExceptionProgram(Program program) const;
+        void setMissProgram(uint32_t rayType, Program program) const;
+        void setCallableProgram(uint32_t index, CallableProgramGroup program) const;
         void setShaderBindingTable(const BufferView &shaderBindingTable, void* hostMem) const;
 
         /*
@@ -1771,11 +1777,32 @@ namespace optixu {
 
 
 
-    class ProgramGroup : public Object<ProgramGroup> {
+    class Program : public Object<Program> {
     public:
         void destroy();
 
-        void getStackSize(OptixStackSizes* sizes) const;
+        uint32_t getStackSize() const;
+    };
+
+
+
+    class HitProgramGroup : public Object<HitProgramGroup> {
+    public:
+        void destroy();
+
+        uint32_t getCHStackSize() const;
+        uint32_t getAHStackSize() const;
+        uint32_t getISStackSize() const;
+    };
+
+
+
+    class CallableProgramGroup : public Object<CallableProgramGroup> {
+    public:
+        void destroy();
+
+        uint32_t getDCStackSize() const;
+        uint32_t getCCStackSize() const;
     };
 
 

@@ -113,7 +113,7 @@ namespace optixu {
             programs.count(key),
             "No hit group is set to the pipeline %s, ray type %u",
             pipeline->getName().c_str(), rayType);
-        const _ProgramGroup* hitGroup = programs.at(key);
+        const _HitProgramGroup* hitGroup = programs.at(key);
         *curSizeAlign = SizeAlign(OPTIX_SBT_RECORD_HEADER_SIZE, OPTIX_SBT_RECORD_ALIGNMENT);
         hitGroup->packHeader(record);
     }
@@ -130,7 +130,7 @@ namespace optixu {
         m = nullptr;
     }
 
-    void Material::setHitGroup(uint32_t rayType, ProgramGroup hitGroup) const {
+    void Material::setHitGroup(uint32_t rayType, HitProgramGroup hitGroup) const {
         const _Pipeline* _pipeline = extract(hitGroup)->getPipeline();
         m->throwRuntimeError(_pipeline, "Invalid pipeline %p.", _pipeline);
 
@@ -152,7 +152,7 @@ namespace optixu {
         std::memcpy(m->userData.data(), data, size);
     }
 
-    ProgramGroup Material::getHitGroup(Pipeline pipeline, uint32_t rayType) const {
+    HitProgramGroup Material::getHitGroup(Pipeline pipeline, uint32_t rayType) const {
         auto _pipeline = extract(pipeline);
         m->throwRuntimeError(_pipeline, "Invalid pipeline %p.", _pipeline);
 
@@ -3009,7 +3009,6 @@ namespace optixu {
             payloadTypes, numPayloadTypes);
     }
 
-    [[nodiscard]]
     Module Pipeline::createModuleFromOptixIR(
         const std::vector<char> &irBin, int32_t maxRegisterCount,
         OptixCompileOptimizationLevel optLevel, OptixCompileDebugLevel debugLevel,
@@ -3023,7 +3022,7 @@ namespace optixu {
             payloadTypes, numPayloadTypes);
     }
 
-    ProgramGroup Pipeline::createRayGenProgram(Module module, const char* entryFunctionName) const {
+    Program Pipeline::createRayGenProgram(Module module, const char* entryFunctionName) const {
         _Module* _module = extract(module);
         m->throwRuntimeError(
             _module && entryFunctionName,
@@ -3043,10 +3042,10 @@ namespace optixu {
         OptixProgramGroup group;
         m->createProgram(desc, options, &group);
 
-        return (new _ProgramGroup(m, group))->getPublicType();
+        return (new _Program(m, group, desc.kind))->getPublicType();
     }
 
-    ProgramGroup Pipeline::createExceptionProgram(Module module, const char* entryFunctionName) const {
+    Program Pipeline::createExceptionProgram(Module module, const char* entryFunctionName) const {
         _Module* _module = extract(module);
         m->throwRuntimeError(
             _module && entryFunctionName,
@@ -3066,10 +3065,10 @@ namespace optixu {
         OptixProgramGroup group;
         m->createProgram(desc, options, &group);
 
-        return (new _ProgramGroup(m, group))->getPublicType();
+        return (new _Program(m, group, desc.kind))->getPublicType();
     }
 
-    ProgramGroup Pipeline::createMissProgram(
+    Program Pipeline::createMissProgram(
         Module module, const char* entryFunctionName,
         const PayloadType &payloadType) const {
         _Module* _module = extract(module);
@@ -3096,10 +3095,10 @@ namespace optixu {
         OptixProgramGroup group;
         m->createProgram(desc, options, &group);
 
-        return (new _ProgramGroup(m, group))->getPublicType();
+        return (new _Program(m, group, desc.kind))->getPublicType();
     }
 
-    ProgramGroup Pipeline::createHitProgramGroupForTriangleIS(
+    HitProgramGroup Pipeline::createHitProgramGroupForTriangleIS(
         Module module_CH, const char* entryFunctionNameCH,
         Module module_AH, const char* entryFunctionNameAH,
         const PayloadType &payloadType) const {
@@ -3144,10 +3143,10 @@ namespace optixu {
         OptixProgramGroup group;
         m->createProgram(desc, options, &group);
 
-        return (new _ProgramGroup(m, group))->getPublicType();
+        return (new _HitProgramGroup(m, group))->getPublicType();
     }
 
-    ProgramGroup Pipeline::createHitProgramGroupForCurveIS(
+    HitProgramGroup Pipeline::createHitProgramGroupForCurveIS(
         OptixPrimitiveType curveType, OptixCurveEndcapFlags endcapFlags,
         Module module_CH, const char* entryFunctionNameCH,
         Module module_AH, const char* entryFunctionNameAH,
@@ -3205,10 +3204,10 @@ namespace optixu {
         OptixProgramGroup group;
         m->createProgram(desc, options, &group);
 
-        return (new _ProgramGroup(m, group))->getPublicType();
+        return (new _HitProgramGroup(m, group))->getPublicType();
     }
 
-    ProgramGroup Pipeline::createHitProgramGroupForSphereIS(
+    HitProgramGroup Pipeline::createHitProgramGroupForSphereIS(
         Module module_CH, const char* entryFunctionNameCH,
         Module module_AH, const char* entryFunctionNameAH,
         ASTradeoff tradeoff, AllowUpdate allowUpdate, AllowCompaction allowCompaction,
@@ -3259,10 +3258,10 @@ namespace optixu {
         OptixProgramGroup group;
         m->createProgram(desc, options, &group);
 
-        return (new _ProgramGroup(m, group))->getPublicType();
+        return (new _HitProgramGroup(m, group))->getPublicType();
     }
 
-    ProgramGroup Pipeline::createHitProgramGroupForCustomIS(
+    HitProgramGroup Pipeline::createHitProgramGroupForCustomIS(
         Module module_CH, const char* entryFunctionNameCH,
         Module module_AH, const char* entryFunctionNameAH,
         Module module_IS, const char* entryFunctionNameIS,
@@ -3318,10 +3317,10 @@ namespace optixu {
         OptixProgramGroup group;
         m->createProgram(desc, options, &group);
 
-        return (new _ProgramGroup(m, group))->getPublicType();
+        return (new _HitProgramGroup(m, group))->getPublicType();
     }
 
-    ProgramGroup Pipeline::createEmptyHitProgramGroup() const {
+    HitProgramGroup Pipeline::createEmptyHitProgramGroup() const {
         OptixProgramGroupDesc desc = {};
 
         OptixProgramGroupOptions options = {};
@@ -3329,10 +3328,10 @@ namespace optixu {
         OptixProgramGroup group;
         m->createProgram(desc, options, &group);
 
-        return (new _ProgramGroup(m, group))->getPublicType();
+        return (new _HitProgramGroup(m, group))->getPublicType();
     }
 
-    ProgramGroup Pipeline::createCallableProgramGroup(
+    CallableProgramGroup Pipeline::createCallableProgramGroup(
         Module module_DC, const char* entryFunctionNameDC,
         Module module_CC, const char* entryFunctionNameCC,
         const PayloadType &payloadType) const {
@@ -3377,7 +3376,7 @@ namespace optixu {
         OptixProgramGroup group;
         m->createProgram(desc, options, &group);
 
-        return (new _ProgramGroup(m, group))->getPublicType();
+        return (new _CallableProgramGroup(m, group))->getPublicType();
     }
 
     void Pipeline::link(uint32_t maxTraceDepth, OptixCompileDebugLevel debugLevel) const {
@@ -3432,8 +3431,8 @@ namespace optixu {
         *memorySize = m->sbtSize;
     }
 
-    void Pipeline::setRayGenerationProgram(ProgramGroup program) const {
-        _ProgramGroup* _program = extract(program);
+    void Pipeline::setRayGenerationProgram(Program program) const {
+        _Program* _program = extract(program);
         m->throwRuntimeError(
             _program, "Invalid program %p.", _program);
         m->throwRuntimeError(
@@ -3445,8 +3444,8 @@ namespace optixu {
         m->sbtIsUpToDate = false;
     }
 
-    void Pipeline::setExceptionProgram(ProgramGroup program) const {
-        _ProgramGroup* _program = extract(program);
+    void Pipeline::setExceptionProgram(Program program) const {
+        _Program* _program = extract(program);
         m->throwRuntimeError(
             _program,
             "Invalid program %p.",
@@ -3460,8 +3459,8 @@ namespace optixu {
         m->sbtIsUpToDate = false;
     }
 
-    void Pipeline::setMissProgram(uint32_t rayType, ProgramGroup program) const {
-        _ProgramGroup* _program = extract(program);
+    void Pipeline::setMissProgram(uint32_t rayType, Program program) const {
+        _Program* _program = extract(program);
         m->throwRuntimeError(
             rayType < m->numMissRayTypes,
             "Invalid ray type.");
@@ -3478,8 +3477,8 @@ namespace optixu {
         m->sbtIsUpToDate = false;
     }
 
-    void Pipeline::setCallableProgram(uint32_t index, ProgramGroup program) const {
-        _ProgramGroup* _program = extract(program);
+    void Pipeline::setCallableProgram(uint32_t index, CallableProgramGroup program) const {
+        _CallableProgramGroup* _program = extract(program);
         m->throwRuntimeError(
             index < m->numCallablePrograms,
             "Invalid callable program index.");
@@ -3601,7 +3600,7 @@ namespace optixu {
 
 
 
-    void ProgramGroup::destroy() {
+    void Program::destroy() {
         if (m) {
             m->pipeline->destroyProgram(m->rawGroup);
             delete m;
@@ -3609,8 +3608,48 @@ namespace optixu {
         m = nullptr;
     }
 
-    void ProgramGroup::getStackSize(OptixStackSizes* sizes) const {
-        OPTIX_CHECK(optixProgramGroupGetStackSize(m->rawGroup, sizes));
+    uint32_t Program::getStackSize() const {
+        return m->stackSize;
+    }
+
+
+
+    void HitProgramGroup::destroy() {
+        if (m) {
+            m->pipeline->destroyProgram(m->rawGroup);
+            delete m;
+        }
+        m = nullptr;
+    }
+
+    uint32_t HitProgramGroup::getCHStackSize() const {
+        return m->stackSizeCH;
+    }
+
+    uint32_t HitProgramGroup::getAHStackSize() const {
+        return m->stackSizeAH;
+    }
+
+    uint32_t HitProgramGroup::getISStackSize() const {
+        return m->stackSizeIS;
+    }
+
+
+
+    void CallableProgramGroup::destroy() {
+        if (m) {
+            m->pipeline->destroyProgram(m->rawGroup);
+            delete m;
+        }
+        m = nullptr;
+    }
+
+    uint32_t CallableProgramGroup::getDCStackSize() const {
+        return m->stackSizeDC;
+    }
+
+    uint32_t CallableProgramGroup::getCCStackSize() const {
+        return m->stackSizeCC;
     }
 
 
