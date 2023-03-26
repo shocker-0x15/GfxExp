@@ -965,8 +965,12 @@ int32_t main(int32_t argc, const char* argv[]) try {
         getExecutableDirectory() / "regir/ptxes",
         gpuEnv.cuContext, gpuEnv.optixContext, shared::maxNumRayTypes, gpuEnv.optixDefaultMaterial);
 
-    CUstream cuStream;
-    CUDADRV_CHECK(cuStreamCreate(&cuStream, 0));
+    CUstream cuStreams[2];
+    CUevent cuEvents[2];
+    CUDADRV_CHECK(cuStreamCreate(&cuStreams[0], 0));
+    CUDADRV_CHECK(cuStreamCreate(&cuStreams[1], 0));
+    CUDADRV_CHECK(cuEventCreate(&cuEvents[0], 0));
+    CUDADRV_CHECK(cuEventCreate(&cuEvents[1], 0));
 
     // ----------------------------------------------------------------
     // JP: シーンのセットアップ。
@@ -1282,7 +1286,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
     std::vector<optixu::DenoisingTask> denoisingTasks(numTasks);
     denoiser.getTasks(denoisingTasks.data());
 
-    denoiser.setupState(cuStream, denoiserStateBuffer, denoiserScratchBuffer);
+    denoiser.setupState(cuStreams[0], denoiserStateBuffer, denoiserScratchBuffer);
 
     // JP: デノイザーは入出力にリニアなバッファーを必要とするため結果をコピーする必要がある。
     // EN: Denoiser requires linear buffers as input/output, so we need to copy the results.
@@ -1471,6 +1475,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
     while (true) {
         uint32_t bufferIndex = frameIndex % 2;
 
+        CUstream curCuStream = cuStreams[bufferIndex];
+        CUevent curCuEvent = cuEvents[bufferIndex];
         GPUTimer &curGPUTimer = gpuTimers[bufferIndex];
 
         perFramePlp.prevCamera = perFramePlp.camera;
@@ -1478,6 +1484,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
         if (glfwWindowShouldClose(window))
             break;
         glfwPollEvents();
+
+        CUDADRV_CHECK(cuStreamSynchronize(curCuStream));
+        CUDADRV_CHECK(cuStreamWaitEvent(curCuStream, cuEvents[(bufferIndex + 1) % 2], 0));
 
         bool resized = false;
         int32_t newFBWidth;
@@ -1493,7 +1502,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
             requestedSize[1] = renderTargetSizeY;
 
             glFinish();
-            CUDADRV_CHECK(cuStreamSynchronize(cuStream));
+            CUDADRV_CHECK(cuStreamSynchronize(cuStreams[0]));
+            CUDADRV_CHECK(cuStreamSynchronize(cuStreams[1]));
 
             resizeScreenRelatedBuffers(renderTargetSizeX, renderTargetSizeY);
 
@@ -1514,7 +1524,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
                 denoisingTasks.resize(numTasks);
                 denoiser.getTasks(denoisingTasks.data());
 
-                denoiser.setupState(cuStream, denoiserStateBuffer, denoiserScratchBuffer);
+                denoiser.setupState(curCuStream, denoiserStateBuffer, denoiserScratchBuffer);
             }
 
             outputTexture.finalize();
@@ -1668,7 +1678,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
             if (ImGui::Button("Both"))
                 saveSS_LDR = saveSS_HDR = true;
             if (saveSS_LDR || saveSS_HDR) {
-                CUDADRV_CHECK(cuStreamSynchronize(cuStream));
+                CUDADRV_CHECK(cuStreamSynchronize(cuStreams[0]));
+                CUDADRV_CHECK(cuStreamSynchronize(cuStreams[1]));
                 auto rawImage = new float4[renderTargetSizeX * renderTargetSizeY];
                 glGetTextureSubImage(
                     outputTexture.getHandle(), 0,
@@ -1737,7 +1748,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
             ImGui::Separator();
             ImGui::Text("Cursor Info: %.1lf, %.1lf", g_mouseX, g_mouseY);
             shared::PickInfo pickInfoOnHost;
-            pickInfos[bufferIndex].read(&pickInfoOnHost, 1, cuStream);
+            pickInfos[bufferIndex].read(&pickInfoOnHost, 1, curCuStream);
             ImGui::Text("Hit: %s", pickInfoOnHost.hit ? "True" : "False");
             ImGui::Text("Instance: %u", pickInfoOnHost.instSlot);
             ImGui::Text("Geometry Instance: %u", pickInfoOnHost.geomInstSlot);
@@ -1765,7 +1776,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
             uint32_t numActiveCellsOnHost = 0;
             if (useReGIR)
-                numActiveCells[bufferIndex].read(&numActiveCellsOnHost, 1, cuStream);
+                numActiveCells[bufferIndex].read(&numActiveCellsOnHost, 1, curCuStream);
             ImGui::Text("#Active Cells: %5u / %5u", numActiveCellsOnHost, numCells);
 
             ImGui::Separator();
@@ -1811,7 +1822,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
                         "Denoised Beauty", &bufferTypeToDisplay, shared::BufferToDisplay::DenoisedBeauty);
 
                     if (ImGui::Checkbox("Temporal Denoiser", &useTemporalDenosier)) {
-                        CUDADRV_CHECK(cuStreamSynchronize(cuStream));
+                        CUDADRV_CHECK(cuStreamSynchronize(cuStreams[0]));
+                        CUDADRV_CHECK(cuStreamSynchronize(cuStreams[1]));
                         denoiser.destroy();
 
                         OptixDenoiserModelKind modelKind = useTemporalDenosier ?
@@ -1837,7 +1849,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
                         denoisingTasks.resize(numTasks);
                         denoiser.getTasks(denoisingTasks.data());
 
-                        denoiser.setupState(cuStream, denoiserStateBuffer, denoiserScratchBuffer);
+                        denoiser.setupState(curCuStream, denoiserStateBuffer, denoiserScratchBuffer);
                     }
 
                     ImGui::SliderFloat("Motion Vector Scale", &motionVectorScale, -2.0f, 2.0f);
@@ -1903,7 +1915,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
 
 
-        curGPUTimer.frame.start(cuStream);
+        curGPUTimer.frame.start(curCuStream);
 
         // JP: 各インスタンスのトランスフォームを更新する。
         // EN: Update the transform of each instance.
@@ -1917,7 +1929,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
                 controller->update(instDataBufferOnHost, animate ? 1.0f / 60.0f : 0.0f);
                 // TODO: まとめて送る。
                 CUDADRV_CHECK(cuMemcpyHtoDAsync(curInstDataBuffer.getCUdeviceptrAt(inst->instSlot),
-                                                &instData, sizeof(instData), cuStream));
+                                                &instData, sizeof(instData), curCuStream));
             }
             curInstDataBuffer.unmap();
         }
@@ -1929,21 +1941,21 @@ int32_t main(int32_t argc, const char* argv[]) try {
         //     Rebuild as the alternative for update doesn't involves
         //     add/remove of instances and changes of AS build settings
         //     so neither of markDirty() nor prepareForBuild() is required.
-        curGPUTimer.update.start(cuStream);
+        curGPUTimer.update.start(curCuStream);
         if (animate)
             perFramePlp.travHandle = scene.ias.rebuild(
-                cuStream, scene.iasInstanceBuffer, scene.iasMem, scene.asScratchMem);
-        curGPUTimer.update.stop(cuStream);
+                curCuStream, scene.iasInstanceBuffer, scene.iasMem, scene.asScratchMem);
+        curGPUTimer.update.stop(curCuStream);
 
         // JP: 光源となるインスタンスのProbability Textureを計算する。
         // EN: Compute the probability texture for light instances.
-        curGPUTimer.computePDFTexture.start(cuStream);
+        curGPUTimer.computePDFTexture.start(curCuStream);
         {
             CUdeviceptr probTexAddr =
                 staticPlpOnDevice + offsetof(shared::StaticPipelineLaunchParameters, lightInstDist);
-            scene.setupLightInstDistribution(cuStream, probTexAddr, bufferIndex);
+            scene.setupLightInstDistribution(curCuStream, probTexAddr, bufferIndex);
         }
-        curGPUTimer.computePDFTexture.stop(cuStream);
+        curGPUTimer.computePDFTexture.stop(curCuStream);
 
         bool newSequence = resized || frameIndex == 0 || resetAccumulation;
         bool firstAccumFrame =
@@ -1979,61 +1991,61 @@ int32_t main(int32_t argc, const char* argv[]) try {
         for (int i = 0; i < lengthof(debugSwitches); ++i)
             perFramePlp.setDebugSwitch(i, debugSwitches[i]);
 
-        CUDADRV_CHECK(cuMemcpyHtoDAsync(perFramePlpOnDevice, &perFramePlp, sizeof(perFramePlp), cuStream));
+        CUDADRV_CHECK(cuMemcpyHtoDAsync(perFramePlpOnDevice, &perFramePlp, sizeof(perFramePlp), curCuStream));
 
-        CUDADRV_CHECK(cuMemcpyHtoDAsync(plpOnDevice, &plp, sizeof(plp), cuStream));
-        CUDADRV_CHECK(cuMemcpyHtoDAsync(gpuEnv.plpPtr, &plp, sizeof(plp), cuStream));
+        CUDADRV_CHECK(cuMemcpyHtoDAsync(plpOnDevice, &plp, sizeof(plp), curCuStream));
+        CUDADRV_CHECK(cuMemcpyHtoDAsync(gpuEnv.plpPtr, &plp, sizeof(plp), curCuStream));
 
         // JP: Gバッファーのセットアップ。
         //     ここではレイトレースを使ってGバッファーを生成しているがもちろんラスタライザーで生成可能。
         // EN: Setup the G-buffers.
         //     Generate the G-buffers using ray trace here, but of course this can be done using rasterizer.
-        curGPUTimer.setupGBuffers.start(cuStream);
+        curGPUTimer.setupGBuffers.start(curCuStream);
         gpuEnv.gBuffer.optixPipeline.launch(
-            cuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);
-        curGPUTimer.setupGBuffers.stop(cuStream);
+            curCuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);
+        curGPUTimer.setupGBuffers.stop(curCuStream);
 
         // JP: セルごとの複数のReservoirを構築する。
         //     そして各セルにおいて前フレームのセルとの間でReservoirの結合を行う。
         // EN: Build multiple reservoirs per cell.
         //     Then combine reservoirs between the current cell and
         //     the cell from the previous frame.
-        curGPUTimer.buildCellReservoirs.start(cuStream);
+        curGPUTimer.buildCellReservoirs.start(curCuStream);
         if (useReGIR) {
             if (enableTemporalReuse && !newSequence)
                 gpuEnv.kernelBuildCellReservoirsAndTemporalReuse(
-                    cuStream, gpuEnv.kernelBuildCellReservoirsAndTemporalReuse.calcGridDim(numLightSlots),
+                    curCuStream, gpuEnv.kernelBuildCellReservoirsAndTemporalReuse.calcGridDim(numLightSlots),
                     static_cast<uint32_t>(frameIndex));
             else
                 gpuEnv.kernelBuildCellReservoirs(
-                    cuStream, gpuEnv.kernelBuildCellReservoirs.calcGridDim(numLightSlots),
+                    curCuStream, gpuEnv.kernelBuildCellReservoirs.calcGridDim(numLightSlots),
                     static_cast<uint32_t>(frameIndex));
         }
-        curGPUTimer.buildCellReservoirs.stop(cuStream);
+        curGPUTimer.buildCellReservoirs.stop(curCuStream);
 
         // JP: パストレーシングによるシェーディングを実行。
         // EN: Perform shading by path tracing.
-        curGPUTimer.pathTrace.start(cuStream);
-        CUDADRV_CHECK(cuMemcpyHtoDAsync(plpOnDevice, &plp, sizeof(plp), cuStream));
+        curGPUTimer.pathTrace.start(curCuStream);
+        CUDADRV_CHECK(cuMemcpyHtoDAsync(plpOnDevice, &plp, sizeof(plp), curCuStream));
         PathTracingEntryPoint entryPoint = useReGIR ?
             PathTracingEntryPoint::ReGIR : PathTracingEntryPoint::Baseline;
         gpuEnv.pathTracing.setEntryPoint(entryPoint);
         gpuEnv.pathTracing.optixPipeline.launch(
-            cuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);
-        curGPUTimer.pathTrace.stop(cuStream);
+            curCuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);
+        curGPUTimer.pathTrace.stop(curCuStream);
 
         // JP: セルの最終アクセスフレーム番号を更新する。
         // EN: Update the last access frame number for each cell.
         if (useReGIR) {
             gpuEnv.kernelUpdateLastAccessFrameIndices(
-                cuStream, gpuEnv.kernelUpdateLastAccessFrameIndices.calcGridDim(numCells),
+                curCuStream, gpuEnv.kernelUpdateLastAccessFrameIndices.calcGridDim(numCells),
                 static_cast<uint32_t>(frameIndex));
         }
 
         // JP: 結果をリニアバッファーにコピーする。(法線の正規化も行う。)
         // EN: Copy the results to the linear buffers (and normalize normals).
         kernelCopyToLinearBuffers.launchWithThreadDim(
-            cuStream, cudau::dim3(renderTargetSizeX, renderTargetSizeY),
+            curCuStream, cudau::dim3(renderTargetSizeX, renderTargetSizeY),
             beautyAccumBuffer.getSurfaceObject(0),
             albedoAccumBuffer.getSurfaceObject(0),
             normalAccumBuffer.getSurfaceObject(0),
@@ -2044,10 +2056,10 @@ int32_t main(int32_t argc, const char* argv[]) try {
             linearFlowBuffer,
             uint2(renderTargetSizeX, renderTargetSizeY));
 
-        curGPUTimer.denoise.start(cuStream);
+        curGPUTimer.denoise.start(curCuStream);
         if (bufferTypeToDisplay == shared::BufferToDisplay::DenoisedBeauty) {
             denoiser.computeNormalizer(
-                cuStream,
+                curCuStream,
                 linearBeautyBuffer, OPTIX_PIXEL_FORMAT_FLOAT4,
                 denoiserScratchBuffer, hdrNormalizer);
             //float hdrNormalizerOnHost;
@@ -2068,14 +2080,14 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
             for (int i = 0; i < denoisingTasks.size(); ++i)
                 denoiser.invoke(
-                    cuStream, denoisingTasks[i], inputBuffers,
+                    curCuStream, denoisingTasks[i], inputBuffers,
                     optixu::IsFirstFrame(newSequence), OPTIX_DENOISER_ALPHA_MODE_COPY, hdrNormalizer, 0.0f,
                     linearDenoisedBeautyBuffer, nullptr,
                     optixu::BufferView());
         }
-        curGPUTimer.denoise.stop(cuStream);
+        curGPUTimer.denoise.stop(curCuStream);
 
-        outputBufferSurfaceHolder.beginCUDAAccess(cuStream);
+        outputBufferSurfaceHolder.beginCUDAAccess(curCuStream);
 
         // JP: デノイズ結果や中間バッファーの可視化。
         // EN: Visualize the denosed result or intermediate buffers.
@@ -2101,7 +2113,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
             break;
         }
         kernelVisualizeToOutputBuffer(
-            cuStream, kernelVisualizeToOutputBuffer.calcGridDim(renderTargetSizeX, renderTargetSizeY),
+            curCuStream, kernelVisualizeToOutputBuffer.calcGridDim(renderTargetSizeX, renderTargetSizeY),
             staticPlp.GBuffer0[bufferIndex], static_cast<uint32_t>(visualizeCells),
             gridOrigin, gridCellSize, gridDimension,
             bufferToDisplay,
@@ -2110,9 +2122,11 @@ int32_t main(int32_t argc, const char* argv[]) try {
             outputBufferSurfaceHolder.getNext(),
             uint2(renderTargetSizeX, renderTargetSizeY));
 
-        outputBufferSurfaceHolder.endCUDAAccess(cuStream, true);
+        outputBufferSurfaceHolder.endCUDAAccess(curCuStream, true);
 
-        curGPUTimer.frame.stop(cuStream);
+        curGPUTimer.frame.stop(curCuStream);
+
+        CUDADRV_CHECK(cuEventRecord(curCuEvent, curCuStream));
 
 
 
@@ -2158,7 +2172,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
         ++frameIndex;
     }
 
-    CUDADRV_CHECK(cuStreamSynchronize(cuStream));
+    CUDADRV_CHECK(cuStreamSynchronize(cuStreams[1]));
+    CUDADRV_CHECK(cuStreamSynchronize(cuStreams[0]));
     gpuTimers[1].finalize();
     gpuTimers[0].finalize();
 
@@ -2203,7 +2218,10 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
     finalizeTextureCaches();
 
-    CUDADRV_CHECK(cuStreamDestroy(cuStream));
+    CUDADRV_CHECK(cuEventDestroy(cuEvents[1]));
+    CUDADRV_CHECK(cuEventDestroy(cuEvents[0]));
+    CUDADRV_CHECK(cuStreamDestroy(cuStreams[1]));
+    CUDADRV_CHECK(cuStreamDestroy(cuStreams[0]));
 
     scene.finalize();
     

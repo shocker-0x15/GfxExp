@@ -957,8 +957,12 @@ int32_t main(int32_t argc, const char* argv[]) try {
         getExecutableDirectory() / "svgf/ptxes",
         gpuEnv.cuContext, gpuEnv.optixContext, shared::maxNumRayTypes, gpuEnv.optixDefaultMaterial);
 
-    CUstream cuStream;
-    CUDADRV_CHECK(cuStreamCreate(&cuStream, 0));
+    CUstream cuStreams[2];
+    CUevent cuEvents[2];
+    CUDADRV_CHECK(cuStreamCreate(&cuStreams[0], 0));
+    CUDADRV_CHECK(cuStreamCreate(&cuStreams[1], 0));
+    CUDADRV_CHECK(cuEventCreate(&cuEvents[0], 0));
+    CUDADRV_CHECK(cuEventCreate(&cuEvents[1], 0));
 
     // ----------------------------------------------------------------
     // JP: シーンのセットアップ。
@@ -1511,6 +1515,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
         cudau::TypedBuffer<shared::PickInfo> &curPickInfo = pickInfos[curBufIdx];
 
+        CUstream curCuStream = cuStreams[curBufIdx];
+        CUevent curCuEvent = cuEvents[curBufIdx];
         GPUTimer &curGPUTimer = gpuTimers[curBufIdx];
 
         cudau::TypedBuffer<shared::InstanceData> &curInstDataBuffer = scene.instDataBuffer[curBufIdx];
@@ -1518,6 +1524,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
         if (glfwWindowShouldClose(window))
             break;
         glfwPollEvents();
+
+        CUDADRV_CHECK(cuStreamSynchronize(curCuStream));
+        CUDADRV_CHECK(cuStreamWaitEvent(curCuStream, cuEvents[prevBufIdx], 0));
 
         bool resized = false;
         int32_t newFBWidth;
@@ -1533,7 +1542,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
             requestedSize[1] = renderTargetSizeY;
 
             glFinish();
-            CUDADRV_CHECK(cuStreamSynchronize(cuStream));
+            CUDADRV_CHECK(cuStreamSynchronize(cuStreams[0]));
+            CUDADRV_CHECK(cuStreamSynchronize(cuStreams[1]));
 
             resizeResolutionDependentBuffers(renderTargetSizeX, renderTargetSizeY);
 
@@ -1689,7 +1699,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
                 saveSS_LDR = saveSS_HDR = true;
             if (saveSS_LDR || saveSS_HDR) {
                 glFinish();
-                CUDADRV_CHECK(cuStreamSynchronize(cuStream));
+                CUDADRV_CHECK(cuStreamSynchronize(cuStreams[0]));
+                CUDADRV_CHECK(cuStreamSynchronize(cuStreams[1]));
                 auto rawImage = new float4[renderTargetSizeX * renderTargetSizeY];
                 glu::Texture2D &texToDisplay = bufferTypeToDisplay == shared::BufferToDisplay::FinalRendering ?
                     curTemporalSet.gfxFinalLightingBuffer : gfxDebugVisualizeBuffer;
@@ -1756,7 +1767,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
             ImGui::Separator();
             ImGui::Text("Cursor Info: %.1lf, %.1lf", g_mouseX, g_mouseY);
             shared::PickInfo pickInfoOnHost;
-            curPickInfo.read(&pickInfoOnHost, 1, cuStream);
+            curPickInfo.read(&pickInfoOnHost, 1, curCuStream);
             ImGui::Text("Hit: %s", pickInfoOnHost.hit ? "True" : "False");
             ImGui::Text("Instance: %u", pickInfoOnHost.instSlot);
             ImGui::Text("Geometry Instance: %u", pickInfoOnHost.geomInstSlot);
@@ -1910,7 +1921,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
 
 
-        curGPUTimer.frame.start(cuStream);
+        curGPUTimer.frame.start(curCuStream);
 
         // JP: 各インスタンスのトランスフォームを更新する。
         // EN: Update the transform of each instance.
@@ -1923,7 +1934,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
                 controller->update(instDataBufferOnHost, animate ? 1.0f / 60.0f : 0.0f);
                 // TODO: まとめて送る。
                 CUDADRV_CHECK(cuMemcpyHtoDAsync(curInstDataBuffer.getCUdeviceptrAt(inst->instSlot),
-                                                &instData, sizeof(instData), cuStream));
+                                                &instData, sizeof(instData), curCuStream));
             }
             curInstDataBuffer.unmap();
         }
@@ -1935,21 +1946,21 @@ int32_t main(int32_t argc, const char* argv[]) try {
         //     Rebuild as the alternative for update doesn't involves
         //     add/remove of instances and changes of AS build settings
         //     so neither of markDirty() nor prepareForBuild() is required.
-        curGPUTimer.update.start(cuStream);
+        curGPUTimer.update.start(curCuStream);
         if (animate)
             perFramePlp.travHandle = scene.ias.rebuild(
-                cuStream, scene.iasInstanceBuffer, scene.iasMem, scene.asScratchMem);
-        curGPUTimer.update.stop(cuStream);
+                curCuStream, scene.iasInstanceBuffer, scene.iasMem, scene.asScratchMem);
+        curGPUTimer.update.stop(curCuStream);
 
         // JP: 光源となるインスタンスのProbability Textureを計算する。
         // EN: Compute the probability texture for light instances.
-        curGPUTimer.computePDFTexture.start(cuStream);
+        curGPUTimer.computePDFTexture.start(curCuStream);
         {
             CUdeviceptr probTexAddr =
                 staticPlpOnDevice + offsetof(shared::StaticPipelineLaunchParameters, lightInstDist);
-            scene.setupLightInstDistribution(cuStream, probTexAddr, curBufIdx);
+            scene.setupLightInstDistribution(curCuStream, probTexAddr, curBufIdx);
         }
-        curGPUTimer.computePDFTexture.stop(cuStream);
+        curGPUTimer.computePDFTexture.stop(curCuStream);
 
         bool newSequence = resized || frameIndex == 0 || resetAccumulation;
         bool firstAccumFrame =
@@ -2064,19 +2075,19 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
         curGPUTimer.setupGBuffers.stop();
 
-        prevTemporalSet.gBuffer0InteropHandler.beginCUDAAccess(cuStream);
-        prevTemporalSet.gBuffer1InteropHandler.beginCUDAAccess(cuStream);
-        prevTemporalSet.gBuffer2InteropHandler.beginCUDAAccess(cuStream);
-        prevTemporalSet.depthBufferInteropHandler.beginCUDAAccess(cuStream);
-        prevTemporalSet.finalLightingBufferInteropHandler.beginCUDAAccess(cuStream);
+        prevTemporalSet.gBuffer0InteropHandler.beginCUDAAccess(curCuStream);
+        prevTemporalSet.gBuffer1InteropHandler.beginCUDAAccess(curCuStream);
+        prevTemporalSet.gBuffer2InteropHandler.beginCUDAAccess(curCuStream);
+        prevTemporalSet.depthBufferInteropHandler.beginCUDAAccess(curCuStream);
+        prevTemporalSet.finalLightingBufferInteropHandler.beginCUDAAccess(curCuStream);
 
-        curTemporalSet.gBuffer0InteropHandler.beginCUDAAccess(cuStream);
-        curTemporalSet.gBuffer1InteropHandler.beginCUDAAccess(cuStream);
-        curTemporalSet.gBuffer2InteropHandler.beginCUDAAccess(cuStream);
-        curTemporalSet.depthBufferInteropHandler.beginCUDAAccess(cuStream);
-        curTemporalSet.finalLightingBufferInteropHandler.beginCUDAAccess(cuStream);
+        curTemporalSet.gBuffer0InteropHandler.beginCUDAAccess(curCuStream);
+        curTemporalSet.gBuffer1InteropHandler.beginCUDAAccess(curCuStream);
+        curTemporalSet.gBuffer2InteropHandler.beginCUDAAccess(curCuStream);
+        curTemporalSet.depthBufferInteropHandler.beginCUDAAccess(curCuStream);
+        curTemporalSet.finalLightingBufferInteropHandler.beginCUDAAccess(curCuStream);
 
-        debugVisualizeBufferInteropHandler.beginCUDAAccess(cuStream);
+        debugVisualizeBufferInteropHandler.beginCUDAAccess(curCuStream);
 
         prevPerFrameTemporalSet.GBuffer0 = prevTemporalSet.gBuffer0InteropHandler.getNext();
         prevPerFrameTemporalSet.GBuffer1 = prevTemporalSet.gBuffer1InteropHandler.getNext();
@@ -2092,72 +2103,71 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
         perFramePlp.debugVisualizeBuffer = debugVisualizeBufferInteropHandler.getNext();
 
-        CUDADRV_CHECK(cuMemcpyHtoDAsync(plpOnDevice, &plp, sizeof(plp), cuStream)); // for OptiX
+        CUDADRV_CHECK(cuMemcpyHtoDAsync(plpOnDevice, &plp, sizeof(plp), curCuStream)); // for OptiX
         // for pure CUDA
-        CUDADRV_CHECK(cuMemcpyHtoDAsync(gpuEnv.plpPtrForSvgfModule, &plp, sizeof(plp), cuStream));
-        CUDADRV_CHECK(cuMemcpyHtoDAsync(gpuEnv.plpPtrForDebugVisualizeModule, &plp, sizeof(plp), cuStream));
+        CUDADRV_CHECK(cuMemcpyHtoDAsync(gpuEnv.plpPtrForSvgfModule, &plp, sizeof(plp), curCuStream));
+        CUDADRV_CHECK(cuMemcpyHtoDAsync(gpuEnv.plpPtrForDebugVisualizeModule, &plp, sizeof(plp), curCuStream));
 
-        CUDADRV_CHECK(cuMemcpyHtoDAsync(perFramePlpOnDevice, &perFramePlp, sizeof(perFramePlp), cuStream));
+        CUDADRV_CHECK(cuMemcpyHtoDAsync(perFramePlpOnDevice, &perFramePlp, sizeof(perFramePlp), curCuStream));
 
         // JP: パストレーシングによるシェーディングを実行。
         // EN: Perform shading by path tracing.
-        curGPUTimer.pathTrace.start(cuStream);
+        curGPUTimer.pathTrace.start(curCuStream);
         PathTracingEntryPoint ptEntryPoint = enableTemporalAccumulation ?
             PathTracingEntryPoint::pathTraceWithTemporalAccumulation :
             PathTracingEntryPoint::pathTraceWithoutTemporalAccumulation;
         gpuEnv.pathTracing.setEntryPoint(ptEntryPoint);
         gpuEnv.pathTracing.optixPipeline.launch(
-            cuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);
-        curGPUTimer.pathTrace.stop(cuStream);
+            curCuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);
+        curGPUTimer.pathTrace.stop(curCuStream);
 
         constexpr uint32_t numFilteringStages = 5;
         if (enableSVGF) {
-            curGPUTimer.denoise.start(cuStream);
+            curGPUTimer.denoise.start(curCuStream);
 
             // JP: ピクセルごとの輝度の分散を求める。
             // EN: Compute the variance of the luminance for each pixel.
-            curGPUTimer.estimateVariance.start(cuStream);
+            curGPUTimer.estimateVariance.start(curCuStream);
             gpuEnv.kernelEstimateVariance.launchWithThreadDim(
-                cuStream, cudau::dim3(renderTargetSizeX, renderTargetSizeY));
-            curGPUTimer.estimateVariance.stop(cuStream);
+                curCuStream, cudau::dim3(renderTargetSizeX, renderTargetSizeY));
+            curGPUTimer.estimateVariance.stop(curCuStream);
 
             if (bufferTypeToDisplay == shared::BufferToDisplay::NoisyBeauty ||
                 bufferTypeToDisplay == shared::BufferToDisplay::Variance) {
                 gpuEnv.kernelDebugVisualize.launchWithThreadDim(
-                    cuStream, cudau::dim3(renderTargetSizeX, renderTargetSizeY),
+                    curCuStream, cudau::dim3(renderTargetSizeX, renderTargetSizeY),
                     bufferTypeToDisplay,
                     0.5f, std::pow(10.0f, motionVectorScale),
                     numFilteringStages);
-                CUDADRV_CHECK(cuStreamSynchronize(cuStream));
             }
 
             // JP: A-Trousフィルターをライティングと分散に複数回適用する。
             // EN: Apply the a-trous filter to lighting and its variance multiple times.
-            curGPUTimer.aTrousFilter.start(cuStream);
+            curGPUTimer.aTrousFilter.start(curCuStream);
             for (uint32_t filterStageIndex = 0; filterStageIndex < numFilteringStages; ++filterStageIndex) {
                 gpuEnv.kernelApplyATrousFilter_box3x3.launchWithThreadDim(
-                    cuStream, cudau::dim3(renderTargetSizeX, renderTargetSizeY),
+                    curCuStream, cudau::dim3(renderTargetSizeX, renderTargetSizeY),
                     filterStageIndex);
             }
-            curGPUTimer.aTrousFilter.stop(cuStream);
+            curGPUTimer.aTrousFilter.stop(curCuStream);
 
-            curGPUTimer.denoise.stop(cuStream);
+            curGPUTimer.denoise.stop(curCuStream);
         }
         else {
             if (enableTemporalAccumulation) {
                 gpuEnv.kernelFeedbackNoisyLighting.launchWithThreadDim(
-                    cuStream, cudau::dim3(renderTargetSizeX, renderTargetSizeY));
+                    curCuStream, cudau::dim3(renderTargetSizeX, renderTargetSizeY));
             }
         }
 
-        curGPUTimer.temporalAA.start(cuStream);
+        curGPUTimer.temporalAA.start(curCuStream);
         gpuEnv.kernelFillBackground(
-            cuStream, gpuEnv.kernelFillBackground.calcGridDim(renderTargetSizeX, renderTargetSizeY),
+            curCuStream, gpuEnv.kernelFillBackground.calcGridDim(renderTargetSizeX, renderTargetSizeY),
             numFilteringStages);
         gpuEnv.kernelApplyAlbedoModulationAndTemporalAntiAliasing(
-            cuStream, gpuEnv.kernelApplyAlbedoModulationAndTemporalAntiAliasing.calcGridDim(renderTargetSizeX, renderTargetSizeY),
+            curCuStream, gpuEnv.kernelApplyAlbedoModulationAndTemporalAntiAliasing.calcGridDim(renderTargetSizeX, renderTargetSizeY),
             numFilteringStages);
-        curGPUTimer.temporalAA.stop(cuStream);
+        curGPUTimer.temporalAA.stop(curCuStream);
 
         if (bufferTypeToDisplay == shared::BufferToDisplay::Albedo ||
             bufferTypeToDisplay == shared::BufferToDisplay::FilteredVariance ||
@@ -2165,32 +2175,31 @@ int32_t main(int32_t argc, const char* argv[]) try {
             bufferTypeToDisplay == shared::BufferToDisplay::MotionVector ||
             bufferTypeToDisplay == shared::BufferToDisplay::SampleCount) {
             gpuEnv.kernelDebugVisualize.launchWithThreadDim(
-                cuStream, cudau::dim3(renderTargetSizeX, renderTargetSizeY),
+                curCuStream, cudau::dim3(renderTargetSizeX, renderTargetSizeY),
                 bufferTypeToDisplay,
                 0.5f, std::pow(10.0f, motionVectorScale),
                 numFilteringStages);
-            CUDADRV_CHECK(cuStreamSynchronize(cuStream));
         }
 
-        debugVisualizeBufferInteropHandler.endCUDAAccess(cuStream, true);
+        debugVisualizeBufferInteropHandler.endCUDAAccess(curCuStream, true);
 
-        curTemporalSet.finalLightingBufferInteropHandler.endCUDAAccess(cuStream, true);
-        curTemporalSet.depthBufferInteropHandler.endCUDAAccess(cuStream, true);
-        curTemporalSet.gBuffer2InteropHandler.endCUDAAccess(cuStream, true);
-        curTemporalSet.gBuffer1InteropHandler.endCUDAAccess(cuStream, true);
-        curTemporalSet.gBuffer0InteropHandler.endCUDAAccess(cuStream, true);
+        curTemporalSet.finalLightingBufferInteropHandler.endCUDAAccess(curCuStream, true);
+        curTemporalSet.depthBufferInteropHandler.endCUDAAccess(curCuStream, true);
+        curTemporalSet.gBuffer2InteropHandler.endCUDAAccess(curCuStream, true);
+        curTemporalSet.gBuffer1InteropHandler.endCUDAAccess(curCuStream, true);
+        curTemporalSet.gBuffer0InteropHandler.endCUDAAccess(curCuStream, true);
 
-        prevTemporalSet.finalLightingBufferInteropHandler.endCUDAAccess(cuStream, true);
-        prevTemporalSet.depthBufferInteropHandler.endCUDAAccess(cuStream, true);
-        prevTemporalSet.gBuffer2InteropHandler.endCUDAAccess(cuStream, true);
-        prevTemporalSet.gBuffer1InteropHandler.endCUDAAccess(cuStream, true);
-        prevTemporalSet.gBuffer0InteropHandler.endCUDAAccess(cuStream, true);
+        prevTemporalSet.finalLightingBufferInteropHandler.endCUDAAccess(curCuStream, true);
+        prevTemporalSet.depthBufferInteropHandler.endCUDAAccess(curCuStream, true);
+        prevTemporalSet.gBuffer2InteropHandler.endCUDAAccess(curCuStream, true);
+        prevTemporalSet.gBuffer1InteropHandler.endCUDAAccess(curCuStream, true);
+        prevTemporalSet.gBuffer0InteropHandler.endCUDAAccess(curCuStream, true);
 
-        curGPUTimer.pick.start(cuStream);
+        curGPUTimer.pick.start(curCuStream);
         gpuEnv.pick.setEntryPoint(PickerEntryPoint::pick);
         gpuEnv.pick.optixPipeline.launch(
-            cuStream, plpOnDevice, 1, 1, 1);
-        curGPUTimer.pick.stop(cuStream);
+            curCuStream, plpOnDevice, 1, 1, 1);
+        curGPUTimer.pick.stop(curCuStream);
 
         // ----------------------------------------------------------------
         // JP: 最終レンダーターゲットに結果を描画する。
@@ -2233,14 +2242,17 @@ int32_t main(int32_t argc, const char* argv[]) try {
         // END: Draw the result to the final render target.
         // ----------------------------------------------------------------
 
-        curGPUTimer.frame.stop(cuStream);
+        curGPUTimer.frame.stop(curCuStream);
+
+        CUDADRV_CHECK(cuEventRecord(curCuEvent, curCuStream));
 
         glfwSwapBuffers(window);
 
         ++frameIndex;
     }
 
-    CUDADRV_CHECK(cuStreamSynchronize(cuStream));
+    CUDADRV_CHECK(cuStreamSynchronize(cuStreams[0]));
+    CUDADRV_CHECK(cuStreamSynchronize(cuStreams[1]));
     gpuTimers[1].finalize();
     gpuTimers[0].finalize();
 
@@ -2273,7 +2285,10 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
     finalizeTextureCaches();
 
-    CUDADRV_CHECK(cuStreamDestroy(cuStream));
+    CUDADRV_CHECK(cuEventDestroy(cuEvents[1]));
+    CUDADRV_CHECK(cuEventDestroy(cuEvents[0]));
+    CUDADRV_CHECK(cuStreamDestroy(cuStreams[1]));
+    CUDADRV_CHECK(cuStreamDestroy(cuStreams[0]));
 
     scene.finalize();
     
