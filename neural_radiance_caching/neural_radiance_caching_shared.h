@@ -9,6 +9,11 @@ namespace shared {
     static constexpr uint32_t trainBufferSize = 2 * numTrainingDataPerFrame;
     static constexpr bool useReflectanceFactorization = true;
 
+    static constexpr uint32_t numLightSubsets = 128;
+    static constexpr uint32_t lightSubsetSize = 1024;
+    static constexpr int tileSizeX = 8;
+    static constexpr int tileSizeY = 8;
+
 
 
     struct GBufferRayType {
@@ -29,6 +34,11 @@ namespace shared {
             Baseline,
             NRC,
             Visibility,
+            // performInitialRIS,
+            // performInitialAndTemporalRISBiased,
+            // performInitialAndTemporalRISUnbiased,
+            // performSpatialRISBiased,
+            // performSpatialRISUnbiased,
             NumTypes
         } value;
 
@@ -39,7 +49,25 @@ namespace shared {
         }
     };
 
-    constexpr uint32_t maxNumRayTypes = 3;
+    struct ReSTIRRayType {
+        enum Value {
+            Visibility,
+            NumTypes
+        } value;
+
+        CUDA_DEVICE_FUNCTION constexpr ReSTIRRayType(Value v = Visibility) : value(v) {}
+
+        CUDA_DEVICE_FUNCTION operator uint32_t() const {
+            return static_cast<uint32_t>(value);
+        }
+    };
+
+    CUDA_COMMON_FUNCTION CUDA_INLINE float convertToWeight(const float3 &color) {
+        //return sRGB_calcLuminance(color);
+        return (color.x + color.y + color.z) / 3;
+    }
+
+    constexpr uint32_t maxNumRayTypes = 3; // does this need to be changed? what does this effect?
 
 
 
@@ -223,7 +251,73 @@ namespace shared {
         unsigned int pathLength : 6;
     };
 
-    
+
+    struct PreSampledLight {
+        LightSample sample;
+        float areaPDensity;
+    };
+
+    using WeightSum = float;
+    //using WeightSum = FloatSum;
+
+    template <typename SampleType>
+    class Reservoir {
+        SampleType m_sample;
+        WeightSum m_sumWeights;
+        uint32_t m_streamLength;
+
+    public:
+        CUDA_COMMON_FUNCTION void initialize() {
+            m_sumWeights = 0;
+            m_streamLength = 0;
+        }
+        CUDA_COMMON_FUNCTION bool update(const SampleType &newSample, float weight, float u) {
+            m_sumWeights += weight;
+            bool accepted = u < weight / m_sumWeights;
+            if (accepted)
+                m_sample = newSample;
+            ++m_streamLength;
+            return accepted;
+        }
+
+        CUDA_COMMON_FUNCTION LightSample getSample() const {
+            return m_sample;
+        }
+        CUDA_COMMON_FUNCTION float getSumWeights() const {
+            return m_sumWeights;
+        }
+        CUDA_COMMON_FUNCTION uint32_t getStreamLength() const {
+            return m_streamLength;
+        }
+        CUDA_COMMON_FUNCTION void setStreamLength(uint32_t length) {
+            m_streamLength = length;
+        }
+    };
+
+    struct ReservoirInfo {
+        float recPDFEstimate;
+        float targetDensity;
+    };
+
+    union SampleVisibility {
+        uint32_t asUInt;
+        struct {
+            unsigned int newSample : 1;
+            unsigned int newSampleOnTemporal : 1;
+            unsigned int newSampleOnSpatiotemporal : 1;
+            unsigned int temporalPassedHeuristic : 1;
+            unsigned int temporalSample : 1;
+            unsigned int temporalSampleOnCurrent : 1;
+            unsigned int temporalSampleOnSpatiotemporal : 1;
+            unsigned int spatiotemporalPassedHeuristic : 1;
+            unsigned int spatiotemporalSample : 1;
+            unsigned int spatiotemporalSampleOnCurrent : 1;
+            unsigned int spatiotemporalSampleOnTemporal : 1;
+            unsigned int selectedSample : 1;
+        };
+
+        CUDA_DEVICE_FUNCTION SampleVisibility() : asUInt(0) {}
+    };
     
     struct StaticPipelineLaunchParameters {
         int2 imageSize;
@@ -261,6 +355,16 @@ namespace shared {
         optixu::NativeBlockBuffer2D<float4> beautyAccumBuffer;
         optixu::NativeBlockBuffer2D<float4> albedoAccumBuffer;
         optixu::NativeBlockBuffer2D<float4> normalAccumBuffer;
+
+        // only for rearchitected restir ver.
+        int2 numTiles;
+        PCG32RNG* lightPreSamplingRngs;
+        PreSampledLight* preSampledLights;
+
+        optixu::BlockBuffer2D<Reservoir<LightSample>, 0> reservoirBuffer[2];
+        optixu::NativeBlockBuffer2D<ReservoirInfo> reservoirInfoBuffer[2];
+        optixu::NativeBlockBuffer2D<SampleVisibility> sampleVisibilityBuffer[2];
+        const float2* spatialNeighborDeltas; // only for rearchitected ver.
     };
 
     struct PerFramePipelineLaunchParameters {
@@ -296,11 +400,27 @@ namespace shared {
         CUDA_COMMON_FUNCTION bool getDebugSwitch(int32_t idx) const {
             return (debugSwitches >> idx) & 0b1;
         }
+
+
+        float spatialNeighborRadius;
+        float radiusThresholdForSpatialVisReuse; // only for rearchitected ver.
+
+        unsigned int log2NumCandidateSamples : 4;
+        unsigned int numSpatialNeighbors : 4;
+        unsigned int useLowDiscrepancyNeighbors : 1;
+        unsigned int reuseVisibility : 1;
+        unsigned int reuseVisibilityForTemporal : 1; // only for rearchitected ver.
+        unsigned int reuseVisibilityForSpatiotemporal : 1; // only for rearchitected ver.
+        unsigned int enableTemporalReuse : 1;
+        unsigned int enableSpatialReuse : 1;
+        unsigned int useUnbiasedEstimator : 1;
     };
     
     struct PipelineLaunchParameters {
         StaticPipelineLaunchParameters* s;
         PerFramePipelineLaunchParameters* f;
+        unsigned int currentReservoirIndex : 1;
+        unsigned int spatialNeighborBaseIndex : 10;
     };
 
 
@@ -588,12 +708,19 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool evaluateVisibility(
         dist = 1e+10f;
 
     float visibility = 1.0f;
-    optixu::trace<shared::VisibilityRayPayloadSignature>(
+    // optixu::trace<shared::VisibilityRayPayloadSignature>(
+    //     plp.f->travHandle,
+    //     shadingPoint, shadowRayDir, 0.0f, dist * 0.9999f, 0.0f,
+    //     0xFF, OPTIX_RAY_FLAG_NONE,
+    //     RayType::Visibility, shared::maxNumRayTypes, RayType::Visibility,
+    //     visibility);
+    shared::VisibilityRayPayloadSignature::trace(
         plp.f->travHandle,
         shadingPoint, shadowRayDir, 0.0f, dist * 0.9999f, 0.0f,
         0xFF, OPTIX_RAY_FLAG_NONE,
         RayType::Visibility, shared::maxNumRayTypes, RayType::Visibility,
         visibility);
+
 
     return visibility > 0.0f;
 }
@@ -691,6 +818,31 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void computeSurfacePoint(
     else {
         (void)*hypAreaPDensity;
     }
+}
+
+template <bool testGeometry>
+CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNeighbor(
+    uint32_t nbBufIdx, int2 nbCoord, float dist, const float3 &normalInWorld) {
+    using namespace shared;
+    if (nbCoord.x < 0 || nbCoord.x >= plp.s->imageSize.x ||
+        nbCoord.y < 0 || nbCoord.y >= plp.s->imageSize.y)
+        return false;
+
+    GBuffer2 nbGBuffer2 = plp.s->GBuffer2[nbBufIdx].read(nbCoord);
+    if (nbGBuffer2.materialSlot == 0xFFFFFFFF)
+        return false;
+
+    if constexpr (testGeometry) {
+        GBuffer0 nbGBuffer0 = plp.s->GBuffer0[nbBufIdx].read(nbCoord);
+        GBuffer1 nbGBuffer1 = plp.s->GBuffer1[nbBufIdx].read(nbCoord);
+        float3 nbPositionInWorld = nbGBuffer0.positionInWorld;
+        float3 nbNormalInWorld = nbGBuffer1.normalInWorld;
+        float nbDist = length(plp.f->camera.position - nbPositionInWorld);
+        if (abs(nbDist - dist) / dist > 0.1f || dot(normalInWorld, nbNormalInWorld) < 0.9f)
+            return false;
+    }
+
+    return true;
 }
 
 

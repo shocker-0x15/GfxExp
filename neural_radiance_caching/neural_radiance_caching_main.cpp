@@ -86,7 +86,30 @@ enum class GBufferEntryPoint {
 enum class PathTracingEntryPoint {
     Baseline,
     NRC,
+    BaselineReSTIR,
+    NRCReSTIR,
     visualizePrediction,
+    performInitialRIS,
+    performInitialAndTemporalRISBiased,
+    performInitialAndTemporalRISUnbiased,
+    performSpatialRISBiased,
+    performSpatialRISUnbiased,
+};
+enum class ReSTIREntryPoint {
+    performInitialRIS,
+    performInitialAndTemporalRISBiased,
+    performInitialAndTemporalRISUnbiased,
+    performSpatialRISBiased,
+    performSpatialRISUnbiased,
+    shading,
+};
+
+enum class ReSTIRRenderer {
+    NoReSTIR = 0,
+    OriginalReSTIRBiased,
+    OriginalReSTIRUnbiased,
+    RearchitectedReSTIRBiased,
+    RearchitectedReSTIRUnbiased,
 };
 
 struct GPUEnvironment {
@@ -238,8 +261,22 @@ struct GPUEnvironment {
                 p.createRayGenProgram(m, RT_RG_NAME_STR("pathTraceBaseline"));
             pipeline.entryPoints[PathTracingEntryPoint::NRC] =
                 p.createRayGenProgram(m, RT_RG_NAME_STR("pathTraceNRC"));
+            pipeline.entryPoints[PathTracingEntryPoint::BaselineReSTIR] =
+                p.createRayGenProgram(m, RT_RG_NAME_STR("pathTraceBaselineReSTIR"));
+            pipeline.entryPoints[PathTracingEntryPoint::NRCReSTIR] =
+                p.createRayGenProgram(m, RT_RG_NAME_STR("pathTraceNRCReSTIR"));
             pipeline.entryPoints[PathTracingEntryPoint::visualizePrediction] =
                 p.createRayGenProgram(m, RT_RG_NAME_STR("visualizePrediction"));
+            pipeline.entryPoints[PathTracingEntryPoint::performInitialRIS] =
+                p.createRayGenProgram(m, RT_RG_NAME_STR("performInitialRIS"));
+            pipeline.entryPoints[PathTracingEntryPoint::performInitialAndTemporalRISBiased] =
+                p.createRayGenProgram(m, RT_RG_NAME_STR("performInitialAndTemporalRISBiased"));
+            pipeline.entryPoints[PathTracingEntryPoint::performInitialAndTemporalRISUnbiased] =
+                p.createRayGenProgram(m, RT_RG_NAME_STR("performInitialAndTemporalRISUnbiased"));
+            pipeline.entryPoints[PathTracingEntryPoint::performSpatialRISBiased] =
+                p.createRayGenProgram(m, RT_RG_NAME_STR("performSpatialRISBiased"));
+            pipeline.entryPoints[PathTracingEntryPoint::performSpatialRISUnbiased] =
+                p.createRayGenProgram(m, RT_RG_NAME_STR("performSpatialRISUnbiased"));
 
             pipeline.programs[RT_MS_NAME_STR("pathTraceBaseline")] = p.createMissProgram(
                 m, RT_MS_NAME_STR("pathTraceBaseline"));
@@ -1155,6 +1192,23 @@ int32_t main(int32_t argc, const char* argv[]) try {
     // ----------------------------------------------------------------
 
 
+    // ----------------------------------------------------------------
+    // Initialize ReSTIR
+    cudau::TypedBuffer<shared::PCG32RNG> lightPreSamplingRngs;
+    cudau::TypedBuffer<shared::PreSampledLight> preSampledLights;
+
+    constexpr uint32_t numPreSampledLights = shared::numLightSubsets * shared::lightSubsetSize;
+    lightPreSamplingRngs.initialize(gpuEnv.cuContext, Scene::bufferType, numPreSampledLights);
+    {
+        shared::PCG32RNG* rngs = lightPreSamplingRngs.map();
+        std::mt19937_64 rngSeed(894213312210);
+        for (int i = 0; i < numPreSampledLights; ++i)
+            rngs[i].setState(rngSeed());
+        lightPreSamplingRngs.unmap();
+    }
+    preSampledLights.initialize(gpuEnv.cuContext, Scene::bufferType, numPreSampledLights);
+
+    // ----------------------------------------------------------------
 
     // ----------------------------------------------------------------
     // JP: スクリーン関連のバッファーを初期化。
@@ -1167,6 +1221,10 @@ int32_t main(int32_t argc, const char* argv[]) try {
     cudau::Array beautyAccumBuffer;
     cudau::Array albedoAccumBuffer;
     cudau::Array normalAccumBuffer;
+
+    optixu::HostBlockBuffer2D<shared::Reservoir<shared::LightSample>, 0> reservoirBuffer[2];
+    cudau::Array reservoirInfoBuffer[2];
+    cudau::Array sampleVisibilityBuffer[2];
 
     cudau::TypedBuffer<float4> linearBeautyBuffer;
     cudau::TypedBuffer<float4> linearAlbedoBuffer;
@@ -1195,6 +1253,18 @@ int32_t main(int32_t argc, const char* argv[]) try {
                 renderTargetSizeX, renderTargetSizeY, 1);
             gBuffer2[i].initialize2D(
                 gpuEnv.cuContext, cudau::ArrayElementType::UInt32, (sizeof(shared::GBuffer2) + 3) / 4,
+                cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable,
+                renderTargetSizeX, renderTargetSizeY, 1);
+
+            reservoirBuffer[i].initialize(gpuEnv.cuContext, Scene::bufferType,
+                                          renderTargetSizeX, renderTargetSizeY);
+            reservoirInfoBuffer[i].initialize2D(
+                gpuEnv.cuContext, cudau::ArrayElementType::UInt32, (sizeof(shared::ReservoirInfo) + 3) / 4,
+                cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable,
+                renderTargetSizeX, renderTargetSizeY, 1);
+
+            sampleVisibilityBuffer[i].initialize2D(
+                gpuEnv.cuContext, cudau::ArrayElementType::UInt32, (sizeof(shared::SampleVisibility) + 3) / 4,
                 cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable,
                 renderTargetSizeX, renderTargetSizeY, 1);
         }
@@ -1275,6 +1345,11 @@ int32_t main(int32_t argc, const char* argv[]) try {
             gBuffer0[i].resize(width, height);
             gBuffer1[i].resize(width, height);
             gBuffer2[i].resize(width, height);
+
+            reservoirBuffer[i].resize(renderTargetSizeX, renderTargetSizeY);
+            reservoirInfoBuffer[i].resize(renderTargetSizeX, renderTargetSizeY);
+
+            sampleVisibilityBuffer[i].resize(renderTargetSizeX, renderTargetSizeY);
         }
 
         beautyAccumBuffer.resize(width, height);
@@ -1406,6 +1481,68 @@ int32_t main(int32_t argc, const char* argv[]) try {
         readTxtFile(exeDir / "neural_radiance_caching/shaders/drawOptiXResult.frag"));
 
 
+    // ----------------------------------------------------------------
+    // JP: Spatial Reuseで使用する近傍ピクセルへの方向をLow-discrepancy数列から作成しておく。
+    // EN: Generate directions to neighboring pixels used in spatial reuse from a low-discrepancy sequence.
+    const auto computeHaltonSequence = [](uint32_t base, uint32_t idx) {
+        const float recBase = 1.0f / base;
+        float ret = 0.0f;
+        float scale = 1.0f;
+        while (idx) {
+            scale *= recBase;
+            ret += (idx % base) * scale;
+            idx /= base;
+        }
+        return ret;
+    };
+    const auto concentricSampleDisk = [](float u0, float u1, float* dx, float* dy) {
+        float r, theta;
+        float sx = 2 * u0 - 1;
+        float sy = 2 * u1 - 1;
+
+        if (sx == 0 && sy == 0) {
+            *dx = 0;
+            *dy = 0;
+            return;
+        }
+        if (sx >= -sy) { // region 1 or 2
+            if (sx > sy) { // region 1
+                r = sx;
+                theta = sy / sx;
+            }
+            else { // region 2
+                r = sy;
+                theta = 2 - sx / sy;
+            }
+        }
+        else { // region 3 or 4
+            if (sx > sy) {/// region 4
+                r = -sy;
+                theta = 6 + sx / sy;
+            }
+            else {// region 3
+                r = -sx;
+                theta = 4 + sy / sx;
+            }
+        }
+        theta *= pi_v<float> / 4;
+        *dx = r * cos(theta);
+        *dy = r * sin(theta);
+    };
+    std::vector<float2> spatialNeighborDeltasOnHost(1024);
+    for (int i = 0; i < spatialNeighborDeltasOnHost.size(); ++i) {
+        float2 delta;
+        concentricSampleDisk(computeHaltonSequence(2, i), computeHaltonSequence(3, i), &delta.x, &delta.y);
+        spatialNeighborDeltasOnHost[i] = delta;
+        //printf("%g, %g\n", delta.x, delta.y);
+    }
+    cudau::TypedBuffer<float2> spatialNeighborDeltas(
+        gpuEnv.cuContext, Scene::bufferType, spatialNeighborDeltasOnHost);
+
+    // End generate directions to neighboring pixels used in spatial reuse from a low-discrepancy sequence.
+    // ----------------------------------------------------------------
+
+
 
     shared::StaticPipelineLaunchParameters staticPlp = {};
     {
@@ -1446,6 +1583,27 @@ int32_t main(int32_t argc, const char* argv[]) try {
         staticPlp.trainVertexInfoBuffer = trainVertexInfoBuffer.getDevicePointer();
         staticPlp.trainSuffixTerminalInfoBuffer = trainSuffixTerminalInfoBuffer.getDevicePointer();
         staticPlp.dataShufflerBuffer = dataShufflerBuffer.getDevicePointer();
+
+        staticPlp.beautyAccumBuffer = beautyAccumBuffer.getSurfaceObject(0);
+        staticPlp.albedoAccumBuffer = albedoAccumBuffer.getSurfaceObject(0);
+        staticPlp.normalAccumBuffer = normalAccumBuffer.getSurfaceObject(0);
+
+
+
+        staticPlp.numTiles = int2((renderTargetSizeX + shared::tileSizeX - 1) / shared::tileSizeX,
+                                  (renderTargetSizeY + shared::tileSizeY - 1) / shared::tileSizeY);
+
+        printf("presample \n");
+        staticPlp.lightPreSamplingRngs = lightPreSamplingRngs.getDevicePointer();
+        staticPlp.preSampledLights = preSampledLights.getDevicePointer();
+
+        staticPlp.reservoirBuffer[0] = reservoirBuffer[0].getBlockBuffer2D();
+        staticPlp.reservoirBuffer[1] = reservoirBuffer[1].getBlockBuffer2D();
+        staticPlp.reservoirInfoBuffer[0] = reservoirInfoBuffer[0].getSurfaceObject(0);
+        staticPlp.reservoirInfoBuffer[1] = reservoirInfoBuffer[1].getSurfaceObject(0);
+        staticPlp.sampleVisibilityBuffer[0] = sampleVisibilityBuffer[0].getSurfaceObject(0);
+        staticPlp.sampleVisibilityBuffer[1] = sampleVisibilityBuffer[1].getSurfaceObject(0);
+        staticPlp.spatialNeighborDeltas = spatialNeighborDeltas.getDevicePointer();
 
         staticPlp.beautyAccumBuffer = beautyAccumBuffer.getSurfaceObject(0);
         staticPlp.albedoAccumBuffer = albedoAccumBuffer.getSurfaceObject(0);
@@ -1511,6 +1669,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
         cudau::Timer update;
         cudau::Timer computePDFTexture;
         cudau::Timer setupGBuffers;
+        cudau::Timer performInitialAndTemporalRIS;
+        cudau::Timer performSpatialRIS;
+        cudau::Timer shading;
         cudau::Timer preprocessNRC;
         cudau::Timer pathTrace;
         cudau::Timer infer;
@@ -1526,6 +1687,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
             update.initialize(context);
             computePDFTexture.initialize(context);
             setupGBuffers.initialize(context);
+            performInitialAndTemporalRIS.initialize(context);
+            performSpatialRIS.initialize(context);
+            shading.initialize(context);
             preprocessNRC.initialize(context);
             pathTrace.initialize(context);
             infer.initialize(context);
@@ -1563,6 +1727,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
     int32_t requestedSize[2];
     uint32_t numAccumFrames = 0;
     while (true) {
+
+    uint32_t lastSpatialNeighborBaseIndex = 0;
+    uint32_t lastReservoirIndex = 1;
         uint32_t bufferIndex = frameIndex % 2;
 
         GPUTimer &curGPUTimer = gpuTimers[bufferIndex];
@@ -1634,6 +1801,13 @@ int32_t main(int32_t argc, const char* argv[]) try {
             staticPlp.albedoAccumBuffer = albedoAccumBuffer.getSurfaceObject(0);
             staticPlp.normalAccumBuffer = normalAccumBuffer.getSurfaceObject(0);
             perFramePlp.camera.aspect = (float)renderTargetSizeX / renderTargetSizeY;
+
+            staticPlp.reservoirBuffer[0] = reservoirBuffer[0].getBlockBuffer2D();
+            staticPlp.reservoirBuffer[1] = reservoirBuffer[1].getBlockBuffer2D();
+            staticPlp.reservoirInfoBuffer[0] = reservoirInfoBuffer[0].getSurfaceObject(0);
+            staticPlp.reservoirInfoBuffer[1] = reservoirInfoBuffer[1].getSurfaceObject(0);
+            staticPlp.sampleVisibilityBuffer[0] = sampleVisibilityBuffer[0].getSurfaceObject(0);
+            staticPlp.sampleVisibilityBuffer[1] = sampleVisibilityBuffer[1].getSurfaceObject(0);
 
             CUDADRV_CHECK(cuMemcpyHtoD(staticPlpOnDevice, &staticPlp, sizeof(staticPlp)));
 
@@ -1797,6 +1971,36 @@ int32_t main(int32_t argc, const char* argv[]) try {
             ImGui::End();
         }
 
+        struct ReSTIRConfigs {
+            int32_t log2NumCandidateSamples;
+            bool enableTemporalReuse = true;
+            bool enableSpatialReuse = true;
+            int32_t numSpatialReusePasses;
+            int32_t numSpatialNeighbors;
+            float spatialNeighborRadius = 20.0f;
+            float radiusThresholdForSpatialVisReuse = 10.0f;
+            bool useLowDiscrepancySpatialNeighbors = true;
+            bool reuseVisibility = true;
+            bool reuseVisibilityForTemporal = true;
+            bool reuseVisibilityForSpatiotemporal = false;
+
+            ReSTIRConfigs(uint32_t _log2NumCandidateSamples,
+                          uint32_t _numSpatialReusePasses, uint32_t _numSpatialNeighbors) :
+                log2NumCandidateSamples(_log2NumCandidateSamples),
+                numSpatialReusePasses(_numSpatialReusePasses),
+                numSpatialNeighbors(_numSpatialNeighbors) {}
+        };
+
+
+        static ReSTIRConfigs orgRestirBiasedConfigs(5, 2, 5);
+        static ReSTIRConfigs orgRestirUnbiasedConfigs(5, 1, 3);
+        static ReSTIRConfigs rearchRestirBiasedConfigs(5, 1, 1);
+        static ReSTIRConfigs rearchRestirUnbiasedConfigs(5, 1, 1);
+
+        // static ReSTIRRenderer curRenderer = ReSTIRRenderer::OriginalReSTIRBiased;
+        static ReSTIRRenderer curRenderer = ReSTIRRenderer::NoReSTIR;
+        static ReSTIRConfigs* curRendererConfigs = &orgRestirBiasedConfigs;
+        static float spatialVisibilityReuseRatio = 50.0f;
         static bool useTemporalDenosier = true;
         static float motionVectorScale = -1.0f;
         static bool animate = /*true*/false;
@@ -1985,6 +2189,84 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
                     ImGui::EndTabItem();
                 }
+
+                if (ImGui::BeginTabItem("ReSTIR Option")) {
+                    ReSTIRRenderer prevRenderer = curRenderer;
+                    ImGui::RadioButtonE("No ReSTIR", &curRenderer,
+                                        ReSTIRRenderer::NoReSTIR);
+                    ImGui::RadioButtonE("Original ReSTIR (Biased)", &curRenderer,
+                                        ReSTIRRenderer::OriginalReSTIRBiased);
+                    ImGui::RadioButtonE("Original ReSTIR (Unbiased)", &curRenderer,
+                                        ReSTIRRenderer::OriginalReSTIRUnbiased);
+                    ImGui::RadioButtonE("Rearchitected ReSTIR (Biased)", &curRenderer,
+                                        ReSTIRRenderer::RearchitectedReSTIRBiased);
+                    ImGui::RadioButtonE("Rearchitected ReSTIR (Unbiased)", &curRenderer,
+                                        ReSTIRRenderer::RearchitectedReSTIRUnbiased);
+                    if (curRenderer != prevRenderer)
+                        resetAccumulation = true;
+
+                    if (curRenderer == ReSTIRRenderer::OriginalReSTIRBiased)
+                        curRendererConfigs = &orgRestirBiasedConfigs;
+                    else if (curRenderer == ReSTIRRenderer::OriginalReSTIRUnbiased)
+                        curRendererConfigs = &orgRestirUnbiasedConfigs;
+                    else if (curRenderer == ReSTIRRenderer::RearchitectedReSTIRBiased)
+                        curRendererConfigs = &rearchRestirBiasedConfigs;
+                    else if (curRenderer == ReSTIRRenderer::RearchitectedReSTIRUnbiased)
+                        curRendererConfigs = &rearchRestirUnbiasedConfigs;
+
+                    ImGui::InputLog2Int("#Candidates", &curRendererConfigs->log2NumCandidateSamples, 8);
+                    //ImGui::InputLog2Int("#Samples", &curRendererConfigs->log2NumSamples, 3);
+
+                    resetAccumulation |=
+                        ImGui::Checkbox("Temporal Reuse", &curRendererConfigs->enableTemporalReuse);
+                    resetAccumulation |=
+                        ImGui::Checkbox("Spatial Reuse", &curRendererConfigs->enableSpatialReuse);
+                    resetAccumulation |=
+                        ImGui::SliderFloat("Radius", &curRendererConfigs->spatialNeighborRadius, 3.0f, 30.0f);
+                    if (curRenderer == ReSTIRRenderer::OriginalReSTIRBiased ||
+                        curRenderer == ReSTIRRenderer::OriginalReSTIRUnbiased) {
+                        resetAccumulation |= ImGui::SliderInt(
+                            "#Reuse Passes",
+                            &curRendererConfigs->numSpatialReusePasses, 1, 5);
+                        // TODO: Allow the rearchicted version use this parameter?
+                        resetAccumulation |= ImGui::SliderInt(
+                            "#Neighbors",
+                            &curRendererConfigs->numSpatialNeighbors, 1, 10);
+                    }
+                    resetAccumulation |= ImGui::Checkbox("Low Discrepancy",
+                                                         &curRendererConfigs->useLowDiscrepancySpatialNeighbors);
+                    resetAccumulation |= ImGui::Checkbox("Reuse Visibility",
+                                                         &curRendererConfigs->reuseVisibility);
+                    if (curRenderer == ReSTIRRenderer::RearchitectedReSTIRBiased) {
+                        resetAccumulation |=
+                            ImGui::Checkbox("Reuse Temporal Visibility",
+                                            &curRendererConfigs->reuseVisibilityForTemporal);
+                        resetAccumulation |=
+                            ImGui::Checkbox("Reuse Spatial Visibility",
+                                            &curRendererConfigs->reuseVisibilityForSpatiotemporal);
+                        resetAccumulation |=
+                            ImGui::InputFloat("Reuse Ratio (%)",
+                                              &spatialVisibilityReuseRatio, 25.0f, 25.0f, "%.1f");
+                        spatialVisibilityReuseRatio =
+                            std::min(std::max(spatialVisibilityReuseRatio, 0.0f), 100.0f);
+                        float reusableRadius = curRendererConfigs->spatialNeighborRadius *
+                            std::sqrt(spatialVisibilityReuseRatio / 100.0f);
+                        curRendererConfigs->radiusThresholdForSpatialVisReuse = reusableRadius;
+                    }
+
+                    ImGui::PushID("Debug Switches");
+                    for (int i = lengthof(debugSwitches) - 1; i >= 0; --i) {
+                        ImGui::PushID(i);
+                        resetAccumulation |= ImGui::Checkbox("", &debugSwitches[i]);
+                        ImGui::PopID();
+                        if (i > 0)
+                            ImGui::SameLine();
+                    }
+                    ImGui::PopID();
+
+                    ImGui::EndTabItem();
+                }
+
 
                 if (ImGui::BeginTabItem("Visualize")) {
                     ImGui::Checkbox("Visualize Training Paths", &visualizeTrainingPath);
@@ -2189,6 +2471,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
         CUDADRV_CHECK(cuMemcpyHtoDAsync(gpuEnv.plpPtr, &plp, sizeof(plp), cuStream));
         CUDADRV_CHECK(cuMemcpyHtoDAsync(plpPtrOnDeviceForCopyBuffers, &plp, sizeof(plp), cuStream));
 
+        uint32_t currentReservoirIndex = (lastReservoirIndex + 1) % 2;
+
         // JP: Gバッファーのセットアップ。
         //     ここではレイトレースを使ってGバッファーを生成しているがもちろんラスタライザーで生成可能。
         // EN: Setup the G-buffers.
@@ -2197,6 +2481,53 @@ int32_t main(int32_t argc, const char* argv[]) try {
         gpuEnv.gBuffer.optixPipeline.launch(
             cuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);
         curGPUTimer.setupGBuffers.stop(cuStream);
+
+            // ReSTIR preprocessing
+            if (curRenderer != ReSTIRRenderer::NoReSTIR){
+                // std::cout << "running restir!" << "\n";
+                curGPUTimer.performInitialAndTemporalRIS.start(cuStream);
+                PathTracingEntryPoint entryPoint = PathTracingEntryPoint::performInitialRIS;
+                if (curRendererConfigs->enableTemporalReuse && !newSequence) {
+                    entryPoint = curRenderer == ReSTIRRenderer::OriginalReSTIRUnbiased ?
+                        PathTracingEntryPoint::performInitialAndTemporalRISUnbiased :
+                        PathTracingEntryPoint::performInitialAndTemporalRISBiased;
+
+                }
+
+                gpuEnv.pathTracing.setEntryPoint(entryPoint);
+                gpuEnv.pathTracing.optixPipeline.launch(
+                    cuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);
+                curGPUTimer.performInitialAndTemporalRIS.stop(cuStream);
+
+                // JP: 各ピクセルにおいて(空間的)隣接ピクセルとの間でReservoirの結合を行う。
+                // EN: For each pixel, combine reservoirs between the current pixel and
+                //     (Spatially) neighboring pixels.
+                curGPUTimer.performSpatialRIS.start(cuStream);
+                if (curRendererConfigs->enableSpatialReuse) {
+                    int32_t numSpatialReusePasses;
+                    PathTracingEntryPoint entryPoint = curRenderer == ReSTIRRenderer::OriginalReSTIRUnbiased ?
+                        PathTracingEntryPoint::performSpatialRISUnbiased :
+                        PathTracingEntryPoint::performSpatialRISBiased;
+                    gpuEnv.pathTracing.setEntryPoint(entryPoint);
+                    numSpatialReusePasses = curRendererConfigs->numSpatialReusePasses;
+
+                    for (int i = 0; i < numSpatialReusePasses; ++i) {
+                        uint32_t baseIndex =
+                            lastSpatialNeighborBaseIndex + curRendererConfigs->numSpatialNeighbors * i;
+                        plp.spatialNeighborBaseIndex = baseIndex;
+                        CUDADRV_CHECK(cuMemcpyHtoDAsync(plpOnDevice, &plp, sizeof(plp), cuStream));
+                        gpuEnv.pathTracing.optixPipeline.launch(
+                            cuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);
+                        currentReservoirIndex = (currentReservoirIndex + 1) % 2;
+                        plp.currentReservoirIndex = currentReservoirIndex;
+                    }
+                    lastSpatialNeighborBaseIndex += curRendererConfigs->numSpatialNeighbors * numSpatialReusePasses;
+                }
+                curGPUTimer.performSpatialRIS.stop(cuStream);
+
+                lastReservoirIndex = currentReservoirIndex;
+            }
+            // -----------------------------------------------------------------
 
         // JP: タイルサイズのアップデートやTraining Suffixの終端情報初期化などを行う。
         // EN: Perform update of the tile size and initialization of training suffixes and so on.
@@ -2212,8 +2543,14 @@ int32_t main(int32_t argc, const char* argv[]) try {
         // EN: Path trace to generate rendering paths and training data.
         curGPUTimer.pathTrace.start(cuStream);
         CUDADRV_CHECK(cuMemcpyHtoDAsync(plpOnDevice, &plp, sizeof(plp), cuStream));
-        PathTracingEntryPoint entryPoint = useNRC ?
-            PathTracingEntryPoint::NRC : PathTracingEntryPoint::Baseline;
+        PathTracingEntryPoint entryPoint;
+        if (curRenderer == ReSTIRRenderer::NoReSTIR){
+            entryPoint = useNRC ?
+                PathTracingEntryPoint::NRC : PathTracingEntryPoint::Baseline;
+        } else {
+            entryPoint = useNRC ?
+                PathTracingEntryPoint::NRCReSTIR : PathTracingEntryPoint::BaselineReSTIR;
+        }   
         gpuEnv.pathTracing.setEntryPoint(entryPoint);
         gpuEnv.pathTracing.optixPipeline.launch(
             cuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);
