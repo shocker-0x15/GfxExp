@@ -957,12 +957,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
         getExecutableDirectory() / "svgf/ptxes",
         gpuEnv.cuContext, gpuEnv.optixContext, shared::maxNumRayTypes, gpuEnv.optixDefaultMaterial);
 
-    CUstream cuStreams[2];
-    CUevent cuEvents[2];
-    CUDADRV_CHECK(cuStreamCreate(&cuStreams[0], 0));
-    CUDADRV_CHECK(cuStreamCreate(&cuStreams[1], 0));
-    CUDADRV_CHECK(cuEventCreate(&cuEvents[0], 0));
-    CUDADRV_CHECK(cuEventCreate(&cuEvents[1], 0));
+    StreamChain<2> streamChain;
+    streamChain.initialize(gpuEnv.cuContext);
+    CUstream stream = streamChain.waitAvailableAndGetCurrentStream();
 
     // ----------------------------------------------------------------
     // JP: シーンのセットアップ。
@@ -1515,8 +1512,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
         cudau::TypedBuffer<shared::PickInfo> &curPickInfo = pickInfos[curBufIdx];
 
-        CUstream curCuStream = cuStreams[curBufIdx];
-        CUevent curCuEvent = cuEvents[curBufIdx];
         GPUTimer &curGPUTimer = gpuTimers[curBufIdx];
 
         cudau::TypedBuffer<shared::InstanceData> &curInstDataBuffer = scene.instDataBuffer[curBufIdx];
@@ -1525,8 +1520,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
             break;
         glfwPollEvents();
 
-        CUDADRV_CHECK(cuStreamSynchronize(curCuStream));
-        CUDADRV_CHECK(cuStreamWaitEvent(curCuStream, cuEvents[prevBufIdx], 0));
+        CUstream curCuStream = streamChain.waitAvailableAndGetCurrentStream();
 
         bool resized = false;
         int32_t newFBWidth;
@@ -1542,8 +1536,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
             requestedSize[1] = renderTargetSizeY;
 
             glFinish();
-            CUDADRV_CHECK(cuStreamSynchronize(cuStreams[0]));
-            CUDADRV_CHECK(cuStreamSynchronize(cuStreams[1]));
+            streamChain.waitAllWorkDone();
 
             resizeResolutionDependentBuffers(renderTargetSizeX, renderTargetSizeY);
 
@@ -1699,8 +1692,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
                 saveSS_LDR = saveSS_HDR = true;
             if (saveSS_LDR || saveSS_HDR) {
                 glFinish();
-                CUDADRV_CHECK(cuStreamSynchronize(cuStreams[0]));
-                CUDADRV_CHECK(cuStreamSynchronize(cuStreams[1]));
+                streamChain.waitAllWorkDone();
                 auto rawImage = new float4[renderTargetSizeX * renderTargetSizeY];
                 glu::Texture2D &texToDisplay = bufferTypeToDisplay == shared::BufferToDisplay::FinalRendering ?
                     curTemporalSet.gfxFinalLightingBuffer : gfxDebugVisualizeBuffer;
@@ -2244,15 +2236,14 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
         curGPUTimer.frame.stop(curCuStream);
 
-        CUDADRV_CHECK(cuEventRecord(curCuEvent, curCuStream));
+        streamChain.swap();
 
         glfwSwapBuffers(window);
 
         ++frameIndex;
     }
 
-    CUDADRV_CHECK(cuStreamSynchronize(cuStreams[0]));
-    CUDADRV_CHECK(cuStreamSynchronize(cuStreams[1]));
+    streamChain.waitAllWorkDone();
     gpuTimers[1].finalize();
     gpuTimers[0].finalize();
 
@@ -2285,10 +2276,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
     finalizeTextureCaches();
 
-    CUDADRV_CHECK(cuEventDestroy(cuEvents[1]));
-    CUDADRV_CHECK(cuEventDestroy(cuEvents[0]));
-    CUDADRV_CHECK(cuStreamDestroy(cuStreams[1]));
-    CUDADRV_CHECK(cuStreamDestroy(cuStreams[0]));
+    streamChain.finalize();
 
     scene.finalize();
     

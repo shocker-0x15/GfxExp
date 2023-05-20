@@ -1112,12 +1112,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
         getExecutableDirectory() / "restir/ptxes",
         gpuEnv.cuContext, gpuEnv.optixContext, shared::maxNumRayTypes, gpuEnv.optixDefaultMaterial);
 
-    CUstream cuStreams[2];
-    CUevent cuEvents[2];
-    CUDADRV_CHECK(cuStreamCreate(&cuStreams[0], 0));
-    CUDADRV_CHECK(cuStreamCreate(&cuStreams[1], 0));
-    CUDADRV_CHECK(cuEventCreate(&cuEvents[0], 0));
-    CUDADRV_CHECK(cuEventCreate(&cuEvents[1], 0));
+    StreamChain<2> streamChain;
+    streamChain.initialize(gpuEnv.cuContext);
+    CUstream stream = streamChain.waitAvailableAndGetCurrentStream();
 
     // ----------------------------------------------------------------
     // JP: シーンのセットアップ。
@@ -1421,7 +1418,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
     std::vector<optixu::DenoisingTask> denoisingTasks(numTasks);
     denoiser.getTasks(denoisingTasks.data());
 
-    denoiser.setupState(cuStreams[0], denoiserStateBuffer, denoiserScratchBuffer);
+    denoiser.setupState(stream, denoiserStateBuffer, denoiserScratchBuffer);
 
     // JP: デノイザーは入出力にリニアなバッファーを必要とするため結果をコピーする必要がある。
     // EN: Denoiser requires linear buffers as input/output, so we need to copy the results.
@@ -1693,8 +1690,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
     while (true) {
         uint32_t bufferIndex = frameIndex % 2;
 
-        CUstream curCuStream = cuStreams[bufferIndex];
-        CUevent curCuEvent = cuEvents[bufferIndex];
         GPUTimer &curGPUTimer = gpuTimers[bufferIndex];
 
         perFramePlp.prevCamera = perFramePlp.camera;
@@ -1703,8 +1698,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
             break;
         glfwPollEvents();
 
-        CUDADRV_CHECK(cuStreamSynchronize(curCuStream));
-        CUDADRV_CHECK(cuStreamWaitEvent(curCuStream, cuEvents[(bufferIndex + 1) % 2], 0));
+        CUstream curCuStream = streamChain.waitAvailableAndGetCurrentStream();
 
         bool resized = false;
         int32_t newFBWidth;
@@ -1720,8 +1714,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
             requestedSize[1] = renderTargetSizeY;
 
             glFinish();
-            CUDADRV_CHECK(cuStreamSynchronize(cuStreams[0]));
-            CUDADRV_CHECK(cuStreamSynchronize(cuStreams[1]));
+            streamChain.waitAllWorkDone();
 
             resizeScreenRelatedBuffers(renderTargetSizeX, renderTargetSizeY);
 
@@ -1904,8 +1897,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
             if (ImGui::Button("Both"))
                 saveSS_LDR = saveSS_HDR = true;
             if (saveSS_LDR || saveSS_HDR) {
-                CUDADRV_CHECK(cuStreamSynchronize(cuStreams[0]));
-                CUDADRV_CHECK(cuStreamSynchronize(cuStreams[1]));
+                streamChain.waitAllWorkDone();
                 auto rawImage = new float4[renderTargetSizeX * renderTargetSizeY];
                 glGetTextureSubImage(
                     outputTexture.getHandle(), 0,
@@ -2119,8 +2111,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
                         "Denoised Beauty", &bufferTypeToDisplay, shared::BufferToDisplay::DenoisedBeauty);
 
                     if (ImGui::Checkbox("Temporal Denoiser", &useTemporalDenosier)) {
-                        CUDADRV_CHECK(cuStreamSynchronize(cuStreams[0]));
-                        CUDADRV_CHECK(cuStreamSynchronize(cuStreams[1]));
+                        streamChain.waitAllWorkDone();
                         denoiser.destroy();
 
                         OptixDenoiserModelKind modelKind = useTemporalDenosier ?
@@ -2549,7 +2540,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
         curGPUTimer.frame.stop(curCuStream);
 
-        CUDADRV_CHECK(cuEventRecord(curCuEvent, curCuStream));
+        streamChain.swap();
 
 
 
@@ -2595,8 +2586,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         ++frameIndex;
     }
 
-    CUDADRV_CHECK(cuStreamSynchronize(cuStreams[1]));
-    CUDADRV_CHECK(cuStreamSynchronize(cuStreams[0]));
+    streamChain.waitAllWorkDone();
     gpuTimers[1].finalize();
     gpuTimers[0].finalize();
 
@@ -2642,10 +2632,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
     finalizeTextureCaches();
 
-    CUDADRV_CHECK(cuEventDestroy(cuEvents[1]));
-    CUDADRV_CHECK(cuEventDestroy(cuEvents[0]));
-    CUDADRV_CHECK(cuStreamDestroy(cuStreams[1]));
-    CUDADRV_CHECK(cuStreamDestroy(cuStreams[0]));
+    streamChain.finalize();
     
     scene.finalize();
 

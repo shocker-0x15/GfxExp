@@ -44,6 +44,61 @@ std::vector<char> readBinaryFile(const std::filesystem::path &filepath);
 
 
 
+template <uint32_t numBuffers>
+class StreamChain {
+    std::array<CUstream, numBuffers> m_streams;
+    std::array<CUevent, numBuffers> m_endEvents;
+    uint32_t m_curBufIdx;
+
+public:
+    StreamChain() {
+        for (int i = 0; i < numBuffers; ++i) {
+            m_streams[i] = nullptr;
+            m_endEvents[i] = nullptr;
+        }
+    }
+
+    void initialize(CUcontext cuContext) {
+        for (int i = 0; i < numBuffers; ++i) {
+            CUDADRV_CHECK(cuStreamCreate(&m_streams[i], 0));
+            CUDADRV_CHECK(cuEventCreate(&m_endEvents[i], 0));
+        }
+        m_curBufIdx = 0;
+    }
+
+    void finalize() {
+        for (int i = 1; i >= 0; --i) {
+            CUDADRV_CHECK(cuStreamSynchronize(m_streams[i]));
+            CUDADRV_CHECK(cuEventDestroy(m_endEvents[i]));
+            CUDADRV_CHECK(cuStreamDestroy(m_streams[i]));
+            m_endEvents[i] = nullptr;
+            m_streams[i] = nullptr;
+        }
+    }
+
+    void swap() {
+        CUstream curStream = m_streams[m_curBufIdx];
+        CUevent curEvent = m_endEvents[m_curBufIdx];
+        CUDADRV_CHECK(cuEventRecord(curEvent, curStream));
+        m_curBufIdx = (m_curBufIdx + 1) % numBuffers;
+    }
+
+    CUstream waitAvailableAndGetCurrentStream() const {
+        CUstream curStream = m_streams[m_curBufIdx];
+        CUevent prevStreamEndEvent = m_endEvents[(m_curBufIdx + numBuffers - 1) % numBuffers];
+        CUDADRV_CHECK(cuStreamSynchronize(curStream));
+        CUDADRV_CHECK(cuStreamWaitEvent(curStream, prevStreamEndEvent, 0));
+        return curStream;
+    }
+
+    void waitAllWorkDone() const {
+        for (int i = 0; i < numBuffers; ++i)
+            CUDADRV_CHECK(cuStreamSynchronize(m_streams[i]));
+    }
+};
+
+
+
 template <typename RealType>
 class DiscreteDistribution1DTemplate {
     cudau::TypedBuffer<RealType> m_weights;
