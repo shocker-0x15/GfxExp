@@ -543,6 +543,57 @@ namespace optixu {
 
 
     template <>
+    class Object<DisplacementMicroMapArray>::Priv : public PrivateObject {
+        _Scene* scene;
+        OptixDisplacementMicromapFlags flags;
+
+        BufferView rawDmmBuffer;
+        BufferView perMicroMapDescBuffer;
+        BufferView outputBuffer;
+        std::vector<OptixDisplacementMicromapHistogramEntry> microMapHistogramEntries;
+
+        OptixDisplacementMicromapArrayBuildInput buildInput;
+        OptixMicromapBufferSizes memoryRequirement;
+
+        struct {
+            unsigned int memoryUsageComputed : 1;
+            unsigned int buffersSet : 1;
+            unsigned int available : 1;
+        };
+
+    public:
+        OPTIXU_OPAQUE_BRIDGE(DisplacementMicroMapArray);
+
+        Priv(_Scene* _scene) :
+            scene(_scene),
+            memoryUsageComputed(false), buffersSet(false),
+            available(false) {
+        }
+        ~Priv() {
+            getContext()->unregisterName(this);
+        }
+
+        const _Scene* getScene() const {
+            return scene;
+        }
+        _Context* getContext() const {
+            return scene->getContext();
+        }
+        OPTIXU_DEFINE_THROW_RUNTIME_ERROR("DMM");
+
+        bool isReady() const {
+            return available;
+        }
+
+        BufferView getBuffer() const {
+            throwRuntimeError(outputBuffer.isValid(), "Output buffer has not been set.");
+            return outputBuffer;
+        }
+    };
+
+
+
+    template <>
     class Object<GeometryInstance>::Priv : public PrivateObject {
         _Scene* scene;
         SizeAlign userDataSizeAlign;
@@ -553,21 +604,37 @@ namespace optixu {
             BufferView* vertexBuffers;
             BufferView triangleBuffer;
             BufferView materialIndexBuffer;
+            OptixVertexFormat vertexFormat;
+            OptixIndicesFormat indexFormat;
+
             _OpacityMicroMapArray* opacityMicroMapArray;
             BufferView opacityMicroMapIndexBuffer;
             std::vector<OptixOpacityMicromapUsageCount> opacityMicroMapUsageCounts;
-            OptixVertexFormat vertexFormat;
-            OptixIndicesFormat indexFormat;
             OptixOpacityMicromapArrayIndexingMode opacityMicroMapIndexingMode;
             uint32_t opacityMicroMapIndexOffset;
+
+            BufferView displacementVertexDirectionBuffer;
+            BufferView displacementVertexBiasAndScaleBuffer;
+            BufferView displacementTriangleFlagsBuffer;
+            OptixDisplacementMicromapDirectionFormat displacementVertexDirectionFormat;
+            OptixDisplacementMicromapBiasAndScaleFormat displacementVertexBiasAndScaleFormat;
+            _DisplacementMicroMapArray* displacementMicroMapArray;
+            BufferView displacementMicroMapIndexBuffer;
+            std::vector<OptixDisplacementMicromapUsageCount> displacementMicroMapUsageCounts;
+            OptixDisplacementMicromapArrayIndexingMode displacementMicroMapIndexingMode;
+            uint32_t displacementMicroMapIndexOffset;
+
             unsigned int materialIndexSize : 3;
             unsigned int opacityMicroMapIndexSize : 3;
+            unsigned int displacementMicroMapIndexSize : 3;
         };
         struct CurveGeometry {
             CUdeviceptr* vertexBufferArray;
             CUdeviceptr* widthBufferArray;
+            CUdeviceptr* normalBufferArray;
             BufferView* vertexBuffers;
             BufferView* widthBuffers;
+            BufferView* normalBuffers;
             BufferView segmentIndexBuffer;
             OptixCurveEndcapFlags endcapFlags;
         };
@@ -617,24 +684,37 @@ namespace optixu {
                 auto &geom = std::get<TriangleGeometry>(geometry);
                 geom.vertexBufferArray = new CUdeviceptr[numMotionSteps];
                 geom.vertexBuffers = new BufferView[numMotionSteps];
-                geom.opacityMicroMapArray = nullptr;
                 geom.vertexFormat = OPTIX_VERTEX_FORMAT_FLOAT3;
                 geom.indexFormat = OPTIX_INDICES_FORMAT_NONE;
+
+                geom.opacityMicroMapArray = nullptr;
                 geom.opacityMicroMapIndexingMode = OPTIX_OPACITY_MICROMAP_ARRAY_INDEXING_MODE_NONE;
                 geom.opacityMicroMapIndexOffset = 0;
+
+                geom.displacementMicroMapArray = nullptr;
+                geom.displacementMicroMapIndexingMode = OPTIX_DISPLACEMENT_MICROMAP_ARRAY_INDEXING_MODE_NONE;
+                geom.displacementMicroMapIndexOffset = 0;
+
                 geom.materialIndexSize = 0;
                 geom.opacityMicroMapIndexSize = 0;
+                geom.displacementMicroMapIndexSize = 0;
             }
             else if (geomType == GeometryType::LinearSegments ||
                      geomType == GeometryType::QuadraticBSplines ||
+                     geomType == GeometryType::FlatQuadraticBSplines ||
                      geomType == GeometryType::CubicBSplines ||
-                     geomType == GeometryType::CatmullRomSplines) {
+                     geomType == GeometryType::CatmullRomSplines ||
+                     geomType == GeometryType::CubicBezier) {
                 geometry = CurveGeometry{};
                 auto &geom = std::get<CurveGeometry>(geometry);
                 geom.vertexBufferArray = new CUdeviceptr[numMotionSteps];
                 geom.vertexBuffers = new BufferView[numMotionSteps];
                 geom.widthBufferArray = new CUdeviceptr[numMotionSteps];
                 geom.widthBuffers = new BufferView[numMotionSteps];
+                if (geomType == GeometryType::FlatQuadraticBSplines) {
+                    geom.normalBufferArray = new CUdeviceptr[numMotionSteps];
+                    geom.normalBuffers = new BufferView[numMotionSteps];
+                }
                 geom.endcapFlags = OPTIX_CURVE_ENDCAP_DEFAULT;
             }
             else if (geomType == GeometryType::Spheres) {
@@ -665,6 +745,10 @@ namespace optixu {
             }
             else if (std::holds_alternative<CurveGeometry>(geometry)) {
                 auto &geom = std::get<CurveGeometry>(geometry);
+                if (geomType == GeometryType::FlatQuadraticBSplines) {
+                    delete[] geom.normalBuffers;
+                    delete[] geom.normalBufferArray;
+                }
                 delete[] geom.widthBuffers;
                 delete[] geom.widthBufferArray;
                 delete[] geom.vertexBuffers;
@@ -1173,6 +1257,10 @@ namespace optixu {
         }
         OPTIXU_DEFINE_THROW_RUNTIME_ERROR("Pipeline");
 
+        OptixPipeline getRawPipeline() const {
+            return rawPipeline;
+        }
+
 
 
         void markDirty();
@@ -1224,7 +1312,7 @@ namespace optixu {
         Priv(_Pipeline* pl, OptixProgramGroup _rawGroup, OptixProgramGroupKind kind) :
             pipeline(pl), rawGroup(_rawGroup) {
             OptixStackSizes stackSizes;
-            OPTIX_CHECK(optixProgramGroupGetStackSize(rawGroup, &stackSizes));
+            OPTIX_CHECK(optixProgramGroupGetStackSize(rawGroup, &stackSizes, pipeline->getRawPipeline()));
             if (kind == OPTIX_PROGRAM_GROUP_KIND_RAYGEN)
                 stackSize = stackSizes.cssRG;
             else if (kind == OPTIX_PROGRAM_GROUP_KIND_MISS)
@@ -1270,7 +1358,7 @@ namespace optixu {
         Priv(_Pipeline* pl, OptixProgramGroup _rawGroup) :
             pipeline(pl), rawGroup(_rawGroup) {
             OptixStackSizes stackSizes;
-            OPTIX_CHECK(optixProgramGroupGetStackSize(rawGroup, &stackSizes));
+            OPTIX_CHECK(optixProgramGroupGetStackSize(rawGroup, &stackSizes, pipeline->getRawPipeline()));
             stackSizeCH = stackSizes.cssCH;
             stackSizeAH = stackSizes.cssAH;
             stackSizeIS = stackSizes.cssIS;
@@ -1310,7 +1398,7 @@ namespace optixu {
         Priv(_Pipeline* pl, OptixProgramGroup _rawGroup) :
             pipeline(pl), rawGroup(_rawGroup) {
             OptixStackSizes stackSizes;
-            OPTIX_CHECK(optixProgramGroupGetStackSize(rawGroup, &stackSizes));
+            OPTIX_CHECK(optixProgramGroupGetStackSize(rawGroup, &stackSizes, pipeline->getRawPipeline()));
             stackSizeDC = stackSizes.dssDC;
             stackSizeCC = stackSizes.cssCC;
         }

@@ -141,7 +141,7 @@
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ImportGroup Label="ExtensionSettings">
-    <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 12.1.props" />
+    <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 12.2.props" />
   </ImportGroup>
   <ImportGroup Label="Shared">
   </ImportGroup>
@@ -153,14 +153,14 @@
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <LibraryPath>$(SolutionDir)ext\prebuilt\lib;C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.1\lib\x64;$(LibraryPath)</LibraryPath>
+    <LibraryPath>$(SolutionDir)ext\prebuilt\lib;C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.2\lib\x64;$(LibraryPath)</LibraryPath>
     <TargetName>svgf</TargetName>
-    <ExternalIncludePath>$(SolutionDir)ext\tinyexr;$(SolutionDir)ext\tinyexr\deps\miniz;$(SolutionDir)ext\glfw\include;$(SolutionDir)ext\imgui;$(SolutionDir)ext\prebuilt\include;C:\ProgramData\NVIDIA Corporation\OptiX SDK 7.6.0\include;$(ExternalIncludePath)</ExternalIncludePath>
+    <ExternalIncludePath>$(SolutionDir)ext\tinyexr;$(SolutionDir)ext\tinyexr\deps\miniz;$(SolutionDir)ext\glfw\include;$(SolutionDir)ext\imgui;$(SolutionDir)ext\prebuilt\include;C:\ProgramData\NVIDIA Corporation\OptiX SDK 7.7.0\include;$(ExternalIncludePath)</ExternalIncludePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <LibraryPath>$(SolutionDir)ext\prebuilt\lib;C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.1\lib\x64;$(LibraryPath)</LibraryPath>
+    <LibraryPath>$(SolutionDir)ext\prebuilt\lib;C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.2\lib\x64;$(LibraryPath)</LibraryPath>
     <TargetName>svgf</TargetName>
-    <ExternalIncludePath>$(SolutionDir)ext\tinyexr;$(SolutionDir)ext\tinyexr\deps\miniz;$(SolutionDir)ext\glfw\include;$(SolutionDir)ext\imgui;$(SolutionDir)ext\prebuilt\include;C:\ProgramData\NVIDIA Corporation\OptiX SDK 7.6.0\include;$(ExternalIncludePath)</ExternalIncludePath>
+    <ExternalIncludePath>$(SolutionDir)ext\tinyexr;$(SolutionDir)ext\tinyexr\deps\miniz;$(SolutionDir)ext\glfw\include;$(SolutionDir)ext\imgui;$(SolutionDir)ext\prebuilt\include;C:\ProgramData\NVIDIA Corporation\OptiX SDK 7.7.0\include;$(ExternalIncludePath)</ExternalIncludePath>
   </PropertyGroup>
   <PropertyGroup Label="Vcpkg">
     <VcpkgEnabled>false</VcpkgEnabled>
@@ -242,6 +242,6 @@
   </ItemDefinitionGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
-    <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 12.1.targets" />
+    <Import Project="$(VCTargetsPath)\BuildCustomizations\CUDA 12.2.targets" />
   </ImportGroup>
 </Project>

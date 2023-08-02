@@ -362,6 +362,15 @@ namespace cudau {
         Buffer();
         ~Buffer();
 
+        Buffer(CUcontext context, BufferType type,
+               uint32_t numElements, uint32_t stride) : Buffer() {
+            initialize(context, type, numElements, stride);
+        }
+        Buffer(CUcontext context, BufferType type,
+               const void* data, uint32_t numElements, uint32_t stride) : Buffer() {
+            initialize(context, type, data, numElements, stride);
+        }
+
         Buffer(Buffer &&b);
         Buffer &operator=(Buffer &&b);
 
@@ -372,6 +381,12 @@ namespace cudau {
             CUcontext context, BufferType type,
             uint32_t numElements, uint32_t stride) {
             initialize(context, type, numElements, stride, 0);
+        }
+        void initialize(
+            CUcontext context, BufferType type,
+            const void* data, uint32_t numElements, uint32_t stride, CUstream stream = 0) {
+            initialize(context, type, numElements, stride, 0);
+            CUDADRV_CHECK(cuMemcpyHtoDAsync(getCUdeviceptr(), data, numElements * stride, stream));
         }
         void initializeFromGLBuffer(CUcontext context, uint32_t stride, uint32_t glBufferID) {
 #if defined(CUDA_UTIL_USE_GL_INTEROP)
@@ -499,19 +514,19 @@ namespace cudau {
     class TypedBuffer : public Buffer {
     public:
         TypedBuffer() {}
-        TypedBuffer(CUcontext context, BufferType type, uint32_t numElements) {
+        TypedBuffer(CUcontext context, BufferType type, uint32_t numElements) : TypedBuffer() {
             Buffer::initialize(context, type, numElements, sizeof(T));
         }
-        TypedBuffer(CUcontext context, BufferType type, uint32_t numElements, const T &value) {
+        TypedBuffer(CUcontext context, BufferType type, uint32_t numElements, const T &value) : TypedBuffer() {
             std::vector<T> values(numElements, value);
             Buffer::initialize(context, type, static_cast<uint32_t>(values.size()), sizeof(T));
             CUDADRV_CHECK(cuMemcpyHtoD(Buffer::getCUdeviceptr(), values.data(), values.size() * sizeof(T)));
         }
-        TypedBuffer(CUcontext context, BufferType type, const T* v, uint32_t numElements) {
+        TypedBuffer(CUcontext context, BufferType type, const T* v, uint32_t numElements) : TypedBuffer() {
             Buffer::initialize(context, type, numElements, sizeof(T));
             CUDADRV_CHECK(cuMemcpyHtoD(Buffer::getCUdeviceptr(), v, numElements * sizeof(T)));
         }
-        TypedBuffer(CUcontext context, BufferType type, const std::vector<T> &v) {
+        TypedBuffer(CUcontext context, BufferType type, const std::vector<T> &v) : TypedBuffer() {
             Buffer::initialize(context, type, static_cast<uint32_t>(v.size()), sizeof(T));
             CUDADRV_CHECK(cuMemcpyHtoD(Buffer::getCUdeviceptr(), v.data(), v.size() * sizeof(T)));
         }

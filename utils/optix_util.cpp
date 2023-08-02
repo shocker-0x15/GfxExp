@@ -253,13 +253,19 @@ namespace optixu {
         return (new _OpacityMicroMapArray(m))->getPublicType();
     }
 
+    DisplacementMicroMapArray Scene::createDisplacementMicroMapArray() const {
+        return (new _DisplacementMicroMapArray(m))->getPublicType();
+    }
+
     GeometryInstance Scene::createGeometryInstance(GeometryType geomType) const {
         m->throwRuntimeError(
             geomType == GeometryType::Triangles ||
             geomType == GeometryType::LinearSegments ||
             geomType == GeometryType::QuadraticBSplines ||
+            geomType == GeometryType::FlatQuadraticBSplines ||
             geomType == GeometryType::CubicBSplines ||
             geomType == GeometryType::CatmullRomSplines ||
+            geomType == GeometryType::CubicBezier ||
             geomType == GeometryType::Spheres ||
             geomType == GeometryType::CustomPrimitives,
             "Invalid geometry type: %u.",
@@ -272,8 +278,10 @@ namespace optixu {
             geomType == GeometryType::Triangles ||
             geomType == GeometryType::LinearSegments ||
             geomType == GeometryType::QuadraticBSplines ||
+            geomType == GeometryType::FlatQuadraticBSplines ||
             geomType == GeometryType::CubicBSplines ||
             geomType == GeometryType::CatmullRomSplines ||
+            geomType == GeometryType::CubicBezier ||
             geomType == GeometryType::Spheres ||
             geomType == GeometryType::CustomPrimitives,
             "Invalid geometry type: %u.",
@@ -435,6 +443,101 @@ namespace optixu {
 
 
 
+    void DisplacementMicroMapArray::destroy() {
+        if (m)
+            delete m;
+        m = nullptr;
+    }
+
+    void DisplacementMicroMapArray::setConfiguration(OptixDisplacementMicromapFlags config) const {
+        bool changed = false;
+        changed = m->flags != config;
+        m->flags = config;
+
+        if (changed) {
+            m->memoryUsageComputed = false;
+            m->available = false;
+        }
+    }
+
+    void DisplacementMicroMapArray::computeMemoryUsage(
+        const OptixDisplacementMicromapHistogramEntry* microMapHistogramEntries,
+        uint32_t numMicroMapHistogramEntries,
+        OptixMicromapBufferSizes* memoryRequirement) const {
+        m->microMapHistogramEntries.resize(numMicroMapHistogramEntries);
+        std::copy_n(microMapHistogramEntries, numMicroMapHistogramEntries, m->microMapHistogramEntries.data());
+
+        m->buildInput = {};
+        m->buildInput.flags = m->flags;
+        m->buildInput.displacementMicromapHistogramEntries = m->microMapHistogramEntries.data();
+        m->buildInput.numDisplacementMicromapHistogramEntries =
+            static_cast<uint32_t>(m->microMapHistogramEntries.size());
+        OPTIX_CHECK(optixDisplacementMicromapArrayComputeMemoryUsage(
+            m->getRawContext(), &m->buildInput, &m->memoryRequirement));
+
+        *memoryRequirement = m->memoryRequirement;
+
+        m->memoryUsageComputed = true;
+        m->available = false;
+    }
+
+    void DisplacementMicroMapArray::setBuffers(
+        const BufferView &rawDmmBuffer, const BufferView &perMicroMapDescBuffer,
+        const BufferView &outputBuffer) const {
+        m->throwRuntimeError(
+            outputBuffer.sizeInBytes() >= m->memoryRequirement.outputSizeInBytes,
+            "Size of the given buffer is not enough.");
+        m->rawDmmBuffer = rawDmmBuffer;
+        m->perMicroMapDescBuffer = perMicroMapDescBuffer;
+        m->outputBuffer = outputBuffer;
+
+        m->buildInput.displacementValuesBuffer = m->rawDmmBuffer.getCUdeviceptr();
+        m->buildInput.perDisplacementMicromapDescBuffer = m->perMicroMapDescBuffer.getCUdeviceptr();
+        m->buildInput.perDisplacementMicromapDescStrideInBytes = m->perMicroMapDescBuffer.stride();
+
+        m->buffersSet = true;
+        m->available = false;
+    }
+
+    void DisplacementMicroMapArray::markDirty() const {
+        m->memoryUsageComputed = false;
+        m->available = false;
+    }
+
+    void DisplacementMicroMapArray::rebuild(
+        CUstream stream, const BufferView &scratchBuffer) const {
+        m->throwRuntimeError(
+            m->memoryUsageComputed, "You need to call computeMemoryUsage() before rebuild.");
+        m->throwRuntimeError(
+            m->buffersSet, "You need to call setBuffers() before rebuild.");
+        m->throwRuntimeError(
+            scratchBuffer.sizeInBytes() >= m->memoryRequirement.tempSizeInBytes,
+            "Size of the given scratch buffer is not enough.");
+
+        OptixMicromapBuffers buffers = {};
+        buffers.output = m->outputBuffer.getCUdeviceptr();
+        buffers.outputSizeInBytes = m->memoryRequirement.outputSizeInBytes;
+        buffers.temp = scratchBuffer.getCUdeviceptr();
+        buffers.tempSizeInBytes = m->memoryRequirement.tempSizeInBytes;
+        OPTIX_CHECK(optixDisplacementMicromapArrayBuild(m->getRawContext(), stream, &m->buildInput, &buffers));
+
+        m->available = true;
+    }
+
+    bool DisplacementMicroMapArray::isReady() const {
+        return m->isReady();
+    }
+
+    BufferView DisplacementMicroMapArray::getOutputBuffer() const {
+        return m->getBuffer();
+    }
+
+    OptixDisplacementMicromapFlags DisplacementMicroMapArray::getConfiguration() const {
+        return m->flags;
+    }
+
+
+
     void GeometryInstance::Priv::fillBuildInput(OptixBuildInput* input, CUdeviceptr preTransform) const {
         *input = OptixBuildInput{};
 
@@ -446,7 +549,7 @@ namespace optixu {
                 "otherwise must not be provided.");
 
             uint32_t vertexStride = geom.vertexBuffers[0].stride();
-            uint32_t numElements = static_cast<uint32_t>(geom.vertexBuffers[0].numElements());
+            uint32_t numVertices = static_cast<uint32_t>(geom.vertexBuffers[0].numElements());
             for (uint32_t i = 0; i < numMotionSteps; ++i) {
                 geom.vertexBufferArray[i] = geom.vertexBuffers[i].getCUdeviceptr();
                 throwRuntimeError(
@@ -454,7 +557,7 @@ namespace optixu {
                     "Vertex buffer for motion step %u is not set.",
                     i);
                 throwRuntimeError(
-                    geom.vertexBuffers[i].numElements() == numElements,
+                    geom.vertexBuffers[i].numElements() == numVertices,
                     "Num elements for motion step %u doesn't match that of 0.",
                     i);
                 throwRuntimeError(
@@ -467,16 +570,19 @@ namespace optixu {
             OptixBuildInputTriangleArray &triArray = input->triangleArray;
 
             triArray.vertexBuffers = geom.vertexBufferArray;
-            triArray.numVertices = numElements;
+            triArray.numVertices = numVertices;
             triArray.vertexFormat = geom.vertexFormat;
             triArray.vertexStrideInBytes = vertexStride;
 
+            uint32_t numTriangles;
             if (geom.indexFormat != OPTIX_INDICES_FORMAT_NONE) {
+                numTriangles = static_cast<uint32_t>(geom.triangleBuffer.numElements());
                 triArray.indexBuffer = geom.triangleBuffer.getCUdeviceptr();
                 triArray.indexStrideInBytes = geom.triangleBuffer.stride();
-                triArray.numIndexTriplets = static_cast<uint32_t>(geom.triangleBuffer.numElements());
+                triArray.numIndexTriplets = numTriangles;
             }
             else {
+                numTriangles = numVertices / 3;
                 triArray.indexBuffer = 0;
                 triArray.indexStrideInBytes = 0;
                 triArray.numIndexTriplets = 0;
@@ -495,6 +601,48 @@ namespace optixu {
                     ommInput.indexStrideInBytes = geom.opacityMicroMapIndexBuffer.stride();
                     ommInput.indexSizeInBytes = geom.opacityMicroMapIndexSize;
                     ommInput.indexOffset = geom.opacityMicroMapIndexOffset;
+                }
+            }
+
+            if (geom.displacementMicroMapArray) {
+                throwRuntimeError(
+                    geom.displacementVertexDirectionBuffer.isValid(),
+                    "Vertex direction buffer must be provided.");
+                throwRuntimeError(
+                    geom.displacementVertexDirectionBuffer.numElements() == numVertices,
+                    "Num elements of the vertex direction buffer doesn't match that of the vertices.");
+                throwRuntimeError(
+                    geom.displacementVertexBiasAndScaleBuffer.isValid(),
+                    "Vertex bias and scale buffer must be provided.");
+                throwRuntimeError(
+                    geom.displacementVertexBiasAndScaleBuffer.numElements() == numVertices,
+                    "Num elements of the vertex bias and scale buffer doesn't match that of the vertices.");
+                throwRuntimeError(
+                    geom.displacementTriangleFlagsBuffer.isValid(),
+                    "Triangle flags buffer must be provided.");
+                throwRuntimeError(
+                    geom.displacementTriangleFlagsBuffer.numElements() == numTriangles,
+                    "Num elements of the triangle flags buffer doesn't match that of the triangles.");
+
+                OptixBuildInputDisplacementMicromap &dmmInput = triArray.displacementMicromap;
+                dmmInput.vertexDirectionsBuffer = geom.displacementVertexDirectionBuffer.getCUdeviceptr();
+                dmmInput.vertexDirectionStrideInBytes = geom.displacementVertexDirectionBuffer.stride();
+                dmmInput.vertexDirectionFormat = geom.displacementVertexDirectionFormat;
+                dmmInput.vertexBiasAndScaleBuffer = geom.displacementVertexBiasAndScaleBuffer.getCUdeviceptr();
+                dmmInput.vertexBiasAndScaleStrideInBytes = geom.displacementVertexBiasAndScaleBuffer.stride();
+                dmmInput.vertexBiasAndScaleFormat = geom.displacementVertexBiasAndScaleFormat;
+                dmmInput.triangleFlagsBuffer = geom.displacementTriangleFlagsBuffer.getCUdeviceptr();
+                dmmInput.triangleFlagsStrideInBytes = geom.displacementTriangleFlagsBuffer.stride();
+                dmmInput.displacementMicromapArray = geom.displacementMicroMapArray->getBuffer().getCUdeviceptr();
+                dmmInput.displacementMicromapUsageCounts = geom.displacementMicroMapUsageCounts.data();
+                dmmInput.numDisplacementMicromapUsageCounts =
+                    static_cast<uint32_t>(geom.displacementMicroMapUsageCounts.size());
+                dmmInput.indexingMode = geom.displacementMicroMapIndexingMode;
+                if (dmmInput.indexingMode == OPTIX_OPACITY_MICROMAP_ARRAY_INDEXING_MODE_INDEXED) {
+                    dmmInput.displacementMicromapIndexBuffer = geom.displacementMicroMapIndexBuffer.getCUdeviceptr();
+                    dmmInput.displacementMicromapIndexStrideInBytes = geom.displacementMicroMapIndexBuffer.stride();
+                    dmmInput.displacementMicromapIndexSizeInBytes = geom.displacementMicroMapIndexSize;
+                    dmmInput.displacementMicromapIndexOffset = geom.displacementMicroMapIndexOffset;
                 }
             }
 
@@ -522,7 +670,14 @@ namespace optixu {
 
             uint32_t vertexStride = geom.vertexBuffers[0].stride();
             uint32_t widthStride = geom.widthBuffers[0].stride();
-            uint32_t numElements = static_cast<uint32_t>(geom.vertexBuffers[0].numElements());
+            bool normalBufferAvailable = geomType == GeometryType::FlatQuadraticBSplines;
+            bool normalBufferSet = false;
+            uint32_t normalStride = 0;
+            if (normalBufferAvailable) {
+                normalBufferSet = geom.normalBuffers[0].isValid();
+                normalStride = geom.normalBuffers[0].stride();
+            }
+            uint32_t numVertices = static_cast<uint32_t>(geom.vertexBuffers[0].numElements());
             for (uint32_t i = 0; i < numMotionSteps; ++i) {
                 geom.vertexBufferArray[i] = geom.vertexBuffers[i].getCUdeviceptr();
                 geom.widthBufferArray[i] = geom.widthBuffers[i].getCUdeviceptr();
@@ -531,7 +686,7 @@ namespace optixu {
                     "Vertex buffer for motion step %u is not set.",
                     i);
                 throwRuntimeError(
-                    geom.vertexBuffers[i].numElements() == numElements,
+                    geom.vertexBuffers[i].numElements() == numVertices,
                     "Num elements of the vertex buffer for motion step %u doesn't match that of 0.",
                     i);
                 throwRuntimeError(
@@ -543,13 +698,30 @@ namespace optixu {
                     "Width buffer for motion step %u is not set.",
                     i);
                 throwRuntimeError(
-                    geom.widthBuffers[i].numElements() == numElements,
+                    geom.widthBuffers[i].numElements() == numVertices,
                     "Num elements of the width buffer for motion step %u doesn't match that of 0.",
                     i);
                 throwRuntimeError(
                     geom.widthBuffers[i].stride() == widthStride,
                     "Width stride for motion step %u doesn't match that of 0.",
                     i);
+                if (normalBufferAvailable) {
+                    throwRuntimeError(
+                        normalBufferSet == geom.normalBuffers[i].isValid(),
+                        "Normal buffer for motion step %u is not set (/ set) while the step 0 is set (/ not set).",
+                        i);
+                    if (normalBufferSet) {
+                        geom.normalBufferArray[i] = geom.normalBuffers[i].getCUdeviceptr();
+                        throwRuntimeError(
+                            geom.normalBuffers[i].numElements() == numVertices,
+                            "Num elements of the normal buffer for motion step %u doesn't match that of 0.",
+                            i);
+                        throwRuntimeError(
+                            geom.normalBuffers[i].stride() == normalStride,
+                            "Normal stride for motion step %u doesn't match that of 0.",
+                            i);
+                    }
+                }
             }
 
             input->type = OPTIX_BUILD_INPUT_TYPE_CURVES;
@@ -559,10 +731,14 @@ namespace optixu {
                 curveArray.curveType = OPTIX_PRIMITIVE_TYPE_ROUND_LINEAR;
             else if (geomType == GeometryType::QuadraticBSplines)
                 curveArray.curveType = OPTIX_PRIMITIVE_TYPE_ROUND_QUADRATIC_BSPLINE;
+            else if (geomType == GeometryType::FlatQuadraticBSplines)
+                curveArray.curveType = OPTIX_PRIMITIVE_TYPE_FLAT_QUADRATIC_BSPLINE;
             else if (geomType == GeometryType::CubicBSplines)
                 curveArray.curveType = OPTIX_PRIMITIVE_TYPE_ROUND_CUBIC_BSPLINE;
             else if (geomType == GeometryType::CatmullRomSplines)
                 curveArray.curveType = OPTIX_PRIMITIVE_TYPE_ROUND_CATMULLROM;
+            else if (geomType == GeometryType::CubicBezier)
+                curveArray.curveType = OPTIX_PRIMITIVE_TYPE_ROUND_CUBIC_BEZIER;
             else
                 optixuAssert_ShouldNotBeCalled();
             curveArray.endcapFlags = geom.endcapFlags;
@@ -571,9 +747,11 @@ namespace optixu {
             curveArray.vertexStrideInBytes = vertexStride;
             curveArray.widthBuffers = geom.widthBufferArray;
             curveArray.widthStrideInBytes = widthStride;
-            curveArray.normalBuffers = 0; // Optix just reserves normal fields for future use.
-            curveArray.normalStrideInBytes = 0;
-            curveArray.numVertices = numElements;
+            if (normalBufferSet) {
+                curveArray.normalBuffers = geom.normalBufferArray;
+                curveArray.normalStrideInBytes = normalStride;
+            }
+            curveArray.numVertices = numVertices;
 
             curveArray.indexBuffer = geom.segmentIndexBuffer.getCUdeviceptr();
             curveArray.indexStrideInBytes = geom.segmentIndexBuffer.stride();
@@ -587,7 +765,7 @@ namespace optixu {
 
             uint32_t centerStride = geom.centerBuffers[0].stride();
             uint32_t radiusStride = geom.radiusBuffers[0].stride();
-            uint32_t numElements = static_cast<uint32_t>(geom.centerBuffers[0].numElements());
+            uint32_t numSpheres = static_cast<uint32_t>(geom.centerBuffers[0].numElements());
             for (uint32_t i = 0; i < numMotionSteps; ++i) {
                 geom.centerBufferArray[i] = geom.centerBuffers[i].getCUdeviceptr();
                 geom.radiusBufferArray[i] = geom.radiusBuffers[i].getCUdeviceptr();
@@ -596,7 +774,7 @@ namespace optixu {
                     "Center buffer for motion step %u is not set.",
                     i);
                 throwRuntimeError(
-                    geom.centerBuffers[i].numElements() == numElements,
+                    geom.centerBuffers[i].numElements() == numSpheres,
                     "Num elements of the center buffer for motion step %u doesn't match that of 0.",
                     i);
                 throwRuntimeError(
@@ -608,7 +786,7 @@ namespace optixu {
                     "Radius buffer for motion step %u is not set.",
                     i);
                 throwRuntimeError(
-                    geom.radiusBuffers[i].numElements() == numElements,
+                    geom.radiusBuffers[i].numElements() == numSpheres,
                     "Num elements of the radius buffer for motion step %u doesn't match that of 0.",
                     i);
                 throwRuntimeError(
@@ -624,7 +802,7 @@ namespace optixu {
             sphereArray.vertexStrideInBytes = centerStride;
             sphereArray.radiusBuffers = geom.radiusBufferArray;
             sphereArray.radiusStrideInBytes = radiusStride;
-            sphereArray.numVertices = numElements;
+            sphereArray.numVertices = numSpheres;
             sphereArray.singleRadius = geom.useSingleRadius;
 
             sphereArray.primitiveIndexOffset = primitiveIndexOffset;
@@ -647,7 +825,7 @@ namespace optixu {
             auto &geom = std::get<CustomPrimitiveGeometry>(geometry);
 
             uint32_t stride = geom.primitiveAabbBuffers[0].stride();
-            uint32_t numElements = static_cast<uint32_t>(geom.primitiveAabbBuffers[0].numElements());
+            uint32_t numPrimitives = static_cast<uint32_t>(geom.primitiveAabbBuffers[0].numElements());
             for (uint32_t i = 0; i < numMotionSteps; ++i) {
                 geom.primitiveAabbBufferArray[i] = geom.primitiveAabbBuffers[i].getCUdeviceptr();
                 throwRuntimeError(
@@ -655,7 +833,7 @@ namespace optixu {
                     "AABB buffer for motion step %u is not set.",
                     i);
                 throwRuntimeError(
-                    geom.primitiveAabbBuffers[i].numElements() == numElements,
+                    geom.primitiveAabbBuffers[i].numElements() == numPrimitives,
                     "Num elements for motion step %u doesn't match that of 0.",
                     i);
                 throwRuntimeError(
@@ -668,7 +846,7 @@ namespace optixu {
             OptixBuildInputCustomPrimitiveArray &customPrimArray = input->customPrimitiveArray;
 
             customPrimArray.aabbBuffers = geom.primitiveAabbBufferArray;
-            customPrimArray.numPrimitives = numElements;
+            customPrimArray.numPrimitives = numPrimitives;
             customPrimArray.strideInBytes = stride;
             customPrimArray.primitiveIndexOffset = primitiveIndexOffset;
 
@@ -696,7 +874,7 @@ namespace optixu {
             auto &geom = std::get<TriangleGeometry>(geometry);
 
             uint32_t vertexStride = geom.vertexBuffers[0].stride();
-            uint32_t numElements = static_cast<uint32_t>(geom.vertexBuffers[0].numElements());
+            uint32_t numVertices = static_cast<uint32_t>(geom.vertexBuffers[0].numElements());
             for (uint32_t i = 0; i < numMotionSteps; ++i) {
                 geom.vertexBufferArray[i] = geom.vertexBuffers[i].getCUdeviceptr();
                 throwRuntimeError(
@@ -704,7 +882,7 @@ namespace optixu {
                     "Vertex buffer for motion step %u is not set.",
                     i);
                 throwRuntimeError(
-                    geom.vertexBuffers[i].numElements() == numElements,
+                    geom.vertexBuffers[i].numElements() == numVertices,
                     "Num elements for motion step %u doesn't match that of 0.",
                     i);
                 throwRuntimeError(
@@ -717,8 +895,14 @@ namespace optixu {
 
             triArray.vertexBuffers = geom.vertexBufferArray;
 
-            if (geom.indexFormat != OPTIX_INDICES_FORMAT_NONE)
+            uint32_t numTriangles;
+            if (geom.indexFormat != OPTIX_INDICES_FORMAT_NONE) {
+                numTriangles = static_cast<uint32_t>(geom.triangleBuffer.numElements());
                 triArray.indexBuffer = geom.triangleBuffer.getCUdeviceptr();
+            }
+            else {
+                numTriangles = numVertices / 3;
+            }
 
             if (geom.opacityMicroMapArray) {
                 // TODO: どの情報が更新可能なのか調べる。
@@ -736,6 +920,50 @@ namespace optixu {
                 }
             }
 
+            if (geom.displacementMicroMapArray) {
+                throwRuntimeError(
+                    geom.displacementVertexDirectionBuffer.isValid(),
+                    "Vertex direction buffer must be provided.");
+                throwRuntimeError(
+                    geom.displacementVertexDirectionBuffer.numElements() == numVertices,
+                    "Num elements of the vertex direction buffer doesn't match that of the vertices.");
+                throwRuntimeError(
+                    geom.displacementVertexBiasAndScaleBuffer.isValid(),
+                    "Vertex bias and scale buffer must be provided.");
+                throwRuntimeError(
+                    geom.displacementVertexBiasAndScaleBuffer.numElements() == numVertices,
+                    "Num elements of the vertex bias and scale buffer doesn't match that of the vertices.");
+                throwRuntimeError(
+                    geom.displacementTriangleFlagsBuffer.isValid(),
+                    "Triangle flags buffer must be provided.");
+                throwRuntimeError(
+                    geom.displacementTriangleFlagsBuffer.numElements() == numTriangles,
+                    "Num elements of the triangle flags buffer doesn't match that of the triangles.");
+
+                // TODO: どの情報が更新可能なのか調べる。
+                throwRuntimeError(geom.displacementMicroMapArray->isReady(), "DMM array is not ready.");
+                OptixBuildInputDisplacementMicromap &dmmInput = triArray.displacementMicromap;
+                dmmInput.vertexDirectionsBuffer = geom.displacementVertexDirectionBuffer.getCUdeviceptr();
+                dmmInput.vertexDirectionStrideInBytes = geom.displacementVertexDirectionBuffer.stride();
+                dmmInput.vertexDirectionFormat = geom.displacementVertexDirectionFormat;
+                dmmInput.vertexBiasAndScaleBuffer = geom.displacementVertexBiasAndScaleBuffer.getCUdeviceptr();
+                dmmInput.vertexBiasAndScaleStrideInBytes = geom.displacementVertexBiasAndScaleBuffer.stride();
+                dmmInput.vertexBiasAndScaleFormat = geom.displacementVertexBiasAndScaleFormat;
+                dmmInput.triangleFlagsBuffer = geom.displacementTriangleFlagsBuffer.getCUdeviceptr();
+                dmmInput.triangleFlagsStrideInBytes = geom.displacementTriangleFlagsBuffer.stride();
+                dmmInput.displacementMicromapArray = geom.displacementMicroMapArray->getBuffer().getCUdeviceptr();
+                dmmInput.displacementMicromapUsageCounts = geom.displacementMicroMapUsageCounts.data();
+                dmmInput.numDisplacementMicromapUsageCounts =
+                    static_cast<uint32_t>(geom.displacementMicroMapUsageCounts.size());
+                dmmInput.indexingMode = geom.displacementMicroMapIndexingMode;
+                if (dmmInput.indexingMode == OPTIX_OPACITY_MICROMAP_ARRAY_INDEXING_MODE_INDEXED) {
+                    dmmInput.displacementMicromapIndexBuffer = geom.displacementMicroMapIndexBuffer.getCUdeviceptr();
+                    dmmInput.displacementMicromapIndexStrideInBytes = geom.displacementMicroMapIndexBuffer.stride();
+                    dmmInput.displacementMicromapIndexSizeInBytes = geom.displacementMicroMapIndexSize;
+                    dmmInput.displacementMicromapIndexOffset = geom.displacementMicroMapIndexOffset;
+                }
+            }
+
             if (triArray.numSbtRecords > 1)
                 triArray.sbtIndexOffsetBuffer = geom.materialIndexBuffer.getCUdeviceptr();
 
@@ -748,7 +976,14 @@ namespace optixu {
 
             uint32_t vertexStride = geom.vertexBuffers[0].stride();
             uint32_t widthStride = geom.widthBuffers[0].stride();
-            uint32_t numElements = static_cast<uint32_t>(geom.vertexBuffers[0].numElements());
+            bool normalBufferAvailable = geomType == GeometryType::FlatQuadraticBSplines;
+            bool normalBufferSet = false;
+            uint32_t normalStride = 0;
+            if (normalBufferAvailable) {
+                normalBufferSet = geom.normalBuffers[0].isValid();
+                normalStride = geom.normalBuffers[0].stride();
+            }
+            uint32_t numVertices = static_cast<uint32_t>(geom.vertexBuffers[0].numElements());
             for (uint32_t i = 0; i < numMotionSteps; ++i) {
                 geom.vertexBufferArray[i] = geom.vertexBuffers[i].getCUdeviceptr();
                 geom.widthBufferArray[i] = geom.widthBuffers[i].getCUdeviceptr();
@@ -757,7 +992,7 @@ namespace optixu {
                     "Vertex buffer for motion step %u is not set.",
                     i);
                 throwRuntimeError(
-                    geom.vertexBuffers[i].numElements() == numElements,
+                    geom.vertexBuffers[i].numElements() == numVertices,
                     "Num elements of the vertex buffer for motion step %u doesn't match that of 0.",
                     i);
                 throwRuntimeError(
@@ -769,20 +1004,40 @@ namespace optixu {
                     "Width buffer for motion step %u is not set.",
                     i);
                 throwRuntimeError(
-                    geom.widthBuffers[i].numElements() == numElements,
+                    geom.widthBuffers[i].numElements() == numVertices,
                     "Num elements of the width buffer for motion step %u doesn't match that of 0.",
                     i);
                 throwRuntimeError(
                     geom.widthBuffers[i].stride() == widthStride,
                     "Width stride for motion step %u doesn't match that of 0.",
                     i);
+                if (normalBufferAvailable) {
+                    throwRuntimeError(
+                        normalBufferSet == geom.normalBuffers[i].isValid(),
+                        "Normal buffer for motion step %u is not set (/ set) while the step 0 is set (/ not set).",
+                        i);
+                    if (normalBufferSet) {
+                        geom.normalBufferArray[i] = geom.normalBuffers[i].getCUdeviceptr();
+                        throwRuntimeError(
+                            geom.normalBuffers[i].numElements() == numVertices,
+                            "Num elements of the normal buffer for motion step %u doesn't match that of 0.",
+                            i);
+                        throwRuntimeError(
+                            geom.normalBuffers[i].stride() == normalStride,
+                            "Normal stride for motion step %u doesn't match that of 0.",
+                            i);
+                    }
+                }
             }
 
             OptixBuildInputCurveArray &curveArray = input->curveArray;
 
             curveArray.vertexBuffers = geom.vertexBufferArray;
             curveArray.widthBuffers = geom.widthBufferArray;
-            curveArray.normalBuffers = 0; // Optix just reserves these fields for future use.
+            if (normalBufferSet) {
+                curveArray.normalBuffers = geom.normalBufferArray;
+                curveArray.normalStrideInBytes = normalStride;
+            }
 
             curveArray.indexBuffer = geom.segmentIndexBuffer.getCUdeviceptr();
         }
@@ -791,7 +1046,7 @@ namespace optixu {
 
             uint32_t centerStride = geom.centerBuffers[0].stride();
             uint32_t radiusStride = geom.radiusBuffers[0].stride();
-            uint32_t numElements = static_cast<uint32_t>(geom.centerBuffers[0].numElements());
+            uint32_t numSpheres = static_cast<uint32_t>(geom.centerBuffers[0].numElements());
             for (uint32_t i = 0; i < numMotionSteps; ++i) {
                 geom.centerBufferArray[i] = geom.centerBuffers[i].getCUdeviceptr();
                 geom.radiusBufferArray[i] = geom.radiusBuffers[i].getCUdeviceptr();
@@ -800,7 +1055,7 @@ namespace optixu {
                     "Center buffer for motion step %u is not set.",
                     i);
                 throwRuntimeError(
-                    geom.centerBuffers[i].numElements() == numElements,
+                    geom.centerBuffers[i].numElements() == numSpheres,
                     "Num elements of the center buffer for motion step %u doesn't match that of 0.",
                     i);
                 throwRuntimeError(
@@ -812,7 +1067,7 @@ namespace optixu {
                     "Radius buffer for motion step %u is not set.",
                     i);
                 throwRuntimeError(
-                    geom.radiusBuffers[i].numElements() == numElements,
+                    geom.radiusBuffers[i].numElements() == numSpheres,
                     "Num elements of the radius buffer for motion step %u doesn't match that of 0.",
                     i);
                 throwRuntimeError(
@@ -830,7 +1085,7 @@ namespace optixu {
             auto &geom = std::get<CustomPrimitiveGeometry>(geometry);
 
             uint32_t stride = geom.primitiveAabbBuffers[0].stride();
-            uint32_t numElements = static_cast<uint32_t>(geom.primitiveAabbBuffers[0].numElements());
+            uint32_t numPrimitives = static_cast<uint32_t>(geom.primitiveAabbBuffers[0].numElements());
             for (uint32_t i = 0; i < numMotionSteps; ++i) {
                 geom.primitiveAabbBufferArray[i] = geom.primitiveAabbBuffers[i].getCUdeviceptr();
                 throwRuntimeError(
@@ -838,7 +1093,7 @@ namespace optixu {
                     "AABB buffer for motion step %u is not set.",
                     i);
                 throwRuntimeError(
-                    geom.primitiveAabbBuffers[i].numElements() == numElements,
+                    geom.primitiveAabbBuffers[i].numElements() == numPrimitives,
                     "Num elements for motion step %u doesn't match that of 0.",
                     i);
                 throwRuntimeError(
@@ -934,6 +1189,10 @@ namespace optixu {
         }
         else if (std::holds_alternative<Priv::CurveGeometry>(m->geometry)) {
             auto &geom = std::get<Priv::CurveGeometry>(m->geometry);
+            if (m->geomType == GeometryType::FlatQuadraticBSplines) {
+                delete[] geom.normalBuffers;
+                delete[] geom.normalBufferArray;
+            }
             delete[] geom.widthBuffers;
             delete[] geom.widthBufferArray;
             delete[] geom.vertexBuffers;
@@ -942,6 +1201,10 @@ namespace optixu {
             geom.vertexBuffers = new BufferView[n];
             geom.widthBufferArray = new CUdeviceptr[n];
             geom.widthBuffers = new BufferView[n];
+            if (m->geomType == GeometryType::FlatQuadraticBSplines) {
+                geom.normalBufferArray = new CUdeviceptr[n];
+                geom.normalBuffers = new BufferView[n];
+            }
         }
         else if (std::holds_alternative<Priv::SphereGeometry>(m->geometry)) {
             auto &geom = std::get<Priv::SphereGeometry>(m->geometry);
@@ -1007,6 +1270,16 @@ namespace optixu {
         geom.widthBuffers[motionStep] = widthBuffer;
     }
 
+    void GeometryInstance::setNormalBuffer(const BufferView &normalBuffer, uint32_t motionStep) const {
+        m->throwRuntimeError(
+            m->geomType == GeometryType::FlatQuadraticBSplines,
+            "This geometry instance was created not for flat quadratic B-splines.");
+        m->throwRuntimeError(motionStep < m->numMotionSteps, "motionStep %u is out of bounds [0, %u).",
+                             motionStep, m->numMotionSteps);
+        auto &geom = std::get<Priv::CurveGeometry>(m->geometry);
+        geom.normalBuffers[motionStep] = normalBuffer;
+    }
+
     void GeometryInstance::setRadiusBuffer(const BufferView &radiusBuffer, uint32_t motionStep) const {
         m->throwRuntimeError(
             std::holds_alternative<Priv::SphereGeometry>(m->geometry),
@@ -1040,10 +1313,10 @@ namespace optixu {
             "This geometry instance was created not for triangles.");
         m->throwRuntimeError(
             indexSize == IndexSize::k2Bytes || indexSize == IndexSize::k4Bytes,
-            "Invalid index offset size.");
+            "Invalid index size.");
         m->throwRuntimeError(
             !ommIndexBuffer.isValid() || ommIndexBuffer.stride() >= indexSizeInBytes,
-            "Buffer's stride is smaller than the given index offset size.");
+            "Buffer's stride is smaller than the given index size.");
         auto &geom = std::get<Priv::TriangleGeometry>(m->geometry);
         geom.opacityMicroMapArray = extract(opacityMicroMapArray);
         if (opacityMicroMapArray) {
@@ -1061,6 +1334,51 @@ namespace optixu {
             geom.opacityMicroMapIndexingMode = OPTIX_OPACITY_MICROMAP_ARRAY_INDEXING_MODE_NONE;
             geom.opacityMicroMapIndexSize = 0;
             geom.opacityMicroMapUsageCounts.clear();
+        }
+    }
+
+    void GeometryInstance::setDisplacementMicroMapArray(
+        const BufferView &vertexDirectionBuffer,
+        const BufferView &vertexBiasAndScaleBuffer,
+        const BufferView &triangleFlagsBuffer,
+        DisplacementMicroMapArray displacementMicroMapArray,
+        const OptixDisplacementMicromapUsageCount* dmmUsageCounts, uint32_t numDmmUsageCounts,
+        const BufferView &dmmIndexBuffer,
+        IndexSize indexSize, uint32_t indexOffset,
+        OptixDisplacementMicromapDirectionFormat vertexDirectionFormat,
+        OptixDisplacementMicromapBiasAndScaleFormat vertexBiasAndScaleFormat) const {
+        uint32_t indexSizeInBytes = 1 << static_cast<uint32_t>(indexSize);
+        m->throwRuntimeError(
+            std::holds_alternative<Priv::TriangleGeometry>(m->geometry),
+            "This geometry instance was created not for triangles.");
+        m->throwRuntimeError(
+            indexSize == IndexSize::k2Bytes || indexSize == IndexSize::k4Bytes,
+            "Invalid index size.");
+        m->throwRuntimeError(
+            !dmmIndexBuffer.isValid() || dmmIndexBuffer.stride() >= indexSizeInBytes,
+            "Buffer's stride is smaller than the given index size.");
+        auto &geom = std::get<Priv::TriangleGeometry>(m->geometry);
+        geom.displacementVertexDirectionBuffer = vertexDirectionBuffer;
+        geom.displacementVertexBiasAndScaleBuffer = vertexBiasAndScaleBuffer;
+        geom.displacementTriangleFlagsBuffer = triangleFlagsBuffer;
+        geom.displacementVertexDirectionFormat = vertexDirectionFormat;
+        geom.displacementVertexBiasAndScaleFormat = vertexBiasAndScaleFormat;
+        geom.displacementMicroMapArray = extract(displacementMicroMapArray);
+        if (displacementMicroMapArray) {
+            geom.displacementMicroMapIndexBuffer = dmmIndexBuffer;
+            geom.displacementMicroMapIndexingMode = dmmIndexBuffer.isValid() ?
+                OPTIX_DISPLACEMENT_MICROMAP_ARRAY_INDEXING_MODE_INDEXED :
+                OPTIX_DISPLACEMENT_MICROMAP_ARRAY_INDEXING_MODE_LINEAR;
+            geom.displacementMicroMapIndexSize = indexSizeInBytes;
+            geom.displacementMicroMapIndexOffset = indexOffset;
+            geom.displacementMicroMapUsageCounts.resize(numDmmUsageCounts);
+            std::copy_n(dmmUsageCounts, numDmmUsageCounts, geom.displacementMicroMapUsageCounts.data());
+        }
+        else {
+            geom.displacementMicroMapIndexBuffer = BufferView();
+            geom.displacementMicroMapIndexingMode = OPTIX_DISPLACEMENT_MICROMAP_ARRAY_INDEXING_MODE_NONE;
+            geom.displacementMicroMapIndexSize = 0;
+            geom.displacementMicroMapUsageCounts.clear();
         }
     }
 
@@ -1121,7 +1439,7 @@ namespace optixu {
             "Invalid index size.");
         m->throwRuntimeError(
             !matIndexBuffer.isValid() || matIndexBuffer.stride() >= indexSizeInBytes,
-            "Buffer's stride is smaller than the given index offset size.");
+            "Buffer's stride is smaller than the given index size.");
         m->buildInputFlags.resize(numMaterials, OPTIX_GEOMETRY_FLAG_NONE);
         if (std::holds_alternative<Priv::TriangleGeometry>(m->geometry)) {
             auto &geom = std::get<Priv::TriangleGeometry>(m->geometry);
@@ -1229,6 +1547,18 @@ namespace optixu {
         return geom.widthBuffers[motionStep];
     }
 
+    BufferView GeometryInstance::getNormalBuffer(uint32_t motionStep) {
+        m->throwRuntimeError(
+            m->geomType == GeometryType::FlatQuadraticBSplines,
+            "This geometry instance was created not for flat quadratic B-splines.");
+        m->throwRuntimeError(
+            motionStep < m->numMotionSteps,
+            "motionStep %u is out of bounds [0, %u).",
+            motionStep, m->numMotionSteps);
+        const auto &geom = std::get<Priv::CurveGeometry>(m->geometry);
+        return geom.normalBuffers[motionStep];
+    }
+
     BufferView GeometryInstance::getRadiusBuffer(uint32_t motionStep) {
         m->throwRuntimeError(
             std::holds_alternative<Priv::SphereGeometry>(m->geometry),
@@ -1265,6 +1595,37 @@ namespace optixu {
         if (indexOffset)
             *indexOffset = geom.opacityMicroMapIndexOffset;
         return geom.opacityMicroMapArray->getPublicType();
+    }
+
+    DisplacementMicroMapArray GeometryInstance::getDisplacementMicroMapArray(
+        BufferView* vertexDirectionBuffer,
+        BufferView* vertexBiasAndScaleBuffer,
+        BufferView* triangleFlagsBuffer,
+        BufferView* dmmIndexBuffer,
+        IndexSize* indexSize, uint32_t* indexOffset,
+        OptixDisplacementMicromapDirectionFormat* vertexDirectionFormat,
+        OptixDisplacementMicromapBiasAndScaleFormat* vertexBiasAndScaleFormat) const {
+        m->throwRuntimeError(
+            std::holds_alternative<Priv::TriangleGeometry>(m->geometry),
+            "This geometry instance was created not for triangles.");
+        const auto &geom = std::get<Priv::TriangleGeometry>(m->geometry);
+        if (vertexDirectionBuffer)
+            *vertexDirectionBuffer = geom.displacementVertexDirectionBuffer;
+        if (vertexBiasAndScaleBuffer)
+            *vertexBiasAndScaleBuffer = geom.displacementVertexBiasAndScaleBuffer;
+        if (triangleFlagsBuffer)
+            *triangleFlagsBuffer = geom.displacementTriangleFlagsBuffer;
+        if (dmmIndexBuffer)
+            *dmmIndexBuffer = geom.displacementMicroMapIndexBuffer;
+        if (indexSize)
+            *indexSize = convertToIndexSizeEnum(geom.opacityMicroMapIndexSize);
+        if (indexOffset)
+            *indexOffset = geom.opacityMicroMapIndexOffset;
+        if (vertexDirectionFormat)
+            *vertexDirectionFormat = geom.displacementVertexDirectionFormat;
+        if (vertexBiasAndScaleFormat)
+            *vertexBiasAndScaleFormat = geom.displacementVertexBiasAndScaleFormat;
+        return geom.displacementMicroMapArray->getPublicType();
     }
 
     BufferView GeometryInstance::getSegmentIndexBuffer() const {
@@ -1468,8 +1829,10 @@ namespace optixu {
             "triangles",
             "linear segments",
             "quadratic B-splines",
+            "flat quadratic B-splines",
             "cubic B-splines",
             "Catmull-Rom splines",
+            "cubic Bezier splines",
             "custom primitives" };
         m->throwRuntimeError(
             _geomInst->getGeometryType() == m->geomType,
@@ -2827,7 +3190,7 @@ namespace optixu {
 
         char log[4096];
         size_t logSize = sizeof(log);
-        OPTIX_CHECK_LOG(optixModuleCreateFromPTX(
+        OPTIX_CHECK_LOG(optixModuleCreate(
             getRawContext(),
             &moduleCompileOptions,
             &pipelineCompileOptions,
@@ -2843,8 +3206,10 @@ namespace optixu {
         ASTradeoff tradeoff, bool allowUpdate, bool allowCompaction, bool allowRandomVertexAccess) {
         if (primType != OPTIX_PRIMITIVE_TYPE_ROUND_LINEAR &&
             primType != OPTIX_PRIMITIVE_TYPE_ROUND_QUADRATIC_BSPLINE &&
+            primType != OPTIX_PRIMITIVE_TYPE_FLAT_QUADRATIC_BSPLINE &&
             primType != OPTIX_PRIMITIVE_TYPE_ROUND_CUBIC_BSPLINE &&
             primType != OPTIX_PRIMITIVE_TYPE_ROUND_CATMULLROM &&
+            primType != OPTIX_PRIMITIVE_TYPE_ROUND_CUBIC_BEZIER &&
             primType != OPTIX_PRIMITIVE_TYPE_SPHERE)
             return nullptr;
 
@@ -3156,8 +3521,10 @@ namespace optixu {
         m->throwRuntimeError(
             curveType != OPTIX_PRIMITIVE_TYPE_ROUND_LINEAR ||
             curveType != OPTIX_PRIMITIVE_TYPE_ROUND_QUADRATIC_BSPLINE ||
+            curveType != OPTIX_PRIMITIVE_TYPE_FLAT_QUADRATIC_BSPLINE ||
             curveType != OPTIX_PRIMITIVE_TYPE_ROUND_CUBIC_BSPLINE ||
-            curveType != OPTIX_PRIMITIVE_TYPE_ROUND_CATMULLROM,
+            curveType != OPTIX_PRIMITIVE_TYPE_ROUND_CATMULLROM ||
+            curveType != OPTIX_PRIMITIVE_TYPE_ROUND_CUBIC_BEZIER,
             "This is a hit program group for curves.");
         _Module* _module_CH = extract(module_CH);
         _Module* _module_AH = extract(module_AH);
@@ -3379,12 +3746,11 @@ namespace optixu {
         return (new _CallableProgramGroup(m, group))->getPublicType();
     }
 
-    void Pipeline::link(uint32_t maxTraceDepth, OptixCompileDebugLevel debugLevel) const {
+    void Pipeline::link(uint32_t maxTraceDepth) const {
         m->throwRuntimeError(!m->pipelineLinked, "This pipeline has been already linked.");
 
         OptixPipelineLinkOptions pipelineLinkOptions = {};
         pipelineLinkOptions.maxTraceDepth = maxTraceDepth;
-        pipelineLinkOptions.debugLevel = debugLevel;
 
         std::vector<OptixProgramGroup> groups;
         groups.resize(m->programGroups.size());
@@ -3869,6 +4235,9 @@ namespace optixu {
         m->throwRuntimeError(
             inputBuffers.numAovs == 0 || (inputBuffers.noisyAovs && denoisedAovs),
             "Both of noisy/denoised AOV buffers must be provided.");
+        m->throwRuntimeError(
+            inputBuffers.numAovs == 0 || (inputBuffers.aovTypes),
+            "AOV types must be provided.");
         for (uint32_t i = 0; i < inputBuffers.numAovs; ++i) {
             m->throwRuntimeError(
                 inputBuffers.noisyAovs[i].isValid() && denoisedAovs[i].isValid(),
@@ -3953,8 +4322,14 @@ namespace optixu {
             setUpInputLayer(inputBuffers.albedoFormat, inputBuffers.albedo.getCUdeviceptr(), &guideLayer.albedo);
         if (m->guideNormal)
             setUpInputLayer(inputBuffers.normalFormat, inputBuffers.normal.getCUdeviceptr(), &guideLayer.normal);
-        if (isTemporal)
+        if (isTemporal) {
             setUpInputLayer(inputBuffers.flowFormat, inputBuffers.flow.getCUdeviceptr(), &guideLayer.flow);
+            if (inputBuffers.flowTrustworthiness.isValid())
+                setUpInputLayer(
+                    inputBuffers.flowTrustworthinessFormat,
+                    inputBuffers.flowTrustworthiness.getCUdeviceptr(),
+                    &guideLayer.flowTrustworthiness);
+        }
         if (requireInternalGuideLayer) {
             setUpOutputLayer(
                 OPTIX_PIXEL_FORMAT_INTERNAL_GUIDE_LAYER,
@@ -3971,19 +4346,22 @@ namespace optixu {
             BufferView output;
             BufferView previousOuput;
             OptixPixelFormat format;
+            OptixDenoiserAOVType aovType;
         };
         std::vector<LayerInfo> layerInfos(1 + inputBuffers.numAovs);
         layerInfos[0] = LayerInfo{
             inputBuffers.noisyBeauty,
             denoisedBeauty,
             inputBuffers.previousDenoisedBeauty,
-            inputBuffers.beautyFormat };
+            inputBuffers.beautyFormat,
+            OPTIX_DENOISER_AOV_TYPE_BEAUTY };
         for (uint32_t i = 0; i < inputBuffers.numAovs; ++i) {
             layerInfos[i + 1] = LayerInfo{
                 inputBuffers.noisyAovs[i],
                 denoisedAovs[i],
                 inputBuffers.previousDenoisedAovs[i],
-                inputBuffers.aovFormats[i] };
+                inputBuffers.aovFormats[i],
+                inputBuffers.aovTypes[i] };
         }
 
         std::vector<OptixDenoiserLayer> denoiserLayers(1 + inputBuffers.numAovs);
@@ -3998,6 +4376,7 @@ namespace optixu {
                     layerInfo.format, layerInfo.previousOuput.getCUdeviceptr(),
                     &denoiserLayer.previousOutput);
             setUpOutputLayer(layerInfo.format, layerInfo.output.getCUdeviceptr(), &denoiserLayer.output);
+            denoiserLayer.type = layerInfo.aovType;
         }
 
         int32_t offsetXInWorkingTile = _task.outputOffsetX - _task.inputOffsetX;

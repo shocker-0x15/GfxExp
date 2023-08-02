@@ -195,7 +195,7 @@ struct GPUEnvironment {
                 p.setCallableProgram(i, program);
             }
 
-            p.link(2, DEBUG_SELECT(OPTIX_COMPILE_DEBUG_LEVEL_FULL, OPTIX_COMPILE_DEBUG_LEVEL_NONE));
+            p.link(2);
 
             uint32_t maxDcStackSize = 0;
             for (int i = 0; i < NumCallablePrograms; ++i) {
@@ -278,7 +278,7 @@ struct GPUEnvironment {
                 p.setCallableProgram(i, program);
             }
 
-            p.link(1, DEBUG_SELECT(OPTIX_COMPILE_DEBUG_LEVEL_FULL, OPTIX_COMPILE_DEBUG_LEVEL_NONE));
+            p.link(1);
 
             uint32_t maxDcStackSize = 0;
             for (int i = 0; i < NumCallablePrograms; ++i) {
