@@ -1409,7 +1409,7 @@ static shared::TexDimInfo calcDimInfo(const cudau::Array &cuArray, bool isLeftHa
     return dimInfo;
 }
 
-static Material* createLambertMaterial(
+void createLambertMaterial(
     CUcontext cuContext, Scene* scene,
     const std::filesystem::path &reflectancePath, const RGB &immReflectance,
     const std::filesystem::path &normalPath,
@@ -1506,10 +1506,10 @@ static Material* createLambertMaterial(
     matData.bsdfEvaluateDHReflectanceEstimate = shared::BSDFEvaluateDHReflectanceEstimate(CallableProgram_LambertBRDF_evaluateDHReflectanceEstimate);
     matDataOnHost[mat->materialSlot] = matData;
 
-    return mat;
+    scene->materials.push_back(mat);
 }
 
-static Material* createDiffuseAndSpecularMaterial(
+void createDiffuseAndSpecularMaterial(
     CUcontext cuContext, Scene* scene,
     const std::filesystem::path &diffuseColorPath, const RGB &immDiffuseColor,
     const std::filesystem::path &specularColorPath, const RGB &immSpecularColor,
@@ -1637,10 +1637,10 @@ static Material* createDiffuseAndSpecularMaterial(
         shared::BSDFEvaluateDHReflectanceEstimate(CallableProgram_DiffuseAndSpecularBRDF_evaluateDHReflectanceEstimate);
     matDataOnHost[mat->materialSlot] = matData;
 
-    return mat;
+    scene->materials.push_back(mat);
 }
 
-static Material* createSimplePBRMaterial(
+void createSimplePBRMaterial(
     CUcontext cuContext, Scene* scene,
     const std::filesystem::path &baseColor_opacityPath, const float4 &immBaseColor_opacity,
     const std::filesystem::path &occlusion_roughness_metallicPath,
@@ -1761,10 +1761,10 @@ static Material* createSimplePBRMaterial(
         shared::BSDFEvaluateDHReflectanceEstimate(CallableProgram_DiffuseAndSpecularBRDF_evaluateDHReflectanceEstimate);
     matDataOnHost[mat->materialSlot] = matData;
 
-    return mat;
+    scene->materials.push_back(mat);
 }
 
-static GeometryInstance* createGeometryInstance(
+GeometryInstance* createGeometryInstance(
     CUcontext cuContext, Scene* scene,
     const std::vector<shared::Vertex> &vertices,
     const std::vector<shared::Triangle> &triangles,
@@ -1850,7 +1850,7 @@ static GeometryInstance* createGeometryInstance(
     return geomInst;
 }
 
-static GeometryGroup* createGeometryGroup(
+GeometryGroup* createGeometryGroup(
     Scene* scene,
     const std::set<const GeometryInstance*> &geomInsts) {
     GeometryGroup* geomGroup = new GeometryGroup();
@@ -1997,17 +1997,16 @@ void createTriangleMeshes(
         else if (aiMat->Get(AI_MATKEY_COLOR_EMISSIVE, color, nullptr) == aiReturn_SUCCESS)
             immEmittance = RGB(color[0], color[1], color[2]);
 
-        Material* mat;
         if (matConv == MaterialConvention::Traditional) {
             if constexpr (useLambertMaterial) {
-                mat = createLambertMaterial(
+                createLambertMaterial(
                     cuContext, scene,
                     reflectancePath, immReflectance,
                     normalPath,
                     emittancePath, immEmittance);
             }
             else {
-                mat = createDiffuseAndSpecularMaterial(
+                createDiffuseAndSpecularMaterial(
                     cuContext, scene,
                     diffuseColorPath, immDiffuseColor,
                     specularColorPath, immSpecularColor,
@@ -2022,15 +2021,13 @@ void createTriangleMeshes(
             //     が格納されていると仮定している。
             // EN: We assume diffuse texture as base color + opacity,
             //     specular texture as occlusion, roughness, metallic.
-            mat = createSimplePBRMaterial(
+            createSimplePBRMaterial(
                 cuContext, scene,
                 diffuseColorPath, float4(immDiffuseColor.toNative(), 1.0f),
                 specularColorPath, immSpecularColor.toNative(),
                 normalPath,
                 emittancePath, immEmittance);
         }
-
-        scene->materials.push_back(mat);
     }
 
     uint32_t baseGeomInstIndex = static_cast<uint32_t>(scene->geomInsts.size());
@@ -2133,15 +2130,14 @@ void createRectangleLight(
     const RGB &immEmittance,
     const Matrix4x4 &transform,
     CUcontext cuContext, Scene* scene, bool allocateGfxResource) {
-    Material* material;
     if constexpr (useLambertMaterial)
-        material = createLambertMaterial(cuContext, scene, "", reflectance, "", emittancePath, immEmittance);
+        createLambertMaterial(cuContext, scene, "", reflectance, "", emittancePath, immEmittance);
     else
-        material = createDiffuseAndSpecularMaterial(
+        createDiffuseAndSpecularMaterial(
             cuContext, scene, "", reflectance, "", RGB(0.0f), 0.3f,
             "",
             emittancePath, immEmittance);
-    scene->materials.push_back(material);
+    Material* material = scene->materials.back();
 
     std::vector<shared::Vertex> vertices = {
         shared::Vertex{Point3D(-0.5f * width, 0.0f, -0.5f * depth), Normal3D(0, -1, 0), Vector3D(1, 0, 0), Point2D(0.0f, 1.0f)},
@@ -2178,15 +2174,14 @@ void createSphereLight(
     const RGB &immEmittance,
     const Point3D &position,
     CUcontext cuContext, Scene* scene, bool allocateGfxResource) {
-    Material* material;
     if constexpr (useLambertMaterial)
-        material = createLambertMaterial(cuContext, scene, "", reflectance, "", emittancePath, immEmittance);
+        createLambertMaterial(cuContext, scene, "", reflectance, "", emittancePath, immEmittance);
     else
-        material = createDiffuseAndSpecularMaterial(
+        createDiffuseAndSpecularMaterial(
             cuContext, scene, "", reflectance, "", RGB(0.0f), 0.3f,
             "",
             emittancePath, immEmittance);
-    scene->materials.push_back(material);
+    Material* material = scene->materials.back();
 
     constexpr uint32_t numZenithSegments = 8;
     constexpr uint32_t numAzimuthSegments = 16;

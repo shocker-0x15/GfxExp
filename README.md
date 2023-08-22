@@ -80,6 +80,17 @@ SVGF filters the lighting result in screen-space obtained by methods like path t
 ![example](svgf/comparison.jpg)
 Crytek Sponza from Morgan McGuire's [Computer Graphics Archive](https://casual-effects.com/data)
 
+### Tessellation-Free Displacement Mapping
+Tessellation-Free Displacement Mapping for Ray Tracing\
+https://research.adobe.com/publication/tessellation-free-displacement-mapping-for-ray-tracing/
+
+TFDMではハイトマップの各テクセルの最小値・最大値を階層的に記録したMinmaxミップマップをベースメッシュ形状と切り離した暗黙的なBVH(の一部)として用いることで、事前テッセレーションを行うことなく、省メモリに緻密なジオメトリに対するレイトレーシングを可能とします。トラバーサル中にはベース三角形ごとにIntersectionシェーダーが起動されます。三角形の各頂点における位置、法線、テクスチャー座標とMinmaxミップマップの値から、アフィン演算を用いてその場で階層的なAABBの計算とレイの交叉判定、最終的な形状との交叉判定を行います。
+
+In TFDM, a minmax mipmap is used to store the minimum and maximum values of each texel hierarchically as (a part of) an implicit BVH, which is decoupled from the base mesh shape. This allows for ray tracing against detailed geometry without pre-tessellation, resulting in a low memory footprint. Intersection shader is invoked during traversal for each base triangle. Using the position, normal, texture coordinates of the triangle vertices and the values from the minmax mipmap, AABB computation on the fly by affine arithmetic and ray intersection test is performed hierarchically, finally ray intersection test against the final shape.
+
+![example](tfdm/result.jpg)
+... from [...](https://)
+
 ## その他 / Miscellaneous
 OptiX/CUDAのラッパーとして[OptiX Utility](https://github.com/shocker-0x15/OptiX_Utility)を使用しています。
 

@@ -1150,6 +1150,39 @@ struct Scene {
 
 void finalizeTextureCaches();
 
+void createLambertMaterial(
+    CUcontext cuContext, Scene* scene,
+    const std::filesystem::path& reflectancePath, const RGB& immReflectance,
+    const std::filesystem::path& normalPath,
+    const std::filesystem::path& emittancePath, const RGB& immEmittance);
+
+void createDiffuseAndSpecularMaterial(
+    CUcontext cuContext, Scene* scene,
+    const std::filesystem::path& diffuseColorPath, const RGB& immDiffuseColor,
+    const std::filesystem::path& specularColorPath, const RGB& immSpecularColor,
+    float immSmoothness,
+    const std::filesystem::path& normalPath,
+    const std::filesystem::path& emittancePath, const RGB& immEmittance);
+
+void createSimplePBRMaterial(
+    CUcontext cuContext, Scene* scene,
+    const std::filesystem::path& baseColor_opacityPath, const float4& immBaseColor_opacity,
+    const std::filesystem::path& occlusion_roughness_metallicPath,
+    const float3& immOcclusion_roughness_metallic,
+    const std::filesystem::path& normalPath,
+    const std::filesystem::path& emittancePath, const RGB& immEmittance);
+
+GeometryInstance* createGeometryInstance(
+    CUcontext cuContext, Scene* scene,
+    const std::vector<shared::Vertex>& vertices,
+    const std::vector<shared::Triangle>& triangles,
+    const Material* mat,
+    bool allocateGfxResource);
+
+GeometryGroup* createGeometryGroup(
+    Scene* scene,
+    const std::set<const GeometryInstance*>& geomInsts);
+
 void createTriangleMeshes(
     const std::string &meshName,
     const std::filesystem::path &filePath,
