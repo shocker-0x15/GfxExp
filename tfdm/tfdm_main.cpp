@@ -927,6 +927,37 @@ int32_t main(int32_t argc, const char* argv[]) try {
         }
     }
 
+    {
+        createLambertMaterial(
+            gpuEnv.cuContext, &scene, "", RGB(0.8f, 0.8f, 0.8f), "", "", RGB(0.0f));
+        Material* material = scene.materials.back();
+
+        std::vector<shared::Vertex> vertices = {
+            shared::Vertex{Point3D(-5.0f, 0.0f, -5.0f), Normal3D(0, 1, 0), Vector3D(1, 0, 0), Point2D(0.0f, 0.0f)},
+            shared::Vertex{Point3D(5.0f, 0.0f, -5.0f), Normal3D(0, 1, 0), Vector3D(1, 0, 0), Point2D(1.0f, 0.0f)},
+            shared::Vertex{Point3D(5.0f, 0.0f, 5.0f), Normal3D(0, 1, 0), Vector3D(1, 0, 0), Point2D(1.0f, 1.0f)},
+            shared::Vertex{Point3D(-5.0f, 0.0f, 5.0f), Normal3D(0, 1, 0), Vector3D(1, 0, 0), Point2D(0.0f, 1.0f)},
+        };
+        std::vector<shared::Triangle> triangles = {
+            shared::Triangle{0, 1, 2},
+            shared::Triangle{0, 2, 3},
+        };
+        GeometryInstance* geomInst = createGeometryInstance(
+            gpuEnv.cuContext, &scene, vertices, triangles, material, false);
+
+        std::set<const GeometryInstance*> srcGeomInsts = { geomInst };
+        GeometryGroup* geomGroup = createGeometryGroup(&scene, srcGeomInsts);
+        scene.geomGroups.push_back(geomGroup);
+
+        auto mesh = new Mesh();
+        Mesh::GeometryGroupInstance g = {};
+        g.geomGroup = geomGroup;
+        g.transform = Matrix4x4();
+        mesh->groupInsts.clear();
+        mesh->groupInsts.push_back(g);
+        scene.meshes["floor"] = mesh;
+    }
+
     Vector3D sceneDim = scene.initialSceneAabb.maxP - scene.initialSceneAabb.minP;
     g_cameraPositionalMovingSpeed = 0.003f * std::max({ sceneDim.x, sceneDim.y, sceneDim.z });
     g_cameraDirectionalMovingSpeed = 0.0015f;

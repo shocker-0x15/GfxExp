@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include "../common/common_shared.h"
+#include "affine_arithmetic.h"
 
 namespace shared {
     static constexpr float probToSampleEnvLight = 0.25f;

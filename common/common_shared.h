@@ -96,6 +96,18 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr size_t lengthof(const T (&array)[size
 
 
 
+template <Number32bit N>
+CUDA_COMMON_FUNCTION CUDA_INLINE N pow2(N x) {
+    return x * x;
+}
+
+template <Number32bit N>
+CUDA_COMMON_FUNCTION CUDA_INLINE N pow3(N x) {
+    return x * x * x;
+}
+
+
+
 template <typename T>
 CUDA_COMMON_FUNCTION CUDA_INLINE T alignUp(T value, uint32_t alignment) {
     return (value + alignment - 1) / alignment * alignment;
@@ -848,6 +860,8 @@ struct Vector3DTemplate {
     CUDA_COMMON_FUNCTION Vector3DTemplate(FloatType v = 0) : x(v), y(v), z(v) {}
     CUDA_COMMON_FUNCTION Vector3DTemplate(FloatType xx, FloatType yy, FloatType zz) :
         x(xx), y(yy), z(zz) {}
+    CUDA_COMMON_FUNCTION Vector3DTemplate(const Vector2D &xy, FloatType zz) :
+        x(xy.x), y(xy.y), z(zz) {}
     CUDA_COMMON_FUNCTION explicit Vector3DTemplate(const Vector3DTemplate<!isNormal> &v) :
         x(v.x), y(v.y), z(v.z) {}
     CUDA_COMMON_FUNCTION explicit Vector3DTemplate(const float3 &v) :
@@ -1094,6 +1108,8 @@ struct Point3D {
     CUDA_COMMON_FUNCTION Point3D(FloatType v = 0) : x(v), y(v), z(v) {}
     CUDA_COMMON_FUNCTION Point3D(FloatType xx, FloatType yy, FloatType zz) :
         x(xx), y(yy), z(zz) {}
+    CUDA_COMMON_FUNCTION Point3D(const Point2D &xy, FloatType zz) :
+        x(xy.x), y(xy.y), z(zz) {}
     template <bool isNormal>
     CUDA_COMMON_FUNCTION explicit Point3D(const Vector3DTemplate<isNormal> &v) : x(v.x), y(v.y), z(v.z) {}
     CUDA_COMMON_FUNCTION explicit Point3D(const float3 &p) : x(p.x), y(p.y), z(p.z) {}
@@ -1513,9 +1529,11 @@ struct Matrix3x3 {
 
     CUDA_COMMON_FUNCTION Matrix3x3() :
         c0(1, 0, 0), c1(0, 1, 0), c2(0, 0, 1) {}
-    CUDA_COMMON_FUNCTION Matrix3x3(const Vector3D cc0, const Vector3D &cc1, const Vector3D cc2) :
+    CUDA_COMMON_FUNCTION Matrix3x3(const Vector3D &cc0, const Vector3D &cc1, const Vector3D &cc2) :
         c0(cc0), c1(cc1), c2(cc2) {}
-    CUDA_COMMON_FUNCTION Matrix3x3(const Point3D cc0, const Point3D &cc1, const Point3D cc2) :
+    CUDA_COMMON_FUNCTION Matrix3x3(const Normal3D &cc0, const Normal3D &cc1, const Normal3D &cc2) :
+        c0(cc0), c1(cc1), c2(cc2) {}
+    CUDA_COMMON_FUNCTION Matrix3x3(const Point3D &cc0, const Point3D &cc1, const Point3D &cc2) :
         c0(static_cast<Vector3D>(cc0)),
         c1(static_cast<Vector3D>(cc1)),
         c2(static_cast<Vector3D>(cc2)) {}
