@@ -2391,25 +2391,25 @@ struct RGBAsOrderedInt {
         r(floatToOrderedInt(v.r)), g(floatToOrderedInt(v.g)), b(floatToOrderedInt(v.b)) {
     }
 
-    CUDA_COMMON_FUNCTION RGBAsOrderedInt& operator=(const RGBAsOrderedInt &v) {
+    CUDA_COMMON_FUNCTION RGBAsOrderedInt &operator=(const RGBAsOrderedInt &v) {
         r = v.r;
         g = v.g;
         b = v.b;
         return *this;
     }
-    CUDA_COMMON_FUNCTION RGBAsOrderedInt& operator=(const volatile RGBAsOrderedInt &v) {
+    CUDA_COMMON_FUNCTION RGBAsOrderedInt &operator=(const volatile RGBAsOrderedInt &v) {
         r = v.r;
         g = v.g;
         b = v.b;
         return *this;
     }
-    CUDA_COMMON_FUNCTION volatile RGBAsOrderedInt& operator=(const RGBAsOrderedInt &v) volatile {
+    CUDA_COMMON_FUNCTION volatile RGBAsOrderedInt &operator=(const RGBAsOrderedInt &v) volatile {
         r = v.r;
         g = v.g;
         b = v.b;
         return *this;
     }
-    CUDA_COMMON_FUNCTION volatile RGBAsOrderedInt& operator=(const volatile RGBAsOrderedInt &v) volatile {
+    CUDA_COMMON_FUNCTION volatile RGBAsOrderedInt &operator=(const volatile RGBAsOrderedInt &v) volatile {
         r = v.r;
         g = v.g;
         b = v.b;

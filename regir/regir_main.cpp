@@ -929,7 +929,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
     // EN: Initialize ImGui.
 
     ImGui::CreateContext();
-    ImGuiIO& io = ImGui::GetIO(); (void)io;
+    ImGuiIO &io = ImGui::GetIO(); (void)io;
     //io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;  // Enable Keyboard Controls
     //io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;   // Enable Gamepad Controls
     ImGui_ImplGlfw_InitForOpenGL(window, true);
@@ -1556,7 +1556,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         bool cameraIsActuallyMoving;
         static bool operatedCameraOnPrevFrame = false;
         {
-            const auto decideDirection = [](const KeyState& a, const KeyState& b) {
+            const auto decideDirection = [](const KeyState &a, const KeyState &b) {
                 int32_t dir = 0;
                 if (a.getState() == true) {
                     if (b.getState() == true)

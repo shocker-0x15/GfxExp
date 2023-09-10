@@ -43,7 +43,7 @@ std::filesystem::path getExecutableDirectory() {
 
 
 
-std::string readTxtFile(const std::filesystem::path& filepath) {
+std::string readTxtFile(const std::filesystem::path &filepath) {
     std::ifstream ifs;
     ifs.open(filepath, std::ios::in);
     if (ifs.fail())
