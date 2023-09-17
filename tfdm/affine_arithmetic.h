@@ -1,6 +1,9 @@
 #pragma once
 
 #include "../common/common_shared.h"
+#if !defined(__CUDA_ARCH__)
+#include <cfenv>
+#endif
 
 namespace shared {
 
@@ -10,7 +13,7 @@ concept Number = std::integral<T> || std::floating_point<T>;
 
 
 template <typename T>
-void swap(T &a, T &b) {
+CUDA_COMMON_FUNCTION CUDA_INLINE void swap(T &a, T &b) {
     T temp = a;
     a = b;
     b = temp;

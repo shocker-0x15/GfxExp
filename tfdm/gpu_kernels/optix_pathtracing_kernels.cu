@@ -221,11 +221,26 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_closestHit_generic() {
     Normal3D geometricNormalInWorld;
     Point2D texCoord;
     float hypAreaPDensity;
-    computeSurfacePoint<useMultipleImportanceSampling, useSolidAngleSampling>(
-        inst, geomInst, hp.primIndex, hp.b1, hp.b2,
-        rayOrigin,
-        &positionInWorld, &shadingNormalInWorld, &texCoord0DirInWorld,
-        &geometricNormalInWorld, &texCoord, &hypAreaPDensity);
+    if (optixGetPrimitiveType() == OPTIX_PRIMITIVE_TYPE_TRIANGLE) {
+        computeSurfacePoint<useMultipleImportanceSampling, useSolidAngleSampling>(
+            inst, geomInst, hp.primIndex, hp.b1, hp.b2,
+            rayOrigin,
+            &positionInWorld, &shadingNormalInWorld, &texCoord0DirInWorld,
+            &geometricNormalInWorld, &texCoord, &hypAreaPDensity);
+    }
+    else {
+        const AABB &aabb = geomInst.aabbBuffer[hp.primIndex];
+        Normal3D n;
+        const Point3D p = aabb.restoreHitPoint(hp.b1, hp.b2, &n);
+
+        positionInWorld = transformPointFromObjectToWorldSpace(p);
+        shadingNormalInWorld = normalize(transformNormalFromObjectToWorldSpace(n));
+        geometricNormalInWorld = shadingNormalInWorld;
+        const auto hitPlane = static_cast<uint32_t>(hp.b1);
+        texCoord = Point2D(hp.b1 - hitPlane, hp.b2);
+        texCoord0DirInWorld = Vector3D(0, 0, 0);
+        hypAreaPDensity = 0.0f;
+    }
     if constexpr (!useMultipleImportanceSampling)
         (void)hypAreaPDensity;
 

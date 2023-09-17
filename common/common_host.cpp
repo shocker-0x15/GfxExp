@@ -1876,6 +1876,53 @@ GeometryInstance* createGeometryInstance(
     return geomInst;
 }
 
+GeometryInstance* createTFDMGeometryInstance(
+    CUcontext cuContext, Scene* scene,
+    const std::vector<shared::Vertex> &vertices,
+    const std::vector<shared::Triangle> &triangles,
+    const Material* mat, optixu::Material optixMat) {
+    shared::GeometryInstanceData* geomInstDataOnHost = scene->geomInstDataBuffer.getMappedPointer();
+
+    GeometryInstance* geomInst = new GeometryInstance();
+    geomInst->geometryType = optixu::GeometryType::CustomPrimitives;
+
+    for (int triIdx = 0; triIdx < triangles.size(); ++triIdx) {
+        const shared::Triangle &tri = triangles[triIdx];
+        const shared::Vertex(&vs)[3] = {
+            vertices[tri.index0],
+            vertices[tri.index1],
+            vertices[tri.index2],
+        };
+        geomInst->aabb
+            .unify(vs[0].position)
+            .unify(vs[1].position)
+            .unify(vs[2].position);
+    }
+
+    geomInst->mat = mat;
+    geomInst->vertexBuffer.initialize(cuContext, Scene::bufferType, vertices);
+    geomInst->triangleBuffer.initialize(cuContext, Scene::bufferType, triangles);
+    geomInst->geomInstSlot = scene->geomInstSlotFinder.getFirstAvailableSlot();
+    scene->geomInstSlotFinder.setInUse(geomInst->geomInstSlot);
+
+    shared::GeometryInstanceData geomInstData = {};
+    geomInstData.vertexBuffer = shared::ROBuffer(
+        geomInst->vertexBuffer.getDevicePointer(), geomInst->vertexBuffer.numElements());
+    geomInstData.triangleBuffer = shared::ROBuffer(
+        geomInst->triangleBuffer.getDevicePointer(), geomInst->triangleBuffer.numElements());
+    geomInst->emitterPrimDist.getDeviceType(&geomInstData.emitterPrimDist);
+    geomInstData.materialSlot = mat->materialSlot;
+    geomInstData.geomInstSlot = geomInst->geomInstSlot;
+    geomInstDataOnHost[geomInst->geomInstSlot] = geomInstData;
+
+    geomInst->optixGeomInst = scene->optixScene.createGeometryInstance(optixu::GeometryType::CustomPrimitives);
+    geomInst->optixGeomInst.setNumMaterials(1, optixu::BufferView());
+    geomInst->optixGeomInst.setMaterial(0, 0, optixMat);
+    geomInst->optixGeomInst.setUserData(geomInst->geomInstSlot);
+
+    return geomInst;
+}
+
 GeometryGroup* createGeometryGroup(
     Scene* scene,
     const std::set<const GeometryInstance*> &geomInsts) {

@@ -8,6 +8,13 @@ namespace shared {
 
 
 
+    enum class AABBHitKind {
+        FrontFace = 0,
+        BackFace
+    };
+
+
+
     struct GBufferRayType {
         enum Value {
             Primary,
@@ -196,6 +203,8 @@ namespace shared {
     };
 
 
+
+    using AABBAttributeSignature = optixu::AttributeSignature<float, float>;
 
     using PrimaryRayPayloadSignature =
         optixu::PayloadSignature<shared::HitPointParams*, shared::PickInfo*>;
@@ -579,10 +588,18 @@ struct HitPointParameter {
     int32_t primIndex;
 
     CUDA_DEVICE_FUNCTION CUDA_INLINE static HitPointParameter get() {
+        using namespace shared;
+
         HitPointParameter ret;
-        float2 bc = optixGetTriangleBarycentrics();
-        ret.b1 = bc.x;
-        ret.b2 = bc.y;
+        OptixPrimitiveType primType = optixGetPrimitiveType();
+        if (primType == OPTIX_PRIMITIVE_TYPE_TRIANGLE) {
+            float2 bc = optixGetTriangleBarycentrics();
+            ret.b1 = bc.x;
+            ret.b2 = bc.y;
+        }
+        else {
+            AABBAttributeSignature::get(&ret.b1, &ret.b2);
+        }
         ret.primIndex = optixGetPrimitiveIndex();
         return ret;
     }
@@ -595,5 +612,32 @@ struct HitGroupSBTRecordData {
         return *reinterpret_cast<HitGroupSBTRecordData*>(optixGetSbtDataPointer());
     }
 };
+
+
+
+#if !defined(PURE_CUDA) || defined(CUDAU_CODE_COMPLETION)
+CUDA_DEVICE_KERNEL void RT_IS_NAME(aabb)() {
+    using namespace shared;
+
+    const auto sbtr = HitGroupSBTRecordData::get();
+    const GeometryInstanceData &geomInst = plp.s->geometryInstanceDataBuffer[sbtr.geomInstSlot];
+
+    const AABB &aabb = geomInst.aabbBuffer[optixGetPrimitiveIndex()];
+    float u, v;
+    bool isFrontHit;
+    const float t = aabb.intersect(
+        Point3D(optixGetObjectRayOrigin()),
+        Vector3D(optixGetObjectRayDirection()),
+        optixGetRayTmin(), optixGetRayTmax(),
+        &u, &v, &isFrontHit);
+    if (!isfinite(t))
+        return;
+
+    AABBAttributeSignature::reportIntersection(
+        t,
+        static_cast<uint32_t>(isFrontHit ? AABBHitKind::FrontFace : AABBHitKind::BackFace),
+        u, v);
+}
+#endif
 
 #endif

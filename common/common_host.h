@@ -516,6 +516,12 @@ struct Material {
     const cudau::Array* emittance;
     CUtexObject texEmittance;
 
+    // for TFDM
+    const cudau::Array* heightMap;
+    CUtexObject heightMapTex;
+    cudau::Array minMaxMipMap;
+    cudau::TypedBuffer<optixu::NativeBlockBuffer2D<float2>> minMaxMipMapSurfs;
+
     uint32_t materialSlot;
 
     Material() :
@@ -537,6 +543,9 @@ struct GeometryInstance {
     uint32_t geomInstSlot;
     optixu::GeometryInstance optixGeomInst;
     AABB aabb;
+    optixu::GeometryType geometryType;
+    // for TFDM
+    cudau::TypedBuffer<AABB> aabbBuffer;
 
     void draw() const {
         glUniform1ui(9, mat->materialSlot);
@@ -1215,6 +1224,12 @@ GeometryInstance* createGeometryInstance(
     const std::vector<shared::Triangle> &triangles,
     const Material* mat, optixu::Material optixMat,
     bool allocateGfxResource);
+
+GeometryInstance* createTFDMGeometryInstance(
+    CUcontext cuContext, Scene* scene,
+    const std::vector<shared::Vertex> &vertices,
+    const std::vector<shared::Triangle> &triangles,
+    const Material* mat, optixu::Material optixMat);
 
 GeometryGroup* createGeometryGroup(
     Scene* scene,

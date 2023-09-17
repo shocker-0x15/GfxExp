@@ -26,6 +26,11 @@ struct GPUEnvironment {
     CUcontext cuContext;
     optixu::Context optixContext;
 
+    CUmodule tfdmModule;
+    cudau::Kernel kernelGenerateFirstMinMaxMipMap;
+    cudau::Kernel kernelGenerateMinMaxMipMap;
+    cudau::Kernel kernelComputeAABBs;
+
     template <typename EntryPointType>
     struct Pipeline {
         optixu::Pipeline optixPipeline;
@@ -46,6 +51,7 @@ struct GPUEnvironment {
     Pipeline<PathTracingEntryPoint> pathTracing;
 
     optixu::Material optixDefaultMaterial;
+    optixu::Material optixTFDMMaterial;
 
     void initialize() {
         int32_t cuDeviceCount;
@@ -54,10 +60,21 @@ struct GPUEnvironment {
         CUDADRV_CHECK(cuCtxCreate(&cuContext, 0, 0));
         CUDADRV_CHECK(cuCtxSetCurrent(cuContext));
 
+        CUDADRV_CHECK(cuModuleLoad(
+            &tfdmModule,
+            (getExecutableDirectory() / "tfdm/ptxes/tfdm.ptx").string().c_str()));
+        kernelGenerateFirstMinMaxMipMap =
+            cudau::Kernel(tfdmModule, "generateFirstMinMaxMipMap", cudau::dim3(8, 8), 0);
+        kernelGenerateMinMaxMipMap =
+            cudau::Kernel(tfdmModule, "generateMinMaxMipMap", cudau::dim3(8, 8), 0);
+        kernelComputeAABBs =
+            cudau::Kernel(tfdmModule, "computeAABBs", cudau::dim3(32), 0);
+
         optixContext = optixu::Context::create(
             cuContext/*, 4, DEBUG_SELECT(optixu::EnableValidation::Yes, optixu::EnableValidation::No)*/);
 
         optixDefaultMaterial = optixContext.createMaterial();
+        optixTFDMMaterial = optixContext.createMaterial();
         optixu::Module emptyModule;
 
         {
@@ -70,12 +87,16 @@ struct GPUEnvironment {
                 std::max({
                     shared::PrimaryRayPayloadSignature::numDwords
                          }),
-                optixu::calcSumDwords<float2>(),
+                std::max({
+                    static_cast<uint32_t>(optixu::calcSumDwords<float2>()),
+                    shared::AABBAttributeSignature::numDwords
+                         }),
                 "plp", sizeof(shared::PipelineLaunchParameters),
                 OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_LEVEL_INSTANCING,
                 OPTIX_EXCEPTION_FLAG_STACK_OVERFLOW | OPTIX_EXCEPTION_FLAG_TRACE_DEPTH |
                 DEBUG_SELECT(OPTIX_EXCEPTION_FLAG_DEBUG, OPTIX_EXCEPTION_FLAG_NONE),
-                OPTIX_PRIMITIVE_TYPE_FLAGS_TRIANGLE);
+                OPTIX_PRIMITIVE_TYPE_FLAGS_TRIANGLE |
+                OPTIX_PRIMITIVE_TYPE_FLAGS_CUSTOM);
 
             m = p.createModuleFromPTXString(
                 readTxtFile(getExecutableDirectory() / "tfdm/ptxes/optix_gbuffer_kernels.ptx"),
@@ -86,9 +107,13 @@ struct GPUEnvironment {
             pipeline.entryPoints[GBufferEntryPoint::setupGBuffers] = p.createRayGenProgram(
                 m, RT_RG_NAME_STR("setupGBuffers"));
 
-            pipeline.hitPrograms["hitgroup"] = p.createHitProgramGroupForTriangleIS(
+            pipeline.hitPrograms["triangle"] = p.createHitProgramGroupForTriangleIS(
                 m, RT_CH_NAME_STR("setupGBuffers"),
                 emptyModule, nullptr);
+            pipeline.hitPrograms["custom"] = p.createHitProgramGroupForCustomIS(
+                m, RT_CH_NAME_STR("setupGBuffers"),
+                emptyModule, nullptr,
+                m, RT_IS_NAME_STR("aabb"));
             pipeline.programs["miss"] = p.createMissProgram(
                 m, RT_MS_NAME_STR("setupGBuffers"));
 
@@ -119,15 +144,20 @@ struct GPUEnvironment {
                 pipeline.entryPoints.at(GBufferEntryPoint::setupGBuffers).getStackSize() +
                 std::max(
                     {
-                        pipeline.hitPrograms.at("hitgroup").getCHStackSize(),
+                        pipeline.hitPrograms.at("triangle").getCHStackSize(),
+                        pipeline.hitPrograms.at("custom").getCHStackSize(),
                         pipeline.programs.at("miss").getStackSize()
                     });
 
             p.setStackSize(0, maxDcStackSize, maxCcStackSize, 2);
 
-            optixDefaultMaterial.setHitGroup(shared::GBufferRayType::Primary, pipeline.hitPrograms.at("hitgroup"));
+            optixDefaultMaterial.setHitGroup(shared::GBufferRayType::Primary, pipeline.hitPrograms.at("triangle"));
             for (uint32_t rayType = shared::GBufferRayType::NumTypes; rayType < shared::maxNumRayTypes; ++rayType)
                 optixDefaultMaterial.setHitGroup(rayType, pipeline.hitPrograms.at("emptyHitGroup"));
+
+            optixTFDMMaterial.setHitGroup(shared::GBufferRayType::Primary, pipeline.hitPrograms.at("custom"));
+            for (uint32_t rayType = shared::GBufferRayType::NumTypes; rayType < shared::maxNumRayTypes; ++rayType)
+                optixTFDMMaterial.setHitGroup(rayType, pipeline.hitPrograms.at("emptyHitGroup"));
 
             size_t sbtSize;
             p.generateShaderBindingTableLayout(&sbtSize);
@@ -165,9 +195,13 @@ struct GPUEnvironment {
 
             pipeline.programs[RT_MS_NAME_STR("pathTraceBaseline")] = p.createMissProgram(
                 m, RT_MS_NAME_STR("pathTraceBaseline"));
-            pipeline.hitPrograms[RT_CH_NAME_STR("pathTraceBaseline")] = p.createHitProgramGroupForTriangleIS(
+            pipeline.hitPrograms[RT_CH_NAME_STR("pathTraceTriangle")] = p.createHitProgramGroupForTriangleIS(
                 m, RT_CH_NAME_STR("pathTraceBaseline"),
                 emptyModule, nullptr);
+            pipeline.hitPrograms[RT_CH_NAME_STR("pathTraceCustom")] = p.createHitProgramGroupForCustomIS(
+                m, RT_CH_NAME_STR("pathTraceBaseline"),
+                emptyModule, nullptr,
+                m, RT_IS_NAME_STR("aabb"));
 
             pipeline.hitPrograms[RT_AH_NAME_STR("visibility")] = p.createHitProgramGroupForTriangleIS(
                 emptyModule, nullptr,
@@ -201,7 +235,10 @@ struct GPUEnvironment {
                 pipeline.entryPoints.at(PathTracingEntryPoint::pathTraceBaseline).getStackSize() +
                 std::max(
                     {
-                        pipeline.hitPrograms.at(RT_CH_NAME_STR("pathTraceBaseline")).getCHStackSize() +
+                        std::max({
+                            pipeline.hitPrograms.at(RT_CH_NAME_STR("pathTraceTriangle")).getCHStackSize(),
+                            pipeline.hitPrograms.at(RT_CH_NAME_STR("pathTraceCustom")).getCHStackSize()
+                                 }) +
                         pipeline.hitPrograms.at(RT_AH_NAME_STR("visibility")).getAHStackSize(),
                         pipeline.programs.at(RT_MS_NAME_STR("pathTraceBaseline")).getStackSize()
                     });
@@ -209,8 +246,13 @@ struct GPUEnvironment {
             p.setStackSize(0, maxDcStackSize, maxCcStackSize, 2);
 
             optixDefaultMaterial.setHitGroup(
-                shared::PathTracingRayType::Baseline, pipeline.hitPrograms.at(RT_CH_NAME_STR("pathTraceBaseline")));
+                shared::PathTracingRayType::Baseline, pipeline.hitPrograms.at(RT_CH_NAME_STR("pathTraceTriangle")));
             optixDefaultMaterial.setHitGroup(
+                shared::PathTracingRayType::Visibility, pipeline.hitPrograms.at(RT_AH_NAME_STR("visibility")));
+
+            optixTFDMMaterial.setHitGroup(
+                shared::PathTracingRayType::Baseline, pipeline.hitPrograms.at(RT_CH_NAME_STR("pathTraceCustom")));
+            optixTFDMMaterial.setHitGroup(
                 shared::PathTracingRayType::Visibility, pipeline.hitPrograms.at(RT_AH_NAME_STR("visibility")));
 
             size_t sbtSize;
@@ -250,9 +292,12 @@ struct GPUEnvironment {
             pipeline.optixPipeline.destroy();
         }
 
+        optixTFDMMaterial.destroy();
         optixDefaultMaterial.destroy();
 
         optixContext.destroy();
+
+        CUDADRV_CHECK(cuModuleUnload(tfdmModule));
 
         CUDADRV_CHECK(cuCtxDestroy(cuContext));
     }
@@ -865,7 +910,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
     Scene scene;
     scene.initialize(
         getExecutableDirectory() / "tfdm/ptxes",
-        gpuEnv.cuContext, gpuEnv.optixContext, shared::maxNumRayTypes, gpuEnv.optixDefaultMaterial);
+        gpuEnv.cuContext, gpuEnv.optixContext, shared::maxNumRayTypes);
 
     StreamChain<2> streamChain;
     streamChain.initialize(gpuEnv.cuContext);
@@ -887,7 +932,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
                 it->first,
                 meshInfo.path, meshInfo.matConv,
                 scale4x4(meshInfo.preScale),
-                gpuEnv.cuContext, &scene);
+                gpuEnv.cuContext, &scene, gpuEnv.optixDefaultMaterial);
         }
         else if (std::holds_alternative<RectangleGeometryInfo>(info)) {
             const auto &rectInfo = std::get<RectangleGeometryInfo>(info);
@@ -897,7 +942,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
                 rectInfo.dimX, rectInfo.dimZ,
                 RGB(0.01f),
                 rectInfo.emitterTexPath, rectInfo.emittance, Matrix4x4(),
-                gpuEnv.cuContext, &scene);
+                gpuEnv.cuContext, &scene, gpuEnv.optixDefaultMaterial);
         }
     }
 
@@ -933,29 +978,155 @@ int32_t main(int32_t argc, const char* argv[]) try {
         Material* material = scene.materials.back();
 
         std::vector<shared::Vertex> vertices = {
-            shared::Vertex{Point3D(-5.0f, 0.0f, -5.0f), Normal3D(0, 1, 0), Vector3D(1, 0, 0), Point2D(0.0f, 0.0f)},
-            shared::Vertex{Point3D(5.0f, 0.0f, -5.0f), Normal3D(0, 1, 0), Vector3D(1, 0, 0), Point2D(1.0f, 0.0f)},
-            shared::Vertex{Point3D(5.0f, 0.0f, 5.0f), Normal3D(0, 1, 0), Vector3D(1, 0, 0), Point2D(1.0f, 1.0f)},
-            shared::Vertex{Point3D(-5.0f, 0.0f, 5.0f), Normal3D(0, 1, 0), Vector3D(1, 0, 0), Point2D(0.0f, 1.0f)},
+            shared::Vertex{Point3D(-1.0f, 0.0f, -1.0f), Normal3D(0, 1, 0), Vector3D(1, 0, 0), Point2D(0.0f, 0.0f)},
+            shared::Vertex{Point3D(1.0f, 0.0f, -1.0f), Normal3D(0, 1, 0), Vector3D(1, 0, 0), Point2D(1.0f, 0.0f)},
+            shared::Vertex{Point3D(1.0f, 0.0f, 1.0f), Normal3D(0, 1, 0), Vector3D(1, 0, 0), Point2D(1.0f, 1.0f)},
+            shared::Vertex{Point3D(-1.0f, 0.0f, 1.0f), Normal3D(0, 1, 0), Vector3D(1, 0, 0), Point2D(0.0f, 1.0f)},
         };
         std::vector<shared::Triangle> triangles = {
             shared::Triangle{0, 1, 2},
             shared::Triangle{0, 2, 3},
         };
         GeometryInstance* geomInst = createGeometryInstance(
-            gpuEnv.cuContext, &scene, vertices, triangles, material, false);
+            gpuEnv.cuContext, &scene, vertices, triangles, material, gpuEnv.optixDefaultMaterial, false);
+        scene.geomInsts.push_back(geomInst);
 
         std::set<const GeometryInstance*> srcGeomInsts = { geomInst };
         GeometryGroup* geomGroup = createGeometryGroup(&scene, srcGeomInsts);
         scene.geomGroups.push_back(geomGroup);
 
         auto mesh = new Mesh();
-        Mesh::GeometryGroupInstance g = {};
-        g.geomGroup = geomGroup;
-        g.transform = Matrix4x4();
-        mesh->groupInsts.clear();
-        mesh->groupInsts.push_back(g);
-        scene.meshes["floor"] = mesh;
+        {
+            Mesh::GeometryGroupInstance groupInst = {};
+            groupInst.geomGroup = geomGroup;
+            groupInst.transform = Matrix4x4();
+            mesh->groupInsts.clear();
+            mesh->groupInsts.push_back(groupInst);
+            scene.meshes["floor"] = mesh;
+        }
+
+        Matrix4x4 instXfm = translate4x4(0, -1.0f, 0);
+        Instance* inst = createInstance(gpuEnv.cuContext, &scene, mesh->groupInsts[0], instXfm);
+        scene.insts.push_back(inst);
+
+        scene.initialSceneAabb.unify(
+            instXfm * mesh->groupInsts[0].transform * mesh->groupInsts[0].geomGroup->aabb);
+    }
+
+#define SHOW_BASE_MESH 0
+    Material* tfdmMeshMaterial;
+    GeometryInstance* tfdmMeshGeomInst;
+    GeometryGroup* tfdmGeomGroup;
+    {
+        createLambertMaterial(
+            gpuEnv.cuContext, &scene, "", RGB(0.8f, 0.8f, 0.8f), "", "", RGB(0.0f));
+        tfdmMeshMaterial = scene.materials.back();
+
+        constexpr uint32_t numEdges = 128;
+        std::vector<shared::Vertex> vertices(pow2(numEdges + 1));
+        std::vector<shared::Triangle> triangles(2 * pow2(numEdges));
+        for (int iy = 0; iy < numEdges + 1; ++iy) {
+            float py = static_cast<float>(iy) / numEdges;
+            float y = -0.5f + 1.0f * py;
+            for (int ix = 0; ix < numEdges + 1; ++ix) {
+                float px = static_cast<float>(ix) / numEdges;
+                float x = -0.5f + 1.0f * px;
+                vertices[iy * (numEdges + 1) + ix] = shared::Vertex{
+                    Point3D(x, 0, y), Normal3D(0, 1, 0), Vector3D(1, 0, 0), Point2D(px, py)
+                };
+                if (iy < numEdges && ix < numEdges) {
+                    uint32_t baseIdx = iy * (numEdges + 1) + ix;
+                    triangles[2 * (iy * numEdges + ix) + 0] = shared::Triangle{
+                        baseIdx, baseIdx + 1, baseIdx + (numEdges + 1) + 1
+                    };
+                    triangles[2 * (iy * numEdges + ix) + 1] = shared::Triangle{
+                        baseIdx, baseIdx + (numEdges + 1) + 1, baseIdx + (numEdges + 1)
+                    };
+                }
+            }
+        }
+#if SHOW_BASE_MESH
+        tfdmMeshGeomInst = createGeometryInstance(
+            gpuEnv.cuContext, &scene, vertices, triangles, tfdmMeshMaterial, gpuEnv.optixDefaultMaterial, false);
+#else
+        tfdmMeshGeomInst = createTFDMGeometryInstance(
+            gpuEnv.cuContext, &scene, vertices, triangles, tfdmMeshMaterial, gpuEnv.optixTFDMMaterial);
+#endif
+        scene.geomInsts.push_back(tfdmMeshGeomInst);
+        {
+            shared::MaterialData &matDataOnHost =
+                scene.materialDataBuffer.getMappedPointer()[tfdmMeshMaterial->materialSlot];
+
+            const std::filesystem::path heightMapPath =
+                R"(C:\Users\shocker_0x15\repos\_my\OptiX_Utility\data\mountain_heightmap_1024.png)";
+            bool needsDegamma;
+            hpprintf("Reading: %s ... ", heightMapPath.string().c_str());
+            if (loadTexture<float, true>(
+                heightMapPath, 0.0f, gpuEnv.cuContext, &tfdmMeshMaterial->heightMap, &needsDegamma))
+                hpprintf("done.\n");
+            else
+                hpprintf("failed.\n");
+
+            cudau::TextureSampler sampler = {};
+            sampler.setXyFilterMode(cudau::TextureFilterMode::Point);
+            sampler.setWrapMode(0, cudau::TextureWrapMode::Repeat);
+            sampler.setWrapMode(1, cudau::TextureWrapMode::Repeat);
+            sampler.setMipMapFilterMode(cudau::TextureFilterMode::Point);
+            sampler.setReadMode(cudau::TextureReadMode::NormalizedFloat);
+            tfdmMeshMaterial->heightMapTex = sampler.createTextureObject(*tfdmMeshMaterial->heightMap);
+            matDataOnHost.heightMapSize = int2(
+                tfdmMeshMaterial->heightMap->getWidth(), tfdmMeshMaterial->heightMap->getHeight());
+            matDataOnHost.heightMap = tfdmMeshMaterial->heightMapTex;
+
+            const uint32_t numMinMaxMipMapLevels = nextPowOf2Exponent(matDataOnHost.heightMapSize.x);
+            tfdmMeshMaterial->minMaxMipMap.initialize2D(
+                gpuEnv.cuContext,
+                cudau::ArrayElementType::Float32, 2,
+                cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable,
+                matDataOnHost.heightMapSize.x / 2, matDataOnHost.heightMapSize.y / 2,
+                numMinMaxMipMapLevels);
+            std::vector<optixu::NativeBlockBuffer2D<float2>> surfObjs(numMinMaxMipMapLevels);
+            for (int mipLevel = 0; mipLevel < numMinMaxMipMapLevels; ++mipLevel)
+                surfObjs[mipLevel] = tfdmMeshMaterial->minMaxMipMap.getSurfaceObject(mipLevel);
+            tfdmMeshMaterial->minMaxMipMapSurfs.initialize(gpuEnv.cuContext, cudau::BufferType::Device, surfObjs);
+            matDataOnHost.minMaxMipMap = tfdmMeshMaterial->minMaxMipMapSurfs.getDevicePointer();
+
+            shared::GeometryInstanceData &geomInstData =
+                scene.geomInstDataBuffer.getMappedPointer()[tfdmMeshGeomInst->geomInstSlot];
+            tfdmMeshGeomInst->aabbBuffer.initialize(gpuEnv.cuContext, cudau::BufferType::Device, triangles.size());
+            geomInstData.aabbBuffer = shared::ROBuffer(
+                tfdmMeshGeomInst->aabbBuffer.getDevicePointer(), tfdmMeshGeomInst->aabbBuffer.numElements());
+            geomInstData.hOffset = 0.0f;
+            geomInstData.hScale = 0.5f;
+            geomInstData.hBias = 0.0f;
+
+#if !SHOW_BASE_MESH
+            tfdmMeshGeomInst->optixGeomInst.setCustomPrimitiveAABBBuffer(tfdmMeshGeomInst->aabbBuffer);
+#endif
+
+            printf("");
+        }
+
+        std::set<const GeometryInstance*> srcGeomInsts = { tfdmMeshGeomInst };
+        tfdmGeomGroup = createGeometryGroup(&scene, srcGeomInsts);
+        scene.geomGroups.push_back(tfdmGeomGroup);
+
+        auto mesh = new Mesh();
+        {
+            Mesh::GeometryGroupInstance groupInst = {};
+            groupInst.geomGroup = tfdmGeomGroup;
+            groupInst.transform = Matrix4x4();
+            mesh->groupInsts.clear();
+            mesh->groupInsts.push_back(groupInst);
+            scene.meshes["obj"] = mesh;
+        }
+
+        Matrix4x4 instXfm = /*translate4x4(0, -0.5f, 0) * */rotateX4x4(0.25f * pi_v<float>);
+        Instance* inst = createInstance(gpuEnv.cuContext, &scene, mesh->groupInsts[0], instXfm);
+        scene.insts.push_back(inst);
+
+        scene.initialSceneAabb.unify(
+            instXfm * mesh->groupInsts[0].transform * mesh->groupInsts[0].geomGroup->aabb);
     }
 
     Vector3D sceneDim = scene.initialSceneAabb.maxP - scene.initialSceneAabb.minP;
@@ -966,7 +1137,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
     scene.unmap();
 
     scene.setupASes(gpuEnv.cuContext);
-    CUDADRV_CHECK(cuStreamSynchronize(0));
 
     uint32_t totalNumEmitterPrimitives = 0;
     for (int i = 0; i < scene.insts.size(); ++i) {
@@ -1234,7 +1404,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
     CUDADRV_CHECK(cuMemcpyHtoD(staticPlpOnDevice, &staticPlp, sizeof(staticPlp)));
 
     shared::PerFramePipelineLaunchParameters perFramePlp = {};
-    perFramePlp.travHandle = scene.ias.getHandle();
     perFramePlp.camera.fovY = 50 * pi_v<float> / 180;
     perFramePlp.camera.aspect = static_cast<float>(renderTargetSizeX) / renderTargetSizeY;
     perFramePlp.camera.position = g_cameraPosition;
@@ -1742,6 +1911,76 @@ int32_t main(int32_t argc, const char* argv[]) try {
             curInstDataBuffer.unmap();
         }
 
+        {
+            const GeometryInstance* geomInst = tfdmMeshGeomInst;
+            const Material* mat = tfdmMeshMaterial;
+            const shared::GeometryInstanceData* const geomInstData =
+                scene.geomInstDataBuffer.getDevicePointerAt(geomInst->geomInstSlot);
+            const shared::MaterialData* const matData =
+                scene.materialDataBuffer.getDevicePointerAt(mat->materialSlot);
+
+            // ----------------------------------------------------------------
+            // JP: Minmax mipmapを計算する。
+            // EN: Compute the minmax mipmap.
+
+            int2 dstImageSize(mat->heightMap->getWidth(), mat->heightMap->getHeight());
+            dstImageSize /= 2;
+            gpuEnv.kernelGenerateFirstMinMaxMipMap.launchWithThreadDim(
+                curCuStream, cudau::dim3(dstImageSize.x, dstImageSize.y),
+                matData);
+            //{
+            //    CUDADRV_CHECK(cuStreamSynchronize(curCuStream));
+            //    std::vector<float2> minMaxValues(dstImageSize.x * dstImageSize.y);
+            //    mat->minMaxMipMap.read(minMaxValues, 0);
+            //    printf("");
+            //}
+            const uint32_t numMinMaxMipMapLevels = nextPowOf2Exponent(mat->heightMap->getWidth());
+            for (int srcLevel = 0; srcLevel < numMinMaxMipMapLevels - 1; ++srcLevel) {
+                dstImageSize /= 2;
+                gpuEnv.kernelGenerateMinMaxMipMap.launchWithThreadDim(
+                    curCuStream, cudau::dim3(dstImageSize.x, dstImageSize.y),
+                    matData, srcLevel);
+
+                //CUDADRV_CHECK(cuStreamSynchronize(curCuStream));
+                //std::vector<float2> minMaxValues(dstImageSize.x * dstImageSize.y);
+                //mat->minMaxMipMap.read(minMaxValues, srcLevel + 1);
+
+                //bool saveImg = false;
+                //if (saveImg) {
+                //    std::vector<float4> minImg(dstImageSize.x * dstImageSize.y);
+                //    std::vector<float4> maxImg(dstImageSize.x * dstImageSize.y);
+                //    for (int y = 0; y < dstImageSize.y; ++y) {
+                //        for (int x = 0; x < dstImageSize.x; ++x) {
+                //            float2 value = minMaxValues[y * dstImageSize.x + x];
+                //            minImg[y * dstImageSize.x + x].x = value.x;
+                //            minImg[y * dstImageSize.x + x].y = value.x;
+                //            minImg[y * dstImageSize.x + x].z = value.x;
+                //            minImg[y * dstImageSize.x + x].w = 1.0f;
+                //            maxImg[y * dstImageSize.x + x].x = value.y;
+                //            maxImg[y * dstImageSize.x + x].y = value.y;
+                //            maxImg[y * dstImageSize.x + x].z = value.y;
+                //            maxImg[y * dstImageSize.x + x].w = 1.0f;
+                //        }
+                //    }
+                //    SDRImageSaverConfig imgConfig = {};
+                //    saveImage("min_img.png", dstImageSize.x, dstImageSize.y, minImg.data(), imgConfig);
+                //    saveImage("max_img.png", dstImageSize.x, dstImageSize.y, maxImg.data(), imgConfig);
+                //}
+                //printf("");
+            }
+
+            // END: Compute the minmax mipmap.
+            // ----------------------------------------------------------------
+
+            gpuEnv.kernelComputeAABBs.launchWithThreadDim(
+                curCuStream, cudau::dim3(geomInst->aabbBuffer.numElements()),
+                geomInstData, matData);
+
+            //CUDADRV_CHECK(cuStreamSynchronize(curCuStream));
+            //std::vector<AABB> aabbs = geomInst->aabbBuffer;
+            //printf("");
+        }
+
         // JP: IASのリビルドを行う。
         //     アップデートの代用としてのリビルドでは、インスタンスの追加・削除や
         //     ASビルド設定の変更を行っていないのでmarkDirty()やprepareForBuild()は必要無い。
@@ -1750,9 +1989,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
         //     add/remove of instances and changes of AS build settings
         //     so neither of markDirty() nor prepareForBuild() is required.
         curGPUTimer.update.start(curCuStream);
-        if (animate)
-            perFramePlp.travHandle = scene.ias.rebuild(
-                curCuStream, scene.iasInstanceBuffer, scene.iasMem, scene.asScratchMem);
+        if (animate || frameIndex == 0)
+            perFramePlp.travHandle = scene.updateASes(curCuStream);
         curGPUTimer.update.stop(curCuStream);
 
         // JP: 光源となるインスタンスのProbability Textureを計算する。

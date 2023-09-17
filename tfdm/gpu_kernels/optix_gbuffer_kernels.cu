@@ -106,7 +106,7 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
     Vector3D texCoord0DirInWorld;
     //Normal3D geometricNormalInWorld;
     Point2D texCoord;
-    {
+    if (optixGetPrimitiveType() == OPTIX_PRIMITIVE_TYPE_TRIANGLE) {
         const Triangle &tri = geomInst.triangleBuffer[hp.primIndex];
         const Vertex &v0 = geomInst.vertexBuffer[tri.index0];
         const Vertex &v1 = geomInst.vertexBuffer[tri.index1];
@@ -129,6 +129,18 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
             shadingNormalInWorld = Normal3D(0, 0, 1);
             texCoord0DirInWorld = Vector3D(1, 0, 0);
         }
+    }
+    else {
+        const AABB &aabb = geomInst.aabbBuffer[hp.primIndex];
+        Normal3D n;
+        const Point3D p = aabb.restoreHitPoint(hp.b1, hp.b2, &n);
+
+        positionInWorld = transformPointFromObjectToWorldSpace(p);
+        shadingNormalInWorld = normalize(transformNormalFromObjectToWorldSpace(n));
+        //geometricNormalInWorld = shadingNormalInWorld;
+        const auto hitPlane = static_cast<uint32_t>(hp.b1);
+        texCoord = Point2D(hp.b1 - hitPlane, hp.b2);
+        texCoord0DirInWorld = Vector3D(0, 0, 0);
     }
 
     const MaterialData &mat = plp.s->materialDataBuffer[geomInst.materialSlot];

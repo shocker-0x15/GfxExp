@@ -2703,6 +2703,82 @@ struct AABB {
             .unify(mat * Point3D(aabb.maxP.x, aabb.maxP.y, aabb.maxP.z));
         return ret;
     }
+
+    CUDA_COMMON_FUNCTION bool isValid() const {
+        Vector3D d = maxP - minP;
+        return all(d >= Vector3D(0.0f));
+    }
+
+    CUDA_COMMON_FUNCTION float intersect(
+        const Point3D &org, const Vector3D &dir,
+        FloatType distMin, FloatType distMax,
+        FloatType* u, FloatType* v, bool* isFrontHit) const {
+        if (!isValid())
+            return INFINITY;
+        FloatType dist0 = -INFINITY, dist1 = INFINITY;
+        Vector3D invRayDir = 1.0f / dir;
+        Vector3D tNear = (minP - org) * invRayDir;
+        Vector3D tFar = (maxP - org) * invRayDir;
+        for (int i = 0; i < 3; ++i) {
+            FloatType near = tNear[i];
+            FloatType far = tFar[i];
+            if (near > far) {
+                FloatType temp = near;
+                near = far;
+                far = temp;
+            }
+            dist0 = std::fmax(near, dist0);
+            dist1 = std::fmin(far, dist1);
+            if (dist0 > dist1)
+                return INFINITY;
+        }
+
+        *isFrontHit = dist0 >= distMin && dist0 <= distMax;
+        FloatType dist = *isFrontHit ? dist0 : dist1;
+        if (dist < distMin || dist > distMax)
+            return INFINITY;
+        uint32_t hitPlane =
+            dist == tNear[0] ? 0 :
+            dist == tFar[0] ? 1 :
+            dist == tNear[1] ? 2 :
+            dist == tFar[1] ? 3 :
+            dist == tNear[2] ? 4 :
+            dist == tFar[2] ? 5 :
+            6;
+        Assert(hitPlane != 6, "Invalid plane.");
+        uint32_t hitDim = hitPlane / 2;
+        int32_t dim0 = (hitDim + 1) % 3;
+        int32_t dim1 = (hitDim + 2) % 3;
+        Point3D p = org + dist * dir;
+        FloatType min0 = minP[dim0];
+        FloatType max0 = maxP[dim0];
+        FloatType min1 = minP[dim1];
+        FloatType max1 = maxP[dim1];
+        *u = std::fmin(std::fmax((p[dim0] - min0) / (max0 - min0), 0.0f), 1.0f)
+            + static_cast<FloatType>(hitPlane);
+        *v = std::fmin(std::fmax((p[dim1] - min1) / (max1 - min1), 0.0f), 1.0f);
+        return dist;
+    }
+
+    CUDA_COMMON_FUNCTION Point3D restoreHitPoint(FloatType u, FloatType v, Normal3D* normal) const {
+        const auto hitPlane = static_cast<uint32_t>(u);
+        uint32_t hitDim = hitPlane / 2;
+        uint32_t hitSide = hitPlane % 2;
+        int32_t dim0 = (hitDim + 1) % 3;
+        int32_t dim1 = (hitDim + 2) % 3;
+        FloatType min0 = minP[dim0];
+        FloatType max0 = maxP[dim0];
+        FloatType min1 = minP[dim1];
+        FloatType max1 = maxP[dim1];
+        u = std::fmod(u, 1.0f);
+        Point3D p;
+        p[hitDim] = hitSide ? maxP[hitDim] : minP[hitDim];
+        p[dim0] = min0 + (max0 - min0) * u;
+        p[dim1] = min1 + (max1 - min1) * v;
+        *normal = Normal3D(0, 0, 0);
+        (*normal)[hitDim] = hitSide ? 1 : -1;
+        return p;
+    }
 };
 
 
@@ -3619,6 +3695,11 @@ namespace shared {
         BSDFEvaluate bsdfEvaluate;
         BSDFEvaluatePDF bsdfEvaluatePDF;
         BSDFEvaluateDHReflectanceEstimate bsdfEvaluateDHReflectanceEstimate;
+
+        // for TFDM
+        int2 heightMapSize;
+        CUtexObject heightMap;
+        optixu::NativeBlockBuffer2D<float2>* minMaxMipMap;
     };
 
     struct GeometryInstanceData {
@@ -3627,6 +3708,11 @@ namespace shared {
         LightDistribution emitterPrimDist;
         uint32_t materialSlot;
         uint32_t geomInstSlot;
+        // for TFDM
+        ROBuffer<AABB> aabbBuffer;
+        float hOffset;
+        float hScale;
+        float hBias;
     };
 
     struct InstanceData {
