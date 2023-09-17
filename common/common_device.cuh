@@ -2,11 +2,12 @@
 
 #include "common_shared.h"
 
-#define pixelprintf(idx, px, py, fmt, ...) \
-    do { if (idx.x == px && idx.y == py) printf(fmt, ##__VA_ARGS__); } while (0)
-#define vector2Arg(v) v.x, v.y
-#define vector3Arg(v) v.x, v.y, v.z
-#define vector4Arg(v) v.x, v.y, v.z, v.w
+#define V2FMT "%g, %g"
+#define V3FMT "%g, %g, %g"
+#define V4FMT "%g, %g, %g"
+#define v2print(v) (v).x, (v).y
+#define v3print(v) (v).x, (v).y, (v).z
+#define v4print(v) (v).x, (v).y, (v).z, (v).w
 
 
 

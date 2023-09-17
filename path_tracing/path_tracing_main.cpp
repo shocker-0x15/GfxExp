@@ -865,7 +865,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
     Scene scene;
     scene.initialize(
         getExecutableDirectory() / "path_tracing/ptxes",
-        gpuEnv.cuContext, gpuEnv.optixContext, shared::maxNumRayTypes, gpuEnv.optixDefaultMaterial);
+        gpuEnv.cuContext, gpuEnv.optixContext, shared::maxNumRayTypes);
 
     StreamChain<2> streamChain;
     streamChain.initialize(gpuEnv.cuContext);
@@ -887,7 +887,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
                 it->first,
                 meshInfo.path, meshInfo.matConv,
                 scale4x4(meshInfo.preScale),
-                gpuEnv.cuContext, &scene);
+                gpuEnv.cuContext, &scene, gpuEnv.optixDefaultMaterial);
         }
         else if (std::holds_alternative<RectangleGeometryInfo>(info)) {
             const auto &rectInfo = std::get<RectangleGeometryInfo>(info);
@@ -897,7 +897,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
                 rectInfo.dimX, rectInfo.dimZ,
                 RGB(0.01f),
                 rectInfo.emitterTexPath, rectInfo.emittance, Matrix4x4(),
-                gpuEnv.cuContext, &scene);
+                gpuEnv.cuContext, &scene, gpuEnv.optixDefaultMaterial);
         }
     }
 
@@ -935,7 +935,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
     scene.unmap();
 
     scene.setupASes(gpuEnv.cuContext);
-    CUDADRV_CHECK(cuStreamSynchronize(0));
 
     uint32_t totalNumEmitterPrimitives = 0;
     for (int i = 0; i < scene.insts.size(); ++i) {
@@ -1203,7 +1202,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
     CUDADRV_CHECK(cuMemcpyHtoD(staticPlpOnDevice, &staticPlp, sizeof(staticPlp)));
 
     shared::PerFramePipelineLaunchParameters perFramePlp = {};
-    perFramePlp.travHandle = scene.ias.getHandle();
     perFramePlp.camera.fovY = 50 * pi_v<float> / 180;
     perFramePlp.camera.aspect = static_cast<float>(renderTargetSizeX) / renderTargetSizeY;
     perFramePlp.camera.position = g_cameraPosition;
@@ -1712,16 +1710,10 @@ int32_t main(int32_t argc, const char* argv[]) try {
         }
 
         // JP: IASのリビルドを行う。
-        //     アップデートの代用としてのリビルドでは、インスタンスの追加・削除や
-        //     ASビルド設定の変更を行っていないのでmarkDirty()やprepareForBuild()は必要無い。
         // EN: Rebuild the IAS.
-        //     Rebuild as the alternative for update doesn't involves
-        //     add/remove of instances and changes of AS build settings
-        //     so neither of markDirty() nor prepareForBuild() is required.
         curGPUTimer.update.start(curCuStream);
-        if (animate)
-            perFramePlp.travHandle = scene.ias.rebuild(
-                curCuStream, scene.iasInstanceBuffer, scene.iasMem, scene.asScratchMem);
+        if (animate || frameIndex == 0)
+            perFramePlp.travHandle = scene.updateASes(curCuStream);
         curGPUTimer.update.stop(curCuStream);
 
         // JP: 光源となるインスタンスのProbability Textureを計算する。

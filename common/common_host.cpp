@@ -925,69 +925,43 @@ struct TextureCacheKey {
     }
 };
 
-struct Fx1ImmTextureCacheKey {
-    float immValue;
+template <typename T>
+struct ImmTextureCacheKey {
+    T immValue;
     CUcontext cuContext;
 
-    bool operator<(const Fx1ImmTextureCacheKey &rKey) const {
-        if (immValue < rKey.immValue)
-            return true;
-        else if (immValue > rKey.immValue)
-            return false;
-        if (cuContext < rKey.cuContext)
-            return true;
-        else if (cuContext > rKey.cuContext)
-            return false;
-        return false;
-    }
-};
-
-struct Fx3ImmTextureCacheKey {
-    float3 immValue;
-    CUcontext cuContext;
-
-    bool operator<(const Fx3ImmTextureCacheKey &rKey) const {
-        if (immValue.z < rKey.immValue.z)
-            return true;
-        else if (immValue.z > rKey.immValue.z)
-            return false;
-        if (immValue.y < rKey.immValue.y)
-            return true;
-        else if (immValue.y > rKey.immValue.y)
-            return false;
-        if (immValue.x < rKey.immValue.x)
-            return true;
-        else if (immValue.x > rKey.immValue.x)
-            return false;
-        if (cuContext < rKey.cuContext)
-            return true;
-        else if (cuContext > rKey.cuContext)
-            return false;
-        return false;
-    }
-};
-
-struct Fx4ImmTextureCacheKey {
-    float4 immValue;
-    CUcontext cuContext;
-
-    bool operator<(const Fx4ImmTextureCacheKey &rKey) const {
-        if (immValue.w < rKey.immValue.w)
-            return true;
-        else if (immValue.w > rKey.immValue.w)
-            return false;
-        if (immValue.z < rKey.immValue.z)
-            return true;
-        else if (immValue.z > rKey.immValue.z)
-            return false;
-        if (immValue.y < rKey.immValue.y)
-            return true;
-        else if (immValue.y > rKey.immValue.y)
-            return false;
-        if (immValue.x < rKey.immValue.x)
-            return true;
-        else if (immValue.x > rKey.immValue.x)
-            return false;
+    bool operator<(const ImmTextureCacheKey &rKey) const {
+        if constexpr (std::is_same_v<T, float>) {
+            if (immValue < rKey.immValue)
+                return true;
+            else if (immValue > rKey.immValue)
+                return false;
+        }
+        else {
+            if constexpr (
+                std::is_same_v<T, float4>) {
+                if (immValue.w < rKey.immValue.w)
+                    return true;
+                else if (immValue.w > rKey.immValue.w)
+                    return false;
+            }
+            if constexpr (
+                std::is_same_v<T, float4> ||
+                std::is_same_v<T, float3>) {
+                if (immValue.z < rKey.immValue.z)
+                    return true;
+                else if (immValue.z > rKey.immValue.z)
+                    return false;
+            }
+            if (immValue.y < rKey.immValue.y)
+                return true;
+            else if (immValue.y > rKey.immValue.y)
+                return false;
+            if (immValue.x < rKey.immValue.x)
+                return true;
+            else if (immValue.x > rKey.immValue.x)
+                return false;
+        }
         if (cuContext < rKey.cuContext)
             return true;
         else if (cuContext > rKey.cuContext)
@@ -1005,9 +979,10 @@ struct TextureCacheValue {
 };
 
 static std::map<TextureCacheKey, TextureCacheValue> s_textureCache;
-static std::map<Fx1ImmTextureCacheKey, TextureCacheValue> s_Fx1ImmTextureCache;
-static std::map<Fx3ImmTextureCacheKey, TextureCacheValue> s_Fx3ImmTextureCache;
-static std::map<Fx4ImmTextureCacheKey, TextureCacheValue> s_Fx4ImmTextureCache;
+static std::map<ImmTextureCacheKey<float>, TextureCacheValue> s_Fx1ImmTextureCache;
+static std::map<ImmTextureCacheKey<float2>, TextureCacheValue> s_Fx2ImmTextureCache;
+static std::map<ImmTextureCacheKey<float3>, TextureCacheValue> s_Fx3ImmTextureCache;
+static std::map<ImmTextureCacheKey<float4>, TextureCacheValue> s_Fx4ImmTextureCache;
 
 void finalizeTextureCaches() {
     for (auto &it : s_textureCache) {
@@ -1028,54 +1003,37 @@ void finalizeTextureCaches() {
     }
 }
 
-static void createFx1ImmTexture(
+template <typename T>
+void createImmTexture(
     CUcontext cuContext,
-    float immValue,
-    bool isNormalized,
-    const cudau::Array** texture) {
-    Fx1ImmTextureCacheKey cacheKey;
-    cacheKey.immValue = immValue;
-    cacheKey.cuContext = cuContext;
-    if (s_Fx1ImmTextureCache.count(cacheKey)) {
-        const TextureCacheValue &value = s_Fx1ImmTextureCache.at(cacheKey);
-        *texture = &value.texture;
-        return;
-    }
-
-    TextureCacheValue cacheValue;
-    cacheValue.isHDR = !isNormalized;
-    if (isNormalized) {
-        uint8_t data = std::min<uint32_t>(255 * immValue, 255);
-        cacheValue.texture.initialize2D(
-            cuContext, cudau::ArrayElementType::UInt8, 1,
-            cudau::ArraySurface::Disable, cudau::ArrayTextureGather::Disable,
-            1, 1, 1);
-        cacheValue.texture.write<uint8_t>(reinterpret_cast<uint8_t*>(&data), 1);
-    }
-    else {
-        cacheValue.texture.initialize2D(
-            cuContext, cudau::ArrayElementType::Float32, 1,
-            cudau::ArraySurface::Disable, cudau::ArrayTextureGather::Disable,
-            1, 1, 1);
-        cacheValue.texture.write(&immValue, 1);
-    }
-
-    s_Fx1ImmTextureCache[cacheKey] = std::move(cacheValue);
-
-    *texture = &s_Fx1ImmTextureCache.at(cacheKey).texture;
-}
-
-static void createFx3ImmTexture(
-    CUcontext cuContext,
-    const float3 &immValue,
+    const T &immValue,
     bool isNormalized,
     const cudau::Array** texture,
     const glu::Texture2D** gfxTexture) {
-    Fx3ImmTextureCacheKey cacheKey;
+    std::map<ImmTextureCacheKey<T>, TextureCacheValue>* textureCache;
+    uint32_t numComps = 0;
+    if constexpr (std::is_same_v<T, float>) {
+        textureCache = &s_Fx1ImmTextureCache;
+        numComps = 1;
+    }
+    if constexpr (std::is_same_v<T, float2>) {
+        textureCache = &s_Fx2ImmTextureCache;
+        numComps = 2;
+    }
+    if constexpr (std::is_same_v<T, float3>) {
+        textureCache = &s_Fx3ImmTextureCache;
+        numComps = 4;
+    }
+    if constexpr (std::is_same_v<T, float4>) {
+        textureCache = &s_Fx4ImmTextureCache;
+        numComps = 4;
+    }
+
+    ImmTextureCacheKey<T> cacheKey;
     cacheKey.immValue = immValue;
     cacheKey.cuContext = cuContext;
-    if (s_Fx3ImmTextureCache.count(cacheKey)) {
-        const TextureCacheValue &value = s_Fx3ImmTextureCache.at(cacheKey);
+    if (textureCache->count(cacheKey)) {
+        const TextureCacheValue &value = textureCache->at(cacheKey);
         *texture = &value.texture;
         if (gfxTexture)
             *gfxTexture = &value.gfxTexture;
@@ -1085,95 +1043,126 @@ static void createFx3ImmTexture(
     TextureCacheValue cacheValue;
     cacheValue.isHDR = !isNormalized;
     if (isNormalized) {
-        uint32_t data = ((std::min<uint32_t>(255 * immValue.x, 255) << 0) |
-                         (std::min<uint32_t>(255 * immValue.y, 255) << 8) |
-                         (std::min<uint32_t>(255 * immValue.z, 255) << 16) |
-                         255 << 24);
+        uint32_t data;
+        GLenum glBufferFormat;
+        if constexpr (std::is_same_v<T, float>) {
+            data = std::min<uint32_t>(255 * immValue, 255);
+            glBufferFormat = GL_R8;
+        }
+        if constexpr (std::is_same_v<T, float2>) {
+            data = (
+                (std::min<uint32_t>(255 * immValue.x, 255) << 0) |
+                (std::min<uint32_t>(255 * immValue.y, 255) << 8));
+            glBufferFormat = GL_RG8;
+        }
+        if constexpr (std::is_same_v<T, float3>) {
+            data = (
+                (std::min<uint32_t>(255 * immValue.x, 255) << 0) |
+                (std::min<uint32_t>(255 * immValue.y, 255) << 8) |
+                (std::min<uint32_t>(255 * immValue.z, 255) << 16) |
+                255 << 24);
+            glBufferFormat = GL_RGBA8;
+        }
+        if constexpr (std::is_same_v<T, float4>) {
+            data = (
+                (std::min<uint32_t>(255 * immValue.x, 255) << 0) |
+                (std::min<uint32_t>(255 * immValue.y, 255) << 8) |
+                (std::min<uint32_t>(255 * immValue.z, 255) << 16) |
+                (std::min<uint32_t>(255 * immValue.w, 255) << 24));
+            glBufferFormat = GL_RGBA8;
+        }
+
         if constexpr (useGLTexture) {
             if (gfxTexture) {
-                cacheValue.gfxTexture.initialize(GL_RGBA8, 1, 1, 1);
+                cacheValue.gfxTexture.initialize(glBufferFormat, 1, 1, 1);
                 cacheValue.gfxTexture.transferImage(GL_RGBA, GL_UNSIGNED_INT_8_8_8_8_REV, &data, 0);
             }
         }
         cacheValue.texture.initialize2D(
-            cuContext, cudau::ArrayElementType::UInt8, 4,
+            cuContext, cudau::ArrayElementType::UInt8, numComps,
             cudau::ArraySurface::Disable, cudau::ArrayTextureGather::Disable,
             1, 1, 1);
-        cacheValue.texture.write<uint8_t>(reinterpret_cast<uint8_t*>(&data), 4);
+        cacheValue.texture.write(reinterpret_cast<uint8_t*>(&data), numComps);
     }
     else {
-        float data[4] = {
-            immValue.x, immValue.y, immValue.z, 1.0f
-        };
+        float data[4] = { 0, 0, 0, 0 };
+        GLenum glBufferFormat;
+        if constexpr (std::is_same_v<T, float>) {
+            data[0] = immValue;
+            glBufferFormat = GL_R32F;
+        }
+        if constexpr (std::is_same_v<T, float2>) {
+            data[0] = immValue.x;
+            data[1] = immValue.y;
+            glBufferFormat = GL_RG32F;
+        }
+        if constexpr (std::is_same_v<T, float3>) {
+            data[0] = immValue.x;
+            data[1] = immValue.y;
+            data[2] = immValue.z;
+            data[3] = 1.0f;
+            glBufferFormat = GL_RGBA32F;
+        }
+        if constexpr (std::is_same_v<T, float4>) {
+            data[0] = immValue.x;
+            data[1] = immValue.y;
+            data[2] = immValue.z;
+            data[3] = immValue.w;
+            glBufferFormat = GL_RGBA32F;
+        }
+
         if constexpr (useGLTexture) {
             if (gfxTexture) {
-                cacheValue.gfxTexture.initialize(GL_RGBA32F, 1, 1, 1);
+                cacheValue.gfxTexture.initialize(glBufferFormat, 1, 1, 1);
                 cacheValue.gfxTexture.transferImage(GL_RGBA, GL_FLOAT, &data, 0);
             }
         }
         cacheValue.texture.initialize2D(
-            cuContext, cudau::ArrayElementType::Float32, 4,
+            cuContext, cudau::ArrayElementType::Float32, numComps,
             cudau::ArraySurface::Disable, cudau::ArrayTextureGather::Disable,
             1, 1, 1);
-        cacheValue.texture.write(data, 4);
+        cacheValue.texture.write(data, numComps);
     }
 
-    s_Fx3ImmTextureCache[cacheKey] = std::move(cacheValue);
+    (*textureCache)[cacheKey] = std::move(cacheValue);
 
-    *texture = &s_Fx3ImmTextureCache.at(cacheKey).texture;
+    *texture = &textureCache->at(cacheKey).texture;
     if (gfxTexture)
-        *gfxTexture = &s_Fx3ImmTextureCache.at(cacheKey).gfxTexture;
+        *gfxTexture = &textureCache->at(cacheKey).gfxTexture;
 }
 
-static void createFx4ImmTexture(
+template void createImmTexture(
+    CUcontext cuContext,
+    const float &immValue,
+    bool isNormalized,
+    const cudau::Array** texture,
+    const glu::Texture2D** gfxTexture);
+template void createImmTexture(
+    CUcontext cuContext,
+    const float2 &immValue,
+    bool isNormalized,
+    const cudau::Array** texture,
+    const glu::Texture2D** gfxTexture);
+template void createImmTexture(
+    CUcontext cuContext,
+    const float3 &immValue,
+    bool isNormalized,
+    const cudau::Array** texture,
+    const glu::Texture2D** gfxTexture);
+template void createImmTexture(
     CUcontext cuContext,
     const float4 &immValue,
     bool isNormalized,
-    const cudau::Array** texture) {
-    Fx4ImmTextureCacheKey cacheKey;
-    cacheKey.immValue = immValue;
-    cacheKey.cuContext = cuContext;
-    if (s_Fx4ImmTextureCache.count(cacheKey)) {
-        const TextureCacheValue &value = s_Fx4ImmTextureCache.at(cacheKey);
-        *texture = &value.texture;
-        return;
-    }
+    const cudau::Array** texture,
+    const glu::Texture2D** gfxTexture);
 
-    TextureCacheValue cacheValue;
-    cacheValue.isHDR = !isNormalized;
-    if (isNormalized) {
-        uint32_t data = ((std::min<uint32_t>(255 * immValue.x, 255) << 0) |
-                         (std::min<uint32_t>(255 * immValue.y, 255) << 8) |
-                         (std::min<uint32_t>(255 * immValue.z, 255) << 16) |
-                         (std::min<uint32_t>(255 * immValue.w, 255) << 24));
-        cacheValue.texture.initialize2D(
-            cuContext, cudau::ArrayElementType::UInt8, 4,
-            cudau::ArraySurface::Disable, cudau::ArrayTextureGather::Disable,
-            1, 1, 1);
-        cacheValue.texture.write<uint8_t>(reinterpret_cast<uint8_t*>(&data), 4);
-    }
-    else {
-        float data[4] = {
-            immValue.x, immValue.y, immValue.z, immValue.w
-        };
-        cacheValue.texture.initialize2D(
-            cuContext, cudau::ArrayElementType::Float32, 4,
-            cudau::ArraySurface::Disable, cudau::ArrayTextureGather::Disable,
-            1, 1, 1);
-        cacheValue.texture.write(data, 4);
-    }
-
-    s_Fx4ImmTextureCache[cacheKey] = std::move(cacheValue);
-
-    *texture = &s_Fx4ImmTextureCache.at(cacheKey).texture;
-}
-
-static bool loadTexture(
-    const std::filesystem::path &filePath, const float4 &fallbackValue,
+template <typename T, bool useSurface>
+bool loadTexture(
+    const std::filesystem::path &filePath, const T &fallbackValue,
     CUcontext cuContext,
     const cudau::Array** texture,
     bool* needsDegamma,
-    bool* isHDR = nullptr) {
+    bool* isHDR) {
     TextureCacheKey cacheKey;
     cacheKey.filePath = filePath;
     cacheKey.cuContext = cuContext;
@@ -1187,7 +1176,7 @@ static bool loadTexture(
     }
 
     bool success = true;
-    TextureCacheValue cacheValue;
+    TextureCacheValue cacheValue = {};
     if (filePath.extension() == ".dds" ||
         filePath.extension() == ".DDS") {
         int32_t width, height, mipCount;
@@ -1195,14 +1184,16 @@ static bool loadTexture(
         size_t* sizes;
         uint8_t** imageData = dds::load(filePath.string().c_str(),
                                         &width, &height, &mipCount, &sizes, &ddsFormat);
+        mipCount = std::max(mipCount - 2, 1);
         if (imageData) {
             cudau::ArrayElementType elemType;
             translate(ddsFormat, &elemType, &cacheValue.needsDegamma, &cacheValue.isHDR);
             cacheValue.texture.initialize2D(
                 cuContext, elemType, 1,
-                cudau::ArraySurface::Disable, cudau::ArrayTextureGather::Disable,
+                useSurface ? cudau::ArraySurface::Enable : cudau::ArraySurface::Disable,
+                cudau::ArrayTextureGather::Disable,
                 width, height, mipCount);
-            for (int32_t mipLevel = 0; mipLevel < std::max(mipCount - 2, 1); ++mipLevel)
+            for (int32_t mipLevel = 0; mipLevel < mipCount; ++mipLevel)
                 cacheValue.texture.write<uint8_t>(
                     imageData[mipLevel], static_cast<uint32_t>(sizes[mipLevel]), mipLevel);
             dds::free(imageData, mipCount, sizes);
@@ -1218,11 +1209,13 @@ static bool loadTexture(
         if (linearImageData) {
             cacheValue.texture.initialize2D(
                 cuContext, cudau::ArrayElementType::UInt8, 4,
-                cudau::ArraySurface::Disable, cudau::ArrayTextureGather::Disable,
+                useSurface ? cudau::ArraySurface::Enable : cudau::ArraySurface::Disable,
+                cudau::ArrayTextureGather::Disable,
                 width, height, 1);
             cacheValue.texture.write<uint8_t>(linearImageData, width * height * 4);
             stbi_image_free(linearImageData);
             cacheValue.needsDegamma = true;
+            cacheValue.isHDR = false;
         }
         else {
             success = false;
@@ -1238,7 +1231,7 @@ static bool loadTexture(
             *isHDR = s_textureCache.at(cacheKey).isHDR;
     }
     else {
-        createFx4ImmTexture(cuContext, fallbackValue, true, texture);
+        createImmTexture(cuContext, fallbackValue, true, texture);
         cacheValue.needsDegamma = true;
         cacheValue.isHDR = false;
     }
@@ -1246,7 +1239,38 @@ static bool loadTexture(
     return success;
 }
 
-static bool loadNormalTexture(
+template bool loadTexture<float, false>(
+    const std::filesystem::path &filePath, const float &fallbackValue,
+    CUcontext cuContext,
+    const cudau::Array** texture,
+    bool* needsDegamma,
+    bool* isHDR);
+template bool loadTexture<float, true>(
+    const std::filesystem::path &filePath, const float &fallbackValue,
+    CUcontext cuContext,
+    const cudau::Array** texture,
+    bool* needsDegamma,
+    bool* isHDR);
+template bool loadTexture<float2, false>(
+    const std::filesystem::path &filePath, const float2 &fallbackValue,
+    CUcontext cuContext,
+    const cudau::Array** texture,
+    bool* needsDegamma,
+    bool* isHDR);
+template bool loadTexture<float3, false>(
+    const std::filesystem::path &filePath, const float3 &fallbackValue,
+    CUcontext cuContext,
+    const cudau::Array** texture,
+    bool* needsDegamma,
+    bool* isHDR);
+template bool loadTexture<float4, false>(
+    const std::filesystem::path &filePath, const float4 &fallbackValue,
+    CUcontext cuContext,
+    const cudau::Array** texture,
+    bool* needsDegamma,
+    bool* isHDR);
+
+bool loadNormalTexture(
     const std::filesystem::path &filePath,
     CUcontext cuContext,
     const cudau::Array** texture,
@@ -1272,6 +1296,7 @@ static bool loadNormalTexture(
         size_t* sizes;
         uint8_t** imageData = dds::load(filePath.string().c_str(),
                                         &width, &height, &mipCount, &sizes, &ddsFormat);
+        mipCount = std::max(mipCount - 2, 1);
         if (imageData) {
             bool isHDR;
             if constexpr (useGLTexture) {
@@ -1299,7 +1324,7 @@ static bool loadNormalTexture(
                 cudau::ArraySurface::Disable,
                 textureGather,
                 width, height, mipCount);
-            for (int32_t mipLevel = 0; mipLevel < std::max(mipCount - 2, 1); ++mipLevel)
+            for (int32_t mipLevel = 0; mipLevel < mipCount; ++mipLevel)
                 cacheValue.texture.write<uint8_t>(
                     imageData[mipLevel], static_cast<uint32_t>(sizes[mipLevel]), mipLevel);
             dds::free(imageData, mipCount, sizes);
@@ -1348,19 +1373,19 @@ static bool loadNormalTexture(
         *bumpMapType = s_textureCache.at(cacheKey).bumpMapType;
     }
     else {
-        createFx3ImmTexture(cuContext, float3(0.5f, 0.5f, 1.0f), true, texture, gfxTexture);
+        createImmTexture(cuContext, float3(0.5f, 0.5f, 1.0f), true, texture, gfxTexture);
         *bumpMapType = BumpMapTextureType::NormalMap;
     }
 
     return success;
 }
 
-static void createNormalTexture(
+void createNormalTexture(
     CUcontext cuContext,
     const std::filesystem::path &normalPath,
     Material* mat) {
     if (normalPath.empty()) {
-        createFx3ImmTexture(cuContext, float3(0.5f, 0.5f, 1.0f), true, &mat->normal, &mat->gfxNormal);
+        createImmTexture(cuContext, float3(0.5f, 0.5f, 1.0f), true, &mat->normal, &mat->gfxNormal);
         mat->bumpMapType = BumpMapTextureType::NormalMap;
     }
     else {
@@ -1372,7 +1397,7 @@ static void createNormalTexture(
     }
 }
 
-static void createEmittanceTexture(
+void createEmittanceTexture(
     CUcontext cuContext,
     const std::filesystem::path &emittancePath, const RGB &immEmittance,
     Material* mat,
@@ -1382,7 +1407,7 @@ static void createEmittanceTexture(
     if (emittancePath.empty()) {
         mat->texEmittance = 0;
         if (any(immEmittance != RGB(0.0f, 0.0f, 0.0f)))
-            createFx3ImmTexture(cuContext, immEmittance.toNative(), false, &mat->emittance, nullptr);
+            createImmTexture(cuContext, immEmittance.toNative(), false, &mat->emittance, nullptr);
     }
     else {
         hpprintf("  Reading: %s ... ", emittancePath.string().c_str());
@@ -1452,7 +1477,7 @@ void createLambertMaterial(
             hpprintf("failed.\n");
     }
     if (!body.reflectance) {
-        createFx3ImmTexture(cuContext, immReflectance.toNative(), true, &body.reflectance, nullptr);
+        createImmTexture(cuContext, immReflectance.toNative(), true, &body.reflectance, nullptr);
         needsDegamma = true;
     }
     if (needsDegamma)
@@ -1555,7 +1580,7 @@ void createDiffuseAndSpecularMaterial(
             hpprintf("failed.\n");
     }
     if (!body.diffuse) {
-        createFx3ImmTexture(cuContext, immDiffuseColor.toNative(), true, &body.diffuse, nullptr);
+        createImmTexture(cuContext, immDiffuseColor.toNative(), true, &body.diffuse, nullptr);
         needsDegamma = true;
     }
     if (needsDegamma)
@@ -1573,7 +1598,7 @@ void createDiffuseAndSpecularMaterial(
             hpprintf("failed.\n");
     }
     if (!body.specular) {
-        createFx3ImmTexture(cuContext, immSpecularColor.toNative(), true, &body.specular, nullptr);
+        createImmTexture(cuContext, immSpecularColor.toNative(), true, &body.specular, nullptr);
         needsDegamma = true;
     }
     if (needsDegamma)
@@ -1581,7 +1606,7 @@ void createDiffuseAndSpecularMaterial(
     else
         body.texSpecular = sampler_normFloat.createTextureObject(*body.specular);
 
-    createFx1ImmTexture(cuContext, immSmoothness, true, &body.smoothness);
+    createImmTexture(cuContext, immSmoothness, true, &body.smoothness);
     body.texSmoothness = sampler_normFloat.createTextureObject(*body.smoothness);
 
     createNormalTexture(cuContext, normalPath, mat);
@@ -1685,8 +1710,8 @@ void createSimplePBRMaterial(
             hpprintf("failed.\n");
     }
     if (!body.baseColor_opacity) {
-        createFx4ImmTexture(cuContext, immBaseColor_opacity, true,
-                            &body.baseColor_opacity);
+        createImmTexture(cuContext, immBaseColor_opacity, true,
+                         &body.baseColor_opacity);
         needsDegamma = true;
     }
     if (needsDegamma)
@@ -1704,8 +1729,8 @@ void createSimplePBRMaterial(
             hpprintf("failed.\n");
     }
     if (!body.occlusion_roughness_metallic) {
-        createFx3ImmTexture(cuContext, immOcclusion_roughness_metallic, true,
-                            &body.occlusion_roughness_metallic, nullptr);
+        createImmTexture(cuContext, immOcclusion_roughness_metallic, true,
+                         &body.occlusion_roughness_metallic, nullptr);
     }
     body.texOcclusion_roughness_metallic =
         sampler_normFloat.createTextureObject(*body.occlusion_roughness_metallic);
@@ -1768,11 +1793,12 @@ GeometryInstance* createGeometryInstance(
     CUcontext cuContext, Scene* scene,
     const std::vector<shared::Vertex> &vertices,
     const std::vector<shared::Triangle> &triangles,
-    const Material* mat,
+    const Material* mat, optixu::Material optixMat,
     bool allocateGfxResource) {
     shared::GeometryInstanceData* geomInstDataOnHost = scene->geomInstDataBuffer.getMappedPointer();
 
     GeometryInstance* geomInst = new GeometryInstance();
+    geomInst->geometryType = optixu::GeometryType::Triangles;
 
     for (int triIdx = 0; triIdx < triangles.size(); ++triIdx) {
         const shared::Triangle &tri = triangles[triIdx];
@@ -1844,7 +1870,7 @@ GeometryInstance* createGeometryInstance(
     geomInst->optixGeomInst.setVertexBuffer(geomInst->vertexBuffer);
     geomInst->optixGeomInst.setTriangleBuffer(geomInst->triangleBuffer);
     geomInst->optixGeomInst.setNumMaterials(1, optixu::BufferView());
-    geomInst->optixGeomInst.setMaterial(0, 0, scene->optixDefaultMaterial);
+    geomInst->optixGeomInst.setMaterial(0, 0, optixMat);
     geomInst->optixGeomInst.setUserData(geomInst->geomInstSlot);
 
     return geomInst;
@@ -1857,7 +1883,8 @@ GeometryGroup* createGeometryGroup(
     geomGroup->geomInsts = geomInsts;
     geomGroup->numEmitterPrimitives = 0;
 
-    geomGroup->optixGas = scene->optixScene.createGeometryAccelerationStructure();
+    optixu::GeometryType geomType = (*geomInsts.cbegin())->geometryType;
+    geomGroup->optixGas = scene->optixScene.createGeometryAccelerationStructure(geomType);
     for (auto it = geomInsts.cbegin(); it != geomInsts.cend(); ++it) {
         const GeometryInstance* geomInst = *it;
         geomGroup->optixGas.addChild(geomInst->optixGeomInst);
@@ -1867,6 +1894,8 @@ GeometryGroup* createGeometryGroup(
     }
     geomGroup->optixGas.setNumMaterialSets(1);
     geomGroup->optixGas.setNumRayTypes(0, scene->numRayTypes);
+    geomGroup->needsRebuild = true;
+    geomGroup->refittable = geomType == optixu::GeometryType::CustomPrimitives;
 
     return geomGroup;
 }
@@ -1878,7 +1907,8 @@ void createTriangleMeshes(
     const std::filesystem::path &filePath,
     MaterialConvention matConv,
     const Matrix4x4 &preTransform,
-    CUcontext cuContext, Scene* scene, bool allocateGfxResource) {
+    CUcontext cuContext, Scene* scene, optixu::Material optixMat,
+    bool allocateGfxResource) {
     hpprintf("Reading: %s ... ", filePath.string().c_str());
     fflush(stdout);
     Assimp::Importer importer;
@@ -1898,7 +1928,6 @@ void createTriangleMeshes(
     dirPath.remove_filename();
 
     uint32_t baseMatIndex = static_cast<uint32_t>(scene->materials.size());
-    shared::MaterialData* matDataOnHost = scene->materialDataBuffer.getMappedPointer();
     for (uint32_t matIdx = 0; matIdx < aiscene->mNumMaterials; ++matIdx) {
         std::filesystem::path emittancePath;
         RGB immEmittance(0.0f);
@@ -2079,7 +2108,8 @@ void createTriangleMeshes(
 
         scene->geomInsts.push_back(createGeometryInstance(
             cuContext, scene, vertices, triangles,
-            scene->materials[baseMatIndex + aiMesh->mMaterialIndex], allocateGfxResource));
+            scene->materials[baseMatIndex + aiMesh->mMaterialIndex], optixMat,
+            allocateGfxResource));
     }
 
     std::vector<FlattenedNode> flattenedNodes;
@@ -2129,7 +2159,8 @@ void createRectangleLight(
     const std::filesystem::path &emittancePath,
     const RGB &immEmittance,
     const Matrix4x4 &transform,
-    CUcontext cuContext, Scene* scene, bool allocateGfxResource) {
+    CUcontext cuContext, Scene* scene, optixu::Material optixMat,
+    bool allocateGfxResource) {
     if constexpr (useLambertMaterial)
         createLambertMaterial(cuContext, scene, "", reflectance, "", emittancePath, immEmittance);
     else
@@ -2150,7 +2181,8 @@ void createRectangleLight(
         shared::Triangle{0, 2, 3},
     };
     GeometryInstance* geomInst = createGeometryInstance(
-        cuContext, scene, vertices, triangles, material, allocateGfxResource);
+        cuContext, scene, vertices, triangles, material, optixMat,
+        allocateGfxResource);
     scene->geomInsts.push_back(geomInst);
 
     std::set<const GeometryInstance*> srcGeomInsts = { geomInst };
@@ -2173,7 +2205,8 @@ void createSphereLight(
     const std::filesystem::path &emittancePath,
     const RGB &immEmittance,
     const Point3D &position,
-    CUcontext cuContext, Scene* scene, bool allocateGfxResource) {
+    CUcontext cuContext, Scene* scene, optixu::Material optixMat,
+    bool allocateGfxResource) {
     if constexpr (useLambertMaterial)
         createLambertMaterial(cuContext, scene, "", reflectance, "", emittancePath, immEmittance);
     else
@@ -2251,7 +2284,8 @@ void createSphereLight(
         }
     }
     GeometryInstance* geomInst = createGeometryInstance(
-        cuContext, scene, vertices, triangles, material, allocateGfxResource);
+        cuContext, scene, vertices, triangles, material, optixMat,
+        allocateGfxResource);
     scene->geomInsts.push_back(geomInst);
 
     std::set<const GeometryInstance*> srcGeomInsts = { geomInst };

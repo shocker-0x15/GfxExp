@@ -44,10 +44,6 @@
 
 
 #include "../utils/optixu_on_cudau.h"
-#if !defined(__CUDA_ARCH__)
-#   undef CUDA_DEVICE_FUNCTION
-#   define CUDA_DEVICE_FUNCTION inline
-#endif
 
 
 
@@ -329,24 +325,45 @@ CUDA_COMMON_FUNCTION CUDA_INLINE bool operator==(const int2 &a, const uint2 &b) 
 CUDA_COMMON_FUNCTION CUDA_INLINE bool operator!=(const int2 &a, const uint2 &b) {
     return a.x != b.x || a.y != b.y;
 }
+
 CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator+(const int2 &a, const uint2 &b) {
     return make_uint2(a.x + b.x, a.y + b.y);
 }
 CUDA_COMMON_FUNCTION CUDA_INLINE int2 operator+(const int2 &a, const int2 &b) {
     return make_int2(a.x + b.x, a.y + b.y);
 }
+
 CUDA_COMMON_FUNCTION CUDA_INLINE int2 operator*(const int2 &a, const int2 &b) {
     return make_int2(a.x * b.x, a.y * b.y);
 }
-CUDA_COMMON_FUNCTION CUDA_INLINE int2 operator*(uint32_t a, const int2 &b) {
+CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator*(const int2 &a, const uint2 &b) {
+    return make_uint2(a.x * b.x, a.y * b.y);
+}
+CUDA_COMMON_FUNCTION CUDA_INLINE int2 operator*(int32_t a, const int2 &b) {
     return make_int2(a * b.x, a * b.y);
 }
-CUDA_COMMON_FUNCTION CUDA_INLINE int2 operator*(const int2 &a, uint32_t b) {
+CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator*(uint32_t a, const int2 &b) {
+    return make_uint2(a * b.x, a * b.y);
+}
+CUDA_COMMON_FUNCTION CUDA_INLINE int2 operator*(const int2 &a, int32_t b) {
     return make_int2(a.x * b, a.y * b);
+}
+CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator*(const int2 &a, uint32_t b) {
+    return make_uint2(a.x * b, a.y * b);
 }
 CUDA_COMMON_FUNCTION CUDA_INLINE int2 &operator*=(int2 &a, const int2 &b) {
     a.x *= b.x;
     a.y *= b.y;
+    return a;
+}
+CUDA_COMMON_FUNCTION CUDA_INLINE int2 &operator*=(int2 &a, const uint2 &b) {
+    a.x *= b.x;
+    a.y *= b.y;
+    return a;
+}
+CUDA_COMMON_FUNCTION CUDA_INLINE int2 &operator*=(int2 &a, int32_t b) {
+    a.x *= b;
+    a.y *= b;
     return a;
 }
 CUDA_COMMON_FUNCTION CUDA_INLINE int2 &operator*=(int2 &a, uint32_t b) {
@@ -354,11 +371,67 @@ CUDA_COMMON_FUNCTION CUDA_INLINE int2 &operator*=(int2 &a, uint32_t b) {
     a.y *= b;
     return a;
 }
+
 CUDA_COMMON_FUNCTION CUDA_INLINE int2 operator/(const int2 &a, const int2 &b) {
     return make_int2(a.x / b.x, a.y / b.y);
 }
 CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator/(const int2 &a, const uint2 &b) {
     return make_uint2(a.x / b.x, a.y / b.y);
+}
+CUDA_COMMON_FUNCTION CUDA_INLINE int2 operator/(const int2 &a, int32_t b) {
+    return make_int2(a.x / b, a.y / b);
+}
+CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator/(const int2 &a, uint32_t b) {
+    return make_uint2(a.x / b, a.y / b);
+}
+CUDA_COMMON_FUNCTION CUDA_INLINE int2 operator/=(int2 &a, const int2 &b) {
+    a.x /= b.x;
+    a.y /= b.y;
+    return a;
+}
+CUDA_COMMON_FUNCTION CUDA_INLINE int2 operator/=(int2 &a, const uint2 &b) {
+    a.x /= b.x;
+    a.y /= b.y;
+    return a;
+}
+CUDA_COMMON_FUNCTION CUDA_INLINE int2 &operator/=(int2 &a, int32_t b) {
+    a.x /= b;
+    a.y /= b;
+    return a;
+}
+CUDA_COMMON_FUNCTION CUDA_INLINE int2 &operator/=(int2 &a, uint32_t b) {
+    a.x /= b;
+    a.y /= b;
+    return a;
+}
+
+CUDA_COMMON_FUNCTION CUDA_INLINE int2 operator<<(const int2 &a, int32_t b) {
+    return make_int2(a.x << b, a.y << b);
+}
+CUDA_COMMON_FUNCTION CUDA_INLINE int2 operator<<(const int2 &a, uint32_t b) {
+    return make_int2(a.x << b, a.y << b);
+}
+CUDA_COMMON_FUNCTION CUDA_INLINE int2 &operator<<=(int2 &a, int32_t b) {
+    a = a << b;
+    return a;
+}
+CUDA_COMMON_FUNCTION CUDA_INLINE int2 &operator<<=(int2 &a, uint32_t b) {
+    a = a << b;
+    return a;
+}
+CUDA_COMMON_FUNCTION CUDA_INLINE int2 operator>>(const int2 &a, int32_t b) {
+    return make_int2(a.x >> b, a.y >> b);
+}
+CUDA_COMMON_FUNCTION CUDA_INLINE int2 operator>>(const int2 &a, uint32_t b) {
+    return make_int2(a.x >> b, a.y >> b);
+}
+CUDA_COMMON_FUNCTION CUDA_INLINE int2 &operator>>=(int2 &a, int32_t b) {
+    a = a >> b;
+    return a;
+}
+CUDA_COMMON_FUNCTION CUDA_INLINE int2 &operator>>=(int2 &a, uint32_t b) {
+    a = a >> b;
+    return a;
 }
 
 CUDA_COMMON_FUNCTION CUDA_INLINE uint2 make_uint2(const int3 &v) {
@@ -379,9 +452,14 @@ CUDA_COMMON_FUNCTION CUDA_INLINE bool operator==(const uint2 &a, const int2 &b) 
 CUDA_COMMON_FUNCTION CUDA_INLINE bool operator!=(const uint2 &a, const int2 &b) {
     return a.x != b.x || a.y != b.y;
 }
+
 CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator+(const uint2 &a, const uint2 &b) {
     return make_uint2(a.x + b.x, a.y + b.y);
 }
+CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator+(const uint2 &a, const int2 &b) {
+    return make_uint2(a.x + b.x, a.y + b.y);
+}
+
 CUDA_COMMON_FUNCTION CUDA_INLINE uint2 &operator+=(uint2 &a, uint32_t b) {
     a.x += b;
     a.y += b;
@@ -428,15 +506,29 @@ CUDA_COMMON_FUNCTION CUDA_INLINE uint2 &operator/=(uint2 &a, uint32_t b) {
 CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator%(const uint2 &a, const uint2 &b) {
     return make_uint2(a.x % b.x, a.y % b.y);
 }
+CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator<<(const uint2 &a, int32_t b) {
+    return make_uint2(a.x << b, a.y << b);
+}
 CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator<<(const uint2 &a, uint32_t b) {
     return make_uint2(a.x << b, a.y << b);
+}
+CUDA_COMMON_FUNCTION CUDA_INLINE uint2 &operator<<=(uint2 &a, int32_t b) {
+    a = a << b;
+    return a;
 }
 CUDA_COMMON_FUNCTION CUDA_INLINE uint2 &operator<<=(uint2 &a, uint32_t b) {
     a = a << b;
     return a;
 }
+CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator>>(const uint2 &a, int32_t b) {
+    return make_uint2(a.x >> b, a.y >> b);
+}
 CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator>>(const uint2 &a, uint32_t b) {
     return make_uint2(a.x >> b, a.y >> b);
+}
+CUDA_COMMON_FUNCTION CUDA_INLINE uint2 &operator>>=(uint2 &a, int32_t b) {
+    a = a >> b;
+    return a;
 }
 CUDA_COMMON_FUNCTION CUDA_INLINE uint2 &operator>>=(uint2 &a, uint32_t b) {
     a = a >> b;
@@ -878,6 +970,17 @@ struct Vector3DTemplate {
         return make_float3(x, y, z);
     }
 
+    template <std::integral I>
+    CUDA_COMMON_FUNCTION FloatType &operator[](I idx) {
+        Assert(static_cast<uint32_t>(idx) < 3, "idx is out of bound.");
+        return *(&x + idx);
+    }
+    template <std::integral I>
+    CUDA_COMMON_FUNCTION FloatType operator[](I idx) const {
+        Assert(static_cast<uint32_t>(idx) < 3, "idx is out of bound.");
+        return *(&x + idx);
+    }
+
     CUDA_COMMON_FUNCTION Vector3DTemplate operator+() const {
         return *this;
     }
@@ -1034,6 +1137,14 @@ CUDA_COMMON_FUNCTION CUDA_INLINE Vector3DTemplate<isNormal> operator/(
     return ret;
 }
 
+template <Number32bit N, bool isNormal>
+CUDA_COMMON_FUNCTION CUDA_INLINE Vector3DTemplate<isNormal> operator/(
+    N a, const Vector3DTemplate<isNormal> &b) {
+    Vector3DTemplate<isNormal> ret(static_cast<FloatType>(a));
+    ret /= b;
+    return ret;
+}
+
 template <bool isNormal>
 CUDA_COMMON_FUNCTION CUDA_INLINE Vector3DTemplate<isNormal> operator/(
     const Vector3DTemplate<isNormal> &a, const Vector3DTemplate<isNormal> &b) {
@@ -1124,6 +1235,17 @@ struct Point3D {
 
     CUDA_COMMON_FUNCTION float3 toNative() const {
         return make_float3(x, y, z);
+    }
+
+    template <std::integral I>
+    CUDA_COMMON_FUNCTION FloatType &operator[](I idx) {
+        Assert(static_cast<uint32_t>(idx) < 3, "idx is out of bound.");
+        return *(&x + idx);
+    }
+    template <std::integral I>
+    CUDA_COMMON_FUNCTION FloatType operator[](I idx) const {
+        Assert(static_cast<uint32_t>(idx) < 3, "idx is out of bound.");
+        return *(&x + idx);
     }
 
     CUDA_COMMON_FUNCTION Point3D operator+() const {
@@ -1359,6 +1481,17 @@ struct Vector4D {
         return Vector3DTemplate<isNormal>(x, y, z);
     }
 
+    template <std::integral I>
+    CUDA_COMMON_FUNCTION FloatType &operator[](I idx) {
+        Assert(static_cast<uint32_t>(idx) < 4, "idx is out of bound.");
+        return *(&x + idx);
+    }
+    template <std::integral I>
+    CUDA_COMMON_FUNCTION FloatType operator[](I idx) const {
+        Assert(static_cast<uint32_t>(idx) < 4, "idx is out of bound.");
+        return *(&x + idx);
+    }
+
     CUDA_COMMON_FUNCTION Vector4D operator+() const {
         return *this;
     }
@@ -1537,6 +1670,17 @@ struct Matrix3x3 {
         c0(static_cast<Vector3D>(cc0)),
         c1(static_cast<Vector3D>(cc1)),
         c2(static_cast<Vector3D>(cc2)) {}
+
+    template <std::integral I>
+    CUDA_COMMON_FUNCTION Vector3D &operator[](I idx) {
+        Assert(static_cast<uint32_t>(idx) < 3, "idx is out of bound.");
+        return *(&c0 + idx);
+    }
+    template <std::integral I>
+    CUDA_COMMON_FUNCTION Vector3D operator[](I idx) const {
+        Assert(static_cast<uint32_t>(idx) < 3, "idx is out of bound.");
+        return *(&c0 + idx);
+    }
 
     CUDA_COMMON_FUNCTION Matrix3x3 operator+() const {
         return *this;
@@ -1735,6 +1879,17 @@ struct Matrix4x4 {
     CUDA_COMMON_FUNCTION Matrix4x4(const Matrix3x3 &mat3x3, const Point3D &position) :
         c0(Vector4D(mat3x3.c0)), c1(Vector4D(mat3x3.c1)), c2(Vector4D(mat3x3.c2)), c3(Vector4D(position))
     { }
+
+    template <std::integral I>
+    CUDA_COMMON_FUNCTION Vector4D &operator[](I idx) {
+        Assert(static_cast<uint32_t>(idx) < 3, "idx is out of bound.");
+        return *(&c0 + idx);
+    }
+    template <std::integral I>
+    CUDA_COMMON_FUNCTION Vector4D operator[](I idx) const {
+        Assert(static_cast<uint32_t>(idx) < 3, "idx is out of bound.");
+        return *(&c0 + idx);
+    }
 
     CUDA_COMMON_FUNCTION Matrix4x4 operator+() const {
         return *this;
@@ -2510,6 +2665,8 @@ struct AABB {
     Point3D maxP;
 
     CUDA_COMMON_FUNCTION AABB() : minP(Point3D(INFINITY)), maxP(Point3D(-INFINITY)) {}
+    CUDA_COMMON_FUNCTION AABB(const Point3D &_minP, const Point3D &_maxP) :
+        minP(_minP), maxP(_maxP) {}
 
     CUDA_COMMON_FUNCTION AABB &unify(const Point3D &p) {
         minP = min(minP, p);
@@ -2649,7 +2806,11 @@ namespace shared {
 
 
     template <typename T, bool oobCheck>
+    class RWBufferTemplate;
+
+    template <typename T, bool oobCheck>
     class ROBufferTemplate {
+        friend class RWBufferTemplate<T, oobCheck>;
         const T* m_data;
 
     public:
@@ -2665,6 +2826,7 @@ namespace shared {
 
     template <typename T>
     class ROBufferTemplate<T, true> {
+        friend class RWBufferTemplate<T, true>;
         const T* m_data;
         uint32_t m_numElements;
 
@@ -2695,6 +2857,8 @@ namespace shared {
         CUDA_COMMON_FUNCTION RWBufferTemplate() : m_data(nullptr) {}
         CUDA_COMMON_FUNCTION RWBufferTemplate(T* data, uint32_t) :
             m_data(data) {}
+        CUDA_COMMON_FUNCTION RWBufferTemplate(const ROBufferTemplate<T, oobCheck> &buf) :
+            m_data(const_cast<T*>(buf.m_data)) {}
 
         template <std::integral I>
         CUDA_COMMON_FUNCTION T &operator[](I idx) {
@@ -2715,6 +2879,8 @@ namespace shared {
         CUDA_COMMON_FUNCTION RWBufferTemplate() : m_data(nullptr), m_numElements(0) {}
         CUDA_COMMON_FUNCTION RWBufferTemplate(T* data, uint32_t numElements) :
             m_data(data), m_numElements(numElements) {}
+        CUDA_COMMON_FUNCTION RWBufferTemplate(const ROBufferTemplate<T, true> &buf) :
+            m_data(const_cast<T*>(buf.m_data)), m_numElements(buf.m_numElements) {}
 
         CUDA_COMMON_FUNCTION uint32_t getNumElements() const {
             return m_numElements;

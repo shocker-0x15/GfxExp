@@ -515,11 +515,13 @@ struct Material {
     BumpMapTextureType bumpMapType;
     const cudau::Array* emittance;
     CUtexObject texEmittance;
+
     uint32_t materialSlot;
 
     Material() :
         normal(nullptr), texNormal(0),
         emittance(nullptr), texEmittance(0),
+        heightMap(nullptr), heightMapTex(0),
         materialSlot(0) {}
 };
 
@@ -562,6 +564,8 @@ struct GeometryGroup {
     cudau::Buffer optixGasMem;
     uint32_t numEmitterPrimitives;
     AABB aabb;
+    uint32_t needsRebuild : 1;
+    uint32_t refittable : 1;
 
     void draw() const {
         for (const GeometryInstance* geomInst : geomInsts)
@@ -680,7 +684,6 @@ struct Scene {
 
     optixu::Scene optixScene;
     uint32_t numRayTypes;
-    optixu::Material optixDefaultMaterial;
 
     SlotFinder materialSlotFinder;
     SlotFinder geomInstSlotFinder;
@@ -712,7 +715,7 @@ struct Scene {
 
     void initialize(
         const std::filesystem::path &ptxDir, CUcontext cuContext, optixu::Context optixContext,
-        uint32_t _numRayTypes, optixu::Material material) {
+        uint32_t _numRayTypes) {
         CUDADRV_CHECK(cuModuleLoad(
             &computeProbTex.cudaModule,
             (ptxDir / "compute_light_probs.ptx").string().c_str()));
@@ -739,8 +742,6 @@ struct Scene {
 
         optixScene = optixContext.createScene();
         numRayTypes = _numRayTypes;
-
-        optixDefaultMaterial = material;
 
         materialSlotFinder.initialize(maxNumMaterials);
         geomInstSlotFinder.initialize(maxNumGeometryInstances);
@@ -862,31 +863,33 @@ struct Scene {
 
         asScratchMem.initialize(cuContext, bufferType, asScratchSize, 1);
 
-        for (int i = 0; i < geomGroups.size(); ++i) {
-            const GeometryGroup* geomGroup = geomGroups[i];
-            geomGroup->optixGas.rebuild(0, geomGroup->optixGasMem, asScratchMem);
-        }
-
         optixScene.generateShaderBindingTableLayout(&hitGroupSbtSize);
 
-        {
-            for (int bufIdx = 0; bufIdx < 2; ++bufIdx) {
-                cudau::TypedBuffer<shared::InstanceData> &curInstDataBuffer = instDataBuffer[bufIdx];
-                shared::InstanceData* instDataBufferOnHost = curInstDataBuffer.map();
-                for (int i = 0; i < instControllers.size(); ++i) {
-                    InstanceController* controller = instControllers[i];
-                    Instance* inst = controller->inst;
-                    shared::InstanceData &instData = instDataBufferOnHost[inst->instSlot];
-                    controller->update(instDataBufferOnHost, 0.0f);
-                    // TODO: まとめて送る。
-                    CUDADRV_CHECK(cuMemcpyHtoDAsync(curInstDataBuffer.getCUdeviceptrAt(inst->instSlot),
-                                                    &instData, sizeof(instData), 0));
-                }
-                curInstDataBuffer.unmap();
+        for (int bufIdx = 0; bufIdx < 2; ++bufIdx) {
+            cudau::TypedBuffer<shared::InstanceData> &curInstDataBuffer = instDataBuffer[bufIdx];
+            shared::InstanceData* instDataBufferOnHost = curInstDataBuffer.map();
+            for (int i = 0; i < instControllers.size(); ++i) {
+                InstanceController* controller = instControllers[i];
+                Instance* inst = controller->inst;
+                shared::InstanceData &instData = instDataBufferOnHost[inst->instSlot];
+                controller->update(instDataBufferOnHost, 0.0f);
+                // TODO: まとめて送る。
+                CUDADRV_CHECK(cuMemcpyHtoDAsync(curInstDataBuffer.getCUdeviceptrAt(inst->instSlot),
+                                                &instData, sizeof(instData), 0));
             }
+            curInstDataBuffer.unmap();
+        }
+    }
+
+    OptixTraversableHandle updateASes(CUstream stream) {
+        for (int i = 0; i < geomGroups.size(); ++i) {
+            GeometryGroup* geomGroup = geomGroups[i];
+            if (geomGroup->needsRebuild)
+                geomGroup->optixGas.rebuild(0, geomGroup->optixGasMem, asScratchMem);
+            geomGroup->needsRebuild = false;
         }
 
-        ias.rebuild(0, iasInstanceBuffer, iasMem, asScratchMem);
+        return ias.rebuild(0, iasInstanceBuffer, iasMem, asScratchMem);
     }
 
     void setupLightGeomDistributions() {
@@ -1150,6 +1153,40 @@ struct Scene {
 
 void finalizeTextureCaches();
 
+template <typename T>
+void createImmTexture(
+    CUcontext cuContext,
+    const T &immValue,
+    bool isNormalized,
+    const cudau::Array** texture,
+    const glu::Texture2D** gfxTexture = nullptr);
+
+template <typename T, bool useSurface = false>
+bool loadTexture(
+    const std::filesystem::path &filePath, const T &fallbackValue,
+    CUcontext cuContext,
+    const cudau::Array** texture,
+    bool* needsDegamma,
+    bool* isHDR = nullptr);
+
+bool loadNormalTexture(
+    const std::filesystem::path &filePath,
+    CUcontext cuContext,
+    const cudau::Array** texture,
+    const glu::Texture2D** gfxTexture,
+    BumpMapTextureType* bumpMapType);
+
+void createNormalTexture(
+    CUcontext cuContext,
+    const std::filesystem::path &normalPath,
+    Material* mat);
+
+void createEmittanceTexture(
+    CUcontext cuContext,
+    const std::filesystem::path &emittancePath, const RGB &immEmittance,
+    Material* mat,
+    bool* needsDegamma, bool* isHDR);
+
 void createLambertMaterial(
     CUcontext cuContext, Scene* scene,
     const std::filesystem::path &reflectancePath, const RGB &immReflectance,
@@ -1176,7 +1213,7 @@ GeometryInstance* createGeometryInstance(
     CUcontext cuContext, Scene* scene,
     const std::vector<shared::Vertex> &vertices,
     const std::vector<shared::Triangle> &triangles,
-    const Material* mat,
+    const Material* mat, optixu::Material optixMat,
     bool allocateGfxResource);
 
 GeometryGroup* createGeometryGroup(
@@ -1188,7 +1225,8 @@ void createTriangleMeshes(
     const std::filesystem::path &filePath,
     MaterialConvention matConv,
     const Matrix4x4 &preTransform,
-    CUcontext cuContext, Scene* scene, bool allocateGfxResource = false);
+    CUcontext cuContext, Scene* scene, optixu::Material optixMat,
+    bool allocateGfxResource = false);
 
 void createRectangleLight(
     const std::string &meshName,
@@ -1197,7 +1235,8 @@ void createRectangleLight(
     const std::filesystem::path &emittancePath,
     const RGB &immEmittance,
     const Matrix4x4 &transform,
-    CUcontext cuContext, Scene* scene, bool allocateGfxResource = false);
+    CUcontext cuContext, Scene* scene, optixu::Material optixMat,
+    bool allocateGfxResource = false);
 
 void createSphereLight(
     const std::string &meshName,
@@ -1206,7 +1245,8 @@ void createSphereLight(
     const std::filesystem::path &emittancePath,
     const RGB &immEmittance,
     const Point3D &position,
-    CUcontext cuContext, Scene* scene, bool allocateGfxResource = false);
+    CUcontext cuContext, Scene* scene, optixu::Material optixMat,
+    bool allocateGfxResource = false);
 
 Instance* createInstance(
     CUcontext cuContext, Scene* scene,
