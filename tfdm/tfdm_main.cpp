@@ -89,7 +89,8 @@ struct GPUEnvironment {
                          }),
                 std::max({
                     static_cast<uint32_t>(optixu::calcSumDwords<float2>()),
-                    shared::AABBAttributeSignature::numDwords
+                    shared::AABBAttributeSignature::numDwords,
+                    shared::DisplacedSurfaceAttributeSignature::numDwords
                          }),
                 "plp", sizeof(shared::PipelineLaunchParameters),
                 OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_LEVEL_INSTANCING,
@@ -1032,7 +1033,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
                 float px = static_cast<float>(ix) / numEdges;
                 float x = -0.5f + 1.0f * px;
                 vertices[iy * (numEdges + 1) + ix] = shared::Vertex{
-                    Point3D(x, 0, y), Normal3D(0, 1, 0), Vector3D(1, 0, 0), Point2D(px, py)
+                    Point3D(x, 0, y),
+                    normalize(Normal3D(/*-0.5f + px*/0, 1, /*-0.5f + py*/0)),
+                    Vector3D(1, 0, 0), Point2D(px, py)
                 };
                 if (iy < numEdges && ix < numEdges) {
                     uint32_t baseIdx = iy * (numEdges + 1) + ix;
@@ -1097,7 +1100,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
             geomInstData.aabbBuffer = shared::ROBuffer(
                 tfdmMeshGeomInst->aabbBuffer.getDevicePointer(), tfdmMeshGeomInst->aabbBuffer.numElements());
             geomInstData.hOffset = 0.0f;
-            geomInstData.hScale = 0.5f;
+            geomInstData.hScale = 0.2f;
             geomInstData.hBias = 0.0f;
 
 #if !SHOW_BASE_MESH

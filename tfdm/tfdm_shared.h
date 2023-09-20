@@ -4,13 +4,24 @@
 #include "affine_arithmetic.h"
 
 namespace shared {
+    static constexpr bool useMultipleRootOptimization = 1;
+
     static constexpr float probToSampleEnvLight = 0.25f;
 
 
 
-    enum class AABBHitKind {
-        FrontFace = 0,
-        BackFace
+    enum class LocalIntersectionType {
+        Box = 0,
+        TwoTriangle,
+        Bilinear,
+        BSpline
+    };
+
+    enum class CustomHitKind {
+        AABBFrontFace = 0,
+        AABBBackFace,
+        DisplacedSurfaceFrontFace,
+        DisplacedSurfaceBackFace,
     };
 
 
@@ -205,6 +216,7 @@ namespace shared {
 
 
     using AABBAttributeSignature = optixu::AttributeSignature<float, float>;
+    using DisplacedSurfaceAttributeSignature = optixu::AttributeSignature<float, float>;
 
     using PrimaryRayPayloadSignature =
         optixu::PayloadSignature<shared::HitPointParams*, shared::PickInfo*>;
@@ -615,7 +627,170 @@ struct HitGroupSBTRecordData {
 
 
 
+struct Texel {
+    uint32_t x : 14;
+    uint32_t y : 14;
+    uint32_t lod : 4;
+
+    CUDA_DEVICE_FUNCTION bool operator==(const Texel &r) const {
+        return x == r.x && y == r.y && lod == r.lod;
+    }
+    CUDA_DEVICE_FUNCTION bool operator!=(const Texel &r) const {
+        return x != r.x || y != r.y || lod != r.lod;
+    }
+};
+
+CUDA_DEVICE_FUNCTION CUDA_INLINE void down(Texel &texel) {
+    --texel.lod;
+    texel.x *= 2;
+    texel.y *= 2;
+}
+
+CUDA_DEVICE_FUNCTION CUDA_INLINE void up(Texel &texel) {
+    ++texel.lod;
+    texel.x /= 2;
+    texel.y /= 2;
+}
+
+CUDA_DEVICE_FUNCTION CUDA_INLINE void next(Texel &texel) {
+    while (true) {
+        switch (2 * (texel.x % 2) + texel.y % 2) {
+        case 1:
+            --texel.y;
+            ++texel.x;
+            return;
+        case 3:
+            up(texel);
+            break;
+        default:
+            ++texel.y;
+            return;
+        }
+    }
+}
+
+enum class TriangleSquareIntersection2DResult {
+    SquareOutsideTriangle = 0,
+    SquareInsideTriangle,
+    SquareOverlappingTriangle
+};
+
+CUDA_DEVICE_FUNCTION TriangleSquareIntersection2DResult testTriangleSquareIntersection2D(
+    const Point2D triPs[3], const Vector2D triEdgeNormals[3],
+    const Point2D &triAabbMinP, const Point2D &triAabbMaxP,
+    const Point2D &squareCenter, FloatType squareHalfWidth) {
+    Vector2D vSquareCenter = static_cast<Vector2D>(squareCenter);
+    Point2D relTriPs[] = {
+        triPs[0] - vSquareCenter,
+        triPs[1] - vSquareCenter,
+        triPs[2] - vSquareCenter,
+    };
+
+    // JP: テクセルのAABBと三角形のAABBのIntersectionを計算する。
+    // EN: 
+    if (any(min(Point2D(squareHalfWidth), triAabbMaxP - vSquareCenter) <=
+            max(Point2D(-squareHalfWidth), triAabbMinP - vSquareCenter)))
+        return TriangleSquareIntersection2DResult::SquareOutsideTriangle;
+
+    // JP: 
+    // EN: 
+    for (int eIdx = 0; eIdx < 3; ++eIdx) {
+        const Vector2D &eNormal = triEdgeNormals[eIdx];
+        Bool2D b = eNormal >= 0;
+        Vector2D e = static_cast<Vector2D>(relTriPs[eIdx]) +
+            Vector2D((b.x ? 1 : -1) * squareHalfWidth,
+                     (b.y ? 1 : -1) * squareHalfWidth);
+        if (dot(eNormal, e) <= 0)
+            return TriangleSquareIntersection2DResult::SquareOutsideTriangle;
+    }
+
+    for (int i = 0; i < 4; ++i) {
+        Point2D corner(
+            (i % 2 ? -1 : 1) * squareHalfWidth,
+            (i / 2 ? -1 : 1) * squareHalfWidth);
+        for (int eIdx = 0; eIdx < 3; ++eIdx) {
+            const Point2D &o = relTriPs[eIdx];
+            const Vector2D &e1 = relTriPs[(eIdx + 1) % 3] - o;
+            Vector2D e2 = corner - o;
+            if (cross(e1, e2) < 0)
+                return TriangleSquareIntersection2DResult::SquareOverlappingTriangle;
+        }
+    }
+
+    return TriangleSquareIntersection2DResult::SquareInsideTriangle;
+}
+
+CUDA_DEVICE_FUNCTION CUDA_INLINE void findRoots(
+    const Point2D &triAabbMinP, const Point2D &triAabbMaxP, const uint32_t maxDepth,
+    Texel* const roots, uint32_t* const numRoots) {
+    using namespace shared;
+
+    const Vector2D d = triAabbMaxP - triAabbMinP;
+    const Point2D shiftedMinP(
+        triAabbMinP.x - std::floor(triAabbMinP.x),
+        triAabbMinP.y - std::floor(triAabbMinP.y));
+    const Point2D shiftedMaxP = shiftedMinP + d;
+    const uint32_t largerDim = d.y > d.x;
+    int32_t log2Res = static_cast<int32_t>(std::floor(log2f(1.0f / d[largerDim])));
+    if constexpr (useMultipleRootOptimization)
+        ++log2Res;
+    if (log2Res <= 0) {
+        roots[0] = Texel{ 0, 0, maxDepth - log2Res };
+        *numRoots = 1;
+    }
+
+    constexpr uint32_t maxWidth = useMultipleRootOptimization ? 2 : 1;
+    while (true) {
+        const uint32_t res = 1 << log2Res;
+        const uint32_t minTexelX = static_cast<uint32_t>(res * shiftedMinP.x);
+        const uint32_t minTexelY = static_cast<uint32_t>(res * shiftedMinP.y);
+        const uint32_t maxTexelX = static_cast<uint32_t>(res * shiftedMaxP.x);
+        const uint32_t maxTexelY = static_cast<uint32_t>(res * shiftedMaxP.y);
+        if (log2Res == 0 || ((maxTexelX - minTexelX) < maxWidth && (maxTexelY - minTexelY) < maxWidth)) {
+            if constexpr (useMultipleRootOptimization) {
+                if (log2Res == 0) {
+                    Texel &root = roots[0];
+                    root.x = minTexelX;
+                    root.y = minTexelY;
+                    root.lod = maxDepth - log2Res;
+                    *numRoots = 1;
+                }
+                else {
+                    const uint32_t lod = maxDepth - log2Res;
+                    *numRoots = 0;
+                    for (int y = minTexelY; y <= maxTexelY; ++y) {
+                        for (int x = minTexelX; x <= maxTexelX; ++x) {
+                            Texel &root = roots[(*numRoots)++];
+                            root.x = x % res;
+                            root.y = y % res;
+                            root.lod = lod;
+                        }
+                    }
+                }
+            }
+            else {
+                Texel &root = roots[0];
+                root.x = minTexelX;
+                root.y = minTexelY;
+                root.lod = maxDepth - log2Res;
+                *numRoots = 1;
+            }
+            break;
+        }
+        --log2Res;
+    }
+}
+
+
+
 #if !defined(PURE_CUDA) || defined(CUDAU_CODE_COMPLETION)
+
+bool isCursorPixel() {
+    return plp.f->mousePosition == make_int2(optixGetLaunchIndex());
+}
+
+
+
 CUDA_DEVICE_KERNEL void RT_IS_NAME(aabb)() {
     using namespace shared;
 
@@ -635,7 +810,7 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(aabb)() {
 
     AABBAttributeSignature::reportIntersection(
         t,
-        static_cast<uint32_t>(isFrontHit ? AABBHitKind::FrontFace : AABBHitKind::BackFace),
+        static_cast<uint32_t>(isFrontHit ? CustomHitKind::AABBFrontFace : CustomHitKind::AABBBackFace),
         u, v);
 }
 #endif

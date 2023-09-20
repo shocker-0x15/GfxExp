@@ -85,6 +85,12 @@ using FloatType = float;
 
 
 
+#if !defined(PURE_CUDA) || defined(CUDAU_CODE_COMPLETION)
+CUDA_COMMON_FUNCTION CUDA_INLINE bool isCursorPixel();
+#endif
+
+
+
 template <typename T, size_t size>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr size_t lengthof(const T (&array)[size]) {
     return size;
@@ -574,6 +580,17 @@ struct Bool2D {
     CUDA_COMMON_FUNCTION Bool2D(bool v = 0) : x(v), y(v) {}
     CUDA_COMMON_FUNCTION Bool2D(bool xx, bool yy) :
         x(xx), y(yy) {}
+
+    template <std::integral I>
+    CUDA_COMMON_FUNCTION bool &operator[](I idx) {
+        Assert(static_cast<uint32_t>(idx) < 2, "idx is out of bound.");
+        return *(&x + idx);
+    }
+    template <std::integral I>
+    CUDA_COMMON_FUNCTION bool operator[](I idx) const {
+        Assert(static_cast<uint32_t>(idx) < 2, "idx is out of bound.");
+        return *(&x + idx);
+    }
 };
 
 CUDA_COMMON_FUNCTION CUDA_INLINE bool all(const Bool2D &v) {
@@ -592,6 +609,17 @@ struct Vector2D {
     CUDA_COMMON_FUNCTION Vector2D(FloatType v = 0) : x(v), y(v) {}
     CUDA_COMMON_FUNCTION Vector2D(FloatType xx, FloatType yy) :
         x(xx), y(yy) {}
+
+    template <std::integral I>
+    CUDA_COMMON_FUNCTION FloatType &operator[](I idx) {
+        Assert(static_cast<uint32_t>(idx) < 2, "idx is out of bound.");
+        return *(&x + idx);
+    }
+    template <std::integral I>
+    CUDA_COMMON_FUNCTION FloatType operator[](I idx) const {
+        Assert(static_cast<uint32_t>(idx) < 2, "idx is out of bound.");
+        return *(&x + idx);
+    }
 
     CUDA_COMMON_FUNCTION Vector2D operator+() const {
         return *this;
@@ -719,6 +747,14 @@ CUDA_COMMON_FUNCTION CUDA_INLINE Vector2D operator/(
     return ret;
 }
 
+template <Number32bit N>
+CUDA_COMMON_FUNCTION CUDA_INLINE Vector2D operator/(
+    N a, const Vector2D &b) {
+    Vector2D ret(static_cast<FloatType>(a));
+    ret /= b;
+    return ret;
+}
+
 CUDA_COMMON_FUNCTION CUDA_INLINE Vector2D operator/(
     const Vector2D &a, const Vector2D &b) {
     Vector2D ret = a;
@@ -765,6 +801,17 @@ struct Point2D {
 
     CUDA_COMMON_FUNCTION explicit operator Vector2D() const {
         return Vector2D(x, y);
+    }
+
+    template <std::integral I>
+    CUDA_COMMON_FUNCTION FloatType &operator[](I idx) {
+        Assert(static_cast<uint32_t>(idx) < 2, "idx is out of bound.");
+        return *(&x + idx);
+    }
+    template <std::integral I>
+    CUDA_COMMON_FUNCTION FloatType operator[](I idx) const {
+        Assert(static_cast<uint32_t>(idx) < 2, "idx is out of bound.");
+        return *(&x + idx);
     }
 
     CUDA_COMMON_FUNCTION Point2D operator+() const {
@@ -933,6 +980,17 @@ struct Bool3D {
     CUDA_COMMON_FUNCTION Bool3D(bool v = 0) : x(v), y(v), z(v) {}
     CUDA_COMMON_FUNCTION Bool3D(bool xx, bool yy, bool zz) :
         x(xx), y(yy), z(zz) {}
+
+    template <std::integral I>
+    CUDA_COMMON_FUNCTION bool &operator[](I idx) {
+        Assert(static_cast<uint32_t>(idx) < 3, "idx is out of bound.");
+        return *(&x + idx);
+    }
+    template <std::integral I>
+    CUDA_COMMON_FUNCTION bool operator[](I idx) const {
+        Assert(static_cast<uint32_t>(idx) < 3, "idx is out of bound.");
+        return *(&x + idx);
+    }
 };
 
 CUDA_COMMON_FUNCTION CUDA_INLINE bool all(const Bool3D &v) {
