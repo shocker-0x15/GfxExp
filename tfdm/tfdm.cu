@@ -209,9 +209,9 @@ CUDA_DEVICE_KERNEL void computeAABBs(
             + 0.25f * tcs3D[(pgIdx + 1) % 3]
             + 0.25f * tcs3D[(pgIdx + 2) % 3];
         const AAFloatOn2D_Vector3D edge0(
-            0, 0.25f * (tcs3D[(pgIdx + 1) % 3] - tcs3D[pgIdx]), 0, 0);
+            Vector3D(0.0f), 0.25f * (tcs3D[(pgIdx + 1) % 3] - tcs3D[pgIdx]), Vector3D(0.0f), Vector3D(0.0f));
         const AAFloatOn2D_Vector3D edge1(
-            0, 0, 0.25f * (tcs3D[(pgIdx + 2) % 3] - tcs3D[pgIdx]), 0);
+            Vector3D(0.0f), Vector3D(0.0f), 0.25f * (tcs3D[(pgIdx + 2) % 3] - tcs3D[pgIdx]), Vector3D(0.0f));
         const AAFloatOn2D_Vector3D texCoord = static_cast<Vector3D>(center) + edge0 + edge1;
 
         const AAFloatOn2D_Vector3D pBound = matTcToP * texCoord;

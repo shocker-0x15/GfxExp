@@ -925,7 +925,7 @@ struct AAFloatOn2D_Vector3D {
         x(xx), y(yy), z(zz) {}
     CUDA_DEVICE_FUNCTION AAFloatOn2D_Vector3D(
         Vector3D centralValue,
-        Vector3D coeff0 = 0, Vector3D coeff1 = 0, Vector3D coeffOthers = 0) :
+        Vector3D coeff0 = Vector3D(0.0f), Vector3D coeff1 = Vector3D(0.0f), Vector3D coeffOthers = Vector3D(0.0f)) :
         x(centralValue.x, coeff0.x, coeff1.x, coeffOthers.x),
         y(centralValue.y, coeff0.y, coeff1.y, coeffOthers.y),
         z(centralValue.z, coeff0.z, coeff1.z, coeffOthers.z) {}

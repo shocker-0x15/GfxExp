@@ -696,7 +696,7 @@ CUDA_DEVICE_FUNCTION TriangleSquareIntersection2DResult testTriangleSquareInters
     // EN: 
     for (int eIdx = 0; eIdx < 3; ++eIdx) {
         const Vector2D &eNormal = triEdgeNormals[eIdx];
-        Bool2D b = eNormal >= 0;
+        Bool2D b = eNormal >= Vector2D(0.0f);
         Vector2D e = static_cast<Vector2D>(relTriPs[eIdx]) +
             Vector2D((b.x ? 1 : -1) * squareHalfWidth,
                      (b.y ? 1 : -1) * squareHalfWidth);

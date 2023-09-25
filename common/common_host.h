@@ -21,6 +21,53 @@
 #include "../ext/cubd/cubd.h"
 #include "stopwatch.h"
 
+#define ENABLE_VDB 0
+
+#if ENABLE_VDB
+#include "../common/vdb_interface.h"
+
+inline void setColor(float r, float g, float b) {
+    vdb_color(r, g, b);
+}
+
+inline void setColor(const RGB &c) {
+    vdb_color(c.r, c.g, c.b);
+}
+
+inline void drawPoint(const Point3D &p) {
+    vdb_point(p.x, p.y, p.z);
+}
+
+inline void drawLine(const Point3D &a, const Point3D &b) {
+    vdb_line(a.x, a.y, a.z, b.x, b.y, b.z);
+}
+
+inline void drawTriangle(const Point3D &a, const Point3D &b, const Point3D &c) {
+    vdb_triangle(
+        a.x, a.y, a.z,
+        b.x, b.y, b.z,
+        c.x, c.y, c.z);
+}
+
+inline void drawAabb(const AABB &aabb) {
+    drawLine(Point3D(aabb.minP.x, aabb.minP.y, aabb.minP.z), Point3D(aabb.maxP.x, aabb.minP.y, aabb.minP.z));
+    drawLine(Point3D(aabb.minP.x, aabb.maxP.y, aabb.minP.z), Point3D(aabb.maxP.x, aabb.maxP.y, aabb.minP.z));
+    drawLine(Point3D(aabb.minP.x, aabb.minP.y, aabb.maxP.z), Point3D(aabb.maxP.x, aabb.minP.y, aabb.maxP.z));
+    drawLine(Point3D(aabb.minP.x, aabb.maxP.y, aabb.maxP.z), Point3D(aabb.maxP.x, aabb.maxP.y, aabb.maxP.z));
+
+    drawLine(Point3D(aabb.minP.x, aabb.minP.y, aabb.minP.z), Point3D(aabb.minP.x, aabb.maxP.y, aabb.minP.z));
+    drawLine(Point3D(aabb.maxP.x, aabb.minP.y, aabb.minP.z), Point3D(aabb.maxP.x, aabb.maxP.y, aabb.minP.z));
+    drawLine(Point3D(aabb.minP.x, aabb.minP.y, aabb.maxP.z), Point3D(aabb.minP.x, aabb.maxP.y, aabb.maxP.z));
+    drawLine(Point3D(aabb.maxP.x, aabb.minP.y, aabb.maxP.z), Point3D(aabb.maxP.x, aabb.maxP.y, aabb.maxP.z));
+
+    drawLine(Point3D(aabb.minP.x, aabb.minP.y, aabb.minP.z), Point3D(aabb.minP.x, aabb.minP.y, aabb.maxP.z));
+    drawLine(Point3D(aabb.maxP.x, aabb.minP.y, aabb.minP.z), Point3D(aabb.maxP.x, aabb.minP.y, aabb.maxP.z));
+    drawLine(Point3D(aabb.minP.x, aabb.maxP.y, aabb.minP.z), Point3D(aabb.minP.x, aabb.maxP.y, aabb.maxP.z));
+    drawLine(Point3D(aabb.maxP.x, aabb.maxP.y, aabb.minP.z), Point3D(aabb.maxP.x, aabb.maxP.y, aabb.maxP.z));
+}
+
+#endif
+
 template <std::floating_point T>
 static constexpr T pi_v = std::numbers::pi_v<T>;
 

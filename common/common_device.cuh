@@ -16,26 +16,6 @@ static constexpr float RayEpsilon = 1e-4;
 
 
 
-CUDA_DEVICE_FUNCTION CUDA_INLINE constexpr float pow2(float x) {
-    return x * x;
-}
-CUDA_DEVICE_FUNCTION CUDA_INLINE constexpr float pow3(float x) {
-    return x * x * x;
-}
-CUDA_DEVICE_FUNCTION CUDA_INLINE constexpr float pow4(float x) {
-    return x * x * x * x;
-}
-CUDA_DEVICE_FUNCTION CUDA_INLINE constexpr float pow5(float x) {
-    return x * x * x * x * x;
-}
-
-template <typename T>
-CUDA_DEVICE_FUNCTION CUDA_INLINE T lerp(const T &v0, const T &v1, float t) {
-    return (1 - t) * v0 + t * v1;
-}
-
-
-
 // ( 0, 0,  1) <=> phi:      0
 // (-1, 0,  0) <=> phi: 1/2 pi
 // ( 0, 0, -1) <=> phi:   1 pi

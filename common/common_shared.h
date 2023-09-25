@@ -99,13 +99,28 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr size_t lengthof(const T (&array)[size
 
 
 template <Number32bit N>
-CUDA_COMMON_FUNCTION CUDA_INLINE N pow2(N x) {
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr N pow2(N x) {
     return x * x;
 }
 
 template <Number32bit N>
-CUDA_COMMON_FUNCTION CUDA_INLINE N pow3(N x) {
-    return x * x * x;
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr N pow3(N x) {
+    return x * pow2(x);
+}
+
+template <Number32bit N>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr N pow4(N x) {
+    return pow2(pow2(x));
+}
+
+template <Number32bit N>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr N pow5(N x) {
+    return x * pow4(x);
+}
+
+template <typename T>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr T lerp(const T &v0, const T &v1, float t) {
+    return (1 - t) * v0 + t * v1;
 }
 
 
@@ -577,7 +592,8 @@ CUDA_COMMON_FUNCTION CUDA_INLINE float3 getXYZ(const float4 &v) {
 struct Bool2D {
     bool x, y;
 
-    CUDA_COMMON_FUNCTION Bool2D(bool v = 0) : x(v), y(v) {}
+    CUDA_COMMON_FUNCTION explicit Bool2D() : x(false), y(false) {}
+    CUDA_COMMON_FUNCTION explicit Bool2D(bool v) : x(v), y(v) {}
     CUDA_COMMON_FUNCTION Bool2D(bool xx, bool yy) :
         x(xx), y(yy) {}
 
@@ -606,7 +622,8 @@ CUDA_COMMON_FUNCTION CUDA_INLINE bool any(const Bool2D &v) {
 struct Vector2D {
     FloatType x, y;
 
-    CUDA_COMMON_FUNCTION Vector2D(FloatType v = 0) : x(v), y(v) {}
+    CUDA_COMMON_FUNCTION Vector2D() : x(0.0f), y(0.0f) {}
+    CUDA_COMMON_FUNCTION explicit Vector2D(FloatType v) : x(v), y(v) {}
     CUDA_COMMON_FUNCTION Vector2D(FloatType xx, FloatType yy) :
         x(xx), y(yy) {}
 
@@ -620,6 +637,16 @@ struct Vector2D {
         Assert(static_cast<uint32_t>(idx) < 2, "idx is out of bound.");
         return *(&x + idx);
     }
+
+#define SWZ2(c0, c1)\
+    CUDA_COMMON_FUNCTION Vector2D c0##c1() const {\
+        return Vector2D(c0, c1);\
+    }
+
+    SWZ2(x, y);
+    SWZ2(y, x);
+
+#undef SWZ2
 
     CUDA_COMMON_FUNCTION Vector2D operator+() const {
         return *this;
@@ -762,6 +789,22 @@ CUDA_COMMON_FUNCTION CUDA_INLINE Vector2D operator/(
     return ret;
 }
 
+CUDA_COMMON_FUNCTION CUDA_INLINE Vector2D step(const Vector2D &a, const Vector2D &b) {
+    return Vector2D(
+        b.x >= a.x ? 1.0f : 0.0f,
+        b.y >= a.y ? 1.0f : 0.0f);
+}
+
+CUDA_COMMON_FUNCTION CUDA_INLINE Vector2D sign(const Vector2D &v) {
+    return Vector2D(
+        v.x > 0.0f ? 1 : v.x < 0.0f ? -1 : 0,
+        v.y > 0.0f ? 1 : v.y < 0.0f ? -1 : 0);
+}
+
+CUDA_COMMON_FUNCTION CUDA_INLINE Vector2D abs(const Vector2D &v) {
+    return Vector2D(std::fabs(v.x), std::fabs(v.y));
+}
+
 CUDA_COMMON_FUNCTION CUDA_INLINE Vector2D min(
     const Vector2D &a, const Vector2D &b) {
     return Vector2D(std::fmin(a.x, b.x), std::fmin(a.y, b.y));
@@ -789,12 +832,18 @@ CUDA_COMMON_FUNCTION CUDA_INLINE Vector2D normalize(
     return ret;
 }
 
+CUDA_COMMON_FUNCTION CUDA_INLINE Vector2D lerp(
+    const Vector2D &v0, const Vector2D &v1, const Vector2D &t) {
+    return (Vector2D(1.0f) - t) * v0 + t * v1;
+}
+
 
 
 struct Point2D {
     FloatType x, y;
 
-    CUDA_COMMON_FUNCTION Point2D(FloatType v = 0) : x(v), y(v) {}
+    CUDA_COMMON_FUNCTION Point2D() : x(0.0f), y(0.0f) {}
+    CUDA_COMMON_FUNCTION explicit Point2D(FloatType v) : x(v), y(v) {}
     CUDA_COMMON_FUNCTION Point2D(FloatType xx, FloatType yy) :
         x(xx), y(yy) {}
     CUDA_COMMON_FUNCTION explicit Point2D(const Vector2D &v) : x(v.x), y(v.y) {}
@@ -813,6 +862,16 @@ struct Point2D {
         Assert(static_cast<uint32_t>(idx) < 2, "idx is out of bound.");
         return *(&x + idx);
     }
+
+#define SWZ2(c0, c1)\
+    CUDA_COMMON_FUNCTION Point2D c0##c1() const {\
+        return Point2D(c0, c1);\
+    }
+
+    SWZ2(x, y);
+    SWZ2(y, x);
+
+#undef SWZ2
 
     CUDA_COMMON_FUNCTION Point2D operator+() const {
         return *this;
@@ -952,6 +1011,22 @@ CUDA_COMMON_FUNCTION CUDA_INLINE Point2D operator/(const Point2D &a, const Point
     return ret;
 }
 
+CUDA_COMMON_FUNCTION CUDA_INLINE Point2D step(const Point2D &a, const Point2D &b) {
+    return Point2D(
+        b.x >= a.x ? 1.0f : 0.0f,
+        b.y >= a.y ? 1.0f : 0.0f);
+}
+
+CUDA_COMMON_FUNCTION CUDA_INLINE Point2D sign(const Point2D &v) {
+    return Point2D(
+        v.x > 0.0f ? 1 : v.x < 0.0f ? -1 : 0,
+        v.y > 0.0f ? 1 : v.y < 0.0f ? -1 : 0);
+}
+
+CUDA_COMMON_FUNCTION CUDA_INLINE Point2D abs(const Point2D &v) {
+    return Point2D(std::fabs(v.x), std::fabs(v.y));
+}
+
 CUDA_COMMON_FUNCTION CUDA_INLINE Point2D min(const Point2D &a, const Point2D &b) {
     return Point2D(std::fmin(a.x, b.x), std::fmin(a.y, b.y));
 }
@@ -972,12 +1047,18 @@ CUDA_COMMON_FUNCTION CUDA_INLINE FloatType distance(const Point2D &a, const Poin
     return sqrtf(sqDistance(a, b));
 }
 
+CUDA_COMMON_FUNCTION CUDA_INLINE Point2D lerp(
+    const Point2D &v0, const Point2D &v1, const Point2D &t) {
+    return Point2D(Point2D(1.0f) - t) * v0 + t * v1;
+}
+
 
 
 struct Bool3D {
     bool x, y, z;
 
-    CUDA_COMMON_FUNCTION Bool3D(bool v = 0) : x(v), y(v), z(v) {}
+    CUDA_COMMON_FUNCTION Bool3D() : x(false), y(false), z(false) {}
+    CUDA_COMMON_FUNCTION explicit Bool3D(bool v) : x(v), y(v), z(v) {}
     CUDA_COMMON_FUNCTION Bool3D(bool xx, bool yy, bool zz) :
         x(xx), y(yy), z(zz) {}
 
@@ -1007,7 +1088,8 @@ template <bool isNormal>
 struct Vector3DTemplate {
     FloatType x, y, z;
 
-    CUDA_COMMON_FUNCTION Vector3DTemplate(FloatType v = 0) : x(v), y(v), z(v) {}
+    CUDA_COMMON_FUNCTION Vector3DTemplate() : x(0.0f), y(0.0f), z(0.0f) {}
+    CUDA_COMMON_FUNCTION explicit Vector3DTemplate(FloatType v) : x(v), y(v), z(v) {}
     CUDA_COMMON_FUNCTION Vector3DTemplate(FloatType xx, FloatType yy, FloatType zz) :
         x(xx), y(yy), z(zz) {}
     CUDA_COMMON_FUNCTION Vector3DTemplate(const Vector2D &xy, FloatType zz) :
@@ -1038,6 +1120,26 @@ struct Vector3DTemplate {
         Assert(static_cast<uint32_t>(idx) < 3, "idx is out of bound.");
         return *(&x + idx);
     }
+
+#define SWZ2(c0, c1)\
+    CUDA_COMMON_FUNCTION Vector2D c0##c1() const {\
+        return Vector2D(c0, c1);\
+    }
+#define SWZ3(c0, c1, c2)\
+    CUDA_COMMON_FUNCTION Vector3DTemplate c0##c1##c2() const {\
+        return Vector3DTemplate(c0, c1, c2);\
+    }
+
+    SWZ2(x, y); SWZ2(x, z);
+    SWZ2(y, x); SWZ2(y, z);
+    SWZ2(z, x); SWZ2(z, y);
+
+    SWZ3(x, y, z); SWZ3(x, z, y);
+    SWZ3(y, x, z); SWZ3(y, z, x);
+    SWZ3(z, x, y); SWZ3(z, y, x);
+
+#undef SWZ3
+#undef SWZ2
 
     CUDA_COMMON_FUNCTION Vector3DTemplate operator+() const {
         return *this;
@@ -1248,6 +1350,24 @@ CUDA_COMMON_FUNCTION CUDA_INLINE Vector3DTemplate<isNormal> normalize(
     return ret;
 }
 
+template <bool isNormalA, bool isNormalB>
+CUDA_COMMON_FUNCTION CUDA_INLINE Vector3DTemplate<false> step(
+    const Vector3DTemplate<isNormalA> &a, const Vector3DTemplate<isNormalB> &b) {
+    return Vector3DTemplate<false>(
+        b.x >= a.x ? 1.0f : 0.0f,
+        b.y >= a.y ? 1.0f : 0.0f,
+        b.z >= a.z ? 1.0f : 0.0f);
+}
+
+template <bool isNormal>
+CUDA_COMMON_FUNCTION CUDA_INLINE Vector3DTemplate<isNormal> sign(
+    const Vector3DTemplate<isNormal> &v) {
+    return Vector3DTemplate<isNormal>(
+        v.x > 0.0f ? 1 : v.x < 0.0f ? -1 : 0,
+        v.y > 0.0f ? 1 : v.y < 0.0f ? -1 : 0,
+        v.z > 0.0f ? 1 : v.z < 0.0f ? -1 : 0);
+}
+
 template <bool isNormal>
 CUDA_COMMON_FUNCTION CUDA_INLINE Vector3DTemplate<isNormal> abs(
     const Vector3DTemplate<isNormal> &v) {
@@ -1266,6 +1386,12 @@ CUDA_COMMON_FUNCTION CUDA_INLINE Vector3DTemplate<isNormal> max(
     return Vector3DTemplate<isNormal>(std::fmax(a.x, b.x), std::fmax(a.y, b.y), std::fmax(a.z, b.z));
 }
 
+template <bool isNormal>
+CUDA_COMMON_FUNCTION CUDA_INLINE Vector3DTemplate<isNormal> lerp(
+    const Vector3DTemplate<isNormal> &v0, const Vector3DTemplate<isNormal> &v1, const Vector3DTemplate<isNormal> &t) {
+    return (Vector3DTemplate<isNormal>(1.0f) - t) * v0 + t * v1;
+}
+
 using Vector3D = Vector3DTemplate<false>;
 using Normal3D = Vector3DTemplate<true>;
 
@@ -1274,7 +1400,8 @@ using Normal3D = Vector3DTemplate<true>;
 struct Point3D {
     FloatType x, y, z;
 
-    CUDA_COMMON_FUNCTION Point3D(FloatType v = 0) : x(v), y(v), z(v) {}
+    CUDA_COMMON_FUNCTION Point3D() : x(0.0f), y(0.0f), z(0.0f) {}
+    CUDA_COMMON_FUNCTION explicit Point3D(FloatType v) : x(v), y(v), z(v) {}
     CUDA_COMMON_FUNCTION Point3D(FloatType xx, FloatType yy, FloatType zz) :
         x(xx), y(yy), z(zz) {}
     CUDA_COMMON_FUNCTION Point3D(const Point2D &xy, FloatType zz) :
@@ -1305,6 +1432,26 @@ struct Point3D {
         Assert(static_cast<uint32_t>(idx) < 3, "idx is out of bound.");
         return *(&x + idx);
     }
+
+#define SWZ2(c0, c1)\
+    CUDA_COMMON_FUNCTION Point2D c0##c1() const {\
+        return Point2D(c0, c1);\
+    }
+#define SWZ3(c0, c1, c2)\
+    CUDA_COMMON_FUNCTION Point3D c0##c1##c2() const {\
+        return Point3D(c0, c1, c2);\
+    }
+
+    SWZ2(x, y); SWZ2(x, z);
+    SWZ2(y, x); SWZ2(y, z);
+    SWZ2(z, x); SWZ2(z, y);
+
+    SWZ3(x, y, z); SWZ3(x, z, y);
+    SWZ3(y, x, z); SWZ3(y, z, x);
+    SWZ3(z, x, y); SWZ3(z, y, x);
+
+#undef SWZ3
+#undef SWZ2
 
     CUDA_COMMON_FUNCTION Point3D operator+() const {
         return *this;
@@ -1503,12 +1650,18 @@ CUDA_COMMON_FUNCTION CUDA_INLINE FloatType distance(const Point3D &a, const Poin
     return sqrtf(sqDistance(a, b));
 }
 
+CUDA_COMMON_FUNCTION CUDA_INLINE Point3D lerp(
+    const Point3D &v0, const Point3D &v1, const Point3D &t) {
+    return Point3D(Point3D(1.0f) - t) * v0 + t * v1;
+}
+
 
 
 struct Bool4D {
     bool x, y, z, w;
 
-    CUDA_COMMON_FUNCTION Bool4D(bool v = 0) : x(v), y(v), z(v), w(v) {}
+    CUDA_COMMON_FUNCTION Bool4D() : x(false), y(false), z(false), w(false) {}
+    CUDA_COMMON_FUNCTION explicit Bool4D(bool v) : x(v), y(v), z(v), w(v) {}
     CUDA_COMMON_FUNCTION Bool4D(bool xx, bool yy, bool zz, bool ww) :
         x(xx), y(yy), z(zz), w(ww) {}
 };
@@ -1526,7 +1679,8 @@ CUDA_COMMON_FUNCTION CUDA_INLINE bool any(const Bool4D &v) {
 struct Vector4D {
     FloatType x, y, z, w;
 
-    CUDA_COMMON_FUNCTION Vector4D(FloatType v = 0) : x(v), y(v), z(v), w(v) {}
+    CUDA_COMMON_FUNCTION Vector4D() : x(0.0f), y(0.0f), z(0.0f), w(0.0f) {}
+    CUDA_COMMON_FUNCTION explicit Vector4D(FloatType v) : x(v), y(v), z(v), w(v) {}
     CUDA_COMMON_FUNCTION Vector4D(FloatType xx, FloatType yy, FloatType zz, FloatType ww) :
         x(xx), y(yy), z(zz), w(ww) {}
     CUDA_COMMON_FUNCTION Vector4D(const Vector3D &v, FloatType ww = 0) :
@@ -1549,6 +1703,40 @@ struct Vector4D {
         Assert(static_cast<uint32_t>(idx) < 4, "idx is out of bound.");
         return *(&x + idx);
     }
+
+#define SWZ2(c0, c1)\
+    CUDA_COMMON_FUNCTION Vector2D c0##c1() const {\
+        return Vector2D(c0, c1);\
+    }
+#define SWZ3(c0, c1, c2)\
+    template <bool isNormal = false>\
+    CUDA_COMMON_FUNCTION Vector3DTemplate<isNormal> c0##c1##c2() const {\
+        return Vector3DTemplate<isNormal>(c0, c1, c2);\
+    }
+#define SWZ4(c0, c1, c2, c3)\
+    CUDA_COMMON_FUNCTION Vector4D c0##c1##c2##c3() const {\
+        return Vector4D(c0, c1, c2, c3);\
+    }
+
+    SWZ2(x, y); SWZ2(x, z); SWZ2(x, w);
+    SWZ2(y, x); SWZ2(y, z); SWZ2(y, w);
+    SWZ2(z, x); SWZ2(z, y); SWZ2(z, w);
+    SWZ2(w, x); SWZ2(w, y); SWZ2(w, z);
+
+    SWZ3(x, y, z); SWZ3(x, y, w); SWZ3(x, z, y); SWZ3(x, z, w); SWZ3(x, w, y); SWZ3(x, w, z);
+    SWZ3(y, x, z); SWZ3(y, x, w); SWZ3(y, z, x); SWZ3(y, z, w); SWZ3(y, w, x); SWZ3(y, w, z);
+    SWZ3(z, x, y); SWZ3(z, x, w); SWZ3(z, y, x); SWZ3(z, y, w); SWZ3(z, w, x); SWZ3(z, w, y);
+    SWZ3(w, x, y); SWZ3(w, x, z); SWZ3(w, y, x); SWZ3(w, y, z); SWZ3(w, z, x); SWZ3(w, z, y);
+
+    SWZ4(x, y, z, w); SWZ4(x, y, w, z); SWZ4(x, z, y, w); SWZ4(x, z, w, y); SWZ4(x, w, y, z); SWZ4(x, w, z, y);
+    SWZ4(y, x, z, w); SWZ4(y, x, w, z); SWZ4(y, z, x, w); SWZ4(y, z, w, x); SWZ4(y, w, x, z); SWZ4(y, w, z, x);
+    SWZ4(z, x, y, w); SWZ4(z, x, w, y); SWZ4(z, y, x, w); SWZ4(z, y, w, x); SWZ4(z, w, x, y); SWZ4(z, w, y, x);
+    SWZ4(w, x, y, z); SWZ4(w, x, z, y); SWZ4(w, y, x, z); SWZ4(w, y, z, x); SWZ4(w, z, x, y); SWZ4(w, z, y, x);
+
+#undef SWZ4
+#undef SWZ3
+#undef SWZ2
+
 
     CUDA_COMMON_FUNCTION Vector4D operator+() const {
         return *this;
@@ -2773,68 +2961,58 @@ struct AABB {
         FloatType* u, FloatType* v, bool* isFrontHit) const {
         if (!isValid())
             return INFINITY;
-        FloatType dist0 = -INFINITY, dist1 = INFINITY;
         Vector3D invRayDir = 1.0f / dir;
         Vector3D tNear = (minP - org) * invRayDir;
         Vector3D tFar = (maxP - org) * invRayDir;
-        for (int i = 0; i < 3; ++i) {
-            FloatType near = tNear[i];
-            FloatType far = tFar[i];
-            if (near > far) {
-                FloatType temp = near;
-                near = far;
-                far = temp;
-            }
-            dist0 = std::fmax(near, dist0);
-            dist1 = std::fmin(far, dist1);
-            if (dist0 > dist1)
-                return INFINITY;
-        }
-
-        *isFrontHit = dist0 >= distMin && dist0 <= distMax;
-        FloatType dist = *isFrontHit ? dist0 : dist1;
-        if (dist < distMin || dist > distMax)
+        Vector3D near = min(tNear, tFar);
+        Vector3D far = max(tNear, tFar);
+        float t0 = std::fmax(std::fmax(near.x, near.y), near.z);
+        float t1 = std::fmin(std::fmin(far.x, far.y), far.z);
+        *isFrontHit = t0 >= 0.0f;
+        t0 = std::fmax(t0, distMin);
+        t1 = std::fmin(t1, distMax);
+        if (!(t0 <= t1 && t1 > 0.0f))
             return INFINITY;
-        uint32_t hitPlane =
-            dist == tNear[0] ? 0 :
-            dist == tFar[0] ? 1 :
-            dist == tNear[1] ? 2 :
-            dist == tFar[1] ? 3 :
-            dist == tNear[2] ? 4 :
-            dist == tFar[2] ? 5 :
-            6;
-        Assert(hitPlane != 6, "Invalid plane.");
-        uint32_t hitDim = hitPlane / 2;
-        int32_t dim0 = (hitDim + 1) % 3;
-        int32_t dim1 = (hitDim + 2) % 3;
-        Point3D p = org + dist * dir;
+
+        float t = *isFrontHit ? t0 : t1;
+        Vector3D n = -sign(dir) * step(near.yzx(), near) * step(near.zxy(), near);
+        if (!*isFrontHit)
+            n = -n;
+
+        int32_t faceID = static_cast<int32_t>(dot(abs(n), Vector3D(2, 4, 8)));
+        faceID ^= static_cast<int32_t>(any(n > Vector3D(0.0f)));
+
+        int32_t faceDim = tzcnt(faceID & ~0b1) - 1;
+        int32_t dim0 = (faceDim + 1) % 3;
+        int32_t dim1 = (faceDim + 2) % 3;
+        Point3D p = org + t * dir;
         FloatType min0 = minP[dim0];
         FloatType max0 = maxP[dim0];
         FloatType min1 = minP[dim1];
         FloatType max1 = maxP[dim1];
         *u = std::fmin(std::fmax((p[dim0] - min0) / (max0 - min0), 0.0f), 1.0f)
-            + static_cast<FloatType>(hitPlane);
+            + static_cast<FloatType>(faceID);
         *v = std::fmin(std::fmax((p[dim1] - min1) / (max1 - min1), 0.0f), 1.0f);
-        return dist;
+
+        return t;
     }
 
     CUDA_COMMON_FUNCTION Point3D restoreHitPoint(FloatType u, FloatType v, Normal3D* normal) const {
-        const auto hitPlane = static_cast<uint32_t>(u);
-        uint32_t hitDim = hitPlane / 2;
-        uint32_t hitSide = hitPlane % 2;
-        int32_t dim0 = (hitDim + 1) % 3;
-        int32_t dim1 = (hitDim + 2) % 3;
-        FloatType min0 = minP[dim0];
-        FloatType max0 = maxP[dim0];
-        FloatType min1 = minP[dim1];
-        FloatType max1 = maxP[dim1];
+        auto faceID = static_cast<uint32_t>(u);
         u = std::fmod(u, 1.0f);
+
+        int32_t faceDim = tzcnt(faceID & ~0b1) - 1;
+        bool isPosSide = faceID & 0b1;
+        *normal = Normal3D(0.0f);
+        (*normal)[faceDim] = isPosSide ? 1 : -1;
+
+        int32_t dim0 = (faceDim + 1) % 3;
+        int32_t dim1 = (faceDim + 2) % 3;
         Point3D p;
-        p[hitDim] = hitSide ? maxP[hitDim] : minP[hitDim];
-        p[dim0] = min0 + (max0 - min0) * u;
-        p[dim1] = min1 + (max1 - min1) * v;
-        *normal = Normal3D(0, 0, 0);
-        (*normal)[hitDim] = hitSide ? 1 : -1;
+        p[faceDim] = isPosSide ? maxP[faceDim] : minP[faceDim];
+        p[dim0] = lerp(minP[dim0], maxP[dim0], u);
+        p[dim1] = lerp(minP[dim1], maxP[dim1], v);
+
         return p;
     }
 };
