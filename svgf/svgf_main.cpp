@@ -464,7 +464,7 @@ static void parseCommandline(int32_t argc, const char* argv[]) {
                     hpprintf("Invalid option.\n");
                     exit(EXIT_FAILURE);
                 }
-                *ori = qRotateZ(atof(argv[i + 1]) * pi_v<float> / 180) * *ori;
+                *ori = qRotateZ(static_cast<float>(atof(argv[i + 1])) * pi_v<float> / 180) * *ori;
                 i += 1;
             }
             else if (strncmp(arg, "-pitch", 7) == 0) {
@@ -472,7 +472,7 @@ static void parseCommandline(int32_t argc, const char* argv[]) {
                     hpprintf("Invalid option.\n");
                     exit(EXIT_FAILURE);
                 }
-                *ori = qRotateX(atof(argv[i + 1]) * pi_v<float> / 180) * *ori;
+                *ori = qRotateX(static_cast<float>(atof(argv[i + 1])) * pi_v<float> / 180) * *ori;
                 i += 1;
             }
             else if (strncmp(arg, "-yaw", 5) == 0) {
@@ -480,7 +480,7 @@ static void parseCommandline(int32_t argc, const char* argv[]) {
                     hpprintf("Invalid option.\n");
                     exit(EXIT_FAILURE);
                 }
-                *ori = qRotateY(atof(argv[i + 1]) * pi_v<float> / 180) * *ori;
+                *ori = qRotateY(static_cast<float>(atof(argv[i + 1])) * pi_v<float> / 180) * *ori;
                 i += 1;
             }
         };
@@ -1484,7 +1484,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
         perFramePlp.temporalSets[0].camera.aspect,
         perFramePlp.temporalSets[0].camera.fovY,
         cameraNear, cameraFar);
-    matW2Vs[0] = invert(Matrix4x4((g_cameraOrientation * qRotateY(M_PI)).toMatrix3x3(), g_cameraPosition));
+    matW2Vs[0] = invert(Matrix4x4((
+        g_cameraOrientation * qRotateY(pi_v<float>)).toMatrix3x3(), g_cameraPosition));
     matV2Cs[1] = matV2Cs[0];
     matW2Vs[1] = matW2Vs[0];
 
@@ -1983,7 +1984,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
         for (int i = 0; i < lengthof(debugSwitches); ++i)
             perFramePlp.setDebugSwitch(i, debugSwitches[i]);
 
-        curMatW2V = invert(Matrix4x4((g_tempCameraOrientation * qRotateY(M_PI)).toMatrix3x3(), g_cameraPosition));
+        curMatW2V = invert(Matrix4x4((
+            g_tempCameraOrientation * qRotateY(pi_v<float>)).toMatrix3x3(), g_cameraPosition));
 
         Vector2D curSubPixelOffset(0.5f, 0.5f);
         if (enableTemporalAA)

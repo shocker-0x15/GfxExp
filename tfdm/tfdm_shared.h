@@ -678,7 +678,7 @@ enum class TriangleSquareIntersection2DResult {
 CUDA_DEVICE_FUNCTION TriangleSquareIntersection2DResult testTriangleSquareIntersection2D(
     const Point2D triPs[3], const Vector2D triEdgeNormals[3],
     const Point2D &triAabbMinP, const Point2D &triAabbMaxP,
-    const Point2D &squareCenter, FloatType squareHalfWidth) {
+    const Point2D &squareCenter, float squareHalfWidth) {
     Vector2D vSquareCenter = static_cast<Vector2D>(squareCenter);
     Point2D relTriPs[] = {
         triPs[0] - vSquareCenter,

@@ -38,8 +38,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE Vector3D halfVector(const Vector3D &a, const Ve
 }
 
 template <bool isNormalA, bool isNormalB>
-CUDA_DEVICE_FUNCTION CUDA_INLINE FloatType absDot(
-    const Vector3DTemplate<isNormalA> &a, const Vector3DTemplate<isNormalB> &b) {
+CUDA_DEVICE_FUNCTION CUDA_INLINE float absDot(
+    const Vector3D_T<float, isNormalA> &a, const Vector3D_T<float, isNormalB> &b) {
     return std::fabs(dot(a, b));
 }
 

@@ -374,7 +374,7 @@ static void parseCommandline(int32_t argc, const char* argv[]) {
                     hpprintf("Invalid option.\n");
                     exit(EXIT_FAILURE);
                 }
-                *ori = qRotateZ(atof(argv[i + 1]) * pi_v<float> / 180) * *ori;
+                *ori = qRotateZ(static_cast<float>(atof(argv[i + 1])) * pi_v<float> / 180) * *ori;
                 i += 1;
             }
             else if (strncmp(arg, "-pitch", 7) == 0) {
@@ -382,7 +382,7 @@ static void parseCommandline(int32_t argc, const char* argv[]) {
                     hpprintf("Invalid option.\n");
                     exit(EXIT_FAILURE);
                 }
-                *ori = qRotateX(atof(argv[i + 1]) * pi_v<float> / 180) * *ori;
+                *ori = qRotateX(static_cast<float>(atof(argv[i + 1])) * pi_v<float> / 180) * *ori;
                 i += 1;
             }
             else if (strncmp(arg, "-yaw", 5) == 0) {
@@ -390,7 +390,7 @@ static void parseCommandline(int32_t argc, const char* argv[]) {
                     hpprintf("Invalid option.\n");
                     exit(EXIT_FAILURE);
                 }
-                *ori = qRotateY(atof(argv[i + 1]) * pi_v<float> / 180) * *ori;
+                *ori = qRotateY(static_cast<float>(atof(argv[i + 1])) * pi_v<float> / 180) * *ori;
                 i += 1;
             }
         };

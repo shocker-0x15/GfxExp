@@ -182,7 +182,7 @@ initialize(CUcontext cuContext, cudau::BufferType type, const RealType* values, 
 
     RealType* CDF = m_CDF.map();
 
-    CompensatedSum<RealType> sum(0);
+    CompensatedSum_T<RealType> sum(0);
     for (uint32_t i = 0; i < m_numValues; ++i) {
         CDF[i] = sum;
         sum += values[i];
@@ -292,7 +292,7 @@ initialize(CUcontext cuContext, cudau::BufferType type, const RealType* values, 
     RealType* CDF = m_CDF.map();
     std::memcpy(PDF, values, sizeof(RealType) * m_numValues);
 
-    CompensatedSum<RealType> sum{ 0 };
+    CompensatedSum_T<RealType> sum{ 0 };
     for (uint32_t i = 0; i < m_numValues; ++i) {
         CDF[i] = sum;
         sum += PDF[i] / m_numValues;
@@ -326,7 +326,7 @@ initialize(CUcontext cuContext, cudau::BufferType type, const RealType* values, 
 
     // JP: まず各行に関するDistribution1Dを作成する。
     // EN: First, create Distribution1D's for every rows.
-    CompensatedSum<RealType> sum(0);
+    CompensatedSum_T<RealType> sum(0);
     RealType* integrals = new RealType[numD2];
     for (uint32_t i = 0; i < numD2; ++i) {
         RegularConstantContinuousDistribution1DTemplate<RealType> &dist = m_1DDists[i];
