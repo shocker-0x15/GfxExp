@@ -1119,7 +1119,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE FloatType distance(
 template <typename FloatType>
 CUDA_COMMON_FUNCTION CUDA_INLINE Point2D_T<FloatType> lerp(
     const Point2D_T<FloatType> &v0, const Point2D_T<FloatType> &v1, const Point2D_T<FloatType> &t) {
-    return Point2D_T(Point2D_T(1.0f) - t) * v0 + t * v1;
+    return Point2D_T<FloatType>(Point2D_T<FloatType>(1.0f) - t) * v0 + t * v1;
 }
 
 
