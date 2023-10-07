@@ -160,8 +160,11 @@ class DiscreteDistribution1DTemplate {
     unsigned int m_isInitialized : 1;
 
 public:
-    DiscreteDistribution1DTemplate() : m_integral(0.0f), m_numValues(0), m_isInitialized(false) {}
-    void initialize(CUcontext cuContext, cudau::BufferType type, const RealType* values, size_t numValues);
+    DiscreteDistribution1DTemplate() :
+        m_integral(0.0f), m_numValues(0), m_isInitialized(false) {}
+    void initialize(
+        CUcontext cuContext, cudau::BufferType type,
+        const RealType* values, uint32_t numValues);
     void finalize() {
         if (!m_isInitialized)
             return;
@@ -242,7 +245,9 @@ class RegularConstantContinuousDistribution1DTemplate {
 public:
     RegularConstantContinuousDistribution1DTemplate() : m_isInitialized(false) {}
 
-    void initialize(CUcontext cuContext, cudau::BufferType type, const RealType* values, size_t numValues);
+    void initialize(
+        CUcontext cuContext, cudau::BufferType type,
+        const RealType* values, uint32_t numValues);
     void finalize(CUcontext cuContext) {
         if (!m_isInitialized)
             return;
@@ -309,7 +314,9 @@ public:
         return *this;
     }
 
-    void initialize(CUcontext cuContext, cudau::BufferType type, const RealType* values, size_t numD1, size_t numD2);
+    void initialize(
+        CUcontext cuContext, cudau::BufferType type,
+        const RealType* values, uint32_t numD1, uint32_t numD2);
     void finalize(CUcontext cuContext) {
         if (!m_isInitialized)
             return;
@@ -351,7 +358,7 @@ class ProbabilityTexture {
 public:
     ProbabilityTexture() : m_cuTexObj(0), m_isInitialized(false) {}
 
-    void initialize(CUcontext cuContext, size_t numValues);
+    void initialize(CUcontext cuContext, uint32_t numValues);
     void finalize() {
         if (!m_isInitialized)
             return;
@@ -366,7 +373,10 @@ public:
     }
 
     void getDeviceType(shared::ProbabilityTexture* probTex) const {
-        probTex->setTexObject(m_cuTexObj, uint2(m_cuArray.getWidth(), m_cuArray.getHeight()));
+        probTex->setTexObject(
+            m_cuTexObj,
+            uint2(static_cast<uint32_t>(m_cuArray.getWidth()),
+                  static_cast<uint32_t>(m_cuArray.getHeight())));
     }
 };
 
@@ -609,7 +619,9 @@ struct GeometryInstance {
         glUniform1ui(11, flags);
 
         glBindVertexArray(gfxVertexArray.getHandle());
-        glDrawElements(GL_TRIANGLES, 3 * triangleBuffer.numElements(), GL_UNSIGNED_INT, nullptr);
+        glDrawElements(
+            GL_TRIANGLES, 3 * static_cast<GLsizei>(triangleBuffer.numElements()),
+            GL_UNSIGNED_INT, nullptr);
     }
 };
 
@@ -835,23 +847,23 @@ struct Scene {
         asScratchMem.finalize();
         iasInstanceBuffer.finalize();
         iasMem.finalize();
-        for (int i = geomGroups.size() - 1; i >= 0; --i) {
+        for (int i = static_cast<int>(geomGroups.size()) - 1; i >= 0; --i) {
             GeometryGroup* geomGroup = geomGroups[i];
             geomGroup->optixGasMem.finalize();
         }
         ias.destroy();
 
-        for (int i = insts.size() - 1; i >= 0; --i) {
+        for (int i = static_cast<int>(insts.size()) - 1; i >= 0; --i) {
             Instance* inst = insts[i];
             inst->optixInst.destroy();
             inst->lightGeomInstDist.finalize();
             inst->lightGeomInstDist.finalize();
         }
-        for (int i = geomGroups.size() - 1; i >= 0; --i) {
+        for (int i = static_cast<int>(geomGroups.size()) - 1; i >= 0; --i) {
             GeometryGroup* geomGroup = geomGroups[i];
             geomGroup->optixGas.destroy();
         }
-        for (int i = geomInsts.size() - 1; i >= 0; --i) {
+        for (int i = static_cast<int>(geomInsts.size()) - 1; i >= 0; --i) {
             GeometryInstance* geomInst = geomInsts[i];
             geomInst->optixGeomInst.destroy();
             geomInst->emitterPrimDist.finalize();
@@ -862,7 +874,7 @@ struct Scene {
             geomInst->gfxTriangleBuffer.finalize();
             geomInst->gfxVertexBuffer.finalize();
         }
-        for (int i = materials.size() - 1; i >= 0; --i) {
+        for (int i = static_cast<int>(materials.size()) - 1; i >= 0; --i) {
             Material* material = materials[i];
         }
 
@@ -905,7 +917,8 @@ struct Scene {
                 optixu::ASTradeoff::PreferFastTrace,
                 optixu::AllowUpdate::No, optixu::AllowCompaction::No, optixu::AllowRandomVertexAccess::No);
             geomGroup->optixGas.prepareForBuild(&asSizes);
-            geomGroup->optixGasMem.initialize(cuContext, bufferType, asSizes.outputSizeInBytes, 1);
+            geomGroup->optixGasMem.initialize(
+                cuContext, bufferType, asSizes.outputSizeInBytes, 1);
             asScratchSize = std::max(asSizes.tempSizeInBytes, asScratchSize);
         }
 
@@ -913,7 +926,8 @@ struct Scene {
             optixu::ASTradeoff::PreferFastTrace,
             optixu::AllowUpdate::No, optixu::AllowCompaction::No, optixu::AllowRandomInstanceAccess::No);
         ias.prepareForBuild(&asSizes);
-        iasMem.initialize(cuContext, bufferType, asSizes.outputSizeInBytes, 1);
+        iasMem.initialize(
+            cuContext, bufferType, asSizes.outputSizeInBytes, 1);
         asScratchSize = std::max(asSizes.tempSizeInBytes, asScratchSize);
         iasInstanceBuffer.initialize(cuContext, bufferType, ias.getNumChildren());
 
@@ -930,8 +944,9 @@ struct Scene {
                 shared::InstanceData &instData = instDataBufferOnHost[inst->instSlot];
                 controller->update(instDataBufferOnHost, 0.0f);
                 // TODO: まとめて送る。
-                CUDADRV_CHECK(cuMemcpyHtoDAsync(curInstDataBuffer.getCUdeviceptrAt(inst->instSlot),
-                                                &instData, sizeof(instData), 0));
+                CUDADRV_CHECK(cuMemcpyHtoDAsync(
+                    curInstDataBuffer.getCUdeviceptrAt(inst->instSlot),
+                    &instData, sizeof(instData), 0));
             }
             curInstDataBuffer.unmap();
         }
@@ -957,7 +972,7 @@ struct Scene {
                 continue;
             shared::GeometryInstanceData* geomInstData =
                 geomInstDataBuffer.getDevicePointerAt(geomInst->geomInstSlot);
-            uint32_t numTriangles = geomInst->triangleBuffer.numElements();
+            uint32_t numTriangles = static_cast<uint32_t>(geomInst->triangleBuffer.numElements());
 #if USE_PROBABILITY_TEXTURE
             uint2 dims = shared::computeProbabilityTextureDimentions(numTriangles);
             uint32_t numMipLevels = nextPowOf2Exponent(dims.x) + 1;
@@ -982,7 +997,7 @@ struct Scene {
                 continue;
             shared::GeometryInstanceData* geomInstData =
                 geomInstDataBuffer.getDevicePointerAt(geomInst->geomInstSlot);
-            uint32_t numTriangles = geomInst->triangleBuffer.numElements();
+            uint32_t numTriangles = static_cast<uint32_t>(geomInst->triangleBuffer.numElements());
 #if USE_PROBABILITY_TEXTURE
             uint2 curDims = shared::computeProbabilityTextureDimentions(numTriangles);
             uint32_t numMipLevels = nextPowOf2Exponent(curDims.x) + 1;
@@ -1031,7 +1046,7 @@ struct Scene {
             if (!inst->lightGeomInstDist.isInitialized())
                 continue;
             shared::InstanceData* instData = instDataBuffer[0].getDevicePointerAt(inst->instSlot);
-            uint32_t numGeomInsts = inst->geomGroupInst.geomGroup->geomInsts.size();
+            uint32_t numGeomInsts = static_cast<uint32_t>(inst->geomGroupInst.geomGroup->geomInsts.size());
 #if USE_PROBABILITY_TEXTURE
             uint2 dims = shared::computeProbabilityTextureDimentions(numGeomInsts);
             uint32_t numMipLevels = nextPowOf2Exponent(dims.x) + 1;
@@ -1055,7 +1070,7 @@ struct Scene {
             if (!inst->lightGeomInstDist.isInitialized())
                 continue;
             shared::InstanceData* instData = instDataBuffer[0].getDevicePointerAt(inst->instSlot);
-            uint32_t numGeomInsts = inst->geomGroupInst.geomGroup->geomInsts.size();
+            uint32_t numGeomInsts = static_cast<uint32_t>(inst->geomGroupInst.geomGroup->geomInsts.size());
 #if USE_PROBABILITY_TEXTURE
             uint2 curDims = shared::computeProbabilityTextureDimentions(numGeomInsts);
             uint32_t numMipLevels = nextPowOf2Exponent(curDims.x) + 1;
@@ -1113,7 +1128,7 @@ struct Scene {
         CUDADRV_CHECK(cuMemcpyHtoDAsync(
             lightInstDistAddr, &dLightInstDist, sizeof(dLightInstDist), cuStream));
 
-        uint32_t numInsts = insts.size();
+        uint32_t numInsts = static_cast<uint32_t>(insts.size());
 #if USE_PROBABILITY_TEXTURE
         uint2 dims = shared::computeProbabilityTextureDimentions(numInsts);
         uint32_t numMipLevels = nextPowOf2Exponent(dims.x) + 1;
@@ -1324,12 +1339,14 @@ void loadEnvironmentalTexture(
 
 
 void saveImage(const std::filesystem::path &filepath, uint32_t width, uint32_t height, const uint32_t* data);
-void saveImageHDR(const std::filesystem::path &filepath, uint32_t width, uint32_t height,
-                  float brightnessScale,
-                  const float* data, bool flipY = false);
-void saveImageHDR(const std::filesystem::path &filepath, uint32_t width, uint32_t height,
-                  float brightnessScale,
-                  const float4* data, bool flipY = false);
+void saveImageHDR(
+    const std::filesystem::path &filepath, uint32_t width, uint32_t height,
+    float brightnessScale,
+    const float* data, bool flipY = false);
+void saveImageHDR(
+    const std::filesystem::path &filepath, uint32_t width, uint32_t height,
+    float brightnessScale,
+    const float4* data, bool flipY = false);
 
 struct SDRImageSaverConfig {
     float alphaForOverride;
@@ -1345,21 +1362,25 @@ struct SDRImageSaverConfig {
         alphaForOverride(-1) {}
 };
 
-void saveImage(const std::filesystem::path &filepath, uint32_t width, uint32_t height, const float4* data,
-               const SDRImageSaverConfig &config);
+void saveImage(
+    const std::filesystem::path &filepath, uint32_t width, uint32_t height, const float4* data,
+    const SDRImageSaverConfig &config);
 
-void saveImage(const std::filesystem::path &filepath,
-               uint32_t width, cudau::TypedBuffer<float4> &buffer,
-               const SDRImageSaverConfig &config);
+void saveImage(
+    const std::filesystem::path &filepath,
+    uint32_t width, cudau::TypedBuffer<float4> &buffer,
+    const SDRImageSaverConfig &config);
 
-void saveImage(const std::filesystem::path &filepath,
-               cudau::Array &array,
-               const SDRImageSaverConfig &config);
+void saveImage(
+    const std::filesystem::path &filepath,
+    cudau::Array &array,
+    const SDRImageSaverConfig &config);
 
 template <uint32_t log2BlockWidth>
-void saveImage(const std::filesystem::path &filepath,
-               optixu::HostBlockBuffer2D<float4, log2BlockWidth> &buffer,
-               const SDRImageSaverConfig &config) {
+void saveImage(
+    const std::filesystem::path &filepath,
+    optixu::HostBlockBuffer2D<float4, log2BlockWidth> &buffer,
+    const SDRImageSaverConfig &config) {
     uint32_t width = buffer.getWidth();
     uint32_t height = buffer.getHeight();
     auto data = new float4[width * height];

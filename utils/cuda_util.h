@@ -184,17 +184,20 @@ while (0)
 
 
 namespace cudau {
-#if !defined(__CUDA_ARCH__)
-    void devPrintf(const char* fmt, ...);
-#endif
-
-
 
 #if __cplusplus >= 202002L
 #   define CUDAU_INTEGRAL_CONCEPT std::integral
 #else
 #   define CUDAU_INTEGRAL_CONCEPT typename
 #endif
+
+
+
+#if !defined(__CUDA_ARCH__)
+    void devPrintf(const char* fmt, ...);
+#endif
+
+
 
     template <typename T, bool oobCheck>
     class RWBufferTemplate;
@@ -309,8 +312,6 @@ namespace cudau {
             return m_data;
         }
     };
-
-#undef CUDAU_INTEGRAL_CONCEPT
 
 
 
@@ -490,8 +491,8 @@ namespace cudau {
         CUcontext m_cuContext;
         BufferType m_type;
 
-        uint32_t m_numElements;
-        uint32_t m_stride;
+        size_t m_numElements;
+        size_t m_stride;
 
         void* m_hostPointer;
         CUdeviceptr m_devicePointer;
@@ -511,18 +512,18 @@ namespace cudau {
 
         void initialize(
             CUcontext context, BufferType type,
-            uint32_t numElements, uint32_t stride, uint32_t glBufferID);
+            size_t numElements, size_t stride, uint32_t glBufferID);
 
     public:
         Buffer();
         ~Buffer();
 
         Buffer(CUcontext context, BufferType type,
-               uint32_t numElements, uint32_t stride) : Buffer() {
+               size_t numElements, size_t stride) : Buffer() {
             initialize(context, type, numElements, stride);
         }
         Buffer(CUcontext context, BufferType type,
-               const void* data, uint32_t numElements, uint32_t stride) : Buffer() {
+               const void* data, size_t numElements, size_t stride) : Buffer() {
             initialize(context, type, data, numElements, stride);
         }
 
@@ -534,16 +535,16 @@ namespace cudau {
 
         void initialize(
             CUcontext context, BufferType type,
-            uint32_t numElements, uint32_t stride) {
+            size_t numElements, size_t stride) {
             initialize(context, type, numElements, stride, 0);
         }
         void initialize(
             CUcontext context, BufferType type,
-            const void* data, uint32_t numElements, uint32_t stride, CUstream stream = 0) {
+            const void* data, size_t numElements, size_t stride, CUstream stream = 0) {
             initialize(context, type, numElements, stride, 0);
             CUDADRV_CHECK(cuMemcpyHtoDAsync(getCUdeviceptr(), data, numElements * stride, stream));
         }
-        void initializeFromGLBuffer(CUcontext context, uint32_t stride, uint32_t glBufferID) {
+        void initializeFromGLBuffer(CUcontext context, size_t stride, uint32_t glBufferID) {
 #if defined(CUDA_UTIL_USE_GL_INTEROP)
             GLint size;
             glGetNamedBufferParameteriv(glBufferID, GL_BUFFER_SIZE, &size);
@@ -560,7 +561,7 @@ namespace cudau {
         }
         void finalize();
 
-        void resize(uint32_t numElements, uint32_t stride, CUstream stream = 0);
+        void resize(size_t numElements, size_t stride, CUstream stream = 0);
 
         CUcontext getCUcontext() const {
             return m_cuContext;
@@ -573,7 +574,7 @@ namespace cudau {
             return m_devicePointer;
         }
         CUdeviceptr getCUdeviceptrAt(uint32_t idx) const {
-            return m_devicePointer + static_cast<uintptr_t>(m_stride) * idx;
+            return m_devicePointer + m_stride * idx;
         }
         void* getDevicePointer() const {
             return reinterpret_cast<void*>(getCUdeviceptr());
@@ -582,12 +583,12 @@ namespace cudau {
             return reinterpret_cast<void*>(getCUdeviceptrAt(idx));
         }
         size_t sizeInBytes() const {
-            return static_cast<size_t>(m_numElements) * m_stride;
+            return m_numElements * m_stride;
         }
-        uint32_t stride() const {
+        size_t stride() const {
             return m_stride;
         }
-        uint32_t numElements() const {
+        size_t numElements() const {
             return m_numElements;
         }
         bool isInitialized() const {
@@ -622,35 +623,35 @@ namespace cudau {
             return reinterpret_cast<T*>(m_mappedPointer);
         }
         template <typename T>
-        void write(const T* srcValues, uint32_t numValues, CUstream stream = 0) const {
+        void write(const T* srcValues, size_t numValues, CUstream stream = 0) const {
             const size_t transferSize = sizeof(T) * numValues;
-            const size_t bufferSize = static_cast<size_t>(m_stride) * m_numElements;
+            const size_t bufferSize = m_stride * m_numElements;
             if (transferSize > bufferSize)
                 throw std::runtime_error("Too large transfer");
             CUDADRV_CHECK(cuMemcpyHtoDAsync(getCUdeviceptr(), srcValues, transferSize, stream));
         }
         template <typename T>
         void write(const std::vector<T> &values, CUstream stream = 0) const {
-            write(values.data(), static_cast<uint32_t>(values.size()), stream);
+            write(values.data(), values.size(), stream);
         }
         template <typename T>
-        void read(T* dstValues, uint32_t numValues, CUstream stream = 0) const {
+        void read(T* dstValues, size_t numValues, CUstream stream = 0) const {
             const size_t transferSize = sizeof(T) * numValues;
-            const size_t bufferSize = static_cast<size_t>(m_stride) * m_numElements;
+            const size_t bufferSize = m_stride * m_numElements;
             if (transferSize > bufferSize)
                 throw std::runtime_error("Too large transfer");
             CUDADRV_CHECK(cuMemcpyDtoHAsync(dstValues, getCUdeviceptr(), transferSize, stream));
         }
         template <typename T>
         void read(std::vector<T> &values, CUstream stream = 0) const {
-            read(values.data(), static_cast<uint32_t>(values.size()), stream);
+            read(values.data(), values.size(), stream);
         }
         template <typename T>
         void fill(const T &value, CUstream stream = 0) const {
-            uint32_t numValues = (m_stride * m_numElements) / sizeof(T);
+            size_t numValues = (m_stride * m_numElements) / sizeof(T);
             if (m_persistentMappedMemory) {
                 T* values = reinterpret_cast<T*>(m_mappedPointer);
-                for (uint32_t i = 0; i < numValues; ++i)
+                for (size_t i = 0; i < numValues; ++i)
                     values[i] = value;
                 write(values, numValues, stream);
             }
@@ -669,37 +670,37 @@ namespace cudau {
     class TypedBuffer : public Buffer {
     public:
         TypedBuffer() {}
-        TypedBuffer(CUcontext context, BufferType type, uint32_t numElements) : TypedBuffer() {
+        TypedBuffer(CUcontext context, BufferType type, size_t numElements) : TypedBuffer() {
             Buffer::initialize(context, type, numElements, sizeof(T));
         }
-        TypedBuffer(CUcontext context, BufferType type, uint32_t numElements, const T &value) : TypedBuffer() {
+        TypedBuffer(CUcontext context, BufferType type, size_t numElements, const T &value) : TypedBuffer() {
             std::vector<T> values(numElements, value);
-            Buffer::initialize(context, type, static_cast<uint32_t>(values.size()), sizeof(T));
+            Buffer::initialize(context, type, values.size(), sizeof(T));
             CUDADRV_CHECK(cuMemcpyHtoD(Buffer::getCUdeviceptr(), values.data(), values.size() * sizeof(T)));
         }
-        TypedBuffer(CUcontext context, BufferType type, const T* v, uint32_t numElements) : TypedBuffer() {
+        TypedBuffer(CUcontext context, BufferType type, const T* v, size_t numElements) : TypedBuffer() {
             Buffer::initialize(context, type, numElements, sizeof(T));
             CUDADRV_CHECK(cuMemcpyHtoD(Buffer::getCUdeviceptr(), v, numElements * sizeof(T)));
         }
         TypedBuffer(CUcontext context, BufferType type, const std::vector<T> &v) : TypedBuffer() {
-            Buffer::initialize(context, type, static_cast<uint32_t>(v.size()), sizeof(T));
+            Buffer::initialize(context, type, v.size(), sizeof(T));
             CUDADRV_CHECK(cuMemcpyHtoD(Buffer::getCUdeviceptr(), v.data(), v.size() * sizeof(T)));
         }
 
-        void initialize(CUcontext context, BufferType type, uint32_t numElements) {
+        void initialize(CUcontext context, BufferType type, size_t numElements) {
             Buffer::initialize(context, type, numElements, sizeof(T));
         }
         void initialize(
             CUcontext context, BufferType type,
-            uint32_t numElements, const T &value,
+            size_t numElements, const T &value,
             CUstream stream = 0) {
             std::vector<T> values(numElements, value);
-            initialize(context, type, static_cast<uint32_t>(values.size()));
+            initialize(context, type, values.size());
             CUDADRV_CHECK(cuMemcpyHtoDAsync(Buffer::getCUdeviceptr(), values.data(), values.size() * sizeof(T), stream));
         }
         void initialize(
             CUcontext context, BufferType type,
-            const T* v, uint32_t numElements,
+            const T* v, size_t numElements,
             CUstream stream = 0) {
             initialize(context, type, numElements);
             CUDADRV_CHECK(cuMemcpyHtoDAsync(Buffer::getCUdeviceptr(), v, numElements * sizeof(T), stream));
@@ -708,7 +709,7 @@ namespace cudau {
             CUcontext context, BufferType type,
             const std::vector<T> &v,
             CUstream stream = 0) {
-            initialize(context, type, static_cast<uint32_t>(v.size()));
+            initialize(context, type, v.size());
             CUDADRV_CHECK(cuMemcpyHtoDAsync(Buffer::getCUdeviceptr(), v.data(), v.size() * sizeof(T), stream));
         }
         void finalize() {
@@ -733,11 +734,13 @@ namespace cudau {
         }
         template <bool oobCheck>
         ROBufferTemplate<T, oobCheck> getROBuffer() const {
-            return ROBufferTemplate<T, oobCheck>(getDevicePointer(), numElements());
+            CUDAUAssert(numElements() <= 0xFFFFFFFF, "Too many elements.");
+            return ROBufferTemplate<T, oobCheck>(getDevicePointer(), static_cast<uint32_t>(numElements()));
         }
         template <bool oobCheck>
         RWBufferTemplate<T, oobCheck> getRWBuffer() const {
-            return RWBufferTemplate<T, oobCheck>(getDevicePointer(), numElements());
+            CUDAUAssert(numElements() <= 0xFFFFFFFF, "Too many elements.");
+            return RWBufferTemplate<T, oobCheck>(getDevicePointer(), static_cast<uint32_t>(numElements()));
         }
 
         T* map(CUstream stream = 0, BufferMapFlag flag = BufferMapFlag::ReadWrite) {
@@ -746,13 +749,13 @@ namespace cudau {
         T* getMappedPointer() const {
             return Buffer::getMappedPointer<T>();
         }
-        void write(const T* srcValues, uint32_t numValues, CUstream stream = 0) const {
+        void write(const T* srcValues, size_t numValues, CUstream stream = 0) const {
             Buffer::write<T>(srcValues, numValues, stream);
         }
         void write(const std::vector<T> &values, CUstream stream = 0) const {
             Buffer::write<T>(values, stream);
         }
-        void read(T* dstValues, uint32_t numValues, CUstream stream = 0) const {
+        void read(T* dstValues, size_t numValues, CUstream stream = 0) const {
             Buffer::read<T>(dstValues, numValues, stream);
         }
         void read(std::vector<T> &values, CUstream stream = 0) const {
@@ -763,7 +766,8 @@ namespace cudau {
         }
 
         // TODO: ? stream
-        T operator[](uint32_t idx) {
+        template <CUDAU_INTEGRAL_CONCEPT I>
+        T operator[](I idx) {
             const T* values = map();
             T ret = values[idx];
             unmap();
@@ -858,9 +862,9 @@ namespace cudau {
     class Array {
         CUcontext m_cuContext;
 
-        uint32_t m_width;
-        uint32_t m_height;
-        uint32_t m_depth;
+        size_t m_width;
+        size_t m_height;
+        size_t m_depth;
         uint32_t m_numMipmapLevels;
         uint32_t m_stride;
         ArrayElementType m_elemType;
@@ -891,11 +895,11 @@ namespace cudau {
 
         void initialize(
             CUcontext context, ArrayElementType elemType, uint32_t numChannels,
-            uint32_t width, uint32_t height, uint32_t depth, uint32_t numMipmapLevels,
+            size_t width, size_t height, size_t depth, uint32_t numMipmapLevels,
             bool writable, bool useTextureGather, bool cubemap, bool layered, uint32_t glTexID);
 
         template <bool forDevice>
-        void computeDimensionsOfLevel(uint32_t mipmapLevel, uint32_t* width, uint32_t* height) const {
+        void computeDimensionsOfLevel(uint32_t mipmapLevel, size_t* width, size_t* height) const {
             *width = m_width;
             *height = m_height;
 
@@ -906,12 +910,12 @@ namespace cudau {
                     *width = (*width + 3) / 4;
                     *height = (*height + 3) / 4;
                 }
-                *width = std::max<uint32_t>(1, *width >> mipmapLevel);
-                *height = std::max<uint32_t>(1, *height >> mipmapLevel);
+                *width = std::max<size_t>(1, *width >> mipmapLevel);
+                *height = std::max<size_t>(1, *height >> mipmapLevel);
             }
             else {
-                *width = std::max<uint32_t>(1, *width >> mipmapLevel);
-                *height = std::max<uint32_t>(1, *height >> mipmapLevel);
+                *width = std::max<size_t>(1, *width >> mipmapLevel);
+                *height = std::max<size_t>(1, *height >> mipmapLevel);
                 if (isBCFormat(m_elemType)) {
                     *width = (*width + 3) / 4;
                     *height = (*height + 3) / 4;
@@ -929,7 +933,7 @@ namespace cudau {
         void initialize1D(
             CUcontext context, ArrayElementType elemType, uint32_t numChannels,
             ArraySurface surfaceLoadStore,
-            uint32_t length, uint32_t numMipmapLevels) {
+            size_t length, uint32_t numMipmapLevels) {
             initialize(
                 context, elemType, numChannels, length, 0, 0, numMipmapLevels,
                 surfaceLoadStore == ArraySurface::Enable, false, false, false, 0);
@@ -937,7 +941,7 @@ namespace cudau {
         void initialize2D(
             CUcontext context, ArrayElementType elemType, uint32_t numChannels,
             ArraySurface surfaceLoadStore, ArrayTextureGather useTextureGather,
-            uint32_t width, uint32_t height, uint32_t numMipmapLevels) {
+            size_t width, size_t height, uint32_t numMipmapLevels) {
             initialize(
                 context, elemType, numChannels, width, height, 0, numMipmapLevels,
                 surfaceLoadStore == ArraySurface::Enable,
@@ -947,7 +951,7 @@ namespace cudau {
         void initialize3D(
             CUcontext context, ArrayElementType elemType, uint32_t numChannels,
             ArraySurface surfaceLoadStore,
-            uint32_t width, uint32_t height, uint32_t depth, uint32_t numMipmapLevels) {
+            size_t width, size_t height, size_t depth, uint32_t numMipmapLevels) {
             initialize(
                 context, elemType, numChannels, width, height, 0, numMipmapLevels,
                 surfaceLoadStore == ArraySurface::Enable, false, false, false, 0);
@@ -982,9 +986,9 @@ namespace cudau {
         }
         void finalize();
 
-        void resize(uint32_t length, CUstream stream = 0);
-        void resize(uint32_t width, uint32_t height, CUstream stream = 0);
-        void resize(uint32_t width, uint32_t height, uint32_t depth, CUstream stream = 0);
+        void resize(size_t length, CUstream stream = 0);
+        void resize(size_t width, size_t height, CUstream stream = 0);
+        void resize(size_t width, size_t height, size_t depth, CUstream stream = 0);
 
         CUarray getCUarray(uint32_t mipmapLevel) const {
             if (m_GLTexID) {
@@ -1003,13 +1007,13 @@ namespace cudau {
             return m_mipmappedArray;
         }
 
-        uint32_t getWidth() const {
+        size_t getWidth() const {
             return m_width;
         }
-        uint32_t getHeight() const {
+        size_t getHeight() const {
             return m_height;
         }
-        uint32_t getDepth() const {
+        size_t getDepth() const {
             return m_depth;
         }
         uint32_t getNumMipmapLevels() const {
@@ -1039,22 +1043,22 @@ namespace cudau {
         void unmap(uint32_t mipmapLevel = 0, CUstream stream = 0);
         template <typename T>
         void write(
-            const T* srcValues, uint32_t numValues, uint32_t mipmapLevel = 0, CUstream stream = 0) const {
-            uint32_t depth = std::max<uint32_t>(1, m_depth);
+            const T* srcValues, size_t numValues, uint32_t mipmapLevel = 0, CUstream stream = 0) const {
+            size_t depth = std::max<size_t>(1, m_depth);
 
-            uint32_t hostBw;
-            uint32_t hostBh;
+            size_t hostBw;
+            size_t hostBh;
             computeDimensionsOfLevel<false>(mipmapLevel, &hostBw, &hostBh);
             size_t hostSizePerRow = hostBw * m_stride;
             size_t hostSize = depth * hostBh * hostSizePerRow;
             if (sizeof(T) * numValues > hostSize)
                 throw std::runtime_error("Too large transfer.");
-            uint32_t writeHeight = (sizeof(T) * numValues) / hostSizePerRow;
+            size_t writeHeight = (sizeof(T) * numValues) / hostSizePerRow;
 
-            uint32_t deviceBw;
-            uint32_t deviceBh;
+            size_t deviceBw;
+            size_t deviceBh;
             computeDimensionsOfLevel<CUDA_UTIL_TEX_DIM_WORKAROUND>(mipmapLevel, &deviceBw, &deviceBh);
-            size_t deviceSizePerRow = deviceBw * static_cast<size_t>(m_stride);
+            size_t deviceSizePerRow = deviceBw * m_stride;
 
             CUDA_MEMCPY3D params = {};
             params.WidthInBytes = deviceSizePerRow;
@@ -1081,25 +1085,25 @@ namespace cudau {
         }
         template <typename T>
         void write(const std::vector<T> &values, uint32_t mipmapLevel = 0, CUstream stream = 0) const {
-            write(values.data(), static_cast<uint32_t>(values.size()), mipmapLevel, stream);
+            write(values.data(), values.size(), mipmapLevel, stream);
         }
         template <typename T>
-        void read(T* dstValues, uint32_t numValues, uint32_t mipmapLevel = 0, CUstream stream = 0) const {
-            uint32_t depth = std::max<uint32_t>(1, m_depth);
+        void read(T* dstValues, size_t numValues, uint32_t mipmapLevel = 0, CUstream stream = 0) const {
+            size_t depth = std::max<size_t>(1, m_depth);
 
-            uint32_t hostBw;
-            uint32_t hostBh;
+            size_t hostBw;
+            size_t hostBh;
             computeDimensionsOfLevel<false>(mipmapLevel, &hostBw, &hostBh);
             size_t hostSizePerRow = hostBw * m_stride;
             size_t hostSize = depth * hostBh * hostSizePerRow;
             if (sizeof(T) * numValues > hostSize)
                 throw std::runtime_error("Too large transfer.");
-            uint32_t readHeight = (sizeof(T) * numValues) / hostSizePerRow;
+            size_t readHeight = (sizeof(T) * numValues) / hostSizePerRow;
 
-            uint32_t deviceBw;
-            uint32_t deviceBh;
+            size_t deviceBw;
+            size_t deviceBh;
             computeDimensionsOfLevel<CUDA_UTIL_TEX_DIM_WORKAROUND>(mipmapLevel, &deviceBw, &deviceBh);
-            size_t deviceSizePerRow = deviceBw * static_cast<size_t>(m_stride);
+            size_t deviceSizePerRow = deviceBw * m_stride;
 
             CUDA_MEMCPY3D params = {};
             params.WidthInBytes = deviceSizePerRow;
@@ -1126,14 +1130,14 @@ namespace cudau {
         }
         template <typename T>
         void read(std::vector<T> &values, uint32_t mipmapLevel = 0, CUstream stream = 0) const {
-            read(values.data(), static_cast<uint32_t>(values.size()), mipmapLevel, stream);
+            read(values.data(), values.size(), mipmapLevel, stream);
         }
         template <typename T>
         void fill(const T &value, uint32_t mipmapLevel = 0, CUstream stream = 0) const {
-            uint32_t hostBw;
-            uint32_t hostBh;
+            size_t hostBw;
+            size_t hostBh;
             computeDimensionsOfLevel<false>(mipmapLevel, &hostBw, &hostBh);
-            uint32_t depth = std::max<uint32_t>(1, m_depth);
+            size_t depth = std::max<size_t>(1, m_depth);
             size_t hostSizePerRow = hostBw * m_stride;
             size_t hostSize = depth * hostBh * hostSizePerRow;
             size_t numValues = hostSize / sizeof(T);
@@ -1392,4 +1396,7 @@ namespace cudau {
     };
 
 #endif // #if !defined(__CUDA_ARCH__)
+
+#undef CUDAU_INTEGRAL_CONCEPT
+
 } // namespace cudau

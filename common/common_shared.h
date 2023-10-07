@@ -79,8 +79,7 @@ template <typename T>
 concept Number32bit =
     std::is_same_v<T, int32_t> ||
     std::is_same_v<T, uint32_t> ||
-    std::is_same_v<T, float> ||
-    std::is_same_v<T, double>;
+    std::is_same_v<T, float>;
 
 
 
@@ -97,23 +96,23 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr size_t lengthof(const T (&array)[size
 
 
 
-template <Number32bit N>
-CUDA_COMMON_FUNCTION CUDA_INLINE constexpr N pow2(N x) {
+template <typename T>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr T pow2(T x) {
     return x * x;
 }
 
-template <Number32bit N>
-CUDA_COMMON_FUNCTION CUDA_INLINE constexpr N pow3(N x) {
+template <typename T>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr T pow3(T x) {
     return x * pow2(x);
 }
 
-template <Number32bit N>
-CUDA_COMMON_FUNCTION CUDA_INLINE constexpr N pow4(N x) {
+template <typename T>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr T pow4(T x) {
     return pow2(pow2(x));
 }
 
-template <Number32bit N>
-CUDA_COMMON_FUNCTION CUDA_INLINE constexpr N pow5(N x) {
+template <typename T>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr T pow5(T x) {
     return x * pow4(x);
 }
 
@@ -751,7 +750,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE Vector2D_T<FloatType> operator-(
     return ret;
 }
 
-template <typename FloatType, Number32bit N>
+template <typename FloatType, Number N>
 CUDA_COMMON_FUNCTION CUDA_INLINE Vector2D_T<FloatType> operator*(
     const Vector2D_T<FloatType> &a, N b) {
     Vector2D_T<FloatType> ret = a;
@@ -759,7 +758,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE Vector2D_T<FloatType> operator*(
     return ret;
 }
 
-template <Number32bit N, typename FloatType>
+template <Number N, typename FloatType>
 CUDA_COMMON_FUNCTION CUDA_INLINE Vector2D_T<FloatType> operator*(
     N a, const Vector2D_T<FloatType> &b) {
     Vector2D_T<FloatType> ret = b;
@@ -775,7 +774,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE Vector2D_T<FloatType> operator*(
     return ret;
 }
 
-template <typename FloatType, Number32bit N>
+template <typename FloatType, Number N>
 CUDA_COMMON_FUNCTION CUDA_INLINE Vector2D_T<FloatType> operator/(
     const Vector2D_T<FloatType> &a, N b) {
     Vector2D_T<FloatType> ret = a;
@@ -783,7 +782,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE Vector2D_T<FloatType> operator/(
     return ret;
 }
 
-template <Number32bit N, typename FloatType>
+template <Number N, typename FloatType>
 CUDA_COMMON_FUNCTION CUDA_INLINE Vector2D_T<FloatType> operator/(
     N a, const Vector2D_T<FloatType> &b) {
     Vector2D_T<FloatType> ret(static_cast<FloatType>(a));
@@ -1026,7 +1025,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE Point2D_T<FloatType> operator-(
     return ret;
 }
 
-template <typename FloatType, Number32bit N>
+template <typename FloatType, Number N>
 CUDA_COMMON_FUNCTION CUDA_INLINE Point2D_T<FloatType> operator*(
     const Point2D_T<FloatType> &a, N b) {
     Point2D_T<FloatType> ret = a;
@@ -1034,7 +1033,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE Point2D_T<FloatType> operator*(
     return ret;
 }
 
-template <Number32bit N, typename FloatType>
+template <Number N, typename FloatType>
 CUDA_COMMON_FUNCTION CUDA_INLINE Point2D_T<FloatType> operator*(
     N a, const Point2D_T<FloatType> &b) {
     Point2D_T<FloatType> ret = b;
@@ -1050,7 +1049,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE Point2D_T<FloatType> operator*(
     return ret;
 }
 
-template <typename FloatType, Number32bit N>
+template <typename FloatType, Number N>
 CUDA_COMMON_FUNCTION CUDA_INLINE Point2D_T<FloatType> operator/(
     const Point2D_T<FloatType> &a, N b) {
     Point2D_T<FloatType> ret = a;
@@ -1335,7 +1334,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE Vector3D_T<FloatType, isNormalA> operator-(
     return ret;
 }
 
-template <typename FloatType, bool isNormal, Number32bit N>
+template <typename FloatType, bool isNormal, Number N>
 CUDA_COMMON_FUNCTION CUDA_INLINE Vector3D_T<FloatType, isNormal> operator*(
     const Vector3D_T<FloatType, isNormal> &a, N b) {
     Vector3D_T<FloatType, isNormal> ret = a;
@@ -1343,7 +1342,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE Vector3D_T<FloatType, isNormal> operator*(
     return ret;
 }
 
-template <Number32bit N, typename FloatType, bool isNormal>
+template <Number N, typename FloatType, bool isNormal>
 CUDA_COMMON_FUNCTION CUDA_INLINE Vector3D_T<FloatType, isNormal> operator*(
     N a, const Vector3D_T<FloatType, isNormal> &b) {
     Vector3D_T<FloatType, isNormal> ret = b;
@@ -1359,7 +1358,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE Vector3D_T<FloatType, isNormal> operator*(
     return ret;
 }
 
-template <typename FloatType, bool isNormal, Number32bit N>
+template <typename FloatType, bool isNormal, Number N>
 CUDA_COMMON_FUNCTION CUDA_INLINE Vector3D_T<FloatType, isNormal> operator/(
     const Vector3D_T<FloatType, isNormal> &a, N b) {
     Vector3D_T<FloatType, isNormal> ret = a;
@@ -1367,7 +1366,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE Vector3D_T<FloatType, isNormal> operator/(
     return ret;
 }
 
-template <Number32bit N, typename FloatType, bool isNormal>
+template <Number N, typename FloatType, bool isNormal>
 CUDA_COMMON_FUNCTION CUDA_INLINE Vector3D_T<FloatType, isNormal> operator/(
     N a, const Vector3D_T<FloatType, isNormal> &b) {
     Vector3D_T<FloatType, isNormal> ret(static_cast<FloatType>(a));
@@ -1667,7 +1666,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE Point3D_T<FloatType> operator-(
     return ret;
 }
 
-template <typename FloatType, Number32bit N>
+template <typename FloatType, Number N>
 CUDA_COMMON_FUNCTION CUDA_INLINE Point3D_T<FloatType> operator*(
     const Point3D_T<FloatType> &a, N b) {
     Point3D_T<FloatType> ret = a;
@@ -1675,7 +1674,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE Point3D_T<FloatType> operator*(
     return ret;
 }
 
-template <Number32bit N, typename FloatType>
+template <Number N, typename FloatType>
 CUDA_COMMON_FUNCTION CUDA_INLINE Point3D_T<FloatType> operator*(
     N a, const Point3D_T<FloatType> &b) {
     Point3D_T<FloatType> ret = b;
@@ -1691,7 +1690,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE Point3D_T<FloatType> operator*(
     return ret;
 }
 
-template <typename FloatType, Number32bit N>
+template <typename FloatType, Number N>
 CUDA_COMMON_FUNCTION CUDA_INLINE Point3D_T<FloatType> operator/(
     const Point3D_T<FloatType> &a, N b) {
     Point3D_T<FloatType> ret = a;
@@ -1937,7 +1936,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE Vector4D_T<FloatType> operator-(
     return ret;
 }
 
-template <typename FloatType, Number32bit N>
+template <typename FloatType, Number N>
 CUDA_COMMON_FUNCTION CUDA_INLINE Vector4D_T<FloatType> operator*(
     const Vector4D_T<FloatType> &a, N b) {
     Vector4D_T<FloatType> ret = a;
@@ -1945,7 +1944,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE Vector4D_T<FloatType> operator*(
     return ret;
 }
 
-template <Number32bit N, typename FloatType>
+template <Number N, typename FloatType>
 CUDA_COMMON_FUNCTION CUDA_INLINE Vector4D_T<FloatType> operator*(
     N a, const Vector4D_T<FloatType> &b) {
     Vector4D_T<FloatType> ret = b;
@@ -1961,7 +1960,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE Vector4D_T<FloatType> operator*(
     return ret;
 }
 
-template <typename FloatType, Number32bit N>
+template <typename FloatType, Number N>
 CUDA_COMMON_FUNCTION CUDA_INLINE Vector4D_T<FloatType> operator/(
     const Vector4D_T<FloatType> &a, N b) {
     Vector4D_T<FloatType> ret = a;
@@ -2044,7 +2043,7 @@ struct Matrix3x3_T {
         return Matrix3x3_T(-c0, -c1, -c2);
     }
 
-    template <Number32bit N>
+    template <Number N>
     CUDA_COMMON_FUNCTION Matrix3x3_T &operator*=(N r) {
         c0 *= r;
         c1 *= r;
@@ -2115,7 +2114,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE Vector3D_T<FloatType, isNormal> operator*(
     return Vector3D_T<FloatType, isNormal>(dot(a.row(0), b), dot(a.row(1), b), dot(a.row(2), b));
 }
 
-template <Number32bit N, typename FloatType>
+template <Number N, typename FloatType>
 CUDA_COMMON_FUNCTION CUDA_INLINE Matrix3x3_T<FloatType> operator*(N a, const Matrix3x3_T<FloatType> &b) {
     Matrix3x3_T<FloatType> ret = b;
     ret *= a;
@@ -2860,7 +2859,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE RGB_T<FloatType> operator-(
     return ret;
 }
 
-template <typename FloatType, Number32bit N>
+template <typename FloatType, Number N>
 CUDA_COMMON_FUNCTION CUDA_INLINE RGB_T<FloatType> operator*(
     const RGB_T<FloatType> &a, N b) {
     RGB_T<FloatType> ret = a;
@@ -2868,7 +2867,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE RGB_T<FloatType> operator*(
     return ret;
 }
 
-template <Number32bit N, typename FloatType>
+template <Number N, typename FloatType>
 CUDA_COMMON_FUNCTION CUDA_INLINE RGB_T<FloatType> operator*(N a, const RGB_T<FloatType> &b) {
     RGB_T<FloatType> ret = b;
     ret *= static_cast<FloatType>(a);
@@ -2883,7 +2882,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE RGB_T<FloatType> operator*(
     return ret;
 }
 
-template <typename FloatType, Number32bit N>
+template <typename FloatType, Number N>
 CUDA_COMMON_FUNCTION CUDA_INLINE RGB_T<FloatType> operator/(
     const RGB_T<FloatType> &a, N b) {
     RGB_T<FloatType> ret = a;
@@ -2907,7 +2906,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE RGB_T<FloatType> safeDivide(
     return ret;
 }
 
-template <typename FloatType, Number32bit N>
+template <typename FloatType, Number N>
 CUDA_COMMON_FUNCTION CUDA_INLINE RGB_T<FloatType> safeDivide(
     const RGB_T<FloatType> &a, N b) {
     RGB_T<FloatType> ret = a;
@@ -3616,7 +3615,8 @@ namespace shared {
 
         CUDA_COMMON_FUNCTION RegularConstantContinuousDistribution2DTemplate() {}
 
-        CUDA_COMMON_FUNCTION void sample(RealType u0, RealType u1, RealType* d0, RealType* d1, RealType* probDensity) const {
+        CUDA_COMMON_FUNCTION void sample(
+            RealType u0, RealType u1, RealType* d0, RealType* d1, RealType* probDensity) const {
             RealType topPDF;
             *d1 = m_top1DDist.sample(u1, &topPDF);
             uint32_t idx1D = mapPrimarySampleToDiscrete(*d1, m_top1DDist.numValues());

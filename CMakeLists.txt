@@ -15,14 +15,14 @@ set(
     "${CMAKE_SOURCE_DIR}/cmake"
     ${CMAKE_MODULE_PATH})
 find_package(CUDAToolkit 12.2 REQUIRED)
-find_package(OptiX77)
+find_package(OptiX80)
 include("copy_files")
 include("nvcuda_compile_ptx")
 
-if (OptiX77_FOUND)
-    set(OPTIX_INCLUDE_DIR "${OPTIX77_INCLUDE_DIR}")
+if (OptiX80_FOUND)
+    set(OPTIX_INCLUDE_DIR "${OPTIX80_INCLUDE_DIR}")
 else()
-    message(FATAL_ERROR "OptiX SDK 7.7 not found.")
+    message(FATAL_ERROR "OptiX SDK 8.0 not found.")
 endif()
 
 
@@ -117,8 +117,9 @@ function(set_common_sources)
         TARGET_PATH "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${CMAKE_CFG_INTDIR}/${TARGET_NAME}/ptxes"
         GENERATED_FILES CUDA_PTXES
         NVCC_OPTIONS
-        "$<$<CONFIG:Debug>:-G>"
+        "-Xcompiler" "\"/wd 4819 /Zc:__cplusplus\""
         "$<$<CONFIG:Debug>:-D_DEBUG=1>"
+        "$<$<CONFIG:Debug>:-G>"
         "--gpu-architecture=compute_52"
         "-std=c++20"
         "-cudart" "shared"
@@ -291,6 +292,8 @@ target_compile_options(
     # if (compilerID == MSVC && compilerLanguage != CUDA) set(/MP);
     "$<$<AND:$<C_COMPILER_ID:MSVC>,$<NOT:$<COMPILE_LANGUAGE:CUDA>>>:/MP>"
     "$<$<AND:$<CXX_COMPILER_ID:MSVC>,$<NOT:$<COMPILE_LANGUAGE:CUDA>>>:/MP>"
+    # if (compilerID == MSVC && compilerLanguage != CUDA) set(/Zc:__cplusplus);
+    "$<$<AND:$<CXX_COMPILER_ID:MSVC>,$<NOT:$<COMPILE_LANGUAGE:CUDA>>>:/Zc:__cplusplus>"
 )
 target_include_directories(
     fakelib INTERFACE

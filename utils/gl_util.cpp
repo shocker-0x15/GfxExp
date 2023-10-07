@@ -1,6 +1,6 @@
 ﻿/*
 
-   Copyright 2022 Shin Watanabe
+   Copyright 2023 Shin Watanabe
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -62,9 +62,10 @@ namespace glu {
 
 
 
-    static void debugCallback(GLenum source, GLenum type, GLuint id, GLenum severity,
-                              GLsizei length, const GLchar* message,
-                              const GLvoid* userParam) {
+    static void debugCallback(
+        GLenum source, GLenum type, GLuint id, GLenum severity,
+        GLsizei length, const GLchar* message,
+        const GLvoid* userParam) {
         char sourceStr[32];
         switch (source) {
         case GL_DEBUG_SOURCE_API:
@@ -197,14 +198,14 @@ namespace glu {
         return *this;
     }
 
-    void Buffer::initialize(uint32_t stride, uint32_t numElements, Usage usage) {
+    void Buffer::initialize(size_t stride, size_t numElements, Usage usage) {
         throwRuntimeError(!m_initialized, "Buffer is already initialized.");
 
         m_stride = stride;
         m_numElements = numElements;
         m_usage = usage;
 
-        size_t size = static_cast<size_t>(m_numElements) * m_stride;
+        size_t size = m_numElements * m_stride;
 
         glCreateBuffers(1, &m_handle);
         glNamedBufferData(m_handle, size, nullptr, m_usage);
@@ -230,7 +231,7 @@ namespace glu {
         m_initialized = false;
     }
 
-    void Buffer::resize(uint32_t numElements, uint32_t stride) {
+    void Buffer::resize(size_t numElements, size_t stride) {
         throwRuntimeError(m_initialized, "Buffer is not initialized.");
         throwRuntimeError(stride >= m_stride, "New stride must be >= the current stride.");
 
@@ -240,16 +241,15 @@ namespace glu {
         Buffer newBuffer;
         newBuffer.initialize(numElements, stride, m_usage);
 
-        uint32_t numElementsToCopy = std::min(m_numElements, numElements);
+        size_t numElementsToCopy = std::min(m_numElements, numElements);
         if (stride == m_stride) {
-            size_t numBytesToCopy = static_cast<size_t>(numElementsToCopy) * m_stride;
-            glCopyNamedBufferSubData(m_handle, newBuffer.m_handle,
-                                     0, 0, numBytesToCopy);
+            size_t numBytesToCopy = numElementsToCopy * m_stride;
+            glCopyNamedBufferSubData(m_handle, newBuffer.m_handle, 0, 0, numBytesToCopy);
         }
         else {
             auto src = map<const uint8_t>();
             auto dst = newBuffer.map<uint8_t>();
-            for (uint32_t i = 0; i < numElementsToCopy; ++i) {
+            for (size_t i = 0; i < numElementsToCopy; ++i) {
                 std::memset(dst, 0, stride);
                 std::memcpy(dst, src, m_stride);
             }
@@ -322,7 +322,7 @@ namespace glu {
         return *this;
     }
 
-    void Texture2D::initialize(GLenum format, uint32_t width, uint32_t height, uint32_t numMipLevels) {
+    void Texture2D::initialize(GLenum format, GLsizei width, GLsizei height, uint32_t numMipLevels) {
         throwRuntimeError(!m_initialized, "Texture2D is already initialized.");
 
         m_format = format;
@@ -355,15 +355,17 @@ namespace glu {
     void Texture2D::transferImage(GLenum format, GLenum type, const void* data, uint32_t mipLevel) const {
         glTextureSubImage2D(
             m_handle, mipLevel,
-            0, 0, std::max(m_width >> mipLevel, 1u), std::max(m_height >> mipLevel, 1u),
+            0, 0,
+            std::max<GLsizei>(m_width >> mipLevel, 1u), std::max<GLsizei>(m_height >> mipLevel, 1u),
             format, type, data);
     }
 
-    void Texture2D::transferCompressedImage(const void* data, size_t size, uint32_t mipLevel) const {
+    void Texture2D::transferCompressedImage(const void* data, GLsizei size, uint32_t mipLevel) const {
         glCompressedTextureSubImage2D(
             m_handle, mipLevel,
-            0, 0, std::max(m_width >> mipLevel, 1u), std::max(m_height >> mipLevel, 1u),
-            m_format, static_cast<GLsizei>(size), data);
+            0, 0,
+            std::max<GLsizei>(m_width >> mipLevel, 1u), std::max<GLsizei>(m_height >> mipLevel, 1u),
+            m_format, size, data);
     }
 
 
@@ -509,10 +511,10 @@ namespace glu {
     }
 
     void FrameBuffer::initialize(
-        uint32_t width, uint32_t height, uint32_t multiBufferingFactor,
-                                 const GLenum* internalFormats, uint32_t colorIsMultiBuffered,
-                                 uint32_t numColorAttachments,
-                                 const GLenum* depthInternalFormat, bool depthIsMultiBuffered) {
+        GLsizei width, GLsizei height, uint32_t multiBufferingFactor,
+        const GLenum* internalFormats, uint32_t colorIsMultiBuffered,
+        uint32_t numColorAttachments,
+        const GLenum* depthInternalFormat, bool depthIsMultiBuffered) {
         throwRuntimeError(numColorAttachments <= 16, "Maximum number of color attachments is 16.");
         throwRuntimeError(!m_initialized, "FrameBuffer is already initialized.");
 
@@ -620,7 +622,7 @@ namespace glu {
         static std::regex regexPragmaOnce(R"regex(^ *# *pragma *once *\r?\n)regex");
         static std::regex regexInclude(R"regex(^ *# *include "(.*)"\r?\n)regex");
 
-        if (includedFiles.contains(filePath.lexically_normal()))
+        if (includedFiles.count(filePath.lexically_normal()) > 0)
             return std::string("");
 
         const auto readFile = [](const std::filesystem::path &filepath) {
@@ -893,9 +895,10 @@ namespace glu {
         m_initialized = true;
     }
 
-    void GraphicsProgram::initializeVSPS(const std::string &glslHead,
-                                         const std::filesystem::path &vertexSourcePath,
-                                         const std::filesystem::path &fragmentSourcePath) {
+    void GraphicsProgram::initializeVSPS(
+        const std::string &glslHead,
+        const std::filesystem::path &vertexSourcePath,
+        const std::filesystem::path &fragmentSourcePath) {
         std::string vsSource = glslHead + "\n" +
             resolveShaderSource(Shader::Type::Vertex, vertexSourcePath);
         std::string fsSource = glslHead + "\n" +

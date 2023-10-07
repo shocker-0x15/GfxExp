@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AutoVisualizer xmlns="http://schemas.microsoft.com/vstudio/debugger/natvis/2010">
+  <Type Name="cudau::Array">
+    <DisplayString>{{type={m_elemType}, stride={m_stride}, size={m_width}x{m_height}x{m_depth}, #mips={m_numMipmapLevels}, glTexID={m_GLTexID}}}</DisplayString>
+    <Expand>
+      <Item Name="CUDA context">m_cuContext</Item>
+      <Item Name="CUDA array" Condition="m_numMipmapLevels == 1">m_array</Item>
+      <Item Name="CUDA mipmaped array" Condition="m_numMipmapLevels > 1">m_mipmappedArray</Item>
+      <Item Name="GL texture ID" Condition="m_GLTexID != 0">m_GLTexID</Item>
+      <Item Name="CUDA gfx resource" Condition="m_GLTexID != 0">m_cudaGfxResource</Item>
+
+      <Item Name="format">m_elemType</Item>
+      <Item Name="width">m_width</Item>
+      <Item Name="height">m_height</Item>
+      <Item Name="depth">m_depth</Item>
+      <Item Name="num mipmap levels">m_numMipmapLevels</Item>
+      <Item Name="stride">m_stride</Item>
+      <Item Name="numChannels" Condition="uint32_t(m_elemType) > 8">m_numChannels</Item>
+
+      <Item Name="surface load store">(bool)m_surfaceLoadStore</Item>
+      <Item Name="use texture gather">(bool)m_useTextureGather</Item>
+      <Item Name="is cube map">(bool)m_cubemap</Item>
+      <Item Name="is layered">(bool)m_layered</Item>
+
+      <Synthetic Name="mapped pointers">
+        <DisplayString>{{{m_mappedPointers}, {m_numMipmapLevels} elems}}</DisplayString>
+        <Expand>
+          <ArrayItems>
+            <Size>m_numMipmapLevels</Size>
+            <ValuePointer>m_mappedPointers</ValuePointer>
+          </ArrayItems>
+        </Expand>
+      </Synthetic>
+
+      <Synthetic Name="mapped arrays">
+        <DisplayString>{{{m_mipmapArrays}, {m_numMipmapLevels} elems}}</DisplayString>
+        <Expand>
+          <ArrayItems>
+            <Size>m_numMipmapLevels</Size>
+            <ValuePointer>m_mipmapArrays</ValuePointer>
+          </ArrayItems>
+        </Expand>
+      </Synthetic>
+
+      <Synthetic Name="map flags">
+        <DisplayString>{{{m_mapFlags}, {m_numMipmapLevels} elems}}</DisplayString>
+        <Expand>
+          <ArrayItems>
+            <Size>m_numMipmapLevels</Size>
+            <ValuePointer>m_mapFlags</ValuePointer>
+          </ArrayItems>
+        </Expand>
+      </Synthetic>
+
+      <Synthetic Name="surface objects" Condition="m_surfaceLoadStore">
+        <DisplayString>{{{m_surfObjs}, {m_numMipmapLevels} elems}}</DisplayString>
+        <Expand>
+          <ArrayItems>
+            <Size>m_numMipmapLevels</Size>
+            <ValuePointer>m_surfObjs</ValuePointer>
+          </ArrayItems>
+        </Expand>
+      </Synthetic>
+    </Expand>
+  </Type>
+</AutoVisualizer>

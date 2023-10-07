@@ -76,9 +76,11 @@ std::vector<char> readBinaryFile(const std::filesystem::path &filepath) {
 
 template <typename RealType>
 void DiscreteDistribution1DTemplate<RealType>::
-initialize(CUcontext cuContext, cudau::BufferType type, const RealType* values, size_t numValues) {
+initialize(
+    CUcontext cuContext, cudau::BufferType type,
+    const RealType* values, uint32_t numValues) {
     Assert(!m_isInitialized, "Already initialized!");
-    m_numValues = static_cast<uint32_t>(numValues);
+    m_numValues = numValues;
     if (m_numValues == 0) {
         m_integral = 0.0f;
         return;
@@ -201,9 +203,11 @@ template class DiscreteDistribution1DTemplate<float>;
 
 template <typename RealType>
 void RegularConstantContinuousDistribution1DTemplate<RealType>::
-initialize(CUcontext cuContext, cudau::BufferType type, const RealType* values, size_t numValues) {
+initialize(
+    CUcontext cuContext, cudau::BufferType type,
+    const RealType* values, uint32_t numValues) {
     Assert(!m_isInitialized, "Already initialized!");
-    m_numValues = static_cast<uint32_t>(numValues);
+    m_numValues = numValues;
 #if defined(USE_WALKER_ALIAS_METHOD)
     m_PDF.initialize(cuContext, type, m_numValues);
     m_aliasTable.initialize(cuContext, type, m_numValues);
@@ -317,7 +321,9 @@ template class RegularConstantContinuousDistribution1DTemplate<float>;
 
 template <typename RealType>
 void RegularConstantContinuousDistribution2DTemplate<RealType>::
-initialize(CUcontext cuContext, cudau::BufferType type, const RealType* values, size_t numD1, size_t numD2) {
+initialize(
+    CUcontext cuContext, cudau::BufferType type,
+    const RealType* values, uint32_t numD1, uint32_t numD2) {
     Assert(!m_isInitialized, "Already initialized!");
     m_1DDists = new RegularConstantContinuousDistribution1DTemplate<RealType>[numD2];
     m_raw1DDists.initialize(cuContext, type, static_cast<uint32_t>(numD2));
@@ -352,7 +358,7 @@ template class RegularConstantContinuousDistribution2DTemplate<float>;
 
 
 
-void ProbabilityTexture::initialize(CUcontext cuContext, size_t numValues) {
+void ProbabilityTexture::initialize(CUcontext cuContext, uint32_t numValues) {
     Assert(!m_isInitialized, "Already initialized!");
     cudau::TextureSampler sampler;
     sampler.setXyFilterMode(cudau::TextureFilterMode::Point);
@@ -1046,29 +1052,29 @@ void createImmTexture(
         uint32_t data;
         GLenum glBufferFormat;
         if constexpr (std::is_same_v<T, float>) {
-            data = std::min<uint32_t>(255 * immValue, 255);
+            data = std::min(static_cast<uint32_t>(255 * immValue), 255u);
             glBufferFormat = GL_R8;
         }
         if constexpr (std::is_same_v<T, float2>) {
             data = (
-                (std::min<uint32_t>(255 * immValue.x, 255) << 0) |
-                (std::min<uint32_t>(255 * immValue.y, 255) << 8));
+                (std::min(static_cast<uint32_t>(255 * immValue.x), 255u) << 0) |
+                (std::min(static_cast<uint32_t>(255 * immValue.y), 255u) << 8));
             glBufferFormat = GL_RG8;
         }
         if constexpr (std::is_same_v<T, float3>) {
             data = (
-                (std::min<uint32_t>(255 * immValue.x, 255) << 0) |
-                (std::min<uint32_t>(255 * immValue.y, 255) << 8) |
-                (std::min<uint32_t>(255 * immValue.z, 255) << 16) |
+                (std::min(static_cast<uint32_t>(255 * immValue.x), 255u) << 0) |
+                (std::min(static_cast<uint32_t>(255 * immValue.y), 255u) << 8) |
+                (std::min(static_cast<uint32_t>(255 * immValue.z), 255u) << 16) |
                 255 << 24);
             glBufferFormat = GL_RGBA8;
         }
         if constexpr (std::is_same_v<T, float4>) {
             data = (
-                (std::min<uint32_t>(255 * immValue.x, 255) << 0) |
-                (std::min<uint32_t>(255 * immValue.y, 255) << 8) |
-                (std::min<uint32_t>(255 * immValue.z, 255) << 16) |
-                (std::min<uint32_t>(255 * immValue.w, 255) << 24));
+                (std::min(static_cast<uint32_t>(255 * immValue.x), 255u) << 0) |
+                (std::min(static_cast<uint32_t>(255 * immValue.y), 255u) << 8) |
+                (std::min(static_cast<uint32_t>(255 * immValue.z), 255u) << 16) |
+                (std::min(static_cast<uint32_t>(255 * immValue.w), 255u) << 24));
             glBufferFormat = GL_RGBA8;
         }
 
@@ -1294,8 +1300,8 @@ bool loadNormalTexture(
         int32_t width, height, mipCount;
         dds::Format ddsFormat;
         size_t* sizes;
-        uint8_t** imageData = dds::load(filePath.string().c_str(),
-                                        &width, &height, &mipCount, &sizes, &ddsFormat);
+        uint8_t** imageData = dds::load(
+            filePath.string().c_str(), &width, &height, &mipCount, &sizes, &ddsFormat);
         mipCount = std::max(mipCount - 2, 1);
         if (imageData) {
             bool isHDR;
@@ -1308,7 +1314,8 @@ bool loadNormalTexture(
                     cudau::ArrayTextureGather::Disable;
                 cacheValue.gfxTexture.initialize(glFormat, width, height, mipCount);
                 for (int mipLevel = 0; mipLevel < mipCount; ++mipLevel)
-                    cacheValue.gfxTexture.transferCompressedImage(imageData[mipLevel], sizes[mipLevel], mipLevel);
+                    cacheValue.gfxTexture.transferCompressedImage(
+                        imageData[mipLevel], static_cast<GLsizei>(sizes[mipLevel]), mipLevel);
                 //cacheValue.texture.initializeFromGLTexture2D(
                 //    cuContext, cacheValue.gfxTexture.getHandle(),
                 //    cudau::ArraySurface::Disable, textureGather);
@@ -1422,8 +1429,8 @@ void createEmittanceTexture(
 
 static shared::TexDimInfo calcDimInfo(const cudau::Array &cuArray, bool isLeftHanded = true) {
     shared::TexDimInfo dimInfo = {};
-    uint32_t w = cuArray.getWidth();
-    uint32_t h = cuArray.getHeight();
+    uint32_t w = static_cast<uint32_t>(cuArray.getWidth());
+    uint32_t h = static_cast<uint32_t>(cuArray.getHeight());
     bool wIsPowerOfTwo = (w & (w - 1)) == 0;
     bool hIsPowerOfTwo = (h & (h - 1)) == 0;
     dimInfo.dimX = w;
@@ -1825,9 +1832,10 @@ GeometryInstance* createGeometryInstance(
         geomInst->gfxVertexArray.initialize();
         {
             GLuint vaoHandle = geomInst->gfxVertexArray.getHandle();
-            glVertexArrayVertexBuffer(vaoHandle,
-                                      0, geomInst->gfxVertexBuffer.getHandle(),
-                                      0, sizeof(shared::Vertex));
+            glVertexArrayVertexBuffer(
+                vaoHandle,
+                0, geomInst->gfxVertexBuffer.getHandle(),
+                0, sizeof(shared::Vertex));
             glVertexArrayAttribBinding(vaoHandle, 0, 0);
             glVertexArrayAttribBinding(vaoHandle, 1, 0);
             glVertexArrayAttribBinding(vaoHandle, 2, 0);
@@ -1848,19 +1856,19 @@ GeometryInstance* createGeometryInstance(
     geomInst->triangleBuffer.initialize(cuContext, Scene::bufferType, triangles);
     if (mat->emittance) {
 #if USE_PROBABILITY_TEXTURE
-        geomInst->emitterPrimDist.initialize(cuContext, triangles.size());
+        geomInst->emitterPrimDist.initialize(
+            cuContext, static_cast<uint32_t>(triangles.size()));
 #else
-        geomInst->emitterPrimDist.initialize(cuContext, Scene::bufferType, nullptr, triangles.size());
+        geomInst->emitterPrimDist.initialize(
+            cuContext, Scene::bufferType, nullptr, static_cast<uint32_t>(triangles.size()));
 #endif
     }
     geomInst->geomInstSlot = scene->geomInstSlotFinder.getFirstAvailableSlot();
     scene->geomInstSlotFinder.setInUse(geomInst->geomInstSlot);
 
     shared::GeometryInstanceData geomInstData = {};
-    geomInstData.vertexBuffer = shared::ROBuffer(
-        geomInst->vertexBuffer.getDevicePointer(), geomInst->vertexBuffer.numElements());
-    geomInstData.triangleBuffer = shared::ROBuffer(
-        geomInst->triangleBuffer.getDevicePointer(), geomInst->triangleBuffer.numElements());
+    geomInstData.vertexBuffer = geomInst->vertexBuffer.getROBuffer<shared::enableBufferOobCheck>();
+    geomInstData.triangleBuffer = geomInst->triangleBuffer.getROBuffer<shared::enableBufferOobCheck>();
     geomInst->emitterPrimDist.getDeviceType(&geomInstData.emitterPrimDist);
     geomInstData.materialSlot = mat->materialSlot;
     geomInstData.geomInstSlot = geomInst->geomInstSlot;
@@ -1906,10 +1914,8 @@ GeometryInstance* createTFDMGeometryInstance(
     scene->geomInstSlotFinder.setInUse(geomInst->geomInstSlot);
 
     shared::GeometryInstanceData geomInstData = {};
-    geomInstData.vertexBuffer = shared::ROBuffer(
-        geomInst->vertexBuffer.getDevicePointer(), geomInst->vertexBuffer.numElements());
-    geomInstData.triangleBuffer = shared::ROBuffer(
-        geomInst->triangleBuffer.getDevicePointer(), geomInst->triangleBuffer.numElements());
+    geomInstData.vertexBuffer = geomInst->vertexBuffer.getROBuffer<shared::enableBufferOobCheck>();
+    geomInstData.triangleBuffer = geomInst->triangleBuffer.getROBuffer<shared::enableBufferOobCheck>();
     geomInst->emitterPrimDist.getDeviceType(&geomInstData.emitterPrimDist);
     geomInstData.materialSlot = mat->materialSlot;
     geomInstData.geomInstSlot = geomInst->geomInstSlot;
@@ -1936,7 +1942,7 @@ GeometryGroup* createGeometryGroup(
         const GeometryInstance* geomInst = *it;
         geomGroup->optixGas.addChild(geomInst->optixGeomInst);
         if (geomInst->mat->emittance)
-            geomGroup->numEmitterPrimitives += geomInst->triangleBuffer.numElements();
+            geomGroup->numEmitterPrimitives += static_cast<uint32_t>(geomInst->triangleBuffer.numElements());
         geomGroup->aabb.unify(geomInst->aabb);
     }
     geomGroup->optixGas.setNumMaterialSets(1);
@@ -2387,9 +2393,11 @@ Instance* createInstance(
     inst->geomInstSlots.initialize(cuContext, Scene::bufferType, geomInstSlots);
     if (hasEmitterGeomInsts) {
 #if USE_PROBABILITY_TEXTURE
-        inst->lightGeomInstDist.initialize(cuContext, geomInstSlots.size());
+        inst->lightGeomInstDist.initialize(
+            cuContext, static_cast<uint32_t>(geomInstSlots.size()));
 #else
-        inst->lightGeomInstDist.initialize(cuContext, Scene::bufferType, nullptr, geomInstSlots.size());
+        inst->lightGeomInstDist.initialize(
+            cuContext, Scene::bufferType, nullptr, static_cast<uint32_t>(geomInstSlots.size()));
 #endif
     }
     inst->instSlot = scene->instSlotFinder.getFirstAvailableSlot();
@@ -2400,8 +2408,7 @@ Instance* createInstance(
     instData.prevTransform = finalTransform;
     instData.normalMatrix = transpose(invert(finalTransform.getUpperLeftMatrix()));
     instData.uniformScale = uniformScale;
-    instData.geomInstSlots = shared::ROBuffer<uint32_t>(
-        inst->geomInstSlots.getDevicePointer(), inst->geomInstSlots.numElements());
+    instData.geomInstSlots = inst->geomInstSlots.getROBuffer<shared::enableBufferOobCheck>();
     inst->lightGeomInstDist.getDeviceType(&instData.lightGeomInstDist);
     instDataOnHost[inst->instSlot] = instData;
 
@@ -2488,9 +2495,10 @@ void saveImage(const std::filesystem::path &filepath, uint32_t width, uint32_t h
         Assert_ShouldNotBeCalled();
 }
 
-void saveImageHDR(const std::filesystem::path &filepath, uint32_t width, uint32_t height,
-                  float brightnessScale,
-                  const float* data, bool flipY) {
+void saveImageHDR(
+    const std::filesystem::path &filepath, uint32_t width, uint32_t height,
+    float brightnessScale,
+    const float* data, bool flipY) {
     EXRHeader header;
     InitEXRHeader(&header);
 
@@ -2505,8 +2513,8 @@ void saveImageHDR(const std::filesystem::path &filepath, uint32_t width, uint32_
     images[2].resize(width * height);
     images[3].resize(width * height);
 
-    for (int y = 0; y < height; ++y) {
-        for (int x = 0; x < width; ++x) {
+    for (uint32_t y = 0; y < height; ++y) {
+        for (uint32_t x = 0; x < width; ++x) {
             uint32_t srcIdx = y * width + x;
             uint32_t dstIdx = (flipY ? (height - 1 - y) : y) * width + x;
             images[0][dstIdx] = brightnessScale * data[srcIdx];
@@ -2553,9 +2561,10 @@ void saveImageHDR(const std::filesystem::path &filepath, uint32_t width, uint32_
     free(header.requested_pixel_types);
 }
 
-void saveImageHDR(const std::filesystem::path &filepath, uint32_t width, uint32_t height,
-                  float brightnessScale,
-                  const float4* data, bool flipY) {
+void saveImageHDR(
+    const std::filesystem::path &filepath, uint32_t width, uint32_t height,
+    float brightnessScale,
+    const float4* data, bool flipY) {
     EXRHeader header;
     InitEXRHeader(&header);
 
@@ -2570,8 +2579,8 @@ void saveImageHDR(const std::filesystem::path &filepath, uint32_t width, uint32_
     images[2].resize(width * height);
     images[3].resize(width * height);
 
-    for (int y = 0; y < height; ++y) {
-        for (int x = 0; x < width; ++x) {
+    for (uint32_t y = 0; y < height; ++y) {
+        for (uint32_t x = 0; x < width; ++x) {
             uint32_t srcIdx = y * width + x;
             uint32_t dstIdx = (flipY ? (height - 1 - y) : y) * width + x;
             images[0][dstIdx] = brightnessScale * data[srcIdx].x;
@@ -2618,8 +2627,9 @@ void saveImageHDR(const std::filesystem::path &filepath, uint32_t width, uint32_
     free(header.requested_pixel_types);
 }
 
-void saveImage(const std::filesystem::path &filepath, uint32_t width, uint32_t height, const float4* data,
-               const SDRImageSaverConfig &config) {
+void saveImage(
+    const std::filesystem::path &filepath, uint32_t width, uint32_t height, const float4* data,
+    const SDRImageSaverConfig &config) {
     auto image = new uint32_t[width * height];
     for (int y = 0; y < static_cast<int32_t>(height); ++y) {
         uint32_t sy = config.flipY ? (height - 1 - y) : y;
@@ -2656,20 +2666,25 @@ void saveImage(const std::filesystem::path &filepath, uint32_t width, uint32_t h
     delete[] image;
 }
 
-void saveImage(const std::filesystem::path &filepath,
-               uint32_t width, cudau::TypedBuffer<float4> &buffer,
-               const SDRImageSaverConfig &config) {
+void saveImage(
+    const std::filesystem::path &filepath,
+    uint32_t width, cudau::TypedBuffer<float4> &buffer,
+    const SDRImageSaverConfig &config) {
     Assert(buffer.numElements() % width == 0, "Buffer's length is not divisible by the width.");
-    uint32_t height = buffer.numElements() / width;
+    uint32_t height = static_cast<uint32_t>(buffer.numElements()) / width;
     auto data = buffer.map();
     saveImage(filepath, width, height, data, config);
     buffer.unmap();
 }
 
-void saveImage(const std::filesystem::path &filepath,
-               cudau::Array &array,
-               const SDRImageSaverConfig &config) {
+void saveImage(
+    const std::filesystem::path &filepath,
+    cudau::Array &array,
+    const SDRImageSaverConfig &config) {
     auto data = array.map<float4>();
-    saveImage(filepath, array.getWidth(), array.getHeight(), data, config);
+    saveImage(
+        filepath,
+        static_cast<uint32_t>(array.getWidth()), static_cast<uint32_t>(array.getHeight()),
+        data, config);
     array.unmap();
 }

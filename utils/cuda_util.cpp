@@ -122,7 +122,7 @@ namespace cudau {
 
     void Buffer::initialize(
         CUcontext context, BufferType type,
-        uint32_t numElements, uint32_t stride, uint32_t glBufferID) {
+        size_t numElements, size_t stride, uint32_t glBufferID) {
         if (m_initialized)
             throw std::runtime_error("Buffer is already initialized.");
 
@@ -153,7 +153,7 @@ namespace cudau {
         m_GLBufferID = glBufferID;
         m_cudaGfxResource = nullptr;
 
-        size_t size = static_cast<size_t>(m_numElements) * m_stride;
+        size_t size = m_numElements * m_stride;
 
         if (m_type == BufferType::Device) {
             CUDADRV_CHECK(cuMemAlloc(&m_devicePointer, size));
@@ -224,7 +224,7 @@ namespace cudau {
         m_initialized = false;
     }
 
-    void Buffer::resize(uint32_t numElements, uint32_t stride, CUstream stream) {
+    void Buffer::resize(size_t numElements, size_t stride, CUstream stream) {
         if (!m_initialized)
             throw std::runtime_error("Buffer is not initialized.");
         if (m_type == BufferType::GL_Interop)
@@ -239,15 +239,15 @@ namespace cudau {
         newBuffer.initialize(m_cuContext, m_type, numElements, stride, m_GLBufferID);
         newBuffer.setMappedMemoryPersistent(m_persistentMappedMemory);
 
-        uint32_t numElementsToCopy = std::min(m_numElements, numElements);
+        size_t numElementsToCopy = std::min(m_numElements, numElements);
         if (stride == m_stride) {
-            size_t numBytesToCopy = static_cast<size_t>(numElementsToCopy) * m_stride;
+            size_t numBytesToCopy = numElementsToCopy * m_stride;
             CUDADRV_CHECK(cuMemcpyDtoDAsync(newBuffer.m_devicePointer, m_devicePointer, numBytesToCopy, stream));
         }
         else {
             auto src = map<const uint8_t>(stream, BufferMapFlag::ReadOnly);
             auto dst = newBuffer.map<uint8_t>(stream, BufferMapFlag::WriteOnlyDiscard);
-            for (uint32_t i = 0; i < numElementsToCopy; ++i) {
+            for (size_t i = 0; i < numElementsToCopy; ++i) {
                 std::memset(dst, 0, stride);
                 std::memcpy(dst, src, m_stride);
             }
@@ -286,7 +286,7 @@ namespace cudau {
         m_persistentMappedMemory = b;
         if (m_mapFlag == BufferMapFlag::Unmapped) {
             if (m_persistentMappedMemory) {
-                size_t size = static_cast<size_t>(m_numElements) * m_stride;
+                size_t size = m_numElements * m_stride;
                 m_mappedPointer = allocHostMem(size);
             }
             else {
@@ -306,7 +306,7 @@ namespace cudau {
             m_type == BufferType::GL_Interop) {
             CUDADRV_CHECK(cuCtxSetCurrent(m_cuContext));
 
-            size_t size = static_cast<size_t>(m_numElements) * m_stride;
+            size_t size = m_numElements * m_stride;
             if (!m_persistentMappedMemory)
                 m_mappedPointer = allocHostMem(size);
 
@@ -337,7 +337,7 @@ namespace cudau {
             m_type == BufferType::GL_Interop) {
             CUDADRV_CHECK(cuCtxSetCurrent(m_cuContext));
 
-            size_t size = static_cast<size_t>(m_numElements) * m_stride;
+            size_t size = m_numElements * m_stride;
 
             if (m_mapFlag != BufferMapFlag::ReadOnly)
                 CUDADRV_CHECK(cuMemcpyHtoDAsync(m_devicePointer, m_mappedPointer, size, stream));
@@ -360,7 +360,7 @@ namespace cudau {
         ret.initialize(m_cuContext, m_type, m_numElements, m_stride, m_GLBufferID);
         ret.setMappedMemoryPersistent(m_persistentMappedMemory);
 
-        size_t size = static_cast<size_t>(m_numElements) * m_stride;
+        size_t size = m_numElements * m_stride;
         if (m_type == BufferType::Device) {
             CUDADRV_CHECK(cuCtxSetCurrent(m_cuContext));
 
@@ -558,7 +558,7 @@ namespace cudau {
 
     void Array::initialize(
         CUcontext context, ArrayElementType elemType, uint32_t numChannels,
-        uint32_t width, uint32_t height, uint32_t depth, uint32_t numMipmapLevels,
+        size_t width, size_t height, size_t depth, uint32_t numMipmapLevels,
         bool surfaceLoadStore, bool useTextureGather, bool cubemap, bool layered, uint32_t glTexID) {
         if (m_initialized)
             throw std::runtime_error("Array is already initialized.");
@@ -770,13 +770,13 @@ namespace cudau {
         m_initialized = false;
     }
 
-    void Array::resize(uint32_t length, CUstream stream) {
+    void Array::resize(size_t length, CUstream stream) {
         if (m_height > 0 || m_depth > 0)
             throw std::runtime_error("Array dimension cannot be changed.");
         CUDAUAssert_NotImplemented();
     }
 
-    void Array::resize(uint32_t width, uint32_t height, CUstream stream) {
+    void Array::resize(size_t width, size_t height, CUstream stream) {
         if (m_depth > 0)
             throw std::runtime_error("Array dimension cannot be changed.");
         if (m_numMipmapLevels > 1)
@@ -790,14 +790,14 @@ namespace cudau {
             m_cuContext, m_elemType, m_numChannels, width, height, m_depth, m_numMipmapLevels,
             m_surfaceLoadStore, m_useTextureGather, m_cubemap, m_layered, 0);
 
-        uint32_t copyWidth = std::max(std::min(m_width, width), 1u);
-        uint32_t copyHeight = std::max(std::min(m_height, height), 1u);
+        size_t copyWidth = std::max<size_t>(std::min(m_width, width), 1u);
+        size_t copyHeight = std::max<size_t>(std::min(m_height, height), 1u);
         if (isBCFormat(m_elemType)) {
             copyWidth = (copyWidth + 3) / 4;
             copyHeight = (copyHeight + 3) / 4;
         }
 
-        size_t sizePerRow = copyWidth * static_cast<size_t>(m_stride);
+        size_t sizePerRow = copyWidth * m_stride;
 
         CUDA_MEMCPY3D params = {};
         params.WidthInBytes = sizePerRow;
@@ -823,7 +823,7 @@ namespace cudau {
         *this = std::move(newArray);
     }
 
-    void Array::resize(uint32_t width, uint32_t height, uint32_t depth, CUstream stream) {
+    void Array::resize(size_t width, size_t height, size_t depth, CUstream stream) {
         CUDAUAssert_NotImplemented();
     }
 
@@ -856,21 +856,21 @@ namespace cudau {
 
         CUDADRV_CHECK(cuCtxSetCurrent(m_cuContext));
 
-        uint32_t depth = std::max<uint32_t>(1, m_depth);
+        size_t depth = std::max<size_t>(1, m_depth);
 
-        uint32_t deviceBw;
-        uint32_t deviceBh;
+        size_t deviceBw;
+        size_t deviceBh;
         computeDimensionsOfLevel<CUDA_UTIL_TEX_DIM_WORKAROUND>(mipmapLevel, &deviceBw, &deviceBh);
-        size_t deviceSizePerRow = deviceBw * static_cast<size_t>(m_stride);
+        size_t deviceSizePerRow = deviceBw * m_stride;
 
 #if CUDA_UTIL_TEX_DIM_WORKAROUND
-        uint32_t hostBw;
-        uint32_t hostBh;
+        size_t hostBw;
+        size_t hostBh;
         computeDimensionsOfLevel<false>(mipmapLevel, &hostBw, &hostBh);
         size_t hostSizePerRow = hostBw * m_stride;
         size_t hostSize = depth * hostBh * hostSizePerRow;
 #else
-        uint32_t hostBh = deviceBh;
+        size_t hostBh = deviceBh;
         size_t hostSizePerRow = deviceSizePerRow;
         size_t hostSize = depth * hostBh * hostSizePerRow;
 #endif
@@ -917,21 +917,21 @@ namespace cudau {
 
         CUDADRV_CHECK(cuCtxSetCurrent(m_cuContext));
 
-        uint32_t deviceBw;
-        uint32_t deviceBh;
+        size_t deviceBw;
+        size_t deviceBh;
         computeDimensionsOfLevel<CUDA_UTIL_TEX_DIM_WORKAROUND>(mipmapLevel, &deviceBw, &deviceBh);
-        uint32_t depth = std::max<uint32_t>(1, m_depth);
-        size_t deviceSizePerRow = deviceBw * static_cast<size_t>(m_stride);
+        size_t depth = std::max<size_t>(1, m_depth);
+        size_t deviceSizePerRow = deviceBw * m_stride;
 
 #if CUDA_UTIL_TEX_DIM_WORKAROUND
-        uint32_t hostBw;
-        uint32_t hostBh;
+        size_t hostBw;
+        size_t hostBh;
         computeDimensionsOfLevel<false>(mipmapLevel, &hostBw, &hostBh);
         size_t hostSizePerRow = hostBw * m_stride;
         size_t hostSize = depth * hostBh * hostSizePerRow;
 #else
         size_t hostSizePerRow = deviceSizePerRow;
-        uint32_t hostBh = deviceBh;
+        size_t hostBh = deviceBh;
 #endif
 
         CUDA_MEMCPY3D params = {};
@@ -965,8 +965,8 @@ namespace cudau {
 
     CUDA_RESOURCE_VIEW_DESC Array::getResourceViewDesc() const {
         CUDA_RESOURCE_VIEW_DESC ret = {};
-        uint32_t width;
-        uint32_t height;
+        size_t width;
+        size_t height;
         computeDimensionsOfLevel<CUDA_UTIL_TEX_DIM_WORKAROUND>(0, &width, &height);
         if (isBCFormat(m_elemType)) {
             width *= 4;

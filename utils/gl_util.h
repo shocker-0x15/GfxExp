@@ -1,6 +1,6 @@
 ﻿/*
 
-   Copyright 2022 Shin Watanabe
+   Copyright 2023 Shin Watanabe
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -188,8 +188,8 @@ namespace glu {
 
     private:
         GLuint m_handle;
-        uint32_t m_stride;
-        uint32_t m_numElements;
+        size_t m_stride;
+        size_t m_numElements;
         Usage m_usage;
 
         void* m_mappedPointer;
@@ -209,21 +209,21 @@ namespace glu {
         Buffer(Buffer &&b);
         Buffer &operator=(Buffer &&b);
 
-        void initialize(uint32_t stride, uint32_t numElements, Usage usage);
+        void initialize(size_t stride, size_t numElements, Usage usage);
         void finalize();
         bool isInitialized() const {
             return m_initialized;
         }
 
-        void resize(uint32_t stride, uint32_t numElements);
+        void resize(size_t stride, size_t numElements);
 
         size_t sizeInBytes() const {
             return static_cast<size_t>(m_numElements) * m_stride;
         }
-        uint32_t stride() const {
+        size_t stride() const {
             return m_stride;
         }
-        uint32_t numElements() const {
+        size_t numElements() const {
             return m_numElements;
         }
 
@@ -245,7 +245,7 @@ namespace glu {
             return reinterpret_cast<T*>(m_mappedPointer);
         }
         template <typename T>
-        void write(const T* srcValues, uint32_t numValues) const {
+        void write(const T* srcValues, size_t numValues) const {
             const size_t transferSize = sizeof(T) * numValues;
             const size_t bufferSize = static_cast<size_t>(m_stride) * m_numElements;
             if (transferSize > bufferSize)
@@ -275,8 +275,8 @@ namespace glu {
     private:
         uint32_t m_handle;
         GLenum m_format;
-        uint32_t m_width;
-        uint32_t m_height;
+        GLsizei m_width;
+        GLsizei m_height;
         uint32_t m_numMipLevels;
 
         struct {
@@ -293,14 +293,14 @@ namespace glu {
         Texture2D(Texture2D &&b);
         Texture2D &operator=(Texture2D &&b);
 
-        void initialize(GLenum format, uint32_t width, uint32_t height, uint32_t numMipLevels);
+        void initialize(GLenum format, GLsizei width, GLsizei height, uint32_t numMipLevels);
         void finalize();
         bool isInitialized() const {
             return m_initialized;
         }
 
         void transferImage(GLenum format, GLenum type, const void* data, uint32_t mipLevel) const;
-        void transferCompressedImage(const void* data, size_t size, uint32_t mipLevel) const;
+        void transferCompressedImage(const void* data, GLsizei size, uint32_t mipLevel) const;
 
         GLuint getHandle() const {
             return m_handle;
@@ -437,8 +437,8 @@ namespace glu {
         Texture2D* m_renderTargetTextures;
         GLenum* m_renderTargetIDs;
         Texture2D* m_depthRenderTargetTextures;
-        uint32_t m_width;
-        uint32_t m_height;
+        GLsizei m_width;
+        GLsizei m_height;
         uint32_t m_numColorAttachments;
         uint32_t m_multiBufferingFactor;
         uint32_t m_colorIsMultiBuffered;
@@ -458,10 +458,11 @@ namespace glu {
         FrameBuffer(FrameBuffer &&b);
         FrameBuffer &operator=(FrameBuffer &&b);
 
-        void initialize(uint32_t width, uint32_t height, uint32_t multiBufferingFactor,
-                        const GLenum* internalFormats, uint32_t colorIsMultiBuffered,
-                        uint32_t numColorAttachments,
-                        const GLenum* depthInternalFormat, bool depthIsMultiBuffered);
+        void initialize(
+            GLsizei width, GLsizei height, uint32_t multiBufferingFactor,
+            const GLenum* internalFormats, uint32_t colorIsMultiBuffered,
+            uint32_t numColorAttachments,
+            const GLenum* depthInternalFormat, bool depthIsMultiBuffered);
         void finalize();
 
         void setDrawBuffers() const {
@@ -599,9 +600,10 @@ namespace glu {
         GraphicsProgram &operator=(GraphicsProgram &&b);
 
         void initializeVSPS(const std::string &vertexSource, const std::string &fragmentSource);
-        void initializeVSPS(const std::string &glslHead,
-                            const std::filesystem::path &vertexSourcePath,
-                            const std::filesystem::path &fragmentSourcePath);
+        void initializeVSPS(
+            const std::string &glslHead,
+            const std::filesystem::path &vertexSourcePath,
+            const std::filesystem::path &fragmentSourcePath);
         void finalize();
 
         GLuint getHandle() const {

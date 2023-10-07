@@ -33,8 +33,9 @@ nvcuda_compile_ptx(
     TARGET_PATH "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${CMAKE_CFG_INTDIR}/${TARGET_NAME}/ptxes"
     GENERATED_FILES CUDA_PTXES
     NVCC_OPTIONS
-    "$<$<CONFIG:Debug>:-G>"
+    "-Xcompiler" "\"/wd 4819 /Zc:__cplusplus\""
     "$<$<CONFIG:Debug>:-D_DEBUG=1>"
+    "$<$<CONFIG:Debug>:-G>"
     "--gpu-architecture=compute_52"
     "-std=c++20"
     "-cudart" "shared"
@@ -49,8 +50,9 @@ nvcuda_compile_ptx(
     TARGET_PATH "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${CMAKE_CFG_INTDIR}/${TARGET_NAME}/ptxes"
     GENERATED_FILES OPTIX_PTXES
     NVCC_OPTIONS
-    "$<$<CONFIG:Debug>:-lineinfo>"
+    "-Xcompiler" "\"/wd 4819 /Zc:__cplusplus\""
     "$<$<CONFIG:Debug>:-D_DEBUG=1>"
+    "$<$<CONFIG:Debug>:-lineinfo>"
     "--gpu-architecture=compute_52"
     "-std=c++20"
     "-cudart" "shared"

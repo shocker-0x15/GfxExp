@@ -155,12 +155,12 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <LibraryPath>$(SolutionDir)ext\prebuilt\lib;C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.2\lib\x64;$(LibraryPath)</LibraryPath>
     <TargetName>svgf</TargetName>
-    <ExternalIncludePath>$(SolutionDir)ext\tinyexr;$(SolutionDir)ext\tinyexr\deps\miniz;$(SolutionDir)ext\glfw\include;$(SolutionDir)ext\imgui;$(SolutionDir)ext\prebuilt\include;C:\ProgramData\NVIDIA Corporation\OptiX SDK 7.7.0\include;$(ExternalIncludePath)</ExternalIncludePath>
+    <ExternalIncludePath>$(SolutionDir)ext\tinyexr;$(SolutionDir)ext\tinyexr\deps\miniz;$(SolutionDir)ext\glfw\include;$(SolutionDir)ext\imgui;$(SolutionDir)ext\prebuilt\include;C:\ProgramData\NVIDIA Corporation\OptiX SDK 8.0.0\include;$(ExternalIncludePath)</ExternalIncludePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <LibraryPath>$(SolutionDir)ext\prebuilt\lib;C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.2\lib\x64;$(LibraryPath)</LibraryPath>
     <TargetName>svgf</TargetName>
-    <ExternalIncludePath>$(SolutionDir)ext\tinyexr;$(SolutionDir)ext\tinyexr\deps\miniz;$(SolutionDir)ext\glfw\include;$(SolutionDir)ext\imgui;$(SolutionDir)ext\prebuilt\include;C:\ProgramData\NVIDIA Corporation\OptiX SDK 7.7.0\include;$(ExternalIncludePath)</ExternalIncludePath>
+    <ExternalIncludePath>$(SolutionDir)ext\tinyexr;$(SolutionDir)ext\tinyexr\deps\miniz;$(SolutionDir)ext\glfw\include;$(SolutionDir)ext\imgui;$(SolutionDir)ext\prebuilt\include;C:\ProgramData\NVIDIA Corporation\OptiX SDK 8.0.0\include;$(ExternalIncludePath)</ExternalIncludePath>
   </PropertyGroup>
   <PropertyGroup Label="Vcpkg">
     <VcpkgEnabled>false</VcpkgEnabled>
@@ -174,6 +174,7 @@
       <PreprocessorDefinitions>USE_CUBD_LIB;_CRT_SECURE_NO_WARNINGS;_MBCS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <SDLCheck>true</SDLCheck>
+      <AdditionalOptions>/Zc:__cplusplus %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -194,7 +195,7 @@
       <TargetMachinePlatform>64</TargetMachinePlatform>
       <CudaRuntime>Shared</CudaRuntime>
       <CompileOut>$(SolutionDir)$(Platform)\$(Configuration)\$(TargetName)\ptxes\%(Filename).ptx</CompileOut>
-      <AdditionalOptions>-std=c++20 --use_fast_math -Xcompiler "/wd 4819" -D_DEBUG %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>-std=c++20 --use_fast_math -Xcompiler "/wd 4819 /Zc:__cplusplus" -D_DEBUG %(AdditionalOptions)</AdditionalOptions>
       <FastMath>true</FastMath>
     </CudaCompile>
     <CudaLink>
@@ -212,6 +213,7 @@
       <PreprocessorDefinitions>USE_CUBD_LIB;_CRT_SECURE_NO_WARNINGS;_MBCS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <SDLCheck>true</SDLCheck>
+      <AdditionalOptions>/Zc:__cplusplus %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -233,7 +235,7 @@
       <TargetMachinePlatform>64</TargetMachinePlatform>
       <CudaRuntime>Shared</CudaRuntime>
       <CompileOut>$(SolutionDir)$(Platform)\$(Configuration)\$(TargetName)\ptxes\%(Filename).ptx</CompileOut>
-      <AdditionalOptions>-std=c++20 --use_fast_math -Xcompiler "/wd 4819" %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>-std=c++20 --use_fast_math -Xcompiler "/wd 4819 /Zc:__cplusplus" %(AdditionalOptions)</AdditionalOptions>
       <FastMath>true</FastMath>
     </CudaCompile>
     <CudaLink>

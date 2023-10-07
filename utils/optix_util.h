@@ -31,6 +31,12 @@ EN:
 - In Visual Studio, does the CUDA property "Use Fast Math" not work for ptx compilation??
 
 変更履歴 / Update History:
+- !!BREAKING
+  JP: - OptiX 8.0.0をサポート。
+        Context::createDenoiser(), Denoiser::invoke()のパラメターを変更。
+  EN: - Supported OptiX 8.0.0.
+        Changed the parameters of Context::createDenoiser(), Denoiser::invoke().
+
 - JP: - Displacement Micro-Mapをサポート。
   EN: - Supported displacement micro-map.
 
@@ -41,6 +47,7 @@ EN:
   EN: - Supported OptiX 7.7.0.
       - Changed the parameters of Pipeline::link().
       - Does not support displaced micro-mesh yet.
+
 - !!BREAKING
   JP: - ProgramGroupをProgram, HitProgramGroup, CallableProgramGroupに分割した。
   EN: - Separated ProgramGroup into Program, HitProgramGroup, CallableProgramGroup.
@@ -91,6 +98,7 @@ EN:
         __CUDACC__と__CUDA_ARCH__の使い分けを明確に。
   EN: - Removed inline qualifier from RT_DEVICE_FUNCTION and added RT_INLINE.
         Disambiguate usage of __CUDACC__ and __CUDA_ARCH__.
+
 - !!BREAKING
   JP: - getPayloads()/setPayloads(), getAttributes(), getExceptionDetails()を削除。
         ペイロードなどの値はシグネチャー型経由で取得・設定を行う。
@@ -481,6 +489,16 @@ namespace optixu {
             OptixVisibilityMask visibilityMask, OptixRayFlags rayFlags,
             uint32_t SBToffset, uint32_t SBTstride, uint32_t missSBTIndex,
             PayloadTypes &... payloads);
+        template <OptixPayloadTypeID payloadTypeID = OPTIX_PAYLOAD_TYPE_DEFAULT>
+        RT_DEVICE_FUNCTION RT_INLINE static void traverse(
+            OptixTraversableHandle handle,
+            const float3 &origin, const float3 &direction,
+            float tmin, float tmax, float rayTime,
+            OptixVisibilityMask visibilityMask, OptixRayFlags rayFlags,
+            uint32_t SBToffset, uint32_t SBTstride, uint32_t missSBTIndex,
+            PayloadTypes &... payloads);
+        template <OptixPayloadTypeID payloadTypeID = OPTIX_PAYLOAD_TYPE_DEFAULT>
+        RT_DEVICE_FUNCTION RT_INLINE static void invoke(PayloadTypes &... payloads);
         RT_DEVICE_FUNCTION RT_INLINE static void get(PayloadTypes*... payloads);
         RT_DEVICE_FUNCTION RT_INLINE static void set(const PayloadTypes*... payloads);
         template <uint32_t index>
@@ -541,6 +559,30 @@ namespace optixu {
             float hitT, uint32_t hitKind,
             const AttributeTypes &... attributes);
         RT_DEVICE_FUNCTION RT_INLINE static void get(AttributeTypes*... attributes);
+        RT_DEVICE_FUNCTION RT_INLINE static void getFromHitObject(AttributeTypes*... attributes);
+        RT_DEVICE_FUNCTION RT_INLINE static void makeHitObject(
+            OptixTraversableHandle handle,
+            const float3 &origin, const float3 &direction,
+            float tmin, float tmax, float rayTime,
+            uint32_t SBToffset, uint32_t SBTstride, uint32_t instIdx,
+            const OptixTraversableHandle* transforms, uint32_t numTransforms,
+            uint32_t sbtGASIdx, uint32_t primIdx, uint32_t hitKind,
+            const AttributeTypes &... attributes);
+        RT_DEVICE_FUNCTION RT_INLINE static void makeHitObject(
+            OptixTraversableHandle handle,
+            const float3 &origin, const float3 &direction,
+            float tmin, float tmax, float rayTime,
+            uint32_t SBToffset, uint32_t SBTstride, uint32_t instIdx,
+            uint32_t sbtGASIdx, uint32_t primIdx, uint32_t hitKind,
+            const AttributeTypes &... attributes);
+        RT_DEVICE_FUNCTION RT_INLINE static void makeHitObjectWithRecord(
+            OptixTraversableHandle handle,
+            const float3 &origin, const float3 &direction,
+            float tmin, float tmax, float rayTime,
+            uint32_t sbtRecordIndex, uint32_t instIdx,
+            const OptixTraversableHandle* transforms, uint32_t numTransforms,
+            uint32_t sbtGASIdx, uint32_t primIdx, uint32_t hitKind,
+            const AttributeTypes &... attributes);
 #endif
     };
 
@@ -651,8 +693,8 @@ namespace optixu {
                 traceSetPayloads<startSlot + numDwords>(p, tailPayloads...);
         }
 
-        template <OptixPayloadTypeID payloadTypeID, size_t... I>
-        RT_DEVICE_FUNCTION RT_INLINE void trace(
+        template <bool withInvoke, OptixPayloadTypeID payloadTypeID, size_t... I>
+        RT_DEVICE_FUNCTION RT_INLINE void traverse(
             OptixTraversableHandle handle,
             const float3 &origin, const float3 &direction,
             float tmin, float tmax, float rayTime,
@@ -660,14 +702,32 @@ namespace optixu {
             uint32_t SBToffset, uint32_t SBTstride, uint32_t missSBTIndex,
             uint32_t* const* payloads,
             std::index_sequence<I...>) {
-            optixTrace(
-                payloadTypeID,
-                handle,
-                origin, direction,
-                tmin, tmax, rayTime,
-                visibilityMask, rayFlags,
-                SBToffset, SBTstride, missSBTIndex,
-                *payloads[I]...);
+            if constexpr (withInvoke) {
+                optixTrace(
+                    payloadTypeID,
+                    handle,
+                    origin, direction,
+                    tmin, tmax, rayTime,
+                    visibilityMask, rayFlags,
+                    SBToffset, SBTstride, missSBTIndex,
+                    *payloads[I]...);
+            }
+            else {
+                optixTraverse(
+                    payloadTypeID,
+                    handle,
+                    origin, direction,
+                    tmin, tmax, rayTime,
+                    visibilityMask, rayFlags,
+                    SBToffset, SBTstride, missSBTIndex,
+                    *payloads[I]...);
+            }
+        }
+
+        template <OptixPayloadTypeID payloadTypeID, size_t... I>
+        RT_DEVICE_FUNCTION RT_INLINE void invoke(
+            uint32_t* const* payloads, std::index_sequence<I...>) {
+            optixInvoke(payloadTypeID, *payloads[I]...);
         }
 
         template <size_t... I>
@@ -675,6 +735,64 @@ namespace optixu {
             float hitT, uint32_t hitKind, const uint32_t* attributes,
             std::index_sequence<I...>) {
             optixReportIntersection(hitT, hitKind, attributes[I]...);
+        }
+
+        template <size_t... I>
+        RT_DEVICE_FUNCTION RT_INLINE void makeHitObject(
+            OptixTraversableHandle handle,
+            const float3 &origin, const float3 &direction,
+            float tmin, float tmax, float rayTime,
+            uint32_t SBToffset, uint32_t SBTstride, uint32_t instIdx,
+            const OptixTraversableHandle* transforms, uint32_t numTransforms,
+            uint32_t sbtGASIdx, uint32_t primIdx, uint32_t hitKind,
+            const uint32_t* attributes,
+            std::index_sequence<I...>) {
+            optixMakeHitObject(
+                handle,
+                origin, direction,
+                tmin, tmax, rayTime,
+                SBToffset, SBTstride, instIdx,
+                transforms, numTransforms,
+                sbtGASIdx, primIdx, hitKind,
+                attributes[I]...);
+        }
+
+        template <size_t... I>
+        RT_DEVICE_FUNCTION RT_INLINE void makeHitObject(
+            OptixTraversableHandle handle,
+            const float3 &origin, const float3 &direction,
+            float tmin, float tmax, float rayTime,
+            uint32_t SBToffset, uint32_t SBTstride, uint32_t instIdx,
+            uint32_t sbtGASIdx, uint32_t primIdx, uint32_t hitKind,
+            const uint32_t* attributes,
+            std::index_sequence<I...>) {
+            optixMakeHitObject(
+                handle,
+                origin, direction,
+                tmin, tmax, rayTime,
+                SBToffset, SBTstride, instIdx,
+                sbtGASIdx, primIdx, hitKind,
+                attributes[I]...);
+        }
+
+        template <size_t... I>
+        RT_DEVICE_FUNCTION RT_INLINE void makeHitObject(
+            OptixTraversableHandle handle,
+            const float3 &origin, const float3 &direction,
+            float tmin, float tmax, float rayTime,
+            uint32_t sbtRecordIndex, uint32_t instIdx,
+            const OptixTraversableHandle* transforms, uint32_t numTransforms,
+            uint32_t sbtGASIdx, uint32_t primIdx, uint32_t hitKind,
+            const uint32_t* attributes,
+            std::index_sequence<I...>) {
+            optixMakeHitObjectWithRecord(
+                handle,
+                origin, direction,
+                tmin, tmax, rayTime,
+                sbtRecordIndex, instIdx,
+                transforms, numTransforms,
+                sbtGASIdx, primIdx, hitKind,
+                attributes[I]...);
         }
 
         template <size_t... I>
@@ -783,6 +901,24 @@ namespace optixu {
             }
         };
 
+        struct HitObjectAttributeFunc {
+            template <uint32_t index>
+            RT_DEVICE_FUNCTION RT_INLINE static uint32_t get() {
+#define OPTIXU_INTRINSIC_GET_ATTRIBUTE(Index) \
+    if constexpr (index == Index) return optixHitObjectGetAttribute_##Index()
+                OPTIXU_INTRINSIC_GET_ATTRIBUTE(0);
+                OPTIXU_INTRINSIC_GET_ATTRIBUTE(1);
+                OPTIXU_INTRINSIC_GET_ATTRIBUTE(2);
+                OPTIXU_INTRINSIC_GET_ATTRIBUTE(3);
+                OPTIXU_INTRINSIC_GET_ATTRIBUTE(4);
+                OPTIXU_INTRINSIC_GET_ATTRIBUTE(5);
+                OPTIXU_INTRINSIC_GET_ATTRIBUTE(6);
+                OPTIXU_INTRINSIC_GET_ATTRIBUTE(7);
+#undef OPTIXU_INTRINSIC_GET_ATTRIBUTE
+                return 0;
+            }
+        };
+
         struct ExceptionDetailFunc {
             template <uint32_t index>
             RT_DEVICE_FUNCTION RT_INLINE static uint32_t get() {
@@ -812,26 +948,48 @@ namespace optixu {
             OptixVisibilityMask visibilityMask, OptixRayFlags rayFlags,
             uint32_t SBToffset, uint32_t SBTstride, uint32_t missSBTIndex,
             PayloadTypes &... payloads) {
-        if constexpr (numDwords == 0) {
-            optixTrace(
-                payloadTypeID,
-                handle,
-                origin, direction,
-                tmin, tmax, rayTime,
-                visibilityMask, rayFlags,
-                SBToffset, SBTstride, missSBTIndex);
-        }
-        else {
-            uint32_t* p[numDwords];
+        uint32_t* p[numDwords > 0 ? numDwords : 1];
+        if constexpr (numDwords > 0)
             detail::traceSetPayloads<0>(p, payloads...);
-            detail::trace<payloadTypeID>(
-                handle,
-                origin, direction,
-                tmin, tmax, rayTime,
-                visibilityMask, rayFlags,
-                SBToffset, SBTstride, missSBTIndex,
-                p, std::make_index_sequence<numDwords>{});
-        }
+        detail::traverse<true, payloadTypeID>(
+            handle,
+            origin, direction,
+            tmin, tmax, rayTime,
+            visibilityMask, rayFlags,
+            SBToffset, SBTstride, missSBTIndex,
+            p, std::make_index_sequence<numDwords>{});
+    }
+
+    template <typename... PayloadTypes>
+    template <OptixPayloadTypeID payloadTypeID>
+    RT_DEVICE_FUNCTION RT_INLINE void PayloadSignature<PayloadTypes...>::
+        traverse(
+            OptixTraversableHandle handle,
+            const float3 &origin, const float3 &direction,
+            float tmin, float tmax, float rayTime,
+            OptixVisibilityMask visibilityMask, OptixRayFlags rayFlags,
+            uint32_t SBToffset, uint32_t SBTstride, uint32_t missSBTIndex,
+            PayloadTypes &... payloads) {
+        uint32_t* p[numDwords > 0 ? numDwords : 1];
+        if constexpr (numDwords > 0)
+            detail::traceSetPayloads<0>(p, payloads...);
+        detail::traverse<false, payloadTypeID>(
+            handle,
+            origin, direction,
+            tmin, tmax, rayTime,
+            visibilityMask, rayFlags,
+            SBToffset, SBTstride, missSBTIndex,
+            p, std::make_index_sequence<numDwords>{});
+    }
+
+    template <typename... PayloadTypes>
+    template <OptixPayloadTypeID payloadTypeID>
+    RT_DEVICE_FUNCTION RT_INLINE void PayloadSignature<PayloadTypes...>::
+        invoke(PayloadTypes &... payloads) {
+        uint32_t* p[numDwords > 0 ? numDwords : 1];
+        if constexpr (numDwords > 0)
+            detail::traceSetPayloads<0>(p, payloads...);
+        detail::invoke<payloadTypeID>(p, std::make_index_sequence<numDwords>{});
     }
 
     template <typename... PayloadTypes>
@@ -873,14 +1031,10 @@ namespace optixu {
         reportIntersection(
             float hitT, uint32_t hitKind,
             const AttributeTypes &... attributes) {
-        if constexpr (numDwords == 0) {
-            optixReportIntersection(hitT, hitKind);
-        }
-        else {
-            uint32_t a[numDwords];
+        uint32_t a[numDwords > 0 ? numDwords : 1];
+        if constexpr (numDwords > 0)
             detail::packToUInts<0>(a, attributes...);
-            detail::reportIntersection(hitT, hitKind, a, std::make_index_sequence<numDwords>{});
-        }
+        detail::reportIntersection(hitT, hitKind, a, std::make_index_sequence<numDwords>{});
     }
 
     template <typename... AttributeTypes>
@@ -891,6 +1045,81 @@ namespace optixu {
             detail::getValues<detail::AttributeFunc, 0>(attributes...);
     }
 
+    template <typename... AttributeTypes>
+    RT_DEVICE_FUNCTION RT_INLINE void AttributeSignature<AttributeTypes...>::
+        getFromHitObject(AttributeTypes*... attributes) {
+        static_assert(numDwords > 0, "Calling this function for this signature has no effect.");
+        if constexpr (numDwords > 0)
+            detail::getValues<detail::HitObjectAttributeFunc, 0>(attributes...);
+    }
+
+    template <typename... AttributeTypes>
+    RT_DEVICE_FUNCTION RT_INLINE void AttributeSignature<AttributeTypes...>::
+        makeHitObject(
+            OptixTraversableHandle handle,
+            const float3 &origin, const float3 &direction,
+            float tmin, float tmax, float rayTime,
+            uint32_t SBToffset, uint32_t SBTstride, uint32_t instIdx,
+            const OptixTraversableHandle* transforms, uint32_t numTransforms,
+            uint32_t sbtGASIdx, uint32_t primIdx, uint32_t hitKind,
+            const AttributeTypes &... attributes) {
+        uint32_t a[numDwords > 0 ? numDwords : 1];
+        if constexpr (numDwords > 0)
+            detail::packToUInts<0>(a, attributes...);
+        detail::makeHitObject(
+            handle,
+            origin, direction,
+            tmin, tmax, rayTime,
+            SBToffset, SBTstride, instIdx,
+            transforms, numTransforms,
+            sbtGASIdx, primIdx, hitKind,
+            a, std::make_index_sequence<numDwords>{});
+    }
+
+    template <typename... AttributeTypes>
+    RT_DEVICE_FUNCTION RT_INLINE void AttributeSignature<AttributeTypes...>::
+        makeHitObject(
+            OptixTraversableHandle handle,
+            const float3 &origin, const float3 &direction,
+            float tmin, float tmax, float rayTime,
+            uint32_t SBToffset, uint32_t SBTstride, uint32_t instIdx,
+            uint32_t sbtGASIdx, uint32_t primIdx, uint32_t hitKind,
+            const AttributeTypes &... attributes) {
+        uint32_t a[numDwords > 0 ? numDwords : 1];
+        if constexpr (numDwords > 0)
+            detail::packToUInts<0>(a, attributes...);
+        detail::makeHitObject(
+            handle,
+            origin, direction,
+            tmin, tmax, rayTime,
+            SBToffset, SBTstride, instIdx,
+            sbtGASIdx, primIdx, hitKind,
+            a, std::make_index_sequence<numDwords>{});
+    }
+
+    template <typename... AttributeTypes>
+    RT_DEVICE_FUNCTION RT_INLINE void AttributeSignature<AttributeTypes...>::
+        makeHitObjectWithRecord(
+            OptixTraversableHandle handle,
+            const float3 &origin, const float3 &direction,
+            float tmin, float tmax, float rayTime,
+            uint32_t sbtRecordIndex, uint32_t instIdx,
+            const OptixTraversableHandle* transforms, uint32_t numTransforms,
+            uint32_t sbtGASIdx, uint32_t primIdx, uint32_t hitKind,
+            const AttributeTypes &... attributes) {
+        uint32_t a[numDwords > 0 ? numDwords : 1];
+        if constexpr (numDwords > 0)
+            detail::packToUInts<0>(a, attributes...);
+        detail::makeHitObject(
+            handle,
+            origin, direction,
+            tmin, tmax, rayTime,
+            sbtRecordIndex, instIdx,
+            transforms, numTransforms,
+            sbtGASIdx, primIdx, hitKind,
+            a, std::make_index_sequence<numDwords>{});
+    }
+
 
 
     template <typename... ExceptionDetailTypes>
@@ -898,14 +1127,10 @@ namespace optixu {
         throwException(
             int32_t exceptionCode,
             const ExceptionDetailTypes &... exDetails) {
-        if constexpr (numDwords == 0) {
-            optixThrowException(exceptionCode);
-        }
-        else {
-            uint32_t ed[numDwords];
+        uint32_t ed[numDwords > 0 ? numDwords : 1];
+        if constexpr (numDwords > 0)
             detail::packToUInts<0>(ed, exDetails...);
-            detail::throwException(exceptionCode, ed, std::make_index_sequence<numDwords>{});
-        }
+        detail::throwException(exceptionCode, ed, std::make_index_sequence<numDwords>{});
     }
 
     template <typename... ExceptionDetailTypes>
@@ -1182,7 +1407,11 @@ namespace optixu {
         Denoiser createDenoiser(
             OptixDenoiserModelKind modelKind,
             GuideAlbedo guideAlbedo,
-            GuideNormal guideNormal) const;
+            GuideNormal guideNormal,
+            OptixDenoiserAlphaMode alphaMode) const;
+
+        uint32_t getRTCoreVersion() const;
+        uint32_t getShaderExecutionReorderingFlags() const;
 
         operator bool() const { return m; }
         bool operator==(const Context &r) const { return m == r.m; }
@@ -1934,7 +2163,7 @@ namespace optixu {
         void invoke(
             CUstream stream, const DenoisingTask &task,
             const DenoiserInputBuffers &inputBuffers, IsFirstFrame isFirstFrame,
-            OptixDenoiserAlphaMode alphaMode, CUdeviceptr normalizer, float blendFactor,
+            CUdeviceptr normalizer, float blendFactor,
             const BufferView &denoisedBeauty, const BufferView* denoisedAovs,
             const BufferView &internalGuideLayerForNextFrame) const;
     };
@@ -1973,11 +2202,7 @@ void optixGetCubicBezierVertexData(OptixTraversableHandle gas, unsigned int prim
 void optixGetCubicBSplineVertexData(OptixTraversableHandle gas, unsigned int primIdx, unsigned int sbtGASIndex, float time, float4 data[4]);
 float optixGetCurveParameter();
 int optixGetExceptionCode();
-OptixInvalidRayExceptionDetails optixGetExceptionInvalidRay();
-int optixGetExceptionInvalidSbtOffset();
-OptixTraversableHandle optixGetExceptionInvalidTraversable();
 char* optixGetExceptionLineInfo();
-OptixParameterMismatchExceptionDetails optixGetExceptionParameterMismatch();
 unsigned int optixGetGASMotionStepCount(OptixTraversableHandle gas);
 float optixGetGASMotionTimeBegin(OptixTraversableHandle gas);
 float optixGetGASMotionTimeEnd(OptixTraversableHandle gas);
@@ -2024,6 +2249,23 @@ void optixGetTriangleVertexData(OptixTraversableHandle gas, unsigned int primIdx
 float3 optixGetWorldRayDirection();
 float3 optixGetWorldRayOrigin();
 void optixGetWorldToObjectTransformMatrix(float m[12]);
+unsigned int optixHitObjectGetHitKind();
+unsigned int optixHitObjectGetInstanceId();
+unsigned int optixHitObjectGetInstanceIndex();
+unsigned int optixHitObjectGetPrimitiveIndex();
+float optixHitObjectGetRayTime();
+float optixHitObjectGetRayTmax();
+float optixHitObjectGetRayTmin();
+CUdeviceptr optixHitObjectGetSbtDataPointer();
+unsigned int optixHitObjectGetSbtGASIndex();
+unsigned int optixHitObjectGetSbtRecordIndex();
+OptixTraversableHandle optixHitObjectGetTransformListHandle(unsigned int index);
+unsigned int optixHitObjectGetTransformListSize();
+float3 optixHitObjectGetWorldRayDirection();
+float3 optixHitObjectGetWorldRayOrigin();
+bool optixHitObjectIsHit();
+bool optixHitObjectIsMiss();
+bool optixHitObjectIsNop();
 void optixIgnoreIntersection();
 bool optixIsBackFaceHit(unsigned int hitKind);
 bool optixIsBackFaceHit();
@@ -2035,6 +2277,10 @@ bool optixIsFrontFaceHit();
 bool optixIsTriangleBackFaceHit();
 bool optixIsTriangleFrontFaceHit();
 bool optixIsTriangleHit();
+void optixMakeMissHitObject(unsigned int missSBTIndex, float3 rayOrigin, float3 rayDirection, float tmin, float tmax, float rayTime);
+void optixMakeNopHitObject();
+void optixReorder();
+void optixReorder(unsigned int coherentHint, unsigned int numCoherentHintBitsFromLSB);
 void optixSetPayloadTypes(unsigned int typeMask);
 void optixTerminateRay();
 uint4 optixTexFootprint2D(unsigned long long tex, unsigned int texInfo, float x, float y, unsigned int* singleMipLevel);

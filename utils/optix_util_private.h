@@ -218,6 +218,8 @@ namespace optixu {
     class Context::Priv {
         CUcontext cuContext;
         OptixDeviceContext rawContext;
+        uint32_t rtCoreVersion;
+        uint32_t shaderExecutionReorderingFlags;
         uint32_t maxInstanceID;
         uint32_t numVisibilityMaskBits;
         std::unordered_map<const void*, std::string> registeredNames;
@@ -244,6 +246,12 @@ namespace optixu {
             OPTIX_CHECK(optixDeviceContextGetProperty(
                 rawContext, OPTIX_DEVICE_PROPERTY_LIMIT_NUM_BITS_INSTANCE_VISIBILITY_MASK,
                 &numVisibilityMaskBits, sizeof(numVisibilityMaskBits)));
+            OPTIX_CHECK(optixDeviceContextGetProperty(
+                rawContext, OPTIX_DEVICE_PROPERTY_RTCORE_VERSION,
+                &rtCoreVersion, sizeof(rtCoreVersion)));
+            OPTIX_CHECK(optixDeviceContextGetProperty(
+                rawContext, OPTIX_DEVICE_PROPERTY_SHADER_EXECUTION_REORDERING,
+                &shaderExecutionReorderingFlags, sizeof(shaderExecutionReorderingFlags)));
         }
         ~Priv() {
             optixDeviceContextDestroy(rawContext);
@@ -352,7 +360,7 @@ namespace optixu {
             struct Hash {
                 typedef std::size_t result_type;
 
-                std::size_t operator()(const Key& key) const {
+                std::size_t operator()(const Key &key) const {
                     size_t seed = 0;
                     auto hash0 = std::hash<const _Pipeline*>()(key.pipeline);
                     auto hash1 = std::hash<uint32_t>()(key.rayType);
@@ -416,7 +424,7 @@ namespace optixu {
             struct Hash {
                 typedef std::size_t result_type;
 
-                std::size_t operator()(const SBTOffsetKey& key) const {
+                std::size_t operator()(const SBTOffsetKey &key) const {
                     size_t seed = 0;
                     auto hash0 = std::hash<uint32_t>()(key.gasSerialID);
                     auto hash1 = std::hash<uint32_t>()(key.matSetIndex);
@@ -1178,7 +1186,7 @@ namespace optixu {
             struct Hash {
                 typedef std::size_t result_type;
 
-                std::size_t operator()(const KeyForBuiltinISModule& key) const {
+                std::size_t operator()(const KeyForBuiltinISModule &key) const {
                     size_t seed = 0;
                     auto hash0 = std::hash<OptixPrimitiveType>()(key.curveType);
                     auto hash1 = std::hash<OptixCurveEndcapFlags>()(key.endcapFlags);
@@ -1505,7 +1513,8 @@ namespace optixu {
             _Context* ctxt,
             OptixDenoiserModelKind _modelKind,
             bool _guideAlbedo,
-            bool _guideNormal) :
+            bool _guideNormal,
+            OptixDenoiserAlphaMode alphaMode) :
             context(ctxt),
             imageWidth(0), imageHeight(0), tileWidth(0), tileHeight(0),
             overlapWidth(0), inputWidth(0), inputHeight(0),
@@ -1515,6 +1524,7 @@ namespace optixu {
             OptixDenoiserOptions options = {};
             options.guideAlbedo = _guideAlbedo;
             options.guideNormal = _guideNormal;
+            options.denoiseAlpha = alphaMode;
             OPTIX_CHECK(optixDenoiserCreate(context->getRawContext(), modelKind, &options, &rawDenoiser));
         }
         ~Priv() {
