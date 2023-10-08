@@ -29,6 +29,7 @@
     <ClCompile Include="restir_main.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\common\basic_types.h" />
     <ClInclude Include="..\common\common_device.cuh" />
     <ClInclude Include="..\common\common_shared.h" />
     <ClInclude Include="..\common\common_host.h" />

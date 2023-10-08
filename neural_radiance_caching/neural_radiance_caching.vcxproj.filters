@@ -332,6 +332,9 @@
     <ClInclude Include="..\ext\prebuilt\include\KHR\khrplatform.h">
       <Filter>non-essentials\ext\gl3w</Filter>
     </ClInclude>
+    <ClInclude Include="..\common\basic_types.h">
+      <Filter>non-essentials</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <CudaCompile Include="network_interface.cu" />

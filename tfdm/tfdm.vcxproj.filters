@@ -170,6 +170,9 @@
       <Filter>non-essentials\ext\gl3w</Filter>
     </ClInclude>
     <ClInclude Include="affine_arithmetic.h" />
+    <ClInclude Include="..\common\basic_types.h">
+      <Filter>non-essentials</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <CudaCompile Include="..\common\gpu_kernels\compute_light_probs.cu">

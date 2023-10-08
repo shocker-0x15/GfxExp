@@ -29,6 +29,7 @@
     <ClCompile Include="svgf_main.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\common\basic_types.h" />
     <ClInclude Include="..\common\common_device.cuh" />
     <CopyFileToFolders Include="..\common\common_shader.h" />
     <ClInclude Include="..\common\common_shared.h" />
