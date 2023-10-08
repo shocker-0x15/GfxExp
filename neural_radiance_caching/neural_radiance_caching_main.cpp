@@ -1462,10 +1462,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
         staticPlp.GBuffer2[0] = gBuffer2[0].getSurfaceObject(0);
         staticPlp.GBuffer2[1] = gBuffer2[1].getSurfaceObject(0);
 
-        staticPlp.materialDataBuffer = shared::ROBuffer(
-            scene.materialDataBuffer.getDevicePointer(), scene.materialDataBuffer.numElements());
-        staticPlp.geometryInstanceDataBuffer = shared::ROBuffer(
-            scene.geomInstDataBuffer.getDevicePointer(), scene.geomInstDataBuffer.numElements());
+        staticPlp.materialDataBuffer = scene.materialDataBuffer.getROBuffer<shared::enableBufferOobCheck>();
+        staticPlp.geometryInstanceDataBuffer = scene.geomInstDataBuffer.getROBuffer<shared::enableBufferOobCheck>();
         envLightImportanceMap.getDeviceType(&staticPlp.envLightImportanceMap);
         staticPlp.envLightTexture = envLightTexture;
 
@@ -1480,26 +1478,26 @@ int32_t main(int32_t argc, const char* argv[]) try {
         }
         staticPlp.offsetToSelectUnbiasedTile = reinterpret_cast<uint32_t*>(offsetToSelectUnbiasedTileOnDevice);
         staticPlp.offsetToSelectTrainingPath = reinterpret_cast<uint32_t*>(offsetToSelectTrainingPathOnDevice);
-        staticPlp.inferenceRadianceQueryBuffer = shared::RWBuffer(
-            inferenceRadianceQueryBuffer.getDevicePointer(), inferenceRadianceQueryBuffer.numElements());
-        staticPlp.inferenceTerminalInfoBuffer = shared::RWBuffer(
-            inferenceTerminalInfoBuffer.getDevicePointer(), inferenceTerminalInfoBuffer.numElements());
-        staticPlp.inferredRadianceBuffer = shared::RWBuffer(
-            inferredRadianceBuffer.getDevicePointer(), inferredRadianceBuffer.numElements());
-        staticPlp.perFrameContributionBuffer = shared::RWBuffer(
-            perFrameContributionBuffer.getDevicePointer(), perFrameContributionBuffer.numElements());
+        staticPlp.inferenceRadianceQueryBuffer =
+            inferenceRadianceQueryBuffer.getROBuffer<shared::enableBufferOobCheck>();
+        staticPlp.inferenceTerminalInfoBuffer =
+            inferenceTerminalInfoBuffer.getROBuffer<shared::enableBufferOobCheck>();
+        staticPlp.inferredRadianceBuffer =
+            inferredRadianceBuffer.getROBuffer<shared::enableBufferOobCheck>();
+        staticPlp.perFrameContributionBuffer =
+            perFrameContributionBuffer.getROBuffer<shared::enableBufferOobCheck>();
         for (int i = 0; i < 2; ++i) {
-            staticPlp.trainRadianceQueryBuffer[i] = shared::RWBuffer(
-                trainRadianceQueryBuffer[i].getDevicePointer(), trainRadianceQueryBuffer[i].numElements());
-            staticPlp.trainTargetBuffer[i] = shared::RWBuffer(
-                trainTargetBuffer[i].getDevicePointer(), trainTargetBuffer[i].numElements());
+            staticPlp.trainRadianceQueryBuffer[i] =
+                trainRadianceQueryBuffer[i].getROBuffer<shared::enableBufferOobCheck>();
+            staticPlp.trainTargetBuffer[i] =
+                trainTargetBuffer[i].getROBuffer<shared::enableBufferOobCheck>();
         }
-        staticPlp.trainVertexInfoBuffer = shared::RWBuffer(
-            trainVertexInfoBuffer.getDevicePointer(), trainVertexInfoBuffer.numElements());
-        staticPlp.trainSuffixTerminalInfoBuffer = shared::RWBuffer(
-            trainSuffixTerminalInfoBuffer.getDevicePointer(), trainSuffixTerminalInfoBuffer.numElements());
-        staticPlp.dataShufflerBuffer = shared::RWBuffer(
-            dataShufflerBuffer.getDevicePointer(), dataShufflerBuffer.numElements());
+        staticPlp.trainVertexInfoBuffer =
+            trainVertexInfoBuffer.getRWBuffer<shared::enableBufferOobCheck>();
+        staticPlp.trainSuffixTerminalInfoBuffer =
+            trainSuffixTerminalInfoBuffer.getRWBuffer<shared::enableBufferOobCheck>();
+        staticPlp.dataShufflerBuffer =
+            dataShufflerBuffer.getRWBuffer<shared::enableBufferOobCheck>();
 
         staticPlp.beautyAccumBuffer = beautyAccumBuffer.getSurfaceObject(0);
         staticPlp.albedoAccumBuffer = albedoAccumBuffer.getSurfaceObject(0);
@@ -1681,14 +1679,14 @@ int32_t main(int32_t argc, const char* argv[]) try {
             staticPlp.GBuffer1[1] = gBuffer1[1].getSurfaceObject(0);
             staticPlp.GBuffer2[0] = gBuffer2[0].getSurfaceObject(0);
             staticPlp.GBuffer2[1] = gBuffer2[1].getSurfaceObject(0);
-            staticPlp.inferenceRadianceQueryBuffer = shared::RWBuffer(
-                inferenceRadianceQueryBuffer.getDevicePointer(), inferenceRadianceQueryBuffer.numElements());
-            staticPlp.inferenceTerminalInfoBuffer = shared::RWBuffer(
-                inferenceTerminalInfoBuffer.getDevicePointer(), inferenceTerminalInfoBuffer.numElements());
-            staticPlp.inferredRadianceBuffer = shared::RWBuffer(
-                inferredRadianceBuffer.getDevicePointer(), inferredRadianceBuffer.numElements());
-            staticPlp.perFrameContributionBuffer = shared::RWBuffer(
-                perFrameContributionBuffer.getDevicePointer(), perFrameContributionBuffer.numElements());
+            staticPlp.inferenceRadianceQueryBuffer =
+                inferenceRadianceQueryBuffer.getRWBuffer<shared::enableBufferOobCheck>();
+            staticPlp.inferenceTerminalInfoBuffer =
+                inferenceTerminalInfoBuffer.getRWBuffer<shared::enableBufferOobCheck>();
+            staticPlp.inferredRadianceBuffer =
+                inferredRadianceBuffer.getRWBuffer<shared::enableBufferOobCheck>();
+            staticPlp.perFrameContributionBuffer =
+                perFrameContributionBuffer.getRWBuffer<shared::enableBufferOobCheck>();
             staticPlp.beautyAccumBuffer = beautyAccumBuffer.getSurfaceObject(0);
             staticPlp.albedoAccumBuffer = albedoAccumBuffer.getSurfaceObject(0);
             staticPlp.normalAccumBuffer = normalAccumBuffer.getSurfaceObject(0);
@@ -2221,9 +2219,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
         perFramePlp.numAccumFrames = numAccumFrames;
         perFramePlp.frameIndex = frameIndex;
-        perFramePlp.instanceDataBuffer = shared::ROBuffer(
-            scene.instDataBuffer[bufferIndex].getDevicePointer(),
-            scene.instDataBuffer[bufferIndex].numElements());
+        perFramePlp.instanceDataBuffer =
+            scene.instDataBuffer[bufferIndex].getROBuffer<shared::enableBufferOobCheck>();
         perFramePlp.radianceScale = std::pow(10.0f, log10RadianceScale);
         perFramePlp.envLightPowerCoeff = std::pow(10.0f, log10EnvLightPowerCoeff);
         perFramePlp.envLightRotation = envLightRotation;

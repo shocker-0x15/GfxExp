@@ -1389,10 +1389,10 @@ int32_t main(int32_t argc, const char* argv[]) try {
         staticPlp.GBuffer2[0] = gBuffer2[0].getSurfaceObject(0);
         staticPlp.GBuffer2[1] = gBuffer2[1].getSurfaceObject(0);
 
-        staticPlp.materialDataBuffer = shared::ROBuffer(
-            scene.materialDataBuffer.getDevicePointer(), scene.materialDataBuffer.numElements());
-        staticPlp.geometryInstanceDataBuffer = shared::ROBuffer(
-            scene.geomInstDataBuffer.getDevicePointer(), scene.geomInstDataBuffer.numElements());
+        staticPlp.materialDataBuffer =
+            scene.materialDataBuffer.getROBuffer<shared::enableBufferOobCheck>();
+        staticPlp.geometryInstanceDataBuffer =
+            scene.geomInstDataBuffer.getROBuffer<shared::enableBufferOobCheck>();
         envLightImportanceMap.getDeviceType(&staticPlp.envLightImportanceMap);
         staticPlp.envLightTexture = envLightTexture;
 
@@ -2017,9 +2017,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
         perFramePlp.numAccumFrames = numAccumFrames;
         perFramePlp.frameIndex = frameIndex;
-        perFramePlp.instanceDataBuffer = shared::ROBuffer(
-            scene.instDataBuffer[bufferIndex].getDevicePointer(),
-            scene.instDataBuffer[bufferIndex].numElements());
+        perFramePlp.instanceDataBuffer =
+            scene.instDataBuffer[bufferIndex].getROBuffer<shared::enableBufferOobCheck>();
         perFramePlp.envLightPowerCoeff = std::pow(10.0f, log10EnvLightPowerCoeff);
         perFramePlp.envLightRotation = envLightRotation;
         perFramePlp.mousePosition = int2(static_cast<int32_t>(g_mouseX),

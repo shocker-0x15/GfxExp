@@ -1534,19 +1534,19 @@ int32_t main(int32_t argc, const char* argv[]) try {
         staticPlp.GBuffer2[0] = gBuffer2[0].getSurfaceObject(0);
         staticPlp.GBuffer2[1] = gBuffer2[1].getSurfaceObject(0);
 
-        staticPlp.materialDataBuffer = shared::ROBuffer(
-            scene.materialDataBuffer.getDevicePointer(), scene.materialDataBuffer.numElements());
-        staticPlp.geometryInstanceDataBuffer = shared::ROBuffer(
-            scene.geomInstDataBuffer.getDevicePointer(), scene.geomInstDataBuffer.numElements());
+        staticPlp.materialDataBuffer =
+            scene.materialDataBuffer.getROBuffer<shared::enableBufferOobCheck>();
+        staticPlp.geometryInstanceDataBuffer =
+            scene.geomInstDataBuffer.getROBuffer<shared::enableBufferOobCheck>();
         envLightImportanceMap.getDeviceType(&staticPlp.envLightImportanceMap);
         staticPlp.envLightTexture = envLightTexture;
 
         staticPlp.numTiles = int2((renderTargetSizeX + shared::tileSizeX - 1) / shared::tileSizeX,
                                   (renderTargetSizeY + shared::tileSizeY - 1) / shared::tileSizeY);
-        staticPlp.lightPreSamplingRngs = shared::RWBuffer(
-            lightPreSamplingRngs.getDevicePointer(), lightPreSamplingRngs.numElements());
-        staticPlp.preSampledLights = shared::RWBuffer(
-            preSampledLights.getDevicePointer(), preSampledLights.numElements());
+        staticPlp.lightPreSamplingRngs =
+            lightPreSamplingRngs.getRWBuffer<shared::enableBufferOobCheck>();
+        staticPlp.preSampledLights =
+            preSampledLights.getRWBuffer<shared::enableBufferOobCheck>();
 
         staticPlp.reservoirBuffer[0] = reservoirBuffer[0].getBlockBuffer2D();
         staticPlp.reservoirBuffer[1] = reservoirBuffer[1].getBlockBuffer2D();
@@ -1554,8 +1554,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
         staticPlp.reservoirInfoBuffer[1] = reservoirInfoBuffer[1].getSurfaceObject(0);
         staticPlp.sampleVisibilityBuffer[0] = sampleVisibilityBuffer[0].getSurfaceObject(0);
         staticPlp.sampleVisibilityBuffer[1] = sampleVisibilityBuffer[1].getSurfaceObject(0);
-        staticPlp.spatialNeighborDeltas = shared::ROBuffer(
-            spatialNeighborDeltas.getDevicePointer(), spatialNeighborDeltas.numElements());
+        staticPlp.spatialNeighborDeltas =
+            spatialNeighborDeltas.getROBuffer<shared::enableBufferOobCheck>();
 
         staticPlp.beautyAccumBuffer = beautyAccumBuffer.getSurfaceObject(0);
         staticPlp.albedoAccumBuffer = albedoAccumBuffer.getSurfaceObject(0);
@@ -2274,8 +2274,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
         perFramePlp.numAccumFrames = numAccumFrames;
         perFramePlp.frameIndex = frameIndex;
-        perFramePlp.instanceDataBuffer = shared::ROBuffer(
-            curInstDataBuffer.getDevicePointer(), curInstDataBuffer.numElements());
+        perFramePlp.instanceDataBuffer =
+            curInstDataBuffer.getROBuffer<shared::enableBufferOobCheck>();
         perFramePlp.envLightPowerCoeff = std::pow(10.0f, log10EnvLightPowerCoeff);
         perFramePlp.envLightRotation = envLightRotation;
         perFramePlp.spatialNeighborRadius = curRendererConfigs->spatialNeighborRadius;

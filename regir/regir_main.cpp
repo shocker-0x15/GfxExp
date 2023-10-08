@@ -1342,28 +1342,28 @@ int32_t main(int32_t argc, const char* argv[]) try {
         staticPlp.GBuffer2[0] = gBuffer2[0].getSurfaceObject(0);
         staticPlp.GBuffer2[1] = gBuffer2[1].getSurfaceObject(0);
 
-        staticPlp.reservoirs[0] = shared::RWBuffer(
-            reservoirs[0].getDevicePointer(), reservoirs[0].numElements());
-        staticPlp.reservoirs[1] = shared::RWBuffer(
-            reservoirs[1].getDevicePointer(), reservoirs[1].numElements());
-        staticPlp.reservoirInfos[0] = shared::RWBuffer(
-            reservoirInfos[0].getDevicePointer(), reservoirInfos[0].numElements());
-        staticPlp.reservoirInfos[1] = shared::RWBuffer(
-            reservoirInfos[1].getDevicePointer(), reservoirInfos[1].numElements());
-        staticPlp.lightSlotRngs = shared::RWBuffer(
-            lightSlotRngs.getDevicePointer(), lightSlotRngs.numElements());
-        staticPlp.perCellNumAccesses = shared::RWBuffer(
-            perCellNumAccesses.getDevicePointer(), perCellNumAccesses.numElements());
-        staticPlp.lastAccessFrameIndices = shared::RWBuffer(
-            lastAccessFrameIndices.getDevicePointer(), lastAccessFrameIndices.numElements());
+        staticPlp.reservoirs[0] =
+            reservoirs[0].getRWBuffer<shared::enableBufferOobCheck>();
+        staticPlp.reservoirs[1] =
+            reservoirs[1].getRWBuffer<shared::enableBufferOobCheck>();
+        staticPlp.reservoirInfos[0] =
+            reservoirInfos[0].getRWBuffer<shared::enableBufferOobCheck>();
+        staticPlp.reservoirInfos[1] =
+            reservoirInfos[1].getRWBuffer<shared::enableBufferOobCheck>();
+        staticPlp.lightSlotRngs =
+            lightSlotRngs.getRWBuffer<shared::enableBufferOobCheck>();
+        staticPlp.perCellNumAccesses =
+            perCellNumAccesses.getRWBuffer<shared::enableBufferOobCheck>();
+        staticPlp.lastAccessFrameIndices =
+            lastAccessFrameIndices.getRWBuffer<shared::enableBufferOobCheck>();
         staticPlp.gridOrigin = gridOrigin;
         staticPlp.gridCellSize = gridCellSize;
         staticPlp.gridDimension = gridDimension;
 
-        staticPlp.materialDataBuffer = shared::ROBuffer(
-            scene.materialDataBuffer.getDevicePointer(), scene.materialDataBuffer.numElements());
-        staticPlp.geometryInstanceDataBuffer = shared::ROBuffer(
-            scene.geomInstDataBuffer.getDevicePointer(), scene.geomInstDataBuffer.numElements());
+        staticPlp.materialDataBuffer =
+            scene.materialDataBuffer.getROBuffer<shared::enableBufferOobCheck>();
+        staticPlp.geometryInstanceDataBuffer =
+            scene.geomInstDataBuffer.getROBuffer<shared::enableBufferOobCheck>();
         envLightImportanceMap.getDeviceType(&staticPlp.envLightImportanceMap);
         staticPlp.envLightTexture = envLightTexture;
 
@@ -1950,9 +1950,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
         perFramePlp.numAccumFrames = numAccumFrames;
         perFramePlp.frameIndex = frameIndex;
-        perFramePlp.instanceDataBuffer = shared::ROBuffer(
-            scene.instDataBuffer[bufferIndex].getDevicePointer(),
-            scene.instDataBuffer[bufferIndex].numElements());
+        perFramePlp.instanceDataBuffer =
+            scene.instDataBuffer[bufferIndex].getROBuffer<shared::enableBufferOobCheck>();
         perFramePlp.envLightPowerCoeff = std::pow(10.0f, log10EnvLightPowerCoeff);
         perFramePlp.envLightRotation = envLightRotation;
         perFramePlp.mousePosition = int2(static_cast<int32_t>(g_mouseX),
