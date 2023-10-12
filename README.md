@@ -10,7 +10,7 @@ You need to install [Git LFS](https://git-lfs.github.com/) to correctly clone th
 
 ## 実装 / Implementations
 
-### ReSTIR
+### ReSTIR: Reservoir-based Spatiotemporal Importance Resampling
 Spatiotemporal reservoir resampling for real-time ray tracing with dynamic direct lighting\
 https://research.nvidia.com/publication/2020-07_Spatiotemporal-reservoir-resampling
 
@@ -30,7 +30,7 @@ ReSTIR enables efficient sampling from a massive amount of emitter primitives at
 ![example](restir/comparison.jpg)
 Amazon Lumberyard Bistro (Exterior) from Morgan McGuire's [Computer Graphics Archive](https://casual-effects.com/data)
 
-### ReGIR
+### ReGIR: Reservoir-based Grid Importance Resampling
 Chapter 23. "Rendering Many Lights with Grid-based Reservoirs", Ray Tracing Gems II\
 https://www.realtimerendering.com/raytracinggems/rtg2/index.html
 
@@ -48,13 +48,13 @@ ReGIR enables efficient sampling from a massive amount of emitter primitives by 
 ![example](regir/comparison.jpg)
 Amazon Lumberyard Bistro (Interior) from Morgan McGuire's [Computer Graphics Archive](https://casual-effects.com/data)
 
-### Neural Radiance Caching
+### NRC: Neural Radiance Caching
 Real-time Neural Radiance Caching for Path Tracing\
 https://research.nvidia.com/publication/2021-06_Real-time-Neural-Radiance
 
-Path Tracing + Neural Radiance Cache (NRC)は、ある経路長より先から得られる寄与をニューラルネットワークによるキャッシュからの値によって置き換えることで、少しのバイアスと引き換えに低い分散の推定値(、さらにシーンによっては短いレンダリング時間)を実現します。NRCは比較的小さなネットワークであり、トレーニングはレンダリングの最中に行うオンラインラーニングとすることで、「適応による汎化」を実現、推論の実行時間もリアルタイムレンダリングに適した短いものとなります。
+Path Tracing + Neural Radiance Cacheは、ある経路長より先から得られる寄与をニューラルネットワークによるキャッシュからの値によって置き換えることで、少しのバイアスと引き換えに低い分散の推定値(、さらにシーンによっては短いレンダリング時間)を実現します。NRCは比較的小さなネットワークであり、トレーニングはレンダリングの最中に行うオンラインラーニングとすることで、「適応による汎化」を実現、推論の実行時間もリアルタイムレンダリングに適した短いものとなります。
 
-Path Tracing + Neural Radiance Cache (NRC) replaces contributions given from beyond a certain path length by a value from the cache based on a neural network. This achieves low variance estimates at the cost of a little bias (, and additionally rendering time can even be reduced depending on the scene). NRC is a relatively small network, and training is online learning during rendering. This achieves "generalization via adaptation", and short inference time appropriate to real-time rendering.
+Path Tracing + Neural Radiance Cache replaces contributions given from beyond a certain path length by a value from the cache based on a neural network. This achieves low variance estimates at the cost of a little bias (, and additionally rendering time can even be reduced depending on the scene). NRC is a relatively small network, and training is online learning during rendering. This achieves "generalization via adaptation", and short inference time appropriate to real-time rendering.
 
 - [x] Basic Implementation (based on simple path tracing, frequency/one-blob input encoding)
 - [ ] Advanced Items
@@ -66,7 +66,7 @@ Path Tracing + Neural Radiance Cache (NRC) replaces contributions given from bey
 ![example](neural_radiance_caching/comparison.jpg)
 Zero-Day from [Open Research Content Archive (ORCA)](https://developer.nvidia.com/orca/beeple-zero-day)
 
-### SVGF
+### SVGF: Spatiotemporal Variance-Guided Filtering
 Spatiotemporal Variance-Guided Filtering: Real-Time Reconstruction for Path-Traced Global Illumination\
 https://research.nvidia.com/publication/2017-07_spatiotemporal-variance-guided-filtering-real-time-reconstruction-path-traced
 
@@ -80,7 +80,7 @@ SVGF filters the lighting result in screen-space obtained by methods like path t
 ![example](svgf/comparison.jpg)
 Crytek Sponza from Morgan McGuire's [Computer Graphics Archive](https://casual-effects.com/data)
 
-### Tessellation-Free Displacement Mapping
+### TFDM: Tessellation-Free Displacement Mapping
 Tessellation-Free Displacement Mapping for Ray Tracing\
 https://research.adobe.com/publication/tessellation-free-displacement-mapping-for-ray-tracing/
 
