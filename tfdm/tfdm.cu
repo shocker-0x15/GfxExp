@@ -1,19 +1,17 @@
-#define PURE_CUDA
+﻿#define PURE_CUDA
 #include "tfdm_shared.h"
 
 using namespace shared;
 
 CUDA_DEVICE_KERNEL void generateFirstMinMaxMipMap(
-    const MaterialData* const material) {
-    const int2 dstPixIdx(
+    const MaterialData* const material, LocalIntersectionType intersectionType) {
+    const int2 pixIdx(
         blockDim.x * blockIdx.x + threadIdx.x,
         blockDim.y * blockIdx.y + threadIdx.y);
-    const int2 srcImageSize = material->heightMapSize;
-    const int2 dstImageSize = srcImageSize / 2;
-    if (dstPixIdx.x >= dstImageSize.x || dstPixIdx.y >= dstImageSize.y)
+    const int2 imgSize = material->heightMapSize;
+    if (pixIdx.x >= imgSize.x || pixIdx.y >= imgSize.y)
         return;
 
-    const int2 basePixIdx = dstPixIdx * 2;
     float minHeight = INFINITY;
     float maxHeight = -INFINITY;
     float height;
@@ -29,31 +27,31 @@ CUDA_DEVICE_KERNEL void generateFirstMinMaxMipMap(
 
     const CUtexObject heightMap = material->heightMap;
 
-    height = sample(heightMap, srcImageSize, basePixIdx + int2(0, 0));
-    minHeight = std::fmin(height, minHeight);
-    maxHeight = std::fmax(height, maxHeight);
+    switch (intersectionType) {
+    case shared::LocalIntersectionType::Box:
+        height = sample(heightMap, imgSize, pixIdx);
+        minHeight = std::fmin(height, minHeight);
+        maxHeight = std::fmax(height, maxHeight);
+        break;
+    case shared::LocalIntersectionType::TwoTriangle:
+        break;
+    case shared::LocalIntersectionType::Bilinear:
+        break;
+    case shared::LocalIntersectionType::BSpline:
+        break;
+    default:
+        break;
+    }
 
-    height = sample(heightMap, srcImageSize, basePixIdx + int2(1, 0));
-    minHeight = std::fmin(height, minHeight);
-    maxHeight = std::fmax(height, maxHeight);
-
-    height = sample(heightMap, srcImageSize, basePixIdx + int2(0, 1));
-    minHeight = std::fmin(height, minHeight);
-    maxHeight = std::fmax(height, maxHeight);
-
-    height = sample(heightMap, srcImageSize, basePixIdx + int2(1, 1));
-    minHeight = std::fmin(height, minHeight);
-    maxHeight = std::fmax(height, maxHeight);
-
-    material->minMaxMipMap[0].write(dstPixIdx, make_float2(minHeight, maxHeight));
+    material->minMaxMipMap[0].write(pixIdx, make_float2(minHeight, maxHeight));
 }
 
 CUDA_DEVICE_KERNEL void generateMinMaxMipMap(
-    const MaterialData* material, const uint32_t srcMipLevel) {
+    const MaterialData* material, LocalIntersectionType intersectionType, const uint32_t srcMipLevel) {
     const int2 dstPixIdx(
         blockDim.x * blockIdx.x + threadIdx.x,
         blockDim.y * blockIdx.y + threadIdx.y);
-    const int2 srcImageSize = material->heightMapSize >> (srcMipLevel + 1);
+    const int2 srcImageSize = material->heightMapSize >> srcMipLevel;
     const int2 dstImageSize = srcImageSize / 2;
     if (dstPixIdx.x >= dstImageSize.x || dstPixIdx.y >= dstImageSize.y)
         return;
@@ -108,6 +106,8 @@ CUDA_DEVICE_KERNEL void computeAABBs(
     //    v3print(vs[1].position), v3print(vs[1].normal), v2print(vs[1].texCoord),
     //    v3print(vs[2].position), v3print(vs[2].normal), v2print(vs[2].texCoord));
 
+    // JP: 三角形を含むテクセルのmin/maxを読み取る。
+    // EN: 
     float minHeight = INFINITY;
     float maxHeight = -INFINITY;
     {
@@ -138,7 +138,6 @@ CUDA_DEVICE_KERNEL void computeAABBs(
         Texel roots[useMultipleRootOptimization ? 4 : 1];
         uint32_t numRoots;
         findRoots(texTriAabbMinP, texTriAabbMaxP, maxDepth, roots, &numRoots);
-#pragma unroll
         for (int rootIdx = 0; rootIdx < lengthof(roots); ++rootIdx) {
             if (rootIdx >= numRoots)
                 break;
@@ -177,11 +176,10 @@ CUDA_DEVICE_KERNEL void computeAABBs(
         Point3D(vs[1].texCoord, 1.0f),
         Point3D(vs[2].texCoord, 1.0f),
     };
-    const Matrix3x3 matTcToBc = invert(Matrix3x3(tcs3D[0], tcs3D[1], tcs3D[2]));
+    const DisplacedTriangleAuxInfo &dispTriAuxInfo = geomInst->dispTriAuxInfoBuffer[primIndex];
     const Matrix3x3 matBcToP(vs[0].position, vs[1].position, vs[2].position);
-    const Matrix3x3 matBcToN(vs[0].normal, vs[1].normal, vs[2].normal);
-    const Matrix3x3 matTcToP = matBcToP * matTcToBc;
-    const Matrix3x3 matTcToN = matBcToN * matTcToBc;
+    const Matrix3x3 matTcToPInObj = matBcToP * dispTriAuxInfo.matTcToBc;
+    const Matrix3x3 &matTcToNInObj = dispTriAuxInfo.matTcToNInObj;
 
     RWBuffer aabbBuffer(geomInst->aabbBuffer);
 
@@ -212,16 +210,16 @@ CUDA_DEVICE_KERNEL void computeAABBs(
             Vector3D(0.0f), 0.25f * (tcs3D[(pgIdx + 1) % 3] - tcs3D[pgIdx]), Vector3D(0.0f), Vector3D(0.0f));
         const AAFloatOn2D_Vector3D edge1(
             Vector3D(0.0f), Vector3D(0.0f), 0.25f * (tcs3D[(pgIdx + 2) % 3] - tcs3D[pgIdx]), Vector3D(0.0f));
-        const AAFloatOn2D_Vector3D texCoord = static_cast<Vector3D>(center) + edge0 + edge1;
+        const AAFloatOn2D_Point3D texCoord = center + (edge0 + edge1);
 
-        const AAFloatOn2D_Vector3D pBound = matTcToP * texCoord;
-        AAFloatOn2D_Vector3D nBound = matTcToN * texCoord;
-        nBound.normalize();
+        AAFloatOn2D_Point3D pBoundInObj = matTcToPInObj * texCoord;
+        AAFloatOn2D_Vector3D nBoundInObj = static_cast<AAFloatOn2D_Vector3D>(matTcToNInObj * texCoord);
+        nBoundInObj.normalize();
 
-        const AAFloatOn2D_Vector3D bounds = pBound + hBound * nBound;
-        const auto iaSx = bounds.x.toIAFloat();
-        const auto iaSy = bounds.y.toIAFloat();
-        const auto iaSz = bounds.z.toIAFloat();
+        const AAFloatOn2D_Point3D boundsInObj = pBoundInObj + hBound * nBoundInObj;
+        const auto iaSx = boundsInObj.x.toIAFloat();
+        const auto iaSy = boundsInObj.y.toIAFloat();
+        const auto iaSz = boundsInObj.z.toIAFloat();
         triAabb.unify(AABB(
             Point3D(iaSx.lo(), iaSy.lo(), iaSz.lo()),
             Point3D(iaSx.hi(), iaSy.hi(), iaSz.hi())));

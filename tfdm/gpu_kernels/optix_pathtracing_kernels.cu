@@ -229,16 +229,24 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_closestHit_generic() {
             &geometricNormalInWorld, &texCoord, &hypAreaPDensity);
     }
     else {
-        const AABB &aabb = geomInst.aabbBuffer[hp.primIndex];
+        Point3D p;
         Normal3D n;
-        const Point3D p = aabb.restoreHitPoint(hp.b1, hp.b2, &n);
+#if USE_DISPLACED_SURFACES
+        p = Point3D(optixGetWorldRayOrigin()) + optixGetRayTmax() * Vector3D(optixGetWorldRayDirection());
+        DisplacedSurfaceAttributeSignature::get(nullptr, nullptr, &n);
+#else
+        const AABB &aabb = geomInst.aabbBuffer[hp.primIndex];
+        p = aabb.restoreHitPoint(hp.b1, hp.b2, &n);
+
+        //geometricNormalInWorld = shadingNormalInWorld;
+        const auto hitPlane = static_cast<uint32_t>(hp.b1);
+        texCoord = Point2D(hp.b1 - hitPlane, hp.b2);
+        texCoord0DirInWorld = Vector3D(0, 0, 0);
+#endif
 
         positionInWorld = transformPointFromObjectToWorldSpace(p);
         shadingNormalInWorld = normalize(transformNormalFromObjectToWorldSpace(n));
         geometricNormalInWorld = shadingNormalInWorld;
-        const auto hitPlane = static_cast<uint32_t>(hp.b1);
-        texCoord = Point2D(hp.b1 - hitPlane, hp.b2);
-        texCoord0DirInWorld = Vector3D(0, 0, 0);
         hypAreaPDensity = 0.0f;
     }
     if constexpr (!useMultipleImportanceSampling)
@@ -300,15 +308,15 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_closestHit_generic() {
     rwPayload->terminate = false;
 }
 
-CUDA_DEVICE_KERNEL void RT_RG_NAME(pathTraceBaseline)() {
+CUDA_DEVICE_KERNEL void RT_RG_NAME(pathTrace)() {
     pathTrace_rayGen_generic();
 }
 
-CUDA_DEVICE_KERNEL void RT_CH_NAME(pathTraceBaseline)() {
+CUDA_DEVICE_KERNEL void RT_CH_NAME(pathTrace)() {
     pathTrace_closestHit_generic();
 }
 
-CUDA_DEVICE_KERNEL void RT_MS_NAME(pathTraceBaseline)() {
+CUDA_DEVICE_KERNEL void RT_MS_NAME(pathTrace)() {
     if constexpr (useImplicitLightSampling) {
         if (!plp.s->envLightTexture || !plp.f->enableEnvLight)
             return;

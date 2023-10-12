@@ -1048,9 +1048,241 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE AAFloatOn2D_Vector3D operator*(
     return ret;
 }
 
+
+
+struct AAFloatOn2D_Point3D {
+    AAFloatOn2D x, y, z;
+
+    CUDA_DEVICE_FUNCTION AAFloatOn2D_Point3D(const AAFloatOn2D &v = 0.0f) :
+        x(v), y(v), z(v) {}
+    CUDA_DEVICE_FUNCTION AAFloatOn2D_Point3D(const AAFloatOn2D &xx, const AAFloatOn2D &yy, const AAFloatOn2D &zz) :
+        x(xx), y(yy), z(zz) {}
+    CUDA_DEVICE_FUNCTION AAFloatOn2D_Point3D(
+        Point3D centralValue,
+        Point3D coeff0 = Point3D(0.0f), Point3D coeff1 = Point3D(0.0f), Point3D coeffOthers = Point3D(0.0f)) :
+        x(centralValue.x, coeff0.x, coeff1.x, coeffOthers.x),
+        y(centralValue.y, coeff0.y, coeff1.y, coeffOthers.y),
+        z(centralValue.z, coeff0.z, coeff1.z, coeffOthers.z) {}
+    CUDA_DEVICE_FUNCTION explicit AAFloatOn2D_Point3D(const AAFloatOn2D_Vector3D &v) :
+        x(v.x), y(v.y), z(v.z) {}
+
+    CUDA_COMMON_FUNCTION explicit operator AAFloatOn2D_Vector3D() const {
+        return AAFloatOn2D_Vector3D(x, y, z);
+    }
+
+    CUDA_DEVICE_FUNCTION Point3D getCentralValue() const {
+        return Point3D(x.getCentralValue(), y.getCentralValue(), z.getCentralValue());
+    }
+    template <std::integral I>
+    CUDA_DEVICE_FUNCTION Point3D getCoeff(I idx) const {
+        return Point3D(x.getCoeff(idx), y.getCoeff(idx), z.getCoeff(idx));
+    }
+    CUDA_DEVICE_FUNCTION Point3D getCoeffOthers() const {
+        return Point3D(x.getCoeffOthers(), y.getCoeffOthers(), z.getCoeffOthers());
+    }
+
+    CUDA_DEVICE_FUNCTION AAFloatOn2D_Point3D &operator+=(const AAFloatOn2D_Vector3D &r) {
+        x += r.x;
+        y += r.y;
+        z += r.z;
+        return *this;
+    }
+    CUDA_DEVICE_FUNCTION AAFloatOn2D_Point3D &operator+=(const AAFloatOn2D_Point3D &r) {
+        x += r.x;
+        y += r.y;
+        z += r.z;
+        return *this;
+    }
+    CUDA_DEVICE_FUNCTION AAFloatOn2D_Point3D &operator-=(const AAFloatOn2D_Vector3D &r) {
+        x -= r.x;
+        y -= r.y;
+        z -= r.z;
+        return *this;
+    }
+    CUDA_DEVICE_FUNCTION AAFloatOn2D_Point3D &operator*=(const AAFloatOn2D &r) {
+        x *= r;
+        y *= r;
+        z *= r;
+        return *this;
+    }
+    CUDA_DEVICE_FUNCTION AAFloatOn2D_Point3D &operator*=(const AAFloatOn2D_Point3D &r) {
+        x *= r.x;
+        y *= r.y;
+        z *= r.z;
+        return *this;
+    }
+    CUDA_DEVICE_FUNCTION AAFloatOn2D_Point3D &operator/=(const AAFloatOn2D &r) {
+        AAFloatOn2D rr = 1 / r;
+        x *= rr;
+        y *= rr;
+        z *= rr;
+        return *this;
+    }
+    CUDA_DEVICE_FUNCTION AAFloatOn2D_Point3D &operator/=(const AAFloatOn2D_Point3D &r) {
+        x /= r.x;
+        y /= r.y;
+        z /= r.z;
+        return *this;
+    }
+};
+
+CUDA_DEVICE_FUNCTION CUDA_INLINE AAFloatOn2D_Point3D operator+(
+    const Point3D &a, const AAFloatOn2D_Vector3D &b) {
+    AAFloatOn2D_Point3D ret(a);
+    ret += b;
+    return ret;
+}
+
+CUDA_DEVICE_FUNCTION CUDA_INLINE AAFloatOn2D_Point3D operator+(
+    const Point3D &a, const AAFloatOn2D_Point3D &b) {
+    AAFloatOn2D_Point3D ret(a);
+    ret += b;
+    return ret;
+}
+
+CUDA_DEVICE_FUNCTION CUDA_INLINE AAFloatOn2D_Point3D operator+(
+    const AAFloatOn2D_Point3D &a, const AAFloatOn2D_Vector3D &b) {
+    AAFloatOn2D_Point3D ret(a);
+    ret += b;
+    return ret;
+}
+
+CUDA_DEVICE_FUNCTION CUDA_INLINE AAFloatOn2D_Point3D operator+(
+    const AAFloatOn2D_Point3D &a, const AAFloatOn2D_Point3D &b) {
+    AAFloatOn2D_Point3D ret(a);
+    ret += b;
+    return ret;
+}
+
+CUDA_DEVICE_FUNCTION CUDA_INLINE AAFloatOn2D_Vector3D operator-(
+    const AAFloatOn2D_Point3D &a, const AAFloatOn2D_Point3D &b) {
+    auto ret = static_cast<AAFloatOn2D_Vector3D>(a);
+    ret -= static_cast<AAFloatOn2D_Vector3D>(b);
+    return ret;
+}
+
+CUDA_DEVICE_FUNCTION CUDA_INLINE AAFloatOn2D_Point3D operator*(
+    const Point3D &a, const AAFloatOn2D &b) {
+    AAFloatOn2D_Point3D ret(a);
+    ret *= b;
+    return ret;
+}
+
+CUDA_DEVICE_FUNCTION CUDA_INLINE AAFloatOn2D_Point3D operator*(
+    const AAFloatOn2D &a, const AAFloatOn2D_Point3D &b) {
+    AAFloatOn2D_Point3D ret = b;
+    ret *= a;
+    return ret;
+}
+
+
+
+struct AAFloatOn2D_Vector4D {
+    AAFloatOn2D x, y, z, w;
+
+    CUDA_DEVICE_FUNCTION AAFloatOn2D_Vector4D(const AAFloatOn2D &v = 0.0f) :
+        x(v), y(v), z(v), w(w) {}
+    CUDA_DEVICE_FUNCTION AAFloatOn2D_Vector4D(
+        const AAFloatOn2D &xx, const AAFloatOn2D &yy, const AAFloatOn2D &zz, const AAFloatOn2D &ww) :
+        x(xx), y(yy), z(zz), w(ww) {}
+    CUDA_DEVICE_FUNCTION AAFloatOn2D_Vector4D(
+        Vector4D centralValue,
+        Vector4D coeff0 = Vector4D(0.0f), Vector4D coeff1 = Vector4D(0.0f), Vector4D coeffOthers = Vector4D(0.0f)) :
+        x(centralValue.x, coeff0.x, coeff1.x, coeffOthers.x),
+        y(centralValue.y, coeff0.y, coeff1.y, coeffOthers.y),
+        z(centralValue.z, coeff0.z, coeff1.z, coeffOthers.z),
+        w(centralValue.w, coeff0.w, coeff1.w, coeffOthers.w) {}
+
+    CUDA_DEVICE_FUNCTION Vector4D getCentralValue() const {
+        return Vector4D(x.getCentralValue(), y.getCentralValue(), z.getCentralValue(), w.getCentralValue());
+    }
+    template <std::integral I>
+    CUDA_DEVICE_FUNCTION Vector4D getCoeff(I idx) const {
+        return Vector4D(x.getCoeff(idx), y.getCoeff(idx), z.getCoeff(idx), w.getCoeff(idx));
+    }
+    CUDA_DEVICE_FUNCTION Vector4D getCoeffOthers() const {
+        return Vector4D(x.getCoeffOthers(), y.getCoeffOthers(), z.getCoeffOthers(), w.getCoeffOthers());
+    }
+
+    CUDA_DEVICE_FUNCTION AAFloatOn2D_Vector4D &operator+=(const AAFloatOn2D_Vector4D &r) {
+        x += r.x;
+        y += r.y;
+        z += r.z;
+        w += r.w;
+        return *this;
+    }
+    CUDA_DEVICE_FUNCTION AAFloatOn2D_Vector4D &operator-=(const AAFloatOn2D_Vector4D &r) {
+        x -= r.x;
+        y -= r.y;
+        z -= r.z;
+        w -= r.w;
+        return *this;
+    }
+    CUDA_DEVICE_FUNCTION AAFloatOn2D_Vector4D &operator*=(const AAFloatOn2D &r) {
+        x *= r;
+        y *= r;
+        z *= r;
+        w *= r;
+        return *this;
+    }
+    CUDA_DEVICE_FUNCTION AAFloatOn2D_Vector4D &operator*=(const AAFloatOn2D_Vector4D &r) {
+        x *= r.x;
+        y *= r.y;
+        z *= r.z;
+        w *= r.w;
+        return *this;
+    }
+    CUDA_DEVICE_FUNCTION AAFloatOn2D_Vector4D &operator/=(const AAFloatOn2D &r) {
+        AAFloatOn2D rr = 1 / r;
+        x *= rr;
+        y *= rr;
+        z *= rr;
+        w *= rr;
+        return *this;
+    }
+    CUDA_DEVICE_FUNCTION AAFloatOn2D_Vector4D &operator/=(const AAFloatOn2D_Vector4D &r) {
+        x /= r.x;
+        y /= r.y;
+        z /= r.z;
+        w /= r.w;
+        return *this;
+    }
+};
+
+CUDA_DEVICE_FUNCTION CUDA_INLINE AAFloatOn2D dot(
+    const Vector4D &a, const AAFloatOn2D_Vector4D &b) {
+    return a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w;
+}
+
+
+
 CUDA_DEVICE_FUNCTION CUDA_INLINE AAFloatOn2D_Vector3D operator*(
     const Matrix3x3 &a, const AAFloatOn2D_Vector3D &b) {
     return AAFloatOn2D_Vector3D(dot(a.row(0), b), dot(a.row(1), b), dot(a.row(2), b));
+}
+
+CUDA_DEVICE_FUNCTION CUDA_INLINE AAFloatOn2D_Vector3D operator*(
+    const Matrix4x4 &a, const AAFloatOn2D_Vector3D &b) {
+    const Matrix3x3 m = a.getUpperLeftMatrix();
+    return AAFloatOn2D_Vector3D(dot(m.row(0), b), dot(m.row(1), b), dot(m.row(2), b));
+}
+
+CUDA_DEVICE_FUNCTION CUDA_INLINE AAFloatOn2D_Point3D operator*(
+    const Matrix3x3 &a, const AAFloatOn2D_Point3D &b) {
+    return AAFloatOn2D_Point3D(
+        dot(a.row(0), static_cast<AAFloatOn2D_Vector3D>(b)),
+        dot(a.row(1), static_cast<AAFloatOn2D_Vector3D>(b)),
+        dot(a.row(2), static_cast<AAFloatOn2D_Vector3D>(b)));
+}
+
+CUDA_DEVICE_FUNCTION CUDA_INLINE AAFloatOn2D_Point3D operator*(
+    const Matrix4x4 &a, const AAFloatOn2D_Point3D &b) {
+    const Vector4D r[] = { a.row(0), a.row(1), a.row(2), a.row(3) };
+    AAFloatOn2D_Vector4D v4(b.x, b.y, b.z, AAFloatOn2D(1.0f));
+    return AAFloatOn2D_Point3D(
+        dot(r[0], v4),
+        dot(r[1], v4),
+        dot(r[2], v4));
 }
 
 }

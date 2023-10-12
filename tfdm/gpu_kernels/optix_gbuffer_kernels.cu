@@ -94,6 +94,7 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
     auto sbtr = HitGroupSBTRecordData::get();
     const InstanceData &inst = plp.f->instanceDataBuffer[optixGetInstanceId()];
     const GeometryInstanceData &geomInst = plp.s->geometryInstanceDataBuffer[sbtr.geomInstSlot];
+    const MaterialData &mat = plp.s->materialDataBuffer[geomInst.materialSlot];
 
     HitPointParams* hitPointParams;
     PickInfo* pickInfo;
@@ -131,19 +132,24 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
         }
     }
     else {
-        const AABB &aabb = geomInst.aabbBuffer[hp.primIndex];
+        Point3D p;
         Normal3D n;
-        const Point3D p = aabb.restoreHitPoint(hp.b1, hp.b2, &n);
+#if USE_DISPLACED_SURFACES
+        p = Point3D(optixGetWorldRayOrigin()) + optixGetRayTmax() * Vector3D(optixGetWorldRayDirection());
+        DisplacedSurfaceAttributeSignature::get(nullptr, nullptr, &n);
+#else
+        const AABB &aabb = geomInst.aabbBuffer[hp.primIndex];
+        p = aabb.restoreHitPoint(hp.b1, hp.b2, &n);
 
-        positionInWorld = transformPointFromObjectToWorldSpace(p);
-        shadingNormalInWorld = normalize(transformNormalFromObjectToWorldSpace(n));
         //geometricNormalInWorld = shadingNormalInWorld;
         const auto hitPlane = static_cast<uint32_t>(hp.b1);
         texCoord = Point2D(hp.b1 - hitPlane, hp.b2);
         texCoord0DirInWorld = Vector3D(0, 0, 0);
-    }
+#endif
 
-    const MaterialData &mat = plp.s->materialDataBuffer[geomInst.materialSlot];
+        positionInWorld = transformPointFromObjectToWorldSpace(p);
+        shadingNormalInWorld = normalize(transformNormalFromObjectToWorldSpace(n));
+    }
 
     BSDF bsdf;
     bsdf.setup(mat, texCoord);

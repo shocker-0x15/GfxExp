@@ -3,6 +3,8 @@
 #include "../common/common_shared.h"
 #include "affine_arithmetic.h"
 
+#define USE_DISPLACED_SURFACES 1
+
 namespace shared {
     static constexpr bool useMultipleRootOptimization = 1;
 
@@ -187,6 +189,9 @@ namespace shared {
         unsigned int enableJittering : 1;
         unsigned int enableEnvLight : 1;
         unsigned int enableBumpMapping : 1;
+        unsigned int localIntersectionType : 2;
+        unsigned int targetMipLevel : 4;
+        unsigned int enableDebugPrint : 1;
 
         uint32_t debugSwitches;
         void setDebugSwitch(int32_t idx, bool b) {
@@ -216,7 +221,7 @@ namespace shared {
 
 
     using AABBAttributeSignature = optixu::AttributeSignature<float, float>;
-    using DisplacedSurfaceAttributeSignature = optixu::AttributeSignature<float, float>;
+    using DisplacedSurfaceAttributeSignature = optixu::AttributeSignature<float, float, Normal3D>;
 
     using PrimaryRayPayloadSignature =
         optixu::PayloadSignature<shared::HitPointParams*, shared::PickInfo*>;
@@ -610,7 +615,11 @@ struct HitPointParameter {
             ret.b2 = bc.y;
         }
         else {
+#if USE_DISPLACED_SURFACES
+            DisplacedSurfaceAttributeSignature::get(&ret.b1, &ret.b2, nullptr);
+#else
             AABBAttributeSignature::get(&ret.b1, &ret.b2);
+#endif
         }
         ret.primIndex = optixGetPrimitiveIndex();
         return ret;
@@ -789,6 +798,10 @@ bool isCursorPixel() {
     return plp.f->mousePosition == make_int2(optixGetLaunchIndex());
 }
 
+bool getDebugPrintEnabled() {
+    return plp.f->enableDebugPrint;
+}
+
 
 
 CUDA_DEVICE_KERNEL void RT_IS_NAME(aabb)() {
@@ -813,6 +826,164 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(aabb)() {
         static_cast<uint32_t>(isFrontHit ? CustomHitKind::AABBFrontFace : CustomHitKind::AABBBackFace),
         u, v);
 }
-#endif
+
+
+
+CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
+    using namespace shared;
+
+    const auto sbtr = HitGroupSBTRecordData::get();
+    const GeometryInstanceData &geomInst = plp.s->geometryInstanceDataBuffer[sbtr.geomInstSlot];
+    const MaterialData &mat = plp.s->materialDataBuffer[geomInst.materialSlot];
+
+    const Triangle &tri = geomInst.triangleBuffer[optixGetPrimitiveIndex()];
+    const Vertex (&vs)[] = {
+        geomInst.vertexBuffer[tri.index0],
+        geomInst.vertexBuffer[tri.index1],
+        geomInst.vertexBuffer[tri.index2]
+    };
+
+    Point2D tcs[] = {
+        vs[0].texCoord,
+        vs[1].texCoord,
+        vs[2].texCoord,
+    };
+    if (cross(tcs[1] - tcs[0], tcs[2] - tcs[0]) < 0)
+        swap(tcs[1], tcs[2]);
+
+    const Vector2D texTriEdgeNormals[] = {
+        Vector2D(tcs[1].y - tcs[0].y, tcs[0].x - tcs[1].x),
+        Vector2D(tcs[2].y - tcs[1].y, tcs[1].x - tcs[2].x),
+        Vector2D(tcs[0].y - tcs[2].y, tcs[2].x - tcs[0].x),
+    };
+    const Point2D texTriAabbMinP = min(tcs[0], min(tcs[1], tcs[2]));
+    const Point2D texTriAabbMaxP = max(tcs[0], max(tcs[1], tcs[2]));
+
+    const DisplacedTriangleAuxInfo &dispTriAuxInfo = geomInst.dispTriAuxInfoBuffer[optixGetPrimitiveIndex()];
+    const Matrix3x3 matTcToNInTc =
+        dispTriAuxInfo.matObjToTc.getUpperLeftMatrix() * dispTriAuxInfo.matTcToNInObj;
+
+    Normal3D normal;
+    float b0, b1;
+    bool isFrontHit;
+    float tMax = optixGetRayTmax();
+    const float tMin = optixGetRayTmin();
+    const Point3D rayOrgInTc = dispTriAuxInfo.matObjToTc * Point3D(optixGetObjectRayOrigin());
+    const Vector3D rayDirInTc = dispTriAuxInfo.matObjToTc * Vector3D(optixGetObjectRayDirection());
+
+    const uint32_t maxDepth =
+        prevPowOf2Exponent(max(mat.heightMapSize.x, mat.heightMapSize.y));
+    Texel roots[useMultipleRootOptimization ? 4 : 1];
+    uint32_t numRoots;
+    findRoots(texTriAabbMinP, texTriAabbMaxP, maxDepth, roots, &numRoots);
+    for (int rootIdx = 0; rootIdx < lengthof(roots); ++rootIdx) {
+        if (rootIdx >= numRoots)
+            break;
+        Texel curTexel = roots[rootIdx];
+        Texel endTexel = curTexel;
+        next(endTexel);
+        while (curTexel != endTexel) {
+            const float texelScale = 1.0f / (1 << (maxDepth - curTexel.lod));
+            const Point2D texelCenter = Point2D(curTexel.x + 0.5f, curTexel.y + 0.5f) * texelScale;
+            const TriangleSquareIntersection2DResult isectResult =
+                testTriangleSquareIntersection2D(
+                    tcs, texTriEdgeNormals, texTriAabbMinP, texTriAabbMaxP,
+                    texelCenter, 0.5f * texelScale);
+
+            // JP: テクセルがベース三角形の外にある場合はテクセルをスキップ。
+            // EN: 
+            if (isectResult == TriangleSquareIntersection2DResult::SquareOutsideTriangle) {
+                next(curTexel);
+                continue;
+            }
+
+            // JP: テクスチャー空間でテクセルがつくるAABBをアフィン演算を用いて計算。
+            // EN: 
+            AABB texelAabb;
+            {
+                const float2 minmax = mat.minMaxMipMap[curTexel.lod].read(int2(curTexel.x, curTexel.y));
+                const AAFloatOn2D hBound(
+                    geomInst.hOffset + geomInst.hScale * minmax.x
+                    + 0.5f * geomInst.hScale * ((minmax.y - minmax.x) - geomInst.hBias),
+                    0, 0,
+                    0.5f * geomInst.hScale * (minmax.y - minmax.x));
+
+                const AAFloatOn2D_Vector3D edge0(
+                    Vector3D(0.0f), Vector3D(0.5f * texelScale, 0, 0), Vector3D(0.0f), Vector3D(0.0f));
+                const AAFloatOn2D_Vector3D edge1(
+                    Vector3D(0.0f), Vector3D(0.0f), Vector3D(0, 0.5f * texelScale, 0), Vector3D(0.0f));
+                const AAFloatOn2D_Point3D texCoord =
+                    Point3D(texelCenter.x, texelCenter.y, 1.0f) + (edge0 + edge1);
+
+                const AAFloatOn2D_Point3D pBoundInTc(texCoord.x, texCoord.y, AAFloatOn2D(0.0f));
+                const AAFloatOn2D_Vector3D nBoundInTc =
+                    static_cast<AAFloatOn2D_Vector3D>(matTcToNInTc * texCoord);
+                const AAFloatOn2D_Point3D boundsInTc = pBoundInTc + hBound * nBoundInTc;
+
+                const auto iaSx = boundsInTc.x.toIAFloat();
+                const auto iaSy = boundsInTc.y.toIAFloat();
+                const auto iaSz = boundsInTc.z.toIAFloat();
+                texelAabb.minP = Point3D(iaSx.lo(), iaSy.lo(), iaSz.lo());
+                texelAabb.maxP = Point3D(iaSx.hi(), iaSy.hi(), iaSz.hi());
+            }
+
+            // JP: レイがAABBにヒットしない場合はテクセル内のサーフェスともヒットしないため深掘りしない。
+            // EN: 
+            if (!texelAabb.intersect(rayOrgInTc, rayDirInTc, tMin, tMax)) {
+                next(curTexel);
+                continue;
+            }
+
+            // JP: レイがAABBにヒットしているがターゲットのMIPレベルに到達していないときは下位MIPに下る。
+            // EN: 
+            if (curTexel.lod > plp.f->targetMipLevel) {
+                down(curTexel);
+                continue;
+            }
+
+            // JP: レイと変位を加えたサーフェスとの交差判定を行う。
+            // EN: 
+            const auto isectType = static_cast<LocalIntersectionType>(plp.f->localIntersectionType);
+            switch (isectType) {
+            case LocalIntersectionType::Box: {
+                float param0, param1;
+                bool isF;
+                const float t = texelAabb.intersect(
+                    rayOrgInTc, rayDirInTc, tMin, tMax, &param0, &param1, &isF);
+                if (t < tMax) {
+                    tMax = t;
+                    Point3D bc = dispTriAuxInfo.matTcToBc * (Point3D(texelCenter, 1.0f) * texelScale);
+                    b0 = bc.x;
+                    b1 = bc.y;
+                    normal = texelAabb.restoreNormal(param0, param1);
+                    isFrontHit = isF;
+                }
+                break;
+            }
+            case LocalIntersectionType::TwoTriangle:
+            case LocalIntersectionType::Bilinear:
+            case LocalIntersectionType::BSpline:
+            default:
+                Assert_ShouldNotBeCalled();
+                break;
+            }
+
+            next(curTexel);
+        }
+    }
+
+    if (tMax == optixGetRayTmax())
+        return;
+
+    DisplacedSurfaceAttributeSignature::reportIntersection(
+        tMax,
+        static_cast<uint32_t>(
+            isFrontHit ?
+            CustomHitKind::DisplacedSurfaceFrontFace :
+            CustomHitKind::DisplacedSurfaceBackFace),
+        b0, b1, normal);
+}
 
 #endif
+
+#endif // #if defined(__CUDA_ARCH__) || defined(OPTIXU_Platform_CodeCompletion)

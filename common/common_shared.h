@@ -826,9 +826,9 @@ namespace shared {
     };
 
     struct DisplacedTriangleAuxInfo {
-        Matrix4x4 matObjToTC;
+        Matrix4x4 matObjToTc;
         Matrix3x3 matTcToBc;
-        Matrix3x3 matTcToN;
+        Matrix3x3 matTcToNInObj;
     };
 
     struct GeometryInstanceData {
@@ -838,6 +838,7 @@ namespace shared {
         uint32_t materialSlot;
         uint32_t geomInstSlot;
         // for TFDM
+        ROBuffer<DisplacedTriangleAuxInfo> dispTriAuxInfoBuffer;
         ROBuffer<AABB> aabbBuffer;
         float hOffset;
         float hScale;
