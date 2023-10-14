@@ -797,9 +797,10 @@ int32_t main(int32_t argc, const char* argv[]) try {
     float contentScaleX, contentScaleY;
     glfwGetMonitorContentScale(monitor, &contentScaleX, &contentScaleY);
     float UIScaling = contentScaleX;
-    GLFWwindow* window = glfwCreateWindow(static_cast<int32_t>(renderTargetSizeX * UIScaling),
-                                          static_cast<int32_t>(renderTargetSizeY * UIScaling),
-                                          "TFDM", NULL, NULL);
+    GLFWwindow* window = glfwCreateWindow(
+        static_cast<int32_t>(renderTargetSizeX * UIScaling),
+        static_cast<int32_t>(renderTargetSizeY * UIScaling),
+        "TFDM", NULL, NULL);
     glfwSetWindowUserPointer(window, nullptr);
     if (!window) {
         hpprintf("Failed to create a GLFW window.\n");
@@ -1248,7 +1249,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
     scene.unmap();
 
-    scene.setupASes(gpuEnv.cuContext);
+    scene.setupASs(gpuEnv.cuContext);
 
     uint32_t totalNumEmitterPrimitives = 0;
     for (int i = 0; i < scene.insts.size(); ++i) {
@@ -2124,16 +2125,11 @@ int32_t main(int32_t argc, const char* argv[]) try {
             //printf("");
         }
 
-        // JP: IASのリビルドを行う。
-        //     アップデートの代用としてのリビルドでは、インスタンスの追加・削除や
-        //     ASビルド設定の変更を行っていないのでmarkDirty()やprepareForBuild()は必要無い。
-        // EN: Rebuild the IAS.
-        //     Rebuild as the alternative for update doesn't involves
-        //     add/remove of instances and changes of AS build settings
-        //     so neither of markDirty() nor prepareForBuild() is required.
+        // JP: ASesのリビルドを行う。
+        // EN: Rebuild the ASes.
         curGPUTimer.update.start(curCuStream);
         if (animate || frameIndex == 0)
-            perFramePlp.travHandle = scene.updateASes(curCuStream);
+            perFramePlp.travHandle = scene.updateASs(curCuStream);
         curGPUTimer.update.stop(curCuStream);
 
         // JP: 光源となるインスタンスのProbability Textureを計算する。

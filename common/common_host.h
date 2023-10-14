@@ -905,7 +905,7 @@ struct Scene {
         materialDataBuffer.unmap();
     }
 
-    void setupASes(CUcontext cuContext) {
+    void setupASs(CUcontext cuContext) {
         for (int i = 0; i < insts.size(); ++i) {
             const Instance* inst = insts[i];
             ias.addChild(inst->optixInst);
@@ -954,7 +954,7 @@ struct Scene {
         }
     }
 
-    OptixTraversableHandle updateASes(CUstream stream) {
+    OptixTraversableHandle updateASs(CUstream stream) {
         for (int i = 0; i < geomGroups.size(); ++i) {
             GeometryGroup* geomGroup = geomGroups[i];
             if (geomGroup->needsRebuild)
