@@ -85,7 +85,8 @@ CUDA_DEVICE_KERNEL void generateMinMaxMipMap(
 
 
 CUDA_DEVICE_KERNEL void computeAABBs(
-    const GeometryInstanceData* const geomInst, const MaterialData* const material) {
+    const GeometryInstanceData* const geomInst, const TFDMData* const tfdm,
+    const MaterialData* const material) {
     const uint32_t primIndex = blockDim.x * blockIdx.x + threadIdx.x;
     if (primIndex >= geomInst->triangleBuffer.getNumElements())
         return;
@@ -176,18 +177,18 @@ CUDA_DEVICE_KERNEL void computeAABBs(
         Point3D(vs[1].texCoord, 1.0f),
         Point3D(vs[2].texCoord, 1.0f),
     };
-    const DisplacedTriangleAuxInfo &dispTriAuxInfo = geomInst->dispTriAuxInfoBuffer[primIndex];
+    const DisplacedTriangleAuxInfo &dispTriAuxInfo = tfdm->dispTriAuxInfoBuffer[primIndex];
     const Matrix3x3 matBcToP(vs[0].position, vs[1].position, vs[2].position);
     const Matrix3x3 matTcToPInObj = matBcToP * dispTriAuxInfo.matTcToBc;
     const Matrix3x3 &matTcToNInObj = dispTriAuxInfo.matTcToNInObj;
 
-    RWBuffer aabbBuffer(geomInst->aabbBuffer);
+    RWBuffer aabbBuffer(tfdm->aabbBuffer);
 
     const AAFloatOn2D hBound(
-        geomInst->hOffset + geomInst->hScale * minHeight
-        + 0.5f * geomInst->hScale * ((maxHeight - minHeight) - geomInst->hBias),
+        tfdm->hOffset + tfdm->hScale * minHeight
+        + 0.5f * tfdm->hScale * ((maxHeight - minHeight) - tfdm->hBias),
         0, 0,
-        0.5f * geomInst->hScale * (maxHeight - minHeight));
+        0.5f * tfdm->hScale * (maxHeight - minHeight));
 
     /*
     JP: 三角形によって与えられるUV領域上のアフィン演算は3つの平行四辺形上の演算の合成として厳密に評価できる。

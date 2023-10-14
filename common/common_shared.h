@@ -837,7 +837,9 @@ namespace shared {
         LightDistribution emitterPrimDist;
         uint32_t materialSlot;
         uint32_t geomInstSlot;
-        // for TFDM
+    };
+
+    struct TFDMData {
         ROBuffer<DisplacedTriangleAuxInfo> dispTriAuxInfoBuffer;
         ROBuffer<AABB> aabbBuffer;
         float hOffset;

@@ -158,6 +158,7 @@ namespace shared {
 
         ROBuffer<MaterialData> materialDataBuffer;
         ROBuffer<GeometryInstanceData> geometryInstanceDataBuffer;
+        ROBuffer<TFDMData> tfdmDataBuffer;
         LightDistribution lightInstDist;
         RegularConstantContinuousDistribution2D envLightImportanceMap;
         CUtexObject envLightTexture;
@@ -808,9 +809,9 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(aabb)() {
     using namespace shared;
 
     const auto sbtr = HitGroupSBTRecordData::get();
-    const GeometryInstanceData &geomInst = plp.s->geometryInstanceDataBuffer[sbtr.geomInstSlot];
+    const TFDMData &tfdm = plp.s->tfdmDataBuffer[sbtr.geomInstSlot];
 
-    const AABB &aabb = geomInst.aabbBuffer[optixGetPrimitiveIndex()];
+    const AABB &aabb = tfdm.aabbBuffer[optixGetPrimitiveIndex()];
     float u, v;
     bool isFrontHit;
     const float t = aabb.intersect(
@@ -859,7 +860,8 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
     const Point2D texTriAabbMinP = min(tcs[0], min(tcs[1], tcs[2]));
     const Point2D texTriAabbMaxP = max(tcs[0], max(tcs[1], tcs[2]));
 
-    const DisplacedTriangleAuxInfo &dispTriAuxInfo = geomInst.dispTriAuxInfoBuffer[optixGetPrimitiveIndex()];
+    const TFDMData &tfdm = plp.s->tfdmDataBuffer[sbtr.geomInstSlot];
+    const DisplacedTriangleAuxInfo &dispTriAuxInfo = tfdm.dispTriAuxInfoBuffer[optixGetPrimitiveIndex()];
     const Matrix3x3 matTcToNInTc =
         dispTriAuxInfo.matObjToTc.getUpperLeftMatrix() * dispTriAuxInfo.matTcToNInObj;
 
@@ -903,10 +905,10 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
             {
                 const float2 minmax = mat.minMaxMipMap[curTexel.lod].read(int2(curTexel.x, curTexel.y));
                 const AAFloatOn2D hBound(
-                    geomInst.hOffset + geomInst.hScale * minmax.x
-                    + 0.5f * geomInst.hScale * ((minmax.y - minmax.x) - geomInst.hBias),
+                    tfdm.hOffset + tfdm.hScale * minmax.x
+                    + 0.5f * tfdm.hScale * ((minmax.y - minmax.x) - tfdm.hBias),
                     0, 0,
-                    0.5f * geomInst.hScale * (minmax.y - minmax.x));
+                    0.5f * tfdm.hScale * (minmax.y - minmax.x));
 
                 const AAFloatOn2D_Vector3D edge0(
                     Vector3D(0.0f), Vector3D(0.5f * texelScale, 0, 0), Vector3D(0.0f), Vector3D(0.0f));

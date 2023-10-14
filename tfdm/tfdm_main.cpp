@@ -962,6 +962,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
     scene.initialize(
         getExecutableDirectory() / "tfdm/ptxes",
         gpuEnv.cuContext, gpuEnv.optixContext, shared::maxNumRayTypes);
+    cudau::TypedBuffer<shared::TFDMData> tfdmDataBuffer(
+        gpuEnv.cuContext, Scene::bufferType, Scene::maxNumGeometryInstances);
 
     StreamChain<2> streamChain;
     streamChain.initialize(gpuEnv.cuContext);
@@ -972,6 +974,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
     // EN: Setup a scene.
 
     scene.map();
+    tfdmDataBuffer.map();
 
     for (auto it = g_meshInfos.cbegin(); it != g_meshInfos.cend(); ++it) {
         const MeshInfo &info = it->second;
@@ -1205,13 +1208,15 @@ int32_t main(int32_t argc, const char* argv[]) try {
                 gpuEnv.cuContext, cudau::BufferType::Device, dispTriAuxInfos);
             tfdmMeshGeomInst->aabbBuffer.initialize(
                 gpuEnv.cuContext, cudau::BufferType::Device, triangles.size());
-            geomInstData.dispTriAuxInfoBuffer =
+
+            shared::TFDMData &tfdmData = tfdmDataBuffer.getMappedPointer()[tfdmMeshGeomInst->geomInstSlot];
+            tfdmData.dispTriAuxInfoBuffer =
                 tfdmMeshGeomInst->dispTriAuxInfoBuffer.getROBuffer<shared::enableBufferOobCheck>();
-            geomInstData.aabbBuffer =
+            tfdmData.aabbBuffer =
                 tfdmMeshGeomInst->aabbBuffer.getROBuffer<shared::enableBufferOobCheck>();
-            geomInstData.hOffset = 0.0f;
-            geomInstData.hScale = 0.2f;
-            geomInstData.hBias = 0.0f;
+            tfdmData.hOffset = 0.0f;
+            tfdmData.hScale = 0.2f;
+            tfdmData.hBias = 0.0f;
 
 #if !SHOW_BASE_MESH
             tfdmMeshGeomInst->optixGeomInst.setCustomPrimitiveAABBBuffer(tfdmMeshGeomInst->aabbBuffer);
@@ -1247,6 +1252,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
     g_cameraDirectionalMovingSpeed = 0.0015f;
     g_cameraTiltSpeed = 0.025f;
 
+    tfdmDataBuffer.unmap();
     scene.unmap();
 
     scene.setupASs(gpuEnv.cuContext);
@@ -1505,6 +1511,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
             scene.materialDataBuffer.getROBuffer<shared::enableBufferOobCheck>();
         staticPlp.geometryInstanceDataBuffer =
             scene.geomInstDataBuffer.getROBuffer<shared::enableBufferOobCheck>();
+        staticPlp.tfdmDataBuffer = tfdmDataBuffer.getROBuffer<shared::enableBufferOobCheck>();
         envLightImportanceMap.getDeviceType(&staticPlp.envLightImportanceMap);
         staticPlp.envLightTexture = envLightTexture;
 
@@ -2103,26 +2110,30 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
                 dstImageSize /= 2;
             }
-
-            // END: Compute the minmax mipmap.
-            // ----------------------------------------------------------------
         }
 
-        {
+        // JP: ディスプレイスメントを適用した各プリミティブのAABBを計算する。
+        // EN: 
+        if (localIntersectionTypeChanged/* || geomChanged || tfdmParamChanged*/) {
             const GeometryInstance* geomInst = tfdmMeshGeomInst;
             const Material* mat = tfdmMeshMaterial;
+
             const shared::GeometryInstanceData* const geomInstData =
                 scene.geomInstDataBuffer.getDevicePointerAt(geomInst->geomInstSlot);
+            const shared::TFDMData* const tfdmData =
+                tfdmDataBuffer.getDevicePointerAt(geomInst->geomInstSlot);
             const shared::MaterialData* const matData =
                 scene.materialDataBuffer.getDevicePointerAt(mat->materialSlot);
 
             gpuEnv.kernelComputeAABBs.launchWithThreadDim(
                 curCuStream, cudau::dim3(geomInst->aabbBuffer.numElements()),
-                geomInstData, matData);
+                geomInstData, tfdmData, matData);
 
             //CUDADRV_CHECK(cuStreamSynchronize(curCuStream));
             //std::vector<AABB> aabbs = geomInst->aabbBuffer;
             //printf("");
+
+            tfdmGeomGroup->needsRebuild = true;
         }
 
         // JP: ASesのリビルドを行う。
@@ -2367,6 +2378,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
     streamChain.finalize();
 
+    tfdmDataBuffer.finalize();
     scene.finalize();
     
     gpuEnv.finalize();
