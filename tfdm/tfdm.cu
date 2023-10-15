@@ -6,31 +6,36 @@ using namespace shared;
 template <LocalIntersectionType intersectionType>
 CUDA_DEVICE_FUNCTION float2 computeTexelMinMax(
     const CUtexObject heightMap, const int32_t mipLevel, const int2 &imgSize, const int2 &pixIdx) {
-    const auto sample = [&](const int2 &tc) {
+    const auto sample = [&](int32_t px, int32_t py) {
         return tex2DLod<float>(
             heightMap,
-            (tc.x + 0.5f) / imgSize.x,
-            (tc.y + 0.5f) / imgSize.y,
+            (px + 0.5f) / imgSize.x,
+            (py + 0.5f) / imgSize.y,
             mipLevel);
     };
 
     float minHeight = INFINITY;
     float maxHeight = -INFINITY;
     if constexpr (intersectionType == LocalIntersectionType::Box) {
-        const float height = sample(pixIdx);
+        const float height = sample(pixIdx.x, pixIdx.y);
         minHeight = std::fmin(height, minHeight);
         maxHeight = std::fmax(height, maxHeight);
     }
     if constexpr (intersectionType == LocalIntersectionType::TwoTriangle) {
-        const float heightUL = sample((pixIdx + imgSize + make_int2(-1, -1)) % imgSize);
-        const float heightUC = sample((pixIdx + imgSize + make_int2(0, -1)) % imgSize);
-        const float heightUR = sample((pixIdx + imgSize + make_int2(1, -1)) % imgSize);
-        const float heightCL = sample((pixIdx + imgSize + make_int2(-1, 0)) % imgSize);
-        const float heightCC = sample((pixIdx + imgSize + make_int2(0, 0)) % imgSize);
-        const float heightCR = sample((pixIdx + imgSize + make_int2(1, 0)) % imgSize);
-        const float heightBL = sample((pixIdx + imgSize + make_int2(-1, 1)) % imgSize);
-        const float heightBC = sample((pixIdx + imgSize + make_int2(0, 1)) % imgSize);
-        const float heightBR = sample((pixIdx + imgSize + make_int2(1, 1)) % imgSize);
+        int32_t py;
+        py = (pixIdx.y + imgSize.y - 1) % imgSize.y;
+        const float heightUL = sample((pixIdx.x + imgSize.x - 1) % imgSize.x, py);
+        const float heightUC = sample(pixIdx.x, py);
+        const float heightUR = sample((pixIdx.x + 1) % imgSize.x, py);
+        py = pixIdx.y;
+        const float heightCL = sample((pixIdx.x + imgSize.x - 1) % imgSize.x, py);
+        const float heightCC = sample(pixIdx.x, py);
+        const float heightCR = sample((pixIdx.x + 1) % imgSize.x, py);
+        py = (pixIdx.y + 1) % imgSize.y;
+        const float heightBL = sample((pixIdx.x + imgSize.x - 1) % imgSize.x, py);
+        const float heightBC = sample(pixIdx.x, py);
+        const float heightBR = sample((pixIdx.x + 1) % imgSize.x, py);
+
         const float cornerHeightUL = 0.25f * (heightUL + heightUC + heightCL + heightCC);
         const float cornerHeightUR = 0.25f * (heightUC + heightUR + heightCC + heightCR);
         const float cornerHeightBL = 0.25f * (heightCL + heightCC + heightBL + heightBC);

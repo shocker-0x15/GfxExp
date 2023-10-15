@@ -829,6 +829,7 @@ namespace shared {
         Matrix4x4 matObjToTc;
         Matrix3x3 matTcToBc;
         Matrix3x3 matTcToNInObj;
+        Matrix3x3 matTcToObj;
     };
 
     struct GeometryInstanceData {

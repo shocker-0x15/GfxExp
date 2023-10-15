@@ -331,6 +331,9 @@ inline constexpr float4 make_float4(float x, float y, float z, float w) {
 
 
 
+CUDA_COMMON_FUNCTION CUDA_INLINE int2 make_int2(int32_t v) {
+    return make_int2(v, v);
+}
 CUDA_COMMON_FUNCTION CUDA_INLINE int2 make_int2(const int3 &v) {
     return make_int2(v.x, v.y);
 }

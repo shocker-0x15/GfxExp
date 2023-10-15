@@ -229,23 +229,26 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_closestHit_generic() {
             &geometricNormalInWorld, &texCoord, &hypAreaPDensity);
     }
     else {
-        Point3D p;
         Normal3D n;
 #if USE_DISPLACED_SURFACES
-        p = Point3D(optixGetWorldRayOrigin()) + optixGetRayTmax() * Vector3D(optixGetWorldRayDirection());
+        positionInWorld =
+            Point3D(optixGetWorldRayOrigin()) + optixGetRayTmax() * Vector3D(optixGetWorldRayDirection());
         DisplacedSurfaceAttributeSignature::get(nullptr, nullptr, &n);
 #else
         const AABB &aabb = geomInst.aabbBuffer[hp.primIndex];
-        p = aabb.restoreHitPoint(hp.b1, hp.b2, &n);
+        Point3D p = aabb.restoreHitPoint(hp.b1, hp.b2, &n);
 
         //geometricNormalInWorld = shadingNormalInWorld;
         const auto hitPlane = static_cast<uint32_t>(hp.b1);
         texCoord = Point2D(hp.b1 - hitPlane, hp.b2);
         texCoord0DirInWorld = Vector3D(0, 0, 0);
-#endif
 
         positionInWorld = transformPointFromObjectToWorldSpace(p);
+#endif
+
         shadingNormalInWorld = normalize(transformNormalFromObjectToWorldSpace(n));
+        Vector3D bitangent;
+        makeCoordinateSystem(shadingNormalInWorld, &texCoord0DirInWorld, &bitangent);
         geometricNormalInWorld = shadingNormalInWorld;
         hypAreaPDensity = 0.0f;
     }

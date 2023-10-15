@@ -867,7 +867,7 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
     const Matrix3x3 matTcToNInTc =
         dispTriAuxInfo.matObjToTc.getUpperLeftMatrix() * dispTriAuxInfo.matTcToNInObj;
 
-    Normal3D normal;
+    Normal3D normalInTc;
     float b0, b1;
     bool isFrontHit;
     float tMax = optixGetRayTmax();
@@ -964,12 +964,93 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
                     Point3D bc = dispTriAuxInfo.matTcToBc * (Point3D(texelCenter, 1.0f) * texelScale);
                     b0 = bc.x;
                     b1 = bc.y;
-                    normal = texelAabb.restoreNormal(param0, param1);
+                    normalInTc = texelAabb.restoreNormal(param0, param1);
                     isFrontHit = isF;
                 }
                 break;
             }
-            case LocalIntersectionType::TwoTriangle:
+            case LocalIntersectionType::TwoTriangle: {
+                const int2 imgSize = make_int2(1 << (maxDepth - curTexel.lod));
+                const auto sample = [&](int32_t px, int32_t py) {
+                    return tex2DLod<float>(
+                        mat.heightMap,
+                        (px + 0.5f) / imgSize.x,
+                        (py + 0.5f) / imgSize.y,
+                        curTexel.lod);
+                };
+
+                int32_t py;
+                py = (curTexel.y + imgSize.y - 1) % imgSize.y;
+                const float heightUL = sample((curTexel.x + imgSize.x - 1) % imgSize.x, py);
+                const float heightUC = sample(curTexel.x, py);
+                const float heightUR = sample((curTexel.x + 1) % imgSize.x, py);
+                py = curTexel.y;
+                const float heightCL = sample((curTexel.x + imgSize.x - 1) % imgSize.x, py);
+                const float heightCC = sample(curTexel.x, py);
+                const float heightCR = sample((curTexel.x + 1) % imgSize.x, py);
+                py = (curTexel.y + 1) % imgSize.y;
+                const float heightBL = sample((curTexel.x + imgSize.x - 1) % imgSize.x, py);
+                const float heightBC = sample(curTexel.x, py);
+                const float heightBR = sample((curTexel.x + 1) % imgSize.x, py);
+
+                const float cornerHeightUL = 0.25f * (heightUL + heightUC + heightCL + heightCC);
+                const float cornerHeightUR = 0.25f * (heightUC + heightUR + heightCC + heightCR);
+                const float cornerHeightBL = 0.25f * (heightCL + heightCC + heightBL + heightBC);
+                const float cornerHeightBR = 0.25f * (heightCC + heightCR + heightBC + heightBR);
+
+                Point3D pUL(
+                    texelAabb.minP.x, texelAabb.minP.y,
+                    tfdm.hOffset + tfdm.hScale * (cornerHeightUL - tfdm.hBias));
+                Point3D pUR(
+                    texelAabb.maxP.x, texelAabb.minP.y,
+                    tfdm.hOffset + tfdm.hScale * (cornerHeightUR - tfdm.hBias));
+                Point3D pBL(
+                    texelAabb.minP.x, texelAabb.maxP.y,
+                    tfdm.hOffset + tfdm.hScale * (cornerHeightBL - tfdm.hBias));
+                Point3D pBR(
+                    texelAabb.maxP.x, texelAabb.maxP.y,
+                    tfdm.hOffset + tfdm.hScale * (cornerHeightBR - tfdm.hBias));
+
+                const auto testRayVsTriangleIntersection = [&]
+                (const Point3D &org, const Vector3D &dir, float distMin, float distMax,
+                 const Point3D &p0, const Point3D &p1, const Point3D &p2,
+                 Vector3D* n, float* t, float* beta, float* gamma) {
+                    const Vector3D e0 = p1 - p0;
+                    const Vector3D e1 = p0 - p2;
+                    *n = cross(e1, e0);
+
+                    const Vector3D e2 = (1.0f / dot(*n, dir)) * (p0 - org);
+                    const Vector3D i = cross(dir, e2);
+
+                    *beta = dot(i, e1);
+                    *gamma = dot(i, e0);
+                    *t = dot(*n, e2);
+
+                    return (
+                        (*t < distMax) & (*t > distMin)
+                        & (*beta >= 0.0f) & (*gamma >= 0.0f) & (*beta + *gamma <= 1));
+                };
+
+                Vector3D n;
+                float t;
+                float b1, b2;
+                if (testRayVsTriangleIntersection(
+                    rayOrgInTc, rayDirInTc, tMin, tMax, pUL, pUR, pBR, &n, &t, &b1, &b2)) {
+                    if (t < tMax) {
+                        tMax = t;
+                        normalInTc = static_cast<Normal3D>(n);
+                    }
+                }
+                if (testRayVsTriangleIntersection(
+                    rayOrgInTc, rayDirInTc, tMin, tMax, pUL, pBR, pBL, &n, &t, &b1, &b2)) {
+                    if (t < tMax) {
+                        tMax = t;
+                        normalInTc = static_cast<Normal3D>(n);
+                    }
+                }
+
+                break;
+            }
             case LocalIntersectionType::Bilinear:
             case LocalIntersectionType::BSpline:
             default:
@@ -984,13 +1065,14 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
     if (tMax == optixGetRayTmax())
         return;
 
+    Normal3D normalInObj = normalize(dispTriAuxInfo.matTcToObj * normalInTc);
     DisplacedSurfaceAttributeSignature::reportIntersection(
         tMax,
         static_cast<uint32_t>(
             isFrontHit ?
             CustomHitKind::DisplacedSurfaceFrontFace :
             CustomHitKind::DisplacedSurfaceBackFace),
-        b0, b1, normal);
+        b0, b1, normalInObj);
 }
 
 #endif

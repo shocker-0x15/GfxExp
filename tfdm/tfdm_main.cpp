@@ -1262,6 +1262,10 @@ int32_t main(int32_t argc, const char* argv[]) try {
                 dispTriAuxInfo.matObjToTc = static_cast<Matrix4x4>(matObjToTc);
                 dispTriAuxInfo.matTcToBc = static_cast<Matrix3x3>(matTcToBc);
                 dispTriAuxInfo.matTcToNInObj = static_cast<Matrix3x3>(matTcToNInObj);
+                dispTriAuxInfo.matTcToObj = Matrix3x3(
+                    static_cast<Vector3D>(tc0Dir),
+                    static_cast<Vector3D>(tc1Dir),
+                    static_cast<Vector3D>(geomNormal));
             }
 
             shared::GeometryInstanceData &geomInstData =
@@ -2211,7 +2215,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
             //CUDADRV_CHECK(cuStreamSynchronize(curCuStream));
             //std::vector<AABB> aabbs = geomInst->aabbBuffer;
-            //printf("");
 
             tfdmGeomGroup->needsRebuild = true;
         }
