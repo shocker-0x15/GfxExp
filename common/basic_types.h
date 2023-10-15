@@ -1529,6 +1529,9 @@ struct Point3D_T {
     CUDA_COMMON_FUNCTION explicit Point3D_T(const Point3D_T<double> &v) :
         x(static_cast<F>(v.x)), y(static_cast<F>(v.y)), z(static_cast<F>(v.z)) {}
 
+    CUDA_COMMON_FUNCTION explicit operator Point2D_T<F>() const {
+        return Point2D_T<F>(x, y);
+    }
     template <bool isNormal>
     CUDA_COMMON_FUNCTION explicit operator Vector3D_T<F, isNormal>() const {
         return Vector3D_T<F, isNormal>(x, y, z);

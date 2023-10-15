@@ -1914,7 +1914,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         bool lastFrameWasAnimated = false;
         static int32_t maxPathLength = 5;
         static int32_t targetMipLevel = 0;
-        static auto localIntersectionType = shared::LocalIntersectionType::Box;
+        static auto localIntersectionType = shared::LocalIntersectionType::TwoTriangle;
         bool localIntersectionTypeChanged = false;
         static bool debugSwitches[] = {
             false, false, false, false, false, false, false, false

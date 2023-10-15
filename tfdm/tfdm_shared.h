@@ -851,8 +851,10 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
         vs[1].texCoord,
         vs[2].texCoord,
     };
-    if (cross(tcs[1] - tcs[0], tcs[2] - tcs[0]) < 0)
+    const float triAreaInTc = cross(tcs[1] - tcs[0], tcs[2] - tcs[0])/* * 0.5f*/;
+    if (triAreaInTc < 0)
         swap(tcs[1], tcs[2]);
+    const float recTriAreaInTc = std::fabs(1.0f / triAreaInTc);
 
     const Vector2D texTriEdgeNormals[] = {
         Vector2D(tcs[1].y - tcs[0].y, tcs[0].x - tcs[1].x),
@@ -867,8 +869,8 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
     const Matrix3x3 matTcToNInTc =
         dispTriAuxInfo.matObjToTc.getUpperLeftMatrix() * dispTriAuxInfo.matTcToNInObj;
 
-    Normal3D normalInTc;
-    float b0, b1;
+    Normal3D hitNormalInTc;
+    float hitBc1, hitBc2;
     bool isFrontHit;
     float tMax = optixGetRayTmax();
     const float tMin = optixGetRayTmin();
@@ -962,9 +964,9 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
                 if (t < tMax) {
                     tMax = t;
                     Point3D bc = dispTriAuxInfo.matTcToBc * (Point3D(texelCenter, 1.0f) * texelScale);
-                    b0 = bc.x;
-                    b1 = bc.y;
-                    normalInTc = texelAabb.restoreNormal(param0, param1);
+                    hitBc1 = bc.x;
+                    hitBc2 = bc.y;
+                    hitNormalInTc = texelAabb.restoreNormal(param0, param1);
                     isFrontHit = isF;
                 }
                 break;
@@ -1038,14 +1040,20 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
                     rayOrgInTc, rayDirInTc, tMin, tMax, pUL, pUR, pBR, &n, &t, &b1, &b2)) {
                     if (t < tMax) {
                         tMax = t;
-                        normalInTc = static_cast<Normal3D>(n);
+                        const Point2D hp((1 - (b1 + b2)) * pUL + b1 * pUR + b2 * pBR);
+                        hitBc1 = cross(tcs[2] - hp, tcs[0] - hp) * recTriAreaInTc;
+                        hitBc2 = cross(tcs[0] - hp, tcs[1] - hp) * recTriAreaInTc;
+                        hitNormalInTc = static_cast<Normal3D>(n);
                     }
                 }
                 if (testRayVsTriangleIntersection(
                     rayOrgInTc, rayDirInTc, tMin, tMax, pUL, pBR, pBL, &n, &t, &b1, &b2)) {
                     if (t < tMax) {
                         tMax = t;
-                        normalInTc = static_cast<Normal3D>(n);
+                        const Point2D hp((1 - (b1 + b2)) * pUL + b1 * pBR + b2 * pBL);
+                        hitBc1 = cross(tcs[2] - hp, tcs[0] - hp) * recTriAreaInTc;
+                        hitBc2 = cross(tcs[0] - hp, tcs[1] - hp) * recTriAreaInTc;
+                        hitNormalInTc = static_cast<Normal3D>(n);
                     }
                 }
 
@@ -1065,14 +1073,14 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
     if (tMax == optixGetRayTmax())
         return;
 
-    Normal3D normalInObj = normalize(dispTriAuxInfo.matTcToObj * normalInTc);
+    const Normal3D normalInObj = normalize(dispTriAuxInfo.matTcToObj * hitNormalInTc);
     DisplacedSurfaceAttributeSignature::reportIntersection(
         tMax,
         static_cast<uint32_t>(
             isFrontHit ?
             CustomHitKind::DisplacedSurfaceFrontFace :
             CustomHitKind::DisplacedSurfaceBackFace),
-        b0, b1, normalInObj);
+        hitBc1, hitBc2, normalInObj);
 }
 
 #endif
