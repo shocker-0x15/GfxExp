@@ -16,12 +16,8 @@ CUDA_DEVICE_FUNCTION float2 computeTexelMinMax(
 
     float minHeight = INFINITY;
     float maxHeight = -INFINITY;
-    if constexpr (intersectionType == LocalIntersectionType::Box) {
-        const float height = sample(pixIdx.x, pixIdx.y);
-        minHeight = std::fmin(height, minHeight);
-        maxHeight = std::fmax(height, maxHeight);
-    }
-    if constexpr (intersectionType == LocalIntersectionType::TwoTriangle) {
+    if constexpr (intersectionType == LocalIntersectionType::Box ||
+                  intersectionType == LocalIntersectionType::TwoTriangle) {
         int32_t py;
         py = (pixIdx.y + imgSize.y - 1) % imgSize.y;
         const float heightUL = sample((pixIdx.x + imgSize.x - 1) % imgSize.x, py);
