@@ -1,4 +1,46 @@
 ﻿/*
+* 
+* コマンドラインオプション例 / Command line option example:
+You can load a 3D model for example by downloading from the internet.
+(e.g. https://casual-effects.com/data/)
+
+(1) -cam-pos 0 3 0 -cam-yaw 90
+    -name sponza -obj crytek_sponza/sponza.obj 0.01 trad
+    -begin-pos 0 0 0.36125 -inst sponza
+    -name rectlight -emittance 600 600 600 -rectangle 2 2 -begin-pos 0 15 0 -inst rectlight
+
+JP: このプログラムはTFDM (Tessellation-Free Displacement Mapping) [1]の実装例です。
+    ディスプレイスメントマッピングによって3Dのサーフェスに詳細なジオメトリを付加することができますが、
+    事前にメッシュからBVHなどのAcceleration Structureを作っておく必要があるレイトレーシングでは事前のポリゴン分割、
+    事前テッセレーションが必要で、膨大なメモリ使用量が問題になります。
+    また適切な事前分割の仕方を考えるのも簡単ではありません。
+    TFDMではハイトマップごとに各MIPレベル・各テクセル範囲中の最小値・最大値を階層的に記録したMinmaxミップマップを
+    予め計算し、ベースメッシュ形状と切り離した暗黙的なBVH(の一部)として用いることで事前テッセレーションを行うことなく、
+    省メモリに緻密なジオメトリに対するレイトレーシングを可能とします。
+    トラバーサル中にはベース三角形ごとにIntersectionシェーダーが起動されます。
+    三角形の各頂点における位置、法線、テクスチャー座標とMinmaxミップマップの値から、
+    アフィン演算を用いてその場でAABBを計算、レイとAABBとの交叉判定をMIPレベルを下りながら階層的に行うことで
+    BVHトラバーサルを実行、目的のMIPレベルに到達した段階で最終的な形状との交叉判定を行います。
+    テクセル単位で交叉判定を行うためポリゴンの適切な事前分割について考える必要もありません。
+
+EN: This program is an example implementation of TFDM (Tessellation-Free Displacement Mapping) [1].
+    Displacement mapping can add fine details to 3D surfaces.
+    However, ray tracing requires building an acceleration structure like BVH beforehand from the mesh
+    with prior polygon subdivision, that is pre-tessellation, and this means significant amount of memory consumption.
+    Also, it is not easy to plan appropriate subdivision.
+    In TFDM, a minmax mipmap is pre-computed for each heightmap, where minimum and maximum values
+    for each mip-level, texel domain is recorded hierarchically, and use it as (a part of) an implicit BVH
+    decoupled from base mesh shape to enable ray tracing against detailed geometry without pre-tessellation,
+    which means low memory consumption.
+    Intersection shader is invoked during traversal for each base triangle.
+    Affine arithmetic is used to compute an AABB on the fly from the position, normal, texture coordinates of
+    the triangle vertices and the values from the minmax mipmap, then the shader performs
+    ray vs AABB intersection tests hierarchically while descending MIP levels, finally performs
+    intersection test against the actual geometry when it reachs a target mip level.
+    There is no need to plan appropriate polygon subdivision since the intersection tests are performed texel-wise.
+
+[1] Tessellation-Free Displacement Mapping for Ray Tracing
+    https://research.adobe.com/publication/tessellation-free-displacement-mapping-for-ray-tracing/
 
 */
 
@@ -27,8 +69,14 @@ struct GPUEnvironment {
     optixu::Context optixContext;
 
     CUmodule tfdmModule;
-    cudau::Kernel kernelGenerateFirstMinMaxMipMap;
-    cudau::Kernel kernelGenerateMinMaxMipMap;
+    cudau::Kernel kernelGenerateFirstMinMaxMipMap_Box;
+    cudau::Kernel kernelGenerateFirstMinMaxMipMap_TwoTriangle;
+    cudau::Kernel kernelGenerateFirstMinMaxMipMap_Bilinear;
+    cudau::Kernel kernelGenerateFirstMinMaxMipMap_BSpline;
+    cudau::Kernel kernelGenerateMinMaxMipMap_Box;
+    cudau::Kernel kernelGenerateMinMaxMipMap_TwoTriangle;
+    cudau::Kernel kernelGenerateMinMaxMipMap_Bilinear;
+    cudau::Kernel kernelGenerateMinMaxMipMap_BSpline;
     cudau::Kernel kernelComputeAABBs;
 
     template <typename EntryPointType>
@@ -54,19 +102,29 @@ struct GPUEnvironment {
     optixu::Material optixTFDMMaterial;
 
     void initialize() {
-        int32_t cuDeviceCount;
         CUDADRV_CHECK(cuInit(0));
-        CUDADRV_CHECK(cuDeviceGetCount(&cuDeviceCount));
         CUDADRV_CHECK(cuCtxCreate(&cuContext, 0, 0));
         CUDADRV_CHECK(cuCtxSetCurrent(cuContext));
 
         CUDADRV_CHECK(cuModuleLoad(
             &tfdmModule,
             (getExecutableDirectory() / "tfdm/ptxes/tfdm.ptx").string().c_str()));
-        kernelGenerateFirstMinMaxMipMap =
-            cudau::Kernel(tfdmModule, "generateFirstMinMaxMipMap", cudau::dim3(8, 8), 0);
-        kernelGenerateMinMaxMipMap =
-            cudau::Kernel(tfdmModule, "generateMinMaxMipMap", cudau::dim3(8, 8), 0);
+        kernelGenerateFirstMinMaxMipMap_Box =
+            cudau::Kernel(tfdmModule, "generateFirstMinMaxMipMap_Box", cudau::dim3(8, 8), 0);
+        kernelGenerateFirstMinMaxMipMap_TwoTriangle =
+            cudau::Kernel(tfdmModule, "generateFirstMinMaxMipMap_TwoTriangle", cudau::dim3(8, 8), 0);
+        kernelGenerateFirstMinMaxMipMap_Bilinear =
+            cudau::Kernel(tfdmModule, "generateFirstMinMaxMipMap_Bilinear", cudau::dim3(8, 8), 0);
+        kernelGenerateFirstMinMaxMipMap_BSpline =
+            cudau::Kernel(tfdmModule, "generateFirstMinMaxMipMap_BSpline", cudau::dim3(8, 8), 0);
+        kernelGenerateMinMaxMipMap_Box =
+            cudau::Kernel(tfdmModule, "generateMinMaxMipMap_Box", cudau::dim3(8, 8), 0);
+        kernelGenerateMinMaxMipMap_TwoTriangle =
+            cudau::Kernel(tfdmModule, "generateMinMaxMipMap_TwoTriangle", cudau::dim3(8, 8), 0);
+        kernelGenerateMinMaxMipMap_Bilinear =
+            cudau::Kernel(tfdmModule, "generateMinMaxMipMap_Bilinear", cudau::dim3(8, 8), 0);
+        kernelGenerateMinMaxMipMap_BSpline =
+            cudau::Kernel(tfdmModule, "generateMinMaxMipMap_BSpline", cudau::dim3(8, 8), 0);
         kernelComputeAABBs =
             cudau::Kernel(tfdmModule, "computeAABBs", cudau::dim3(32), 0);
 
@@ -1114,7 +1172,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
                 scene.materialDataBuffer.getMappedPointer()[tfdmMeshMaterial->materialSlot];
 
             const std::filesystem::path heightMapPath =
-                R"(C:\Users\shocker_0x15\repos\OptiX_Utility\data\mountain_heightmap_1024.png)";
+                R"(..\data\TCom_Rock_Cliff3_2x2_1K_height.dds)";
             bool needsDegamma;
             hpprintf("Reading: %s ... ", heightMapPath.string().c_str());
             if (loadTexture<float, true>(
@@ -1134,6 +1192,10 @@ int32_t main(int32_t argc, const char* argv[]) try {
                 tfdmMeshMaterial->heightMap->getWidth(), tfdmMeshMaterial->heightMap->getHeight());
             matDataOnHost.heightMap = tfdmMeshMaterial->heightMapTex;
 
+            if (matDataOnHost.heightMapSize.x != matDataOnHost.heightMapSize.y)
+                throw std::runtime_error("Non-square height map is not supported.");
+            if (popcnt(matDataOnHost.heightMapSize.x) != 1)
+                throw std::runtime_error("Non-power-of-two height map is not supported.");
             const uint32_t numMinMaxMipMapLevels = nextPowOf2Exponent(matDataOnHost.heightMapSize.x) + 1;
             tfdmMeshMaterial->minMaxMipMap.initialize2D(
                 gpuEnv.cuContext,
@@ -1221,8 +1283,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
 #if !SHOW_BASE_MESH
             tfdmMeshGeomInst->optixGeomInst.setCustomPrimitiveAABBBuffer(tfdmMeshGeomInst->aabbBuffer);
 #endif
-
-            printf("");
         }
 
         std::set<const GeometryInstance*> srcGeomInsts = { tfdmMeshGeomInst };
@@ -2055,18 +2115,38 @@ int32_t main(int32_t argc, const char* argv[]) try {
             curInstDataBuffer.unmap();
         }
 
+        // JP: Minmax mipmapを計算する。
+        // EN: Compute the minmax mipmap.
         if (localIntersectionTypeChanged) {
-            const shared::GeometryInstanceData* const geomInstData =
-                scene.geomInstDataBuffer.getDevicePointerAt(tfdmMeshGeomInst->geomInstSlot);
+            const Material* mat = tfdmMeshMaterial;
+
             const shared::MaterialData* const matData =
-                scene.materialDataBuffer.getDevicePointerAt(tfdmMeshMaterial->materialSlot);
+                scene.materialDataBuffer.getDevicePointerAt(mat->materialSlot);
 
-            // ----------------------------------------------------------------
-            // JP: Minmax mipmapを計算する。
-            // EN: Compute the minmax mipmap.
+            cudau::Kernel generateFirstMinMaxMipMap;
+            cudau::Kernel generateMinMaxMipMap;
+            if (localIntersectionType == shared::LocalIntersectionType::Box) {
+                generateFirstMinMaxMipMap = gpuEnv.kernelGenerateFirstMinMaxMipMap_Box;
+                generateMinMaxMipMap = gpuEnv.kernelGenerateMinMaxMipMap_Box;
+            }
+            else if (localIntersectionType == shared::LocalIntersectionType::TwoTriangle) {
+                generateFirstMinMaxMipMap = gpuEnv.kernelGenerateFirstMinMaxMipMap_TwoTriangle;
+                generateMinMaxMipMap = gpuEnv.kernelGenerateMinMaxMipMap_TwoTriangle;
+            }
+            else if (localIntersectionType == shared::LocalIntersectionType::Bilinear) {
+                generateFirstMinMaxMipMap = gpuEnv.kernelGenerateFirstMinMaxMipMap_Bilinear;
+                generateMinMaxMipMap = gpuEnv.kernelGenerateMinMaxMipMap_Bilinear;
+            }
+            else if (localIntersectionType == shared::LocalIntersectionType::BSpline) {
+                generateFirstMinMaxMipMap = gpuEnv.kernelGenerateFirstMinMaxMipMap_BSpline;
+                generateMinMaxMipMap = gpuEnv.kernelGenerateMinMaxMipMap_BSpline;
+            }
+            else {
+                Assert_ShouldNotBeCalled();
+            }
 
-            int2 dstImageSize(tfdmMeshMaterial->heightMap->getWidth(), tfdmMeshMaterial->heightMap->getHeight());
-            gpuEnv.kernelGenerateFirstMinMaxMipMap.launchWithThreadDim(
+            int2 dstImageSize(mat->heightMap->getWidth(), mat->heightMap->getHeight());
+            generateFirstMinMaxMipMap.launchWithThreadDim(
                 curCuStream, cudau::dim3(dstImageSize.x, dstImageSize.y),
                 matData, localIntersectionType);
             //{
@@ -2076,11 +2156,11 @@ int32_t main(int32_t argc, const char* argv[]) try {
             //    printf("");
             //}
             dstImageSize /= 2;
-            const uint32_t numMinMaxMipMapLevels = nextPowOf2Exponent(tfdmMeshMaterial->heightMap->getWidth()) + 1;
+            const uint32_t numMinMaxMipMapLevels = nextPowOf2Exponent(mat->heightMap->getWidth()) + 1;
             for (int srcLevel = 0; srcLevel < numMinMaxMipMapLevels - 1; ++srcLevel) {
-                gpuEnv.kernelGenerateMinMaxMipMap.launchWithThreadDim(
+                generateMinMaxMipMap.launchWithThreadDim(
                     curCuStream, cudau::dim3(dstImageSize.x, dstImageSize.y),
-                    matData, localIntersectionType, srcLevel);
+                    matData, srcLevel);
 
                 /*CUDADRV_CHECK(cuStreamSynchronize(curCuStream));
                 std::vector<float2> minMaxValues(dstImageSize.x * dstImageSize.y);
@@ -2113,7 +2193,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         }
 
         // JP: ディスプレイスメントを適用した各プリミティブのAABBを計算する。
-        // EN: 
+        // EN: Compute the AABB of each displacement-enabled primitive.
         if (localIntersectionTypeChanged/* || geomChanged || tfdmParamChanged*/) {
             const GeometryInstance* geomInst = tfdmMeshGeomInst;
             const Material* mat = tfdmMeshMaterial;

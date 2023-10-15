@@ -4,6 +4,7 @@
 #include "affine_arithmetic.h"
 
 #define USE_DISPLACED_SURFACES 1
+#define USE_WORKAROUND_FOR_CUDA_BC_TEX 1
 
 namespace shared {
     static constexpr bool useMultipleRootOptimization = 1;
@@ -745,8 +746,9 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void findRoots(
     if constexpr (useMultipleRootOptimization)
         ++log2Res;
     if (log2Res <= 0) {
-        roots[0] = Texel{ 0, 0, maxDepth - log2Res };
+        roots[0] = Texel{ 0, 0, maxDepth };
         *numRoots = 1;
+        return;
     }
 
     constexpr uint32_t maxWidth = useMultipleRootOptimization ? 2 : 1;
@@ -762,7 +764,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void findRoots(
                     Texel &root = roots[0];
                     root.x = minTexelX;
                     root.y = minTexelY;
-                    root.lod = maxDepth - log2Res;
+                    root.lod = maxDepth;
                     *numRoots = 1;
                 }
                 else {
@@ -893,14 +895,14 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
                     texelCenter, 0.5f * texelScale);
 
             // JP: テクセルがベース三角形の外にある場合はテクセルをスキップ。
-            // EN: 
+            // EN: Skip the texel if it is outside of the base triangle.
             if (isectResult == TriangleSquareIntersection2DResult::SquareOutsideTriangle) {
                 next(curTexel);
                 continue;
             }
 
             // JP: テクスチャー空間でテクセルがつくるAABBをアフィン演算を用いて計算。
-            // EN: 
+            // EN: Compute the AABB of texel in the texture space using affine arithmetic.
             AABB texelAabb;
             {
                 const float2 minmax = mat.minMaxMipMap[curTexel.lod].read(int2(curTexel.x, curTexel.y));
@@ -930,21 +932,26 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
             }
 
             // JP: レイがAABBにヒットしない場合はテクセル内のサーフェスともヒットしないため深掘りしない。
-            // EN: 
+            // EN: Don't descend more when the ray does not hit the AABB since
+            //     the ray will never hit the surface inside the texel
             if (!texelAabb.intersect(rayOrgInTc, rayDirInTc, tMin, tMax)) {
                 next(curTexel);
                 continue;
             }
 
             // JP: レイがAABBにヒットしているがターゲットのMIPレベルに到達していないときは下位MIPに下る。
-            // EN: 
+            // EN: Descend to the lower mip when the ray hit the AABB but does not reach the target mip level.
+#if USE_WORKAROUND_FOR_CUDA_BC_TEX
+            if (curTexel.lod > min(plp.f->targetMipLevel, maxDepth - 2)) {
+#else
             if (curTexel.lod > plp.f->targetMipLevel) {
+#endif
                 down(curTexel);
                 continue;
             }
 
-            // JP: レイと変位を加えたサーフェスとの交差判定を行う。
-            // EN: 
+            // JP: レイと変位を加えたサーフェスとの交叉判定を行う。
+            // EN: Test ray intersection against the displaced surface.
             const auto isectType = static_cast<LocalIntersectionType>(plp.f->localIntersectionType);
             switch (isectType) {
             case LocalIntersectionType::Box: {

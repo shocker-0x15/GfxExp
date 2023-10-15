@@ -57,18 +57,22 @@ void devPrintf(const char* fmt, ...);
 #   define devPrintf(fmt, ...) printf(fmt, ##__VA_ARGS__);
 #endif
 
+#if defined(__CUDA_ARCH__)
+#   define __Assert(expr, fmt, ...) do { if (!(expr)) { devPrintf("%s @%s: %u:\n", #expr, __FILE__, __LINE__); devPrintf(fmt"\n", ##__VA_ARGS__); assert(false); } } while (0)
+#else
+#   define __Assert(expr, fmt, ...) do { if (!(expr)) { devPrintf("%s @%s: %u:\n", #expr, __FILE__, __LINE__); devPrintf(fmt"\n", ##__VA_ARGS__); abort(); } } while (0)
+#endif
+
 #ifdef ENABLE_ASSERT
-#   if defined(__CUDA_ARCH__)
-#       define Assert(expr, fmt, ...) do { if (!(expr)) { devPrintf("%s @%s: %u:\n", #expr, __FILE__, __LINE__); devPrintf(fmt"\n", ##__VA_ARGS__); assert(false); } } while (0)
-#   else
-#       define Assert(expr, fmt, ...) do { if (!(expr)) { devPrintf("%s @%s: %u:\n", #expr, __FILE__, __LINE__); devPrintf(fmt"\n", ##__VA_ARGS__); abort(); } } while (0)
-#   endif
+#   define Assert(expr, fmt, ...) __Assert(expr, fmt, ##__VA_ARGS__)
 #else
 #   define Assert(expr, fmt, ...)
 #endif
 
-#define Assert_ShouldNotBeCalled() Assert(false, "Should not be called!")
-#define Assert_NotImplemented() Assert(false, "Not implemented yet!")
+#define Assert_Release(expr, fmt, ...) __Assert(expr, fmt, ##__VA_ARGS__)
+
+#define Assert_ShouldNotBeCalled() __Assert(false, "Should not be called!")
+#define Assert_NotImplemented() __Assert(false, "Not implemented yet!")
 
 
 
@@ -425,6 +429,10 @@ CUDA_COMMON_FUNCTION CUDA_INLINE int2 &operator/=(int2 &a, uint32_t b) {
     return a;
 }
 
+CUDA_COMMON_FUNCTION CUDA_INLINE int2 operator%(const int2 &a, const int2 &b) {
+    return make_int2(a.x % b.x, a.y % b.y);
+}
+
 CUDA_COMMON_FUNCTION CUDA_INLINE int2 operator<<(const int2 &a, int32_t b) {
     return make_int2(a.x << b, a.y << b);
 }
@@ -566,6 +574,10 @@ CUDA_COMMON_FUNCTION CUDA_INLINE uint2 max(const uint2 &a, const uint2 &b) {
     using std::max;
 #endif
     return make_uint2(max(a.x, b.x), max(a.y, b.y));
+}
+
+CUDA_COMMON_FUNCTION CUDA_INLINE float2 min(const float2 &a, const float2 &b) {
+    return make_float2(std::fmin(a.x, b.x), std::fmin(a.y, b.y));
 }
 
 CUDA_COMMON_FUNCTION CUDA_INLINE float3 make_float3(float v) {

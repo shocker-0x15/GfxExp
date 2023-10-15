@@ -3,8 +3,55 @@
 
 using namespace shared;
 
-CUDA_DEVICE_KERNEL void generateFirstMinMaxMipMap(
-    const MaterialData* const material, LocalIntersectionType intersectionType) {
+template <LocalIntersectionType intersectionType>
+CUDA_DEVICE_FUNCTION float2 computeTexelMinMax(
+    const CUtexObject heightMap, const int32_t mipLevel, const int2 &imgSize, const int2 &pixIdx) {
+    const auto sample = [&](const int2 &tc) {
+        return tex2DLod<float>(
+            heightMap,
+            (tc.x + 0.5f) / imgSize.x,
+            (tc.y + 0.5f) / imgSize.y,
+            mipLevel);
+    };
+
+    float minHeight = INFINITY;
+    float maxHeight = -INFINITY;
+    if constexpr (intersectionType == LocalIntersectionType::Box) {
+        const float height = sample(pixIdx);
+        minHeight = std::fmin(height, minHeight);
+        maxHeight = std::fmax(height, maxHeight);
+    }
+    if constexpr (intersectionType == LocalIntersectionType::TwoTriangle) {
+        const float heightUL = sample((pixIdx + imgSize + make_int2(-1, -1)) % imgSize);
+        const float heightUC = sample((pixIdx + imgSize + make_int2(0, -1)) % imgSize);
+        const float heightUR = sample((pixIdx + imgSize + make_int2(1, -1)) % imgSize);
+        const float heightCL = sample((pixIdx + imgSize + make_int2(-1, 0)) % imgSize);
+        const float heightCC = sample((pixIdx + imgSize + make_int2(0, 0)) % imgSize);
+        const float heightCR = sample((pixIdx + imgSize + make_int2(1, 0)) % imgSize);
+        const float heightBL = sample((pixIdx + imgSize + make_int2(-1, 1)) % imgSize);
+        const float heightBC = sample((pixIdx + imgSize + make_int2(0, 1)) % imgSize);
+        const float heightBR = sample((pixIdx + imgSize + make_int2(1, 1)) % imgSize);
+        const float cornerHeightUL = 0.25f * (heightUL + heightUC + heightCL + heightCC);
+        const float cornerHeightUR = 0.25f * (heightUC + heightUR + heightCC + heightCR);
+        const float cornerHeightBL = 0.25f * (heightCL + heightCC + heightBL + heightBC);
+        const float cornerHeightBR = 0.25f * (heightCC + heightCR + heightBC + heightBR);
+        minHeight = std::fmin(std::fmin(std::fmin(cornerHeightUL, cornerHeightUR), cornerHeightBL), cornerHeightBR);
+        maxHeight = std::fmax(std::fmax(std::fmax(cornerHeightUL, cornerHeightUR), cornerHeightBL), cornerHeightBR);
+    }
+    if constexpr (intersectionType == LocalIntersectionType::Bilinear) {
+        Assert_NotImplemented();
+    }
+    if constexpr (intersectionType == LocalIntersectionType::BSpline) {
+        Assert_NotImplemented();
+    }
+
+    return make_float2(minHeight, maxHeight);
+}
+
+
+
+template <LocalIntersectionType intersectionType>
+CUDA_DEVICE_FUNCTION void generateFirstMinMaxMipMap_generic(const MaterialData* const material) {
     const int2 pixIdx(
         blockDim.x * blockIdx.x + threadIdx.x,
         blockDim.y * blockIdx.y + threadIdx.y);
@@ -12,42 +59,32 @@ CUDA_DEVICE_KERNEL void generateFirstMinMaxMipMap(
     if (pixIdx.x >= imgSize.x || pixIdx.y >= imgSize.y)
         return;
 
-    float minHeight = INFINITY;
-    float maxHeight = -INFINITY;
-    float height;
-
-    const auto sample = []
-    (const CUtexObject texture, const int2 &imageSize, const int2 &tc) {
-        return tex2DLod<float>(
-            texture,
-            (tc.x + 0.5f) / imageSize.x,
-            (tc.y + 0.5f) / imageSize.y,
-            0.0f);
-    };
-
-    const CUtexObject heightMap = material->heightMap;
-
-    switch (intersectionType) {
-    case shared::LocalIntersectionType::Box:
-        height = sample(heightMap, imgSize, pixIdx);
-        minHeight = std::fmin(height, minHeight);
-        maxHeight = std::fmax(height, maxHeight);
-        break;
-    case shared::LocalIntersectionType::TwoTriangle:
-        break;
-    case shared::LocalIntersectionType::Bilinear:
-        break;
-    case shared::LocalIntersectionType::BSpline:
-        break;
-    default:
-        break;
-    }
-
-    material->minMaxMipMap[0].write(pixIdx, make_float2(minHeight, maxHeight));
+    material->minMaxMipMap[0].write(
+        pixIdx, 
+        computeTexelMinMax<intersectionType>(material->heightMap, 0, imgSize, pixIdx));
 }
 
-CUDA_DEVICE_KERNEL void generateMinMaxMipMap(
-    const MaterialData* material, LocalIntersectionType intersectionType, const uint32_t srcMipLevel) {
+CUDA_DEVICE_KERNEL void generateFirstMinMaxMipMap_Box(const MaterialData* const material) {
+    generateFirstMinMaxMipMap_generic<LocalIntersectionType::Box>(material);
+}
+
+CUDA_DEVICE_KERNEL void generateFirstMinMaxMipMap_TwoTriangle(const MaterialData* const material) {
+    generateFirstMinMaxMipMap_generic<LocalIntersectionType::TwoTriangle>(material);
+}
+
+CUDA_DEVICE_KERNEL void generateFirstMinMaxMipMap_Bilinear(const MaterialData* const material) {
+    generateFirstMinMaxMipMap_generic<LocalIntersectionType::Bilinear>(material);
+}
+
+CUDA_DEVICE_KERNEL void generateFirstMinMaxMipMap_BSpline(const MaterialData* const material) {
+    generateFirstMinMaxMipMap_generic<LocalIntersectionType::BSpline>(material);
+}
+
+
+
+template <LocalIntersectionType intersectionType>
+CUDA_DEVICE_FUNCTION void generateMinMaxMipMap_generic(
+    const MaterialData* material, const uint32_t srcMipLevel) {
     const int2 dstPixIdx(
         blockDim.x * blockIdx.x + threadIdx.x,
         blockDim.y * blockIdx.y + threadIdx.y);
@@ -79,7 +116,36 @@ CUDA_DEVICE_KERNEL void generateMinMaxMipMap(
     minHeight = std::fmin(minMax.x, minHeight);
     maxHeight = std::fmax(minMax.y, maxHeight);
 
+    // JP: 常に最低MIPレベルしか使わないのなら不要。
+    // EN: 
+    if (dstImageSize.x >= 4 || !USE_WORKAROUND_FOR_CUDA_BC_TEX) {
+        const float2 minMaxOfThisMipTexel = computeTexelMinMax<intersectionType>(
+            material->heightMap, srcMipLevel + 1, dstImageSize, dstPixIdx);
+        minHeight = std::fmin(minHeight, minMaxOfThisMipTexel.x);
+        maxHeight = std::fmax(maxHeight, minMaxOfThisMipTexel.y);
+    }
+
     material->minMaxMipMap[srcMipLevel + 1].write(dstPixIdx, make_float2(minHeight, maxHeight));
+}
+
+CUDA_DEVICE_KERNEL void generateMinMaxMipMap_Box(
+    const MaterialData* material, const uint32_t srcMipLevel) {
+    generateMinMaxMipMap_generic<LocalIntersectionType::Box>(material, srcMipLevel);
+}
+
+CUDA_DEVICE_KERNEL void generateMinMaxMipMap_TwoTriangle(
+    const MaterialData* material, const uint32_t srcMipLevel) {
+    generateMinMaxMipMap_generic<LocalIntersectionType::TwoTriangle>(material, srcMipLevel);
+}
+
+CUDA_DEVICE_KERNEL void generateMinMaxMipMap_Bilinear(
+    const MaterialData* material, const uint32_t srcMipLevel) {
+    generateMinMaxMipMap_generic<LocalIntersectionType::Bilinear>(material, srcMipLevel);
+}
+
+CUDA_DEVICE_KERNEL void generateMinMaxMipMap_BSpline(
+    const MaterialData* material, const uint32_t srcMipLevel) {
+    generateMinMaxMipMap_generic<LocalIntersectionType::BSpline>(material, srcMipLevel);
 }
 
 
@@ -108,7 +174,7 @@ CUDA_DEVICE_KERNEL void computeAABBs(
     //    v3print(vs[2].position), v3print(vs[2].normal), v2print(vs[2].texCoord));
 
     // JP: 三角形を含むテクセルのmin/maxを読み取る。
-    // EN: 
+    // EN: Compute the min/max of texels overlapping with the triangle.
     float minHeight = INFINITY;
     float maxHeight = -INFINITY;
     {
@@ -134,8 +200,7 @@ CUDA_DEVICE_KERNEL void computeAABBs(
         //       primIndex,
         //       vector2Arg(texTriAabbMinP), vector2Arg(texTriAabbMaxP));
 
-        const uint32_t maxDepth =
-            prevPowOf2Exponent(max(material->heightMapSize.x, material->heightMapSize.y));
+        const uint32_t maxDepth = prevPowOf2Exponent(material->heightMapSize.x);
         Texel roots[useMultipleRootOptimization ? 4 : 1];
         uint32_t numRoots;
         findRoots(texTriAabbMinP, texTriAabbMaxP, maxDepth, roots, &numRoots);
@@ -192,7 +257,8 @@ CUDA_DEVICE_KERNEL void computeAABBs(
 
     /*
     JP: 三角形によって与えられるUV領域上のアフィン演算は3つの平行四辺形上の演算の合成として厳密に評価できる。
-    EN: 
+    EN: Affine arithmetic on the triangle can be performed strictly by considering the triangle as
+        an union of three overlapping parallelograms.
           /\                                            /\
          /  \                                          /  \
         /    \                                        /    \
