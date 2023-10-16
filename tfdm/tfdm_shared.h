@@ -872,7 +872,6 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
 
     Normal3D hitNormalInTc;
     float hitBc1, hitBc2;
-    bool isFrontHit;
     float tMax = optixGetRayTmax();
     const float tMin = optixGetRayTmin();
     const Point3D rayOrgInTc = dispTriAuxInfo.matObjToTc * Point3D(optixGetObjectRayOrigin());
@@ -964,11 +963,9 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
                     rayOrgInTc, rayDirInTc, tMin, tMax, &param0, &param1, &isF);
                 if (t < tMax) {
                     tMax = t;
-                    Point3D bc = dispTriAuxInfo.matTcToBc * (Point3D(texelCenter, 1.0f) * texelScale);
-                    hitBc1 = bc.x;
-                    hitBc2 = bc.y;
-                    hitNormalInTc = texelAabb.restoreNormal(param0, param1);
-                    isFrontHit = isF;
+                    const Point2D hp(texelAabb.restoreHitPoint(param0, param1, &hitNormalInTc));
+                    hitBc1 = cross(tcs[2] - hp, tcs[0] - hp) * recTriAreaInTc;
+                    hitBc2 = cross(tcs[0] - hp, tcs[1] - hp) * recTriAreaInTc;
                 }
                 break;
             }
@@ -1044,6 +1041,7 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
             }
             case LocalIntersectionType::Bilinear:
             case LocalIntersectionType::BSpline:
+                Assert_NotImplemented();
             default:
                 Assert_ShouldNotBeCalled();
                 break;
@@ -1060,7 +1058,7 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
     DisplacedSurfaceAttributeSignature::reportIntersection(
         tMax,
         static_cast<uint32_t>(
-            isFrontHit ?
+            dot(rayDirInTc, hitNormalInTc) <= 0 ?
             CustomHitKind::DisplacedSurfaceFrontFace :
             CustomHitKind::DisplacedSurfaceBackFace),
         hitBc1, hitBc2, normalInObj);
