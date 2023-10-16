@@ -1182,7 +1182,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
                 hpprintf("failed.\n");
 
             cudau::TextureSampler sampler = {};
-            sampler.setXyFilterMode(cudau::TextureFilterMode::Point);
+            sampler.setXyFilterMode(cudau::TextureFilterMode::Linear);
             sampler.setWrapMode(0, cudau::TextureWrapMode::Repeat);
             sampler.setWrapMode(1, cudau::TextureWrapMode::Repeat);
             sampler.setMipMapFilterMode(cudau::TextureFilterMode::Point);
@@ -2006,6 +2006,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
                         "Noisy Beauty", &bufferTypeToDisplay, shared::BufferToDisplay::NoisyBeauty);
                     ImGui::RadioButtonE("Albedo", &bufferTypeToDisplay, shared::BufferToDisplay::Albedo);
                     ImGui::RadioButtonE("Normal", &bufferTypeToDisplay, shared::BufferToDisplay::Normal);
+                    ImGui::RadioButtonE("TexCoord", &bufferTypeToDisplay, shared::BufferToDisplay::TexCoord);
                     ImGui::RadioButtonE("Motion Vector", &bufferTypeToDisplay, shared::BufferToDisplay::Flow);
                     ImGui::RadioButtonE(
                         "Denoised Beauty", &bufferTypeToDisplay, shared::BufferToDisplay::DenoisedBeauty);
@@ -2349,6 +2350,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
         case shared::BufferToDisplay::Normal:
             bufferToDisplay = linearNormalBuffer.getDevicePointer();
             break;
+        case shared::BufferToDisplay::TexCoord:
+            break;
         case shared::BufferToDisplay::Flow:
             bufferToDisplay = linearFlowBuffer.getDevicePointer();
             break;
@@ -2362,6 +2365,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         kernelVisualizeToOutputBuffer(
             curCuStream, kernelVisualizeToOutputBuffer.calcGridDim(renderTargetSizeX, renderTargetSizeY),
             staticPlp.GBuffer0[bufferIndex],
+            staticPlp.GBuffer1[bufferIndex],
             bufferToDisplay,
             bufferTypeToDisplay,
             0.5f, std::pow(10.0f, motionVectorScale),

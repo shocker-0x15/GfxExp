@@ -33,6 +33,7 @@ CUDA_DEVICE_KERNEL void copyToLinearBuffers(
 
 CUDA_DEVICE_KERNEL void visualizeToOutputBuffer(
     optixu::NativeBlockBuffer2D<shared::GBuffer0> gBuffer0,
+    optixu::NativeBlockBuffer2D<shared::GBuffer1> gBuffer1,
     void* linearBuffer,
     shared::BufferToDisplay bufferTypeToDisplay,
     float motionVectorOffset, float motionVectorScale,
@@ -65,6 +66,19 @@ CUDA_DEVICE_KERNEL void visualizeToOutputBuffer(
         value.x = 0.5f + 0.5f * value.x;
         value.y = 0.5f + 0.5f * value.y;
         value.z = 0.5f + 0.5f * value.z;
+        break;
+    }
+    case shared::BufferToDisplay::TexCoord: {
+        Point2D texCoord;
+        texCoord.x = gBuffer0.read(launchIndex).texCoord_x;
+        texCoord.y = gBuffer1.read(launchIndex).texCoord_y;
+        value.x = std::fmod(texCoord.x, 1.0f);
+        value.y = std::fmod(texCoord.y, 1.0f);
+        value.z = 0.5f * std::fmod((texCoord.x - value.x) / 10.0f, 1.0f)
+            + 0.5f * std::fmod(texCoord.y - value.y, 2.0f);
+        //value.x = 1 - texCoord.x - texCoord.y;
+        //value.y = texCoord.x;
+        //value.z = texCoord.y;
         break;
     }
     case shared::BufferToDisplay::Flow: {

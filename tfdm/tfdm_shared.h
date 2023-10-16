@@ -216,6 +216,7 @@ namespace shared {
         NoisyBeauty = 0,
         Albedo,
         Normal,
+        TexCoord,
         Flow,
         DenoisedBeauty,
     };
@@ -973,43 +974,25 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
             }
             case LocalIntersectionType::TwoTriangle: {
                 const int2 imgSize = make_int2(1 << (maxDepth - curTexel.lod));
-                const auto sample = [&](int32_t px, int32_t py) {
-                    return tex2DLod<float>(
-                        mat.heightMap,
-                        (px + 0.5f) / imgSize.x,
-                        (py + 0.5f) / imgSize.y,
-                        curTexel.lod);
+                const auto sample = [&](float px, float py) {
+                    return tex2DLod<float>(mat.heightMap, px / imgSize.x, py / imgSize.y, curTexel.lod);
                 };
 
-                int32_t py;
-                py = (curTexel.y + imgSize.y - 1) % imgSize.y;
-                const float heightUL = sample((curTexel.x + imgSize.x - 1) % imgSize.x, py);
-                const float heightUC = sample(curTexel.x, py);
-                const float heightUR = sample((curTexel.x + 1) % imgSize.x, py);
-                py = curTexel.y;
-                const float heightCL = sample((curTexel.x + imgSize.x - 1) % imgSize.x, py);
-                const float heightCC = sample(curTexel.x, py);
-                const float heightCR = sample((curTexel.x + 1) % imgSize.x, py);
-                py = (curTexel.y + 1) % imgSize.y;
-                const float heightBL = sample((curTexel.x + imgSize.x - 1) % imgSize.x, py);
-                const float heightBC = sample(curTexel.x, py);
-                const float heightBR = sample((curTexel.x + 1) % imgSize.x, py);
+                const float cornerHeightUL = sample(curTexel.x - 0.5f, curTexel.y - 0.5f);
+                const float cornerHeightUR = sample(curTexel.x + 0.5f, curTexel.y - 0.5f);
+                const float cornerHeightBL = sample(curTexel.x - 0.5f, curTexel.y + 0.5f);
+                const float cornerHeightBR = sample(curTexel.x + 0.5f, curTexel.y + 0.5f);
 
-                const float cornerHeightUL = 0.25f * (heightUL + heightUC + heightCL + heightCC);
-                const float cornerHeightUR = 0.25f * (heightUC + heightUR + heightCC + heightCR);
-                const float cornerHeightBL = 0.25f * (heightCL + heightCC + heightBL + heightBC);
-                const float cornerHeightBR = 0.25f * (heightCC + heightCR + heightBC + heightBR);
-
-                Point3D pUL(
+                const Point3D pUL(
                     texelAabb.minP.x, texelAabb.minP.y,
                     tfdm.hOffset + tfdm.hScale * (cornerHeightUL - tfdm.hBias));
-                Point3D pUR(
+                const Point3D pUR(
                     texelAabb.maxP.x, texelAabb.minP.y,
                     tfdm.hOffset + tfdm.hScale * (cornerHeightUR - tfdm.hBias));
-                Point3D pBL(
+                const Point3D pBL(
                     texelAabb.minP.x, texelAabb.maxP.y,
                     tfdm.hOffset + tfdm.hScale * (cornerHeightBL - tfdm.hBias));
-                Point3D pBR(
+                const Point3D pBR(
                     texelAabb.maxP.x, texelAabb.maxP.y,
                     tfdm.hOffset + tfdm.hScale * (cornerHeightBR - tfdm.hBias));
 
