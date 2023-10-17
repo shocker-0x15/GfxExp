@@ -1981,10 +1981,11 @@ int32_t main(int32_t argc, const char* argv[]) try {
                     resetAccumulation |= ImGui::SliderInt("Target Mip Level", &targetMipLevel, 0, 15);
 
                     ImGui::Separator();
+                    ImGui::Text("Displacement Parameters");
 
                     heightParamChanged |= ImGui::SliderFloat("Offset", &heightOffset, -1.0f, 1.0f);
                     heightParamChanged |= ImGui::SliderFloat("Scale", &heightScale, -1.0f, 1.0f);
-                    heightParamChanged |= ImGui::SliderFloat("Bias", &heightBias, -1.0f, 1.0f);
+                    heightParamChanged |= ImGui::SliderFloat("Bias", &heightBias, 0.0f, 1.0f);
                     resetAccumulation |= heightParamChanged;
 
                     ImGui::Separator();
