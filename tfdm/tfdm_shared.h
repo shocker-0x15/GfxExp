@@ -938,11 +938,9 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
             AABB texelAabb;
             {
                 const float2 minmax = mat.minMaxMipMap[curTexel.lod].read(int2(curTexel.x, curTexel.y));
-                const AAFloatOn2D hBound(
-                    tfdm.hOffset + tfdm.hScale * minmax.x
-                    + 0.5f * tfdm.hScale * ((minmax.y - minmax.x) - tfdm.hBias),
-                    0, 0,
-                    0.5f * tfdm.hScale * (minmax.y - minmax.x));
+                const float amplitude = tfdm.hScale * (minmax.y - minmax.x);
+                const float minHeight = tfdm.hOffset + tfdm.hScale * (minmax.x - tfdm.hBias);
+                const AAFloatOn2D hBound(minHeight + 0.5f * amplitude, 0, 0, 0.5f * amplitude);
 
                 const AAFloatOn2D_Vector3D edge0(
                     Vector3D(0.0f), Vector3D(0.5f * texelScale, 0, 0), Vector3D(0.0f), Vector3D(0.0f));

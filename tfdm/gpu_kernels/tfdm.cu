@@ -232,11 +232,9 @@ CUDA_DEVICE_KERNEL void computeAABBs(
 
     RWBuffer aabbBuffer(tfdm->aabbBuffer);
 
-    const AAFloatOn2D hBound(
-        tfdm->hOffset + tfdm->hScale * minHeight
-        + 0.5f * tfdm->hScale * ((maxHeight - minHeight) - tfdm->hBias),
-        0, 0,
-        0.5f * tfdm->hScale * (maxHeight - minHeight));
+    const float amplitude = tfdm->hScale * (maxHeight - minHeight);
+    minHeight = tfdm->hOffset + tfdm->hScale * (minHeight - tfdm->hBias);
+    const AAFloatOn2D hBound(minHeight + 0.5f * amplitude, 0, 0, 0.5f * amplitude);
 
     /*
     JP: 三角形によって与えられるUV領域上のアフィン演算は3つの平行四辺形上の演算の合成として厳密に評価できる。
