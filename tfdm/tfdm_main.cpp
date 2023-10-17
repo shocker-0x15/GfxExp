@@ -1521,6 +1521,10 @@ int32_t main(int32_t argc, const char* argv[]) try {
     cudau::Kernel kernelVisualizeToOutputBuffer(
         moduleCopyBuffers, "visualizeToOutputBuffer", cudau::dim3(8, 8), 0);
 
+    CUdeviceptr plpPureCUDAOnDevice;
+    size_t plpSize;
+    CUDADRV_CHECK(cuModuleGetGlobal(&plpPureCUDAOnDevice, &plpSize, moduleCopyBuffers, "plp"));
+
     CUdeviceptr hdrNormalizer;
     CUDADRV_CHECK(cuMemAlloc(&hdrNormalizer, sizeof(float)));
 
@@ -2272,6 +2276,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         CUDADRV_CHECK(cuMemcpyHtoDAsync(perFramePlpOnDevice, &perFramePlp, sizeof(perFramePlp), curCuStream));
 
         CUDADRV_CHECK(cuMemcpyHtoDAsync(plpOnDevice, &plp, sizeof(plp), curCuStream));
+        CUDADRV_CHECK(cuMemcpyHtoDAsync(plpPureCUDAOnDevice, &plp, sizeof(plp), curCuStream));
 
         // JP: Gバッファーのセットアップ。
         //     ここではレイトレースを使ってGバッファーを生成しているがもちろんラスタライザーで生成可能。

@@ -798,11 +798,11 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void findRoots(
 
 #if !defined(PURE_CUDA) || defined(CUDAU_CODE_COMPLETION)
 
-bool isCursorPixel() {
+CUDA_DEVICE_FUNCTION bool isCursorPixel() {
     return plp.f->mousePosition == make_int2(optixGetLaunchIndex());
 }
 
-bool getDebugPrintEnabled() {
+CUDA_DEVICE_FUNCTION bool getDebugPrintEnabled() {
     return plp.f->enableDebugPrint;
 }
 
@@ -922,8 +922,9 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
                     Point3D(texelCenter.x, texelCenter.y, 1.0f) + (edge0 + edge1);
 
                 const AAFloatOn2D_Point3D pBoundInTc(texCoord.x, texCoord.y, AAFloatOn2D(0.0f));
-                const AAFloatOn2D_Vector3D nBoundInTc =
+                AAFloatOn2D_Vector3D nBoundInTc =
                     static_cast<AAFloatOn2D_Vector3D>(matTcToNInTc * texCoord);
+                nBoundInTc.normalize();
                 const AAFloatOn2D_Point3D boundsInTc = pBoundInTc + hBound * nBoundInTc;
 
                 const auto iaSx = boundsInTc.x.toIAFloat();
@@ -980,20 +981,25 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
                 const float cornerHeightBL = sample(curTexel.x - 0.5f, curTexel.y + 0.5f);
                 const float cornerHeightBR = sample(curTexel.x + 0.5f, curTexel.y + 0.5f);
 
-                const Point3D pUL(
-                    texelAabb.minP.x, texelAabb.minP.y,
-                    tfdm.hOffset + tfdm.hScale * (cornerHeightUL - tfdm.hBias));
-                const Point3D pUR(
-                    texelAabb.maxP.x, texelAabb.minP.y,
-                    tfdm.hOffset + tfdm.hScale * (cornerHeightUR - tfdm.hBias));
-                const Point3D pBL(
-                    texelAabb.minP.x, texelAabb.maxP.y,
-                    tfdm.hOffset + tfdm.hScale * (cornerHeightBL - tfdm.hBias));
-                const Point3D pBR(
-                    texelAabb.maxP.x, texelAabb.maxP.y,
-                    tfdm.hOffset + tfdm.hScale * (cornerHeightBR - tfdm.hBias));
+                const Point2D tcUL(texelCenter + texelScale * Vector2D(-0.5f, -0.5f));
+                const Point2D tcUR(texelCenter + texelScale * Vector2D(0.5f, -0.5f));
+                const Point2D tcBL(texelCenter + texelScale * Vector2D(-0.5f, 0.5f));
+                const Point2D tcBR(texelCenter + texelScale * Vector2D(0.5f, 0.5f));
 
-                const auto testRayVsTriangleIntersection = [&]
+                const Point3D pUL = Point3D(tcUL, 0.0f)
+                    + (tfdm.hOffset + tfdm.hScale * (cornerHeightUL - tfdm.hBias))
+                    * normalize(static_cast<Vector3D>(matTcToNInTc * Point3D(tcUL, 1.0f)));
+                const Point3D pUR = Point3D(tcUR, 0.0f)
+                    + (tfdm.hOffset + tfdm.hScale * (cornerHeightUR - tfdm.hBias))
+                    * normalize(static_cast<Vector3D>(matTcToNInTc * Point3D(tcUR, 1.0f)));
+                const Point3D pBL = Point3D(tcBL, 0.0f)
+                    + (tfdm.hOffset + tfdm.hScale * (cornerHeightBL - tfdm.hBias))
+                    * normalize(static_cast<Vector3D>(matTcToNInTc * Point3D(tcBL, 1.0f)));
+                const Point3D pBR = Point3D(tcBR, 0.0f)
+                    + (tfdm.hOffset + tfdm.hScale * (cornerHeightBR - tfdm.hBias))
+                    * normalize(static_cast<Vector3D>(matTcToNInTc * Point3D(tcBR, 1.0f)));
+
+                const auto testRayVsTriangleIntersection = []
                 (const Point3D &org, const Vector3D &dir, float distMin, float distMax,
                  const Point3D &p0, const Point3D &p1, const Point3D &p2,
                  Vector3D* n, float* t, float* beta, float* gamma) {
@@ -1020,7 +1026,7 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
                     rayOrgInTc, rayDirInTc, tMin, tMax, pUL, pUR, pBR, &n, &t, &b1, &b2)) {
                     if (t < tMax) {
                         tMax = t;
-                        const Point2D hp((1 - (b1 + b2)) * pUL + b1 * pUR + b2 * pBR);
+                        const Point2D hp((1 - (b1 + b2)) * tcUL + b1 * tcUR + b2 * tcBR);
                         hitBc1 = cross(tcs[2] - hp, tcs[0] - hp) * recTriAreaInTc;
                         hitBc2 = cross(tcs[0] - hp, tcs[1] - hp) * recTriAreaInTc;
                         hitNormalInTc = static_cast<Normal3D>(n);
@@ -1030,7 +1036,7 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
                     rayOrgInTc, rayDirInTc, tMin, tMax, pUL, pBR, pBL, &n, &t, &b1, &b2)) {
                     if (t < tMax) {
                         tMax = t;
-                        const Point2D hp((1 - (b1 + b2)) * pUL + b1 * pBR + b2 * pBL);
+                        const Point2D hp((1 - (b1 + b2)) * tcUL + b1 * tcBR + b2 * tcBL);
                         hitBc1 = cross(tcs[2] - hp, tcs[0] - hp) * recTriAreaInTc;
                         hitBc2 = cross(tcs[0] - hp, tcs[1] - hp) * recTriAreaInTc;
                         hitNormalInTc = static_cast<Normal3D>(n);
