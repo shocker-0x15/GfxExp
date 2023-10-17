@@ -991,10 +991,16 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
                 const float t = texelAabb.intersect(
                     rayOrgInTc, rayDirInTc, tMin, tMax, &param0, &param1, &isF);
                 if (t < tMax) {
-                    tMax = t;
-                    const Point2D hp(texelAabb.restoreHitPoint(param0, param1, &hitNormalInTc));
-                    hitBc1 = cross(tcs[2] - hp, tcs[0] - hp) * recTriAreaInTc;
-                    hitBc2 = cross(tcs[0] - hp, tcs[1] - hp) * recTriAreaInTc;
+                    Normal3D n;
+                    const Point2D hp(texelAabb.restoreHitPoint(param0, param1, &n));
+                    const float b1 = cross(tcs[2] - hp, tcs[0] - hp) * recTriAreaInTc;
+                    const float b2 = cross(tcs[0] - hp, tcs[1] - hp) * recTriAreaInTc;
+                    if (b1 >= 0.0f && b2 >= 0.0f && b1 + b2 <= 1.0f) {
+                        tMax = t;
+                        hitBc1 = b1;
+                        hitBc2 = b2;
+                        hitNormalInTc = static_cast<Normal3D>(n);
+                    }
                 }
                 break;
             }
@@ -1049,25 +1055,33 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
 
                 Vector3D n;
                 float t;
-                float b1, b2;
+                float mb1, mb2;
                 if (testRayVsTriangleIntersection(
-                    rayOrgInTc, rayDirInTc, tMin, tMax, pUL, pUR, pBR, &n, &t, &b1, &b2)) {
+                    rayOrgInTc, rayDirInTc, tMin, tMax, pUL, pUR, pBR, &n, &t, &mb1, &mb2)) {
                     if (t < tMax) {
-                        tMax = t;
-                        const Point2D hp((1 - (b1 + b2)) * tcUL + b1 * tcUR + b2 * tcBR);
-                        hitBc1 = cross(tcs[2] - hp, tcs[0] - hp) * recTriAreaInTc;
-                        hitBc2 = cross(tcs[0] - hp, tcs[1] - hp) * recTriAreaInTc;
-                        hitNormalInTc = static_cast<Normal3D>(n);
+                        const Point2D hp((1 - (mb1 + mb2)) * tcUL + mb1 * tcUR + mb2 * tcBR);
+                        const float b1 = cross(tcs[2] - hp, tcs[0] - hp) * recTriAreaInTc;
+                        const float b2 = cross(tcs[0] - hp, tcs[1] - hp) * recTriAreaInTc;
+                        if (b1 >= 0.0f && b2 >= 0.0f && b1 + b2 <= 1.0f) {
+                            tMax = t;
+                            hitBc1 = b1;
+                            hitBc2 = b2;
+                            hitNormalInTc = static_cast<Normal3D>(n);
+                        }
                     }
                 }
                 if (testRayVsTriangleIntersection(
-                    rayOrgInTc, rayDirInTc, tMin, tMax, pUL, pBR, pBL, &n, &t, &b1, &b2)) {
+                    rayOrgInTc, rayDirInTc, tMin, tMax, pUL, pBR, pBL, &n, &t, &mb1, &mb2)) {
                     if (t < tMax) {
-                        tMax = t;
-                        const Point2D hp((1 - (b1 + b2)) * tcUL + b1 * tcBR + b2 * tcBL);
-                        hitBc1 = cross(tcs[2] - hp, tcs[0] - hp) * recTriAreaInTc;
-                        hitBc2 = cross(tcs[0] - hp, tcs[1] - hp) * recTriAreaInTc;
-                        hitNormalInTc = static_cast<Normal3D>(n);
+                        const Point2D hp((1 - (mb1 + mb2)) * tcUL + mb1 * tcBR + mb2 * tcBL);
+                        const float b1 = cross(tcs[2] - hp, tcs[0] - hp) * recTriAreaInTc;
+                        const float b2 = cross(tcs[0] - hp, tcs[1] - hp) * recTriAreaInTc;
+                        if (b1 >= 0.0f && b2 >= 0.0f && b1 + b2 <= 1.0f) {
+                            tMax = t;
+                            hitBc1 = b1;
+                            hitBc2 = b2;
+                            hitNormalInTc = static_cast<Normal3D>(n);
+                        }
                     }
                 }
 
