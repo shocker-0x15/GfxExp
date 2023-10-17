@@ -899,6 +899,9 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
     float hitBc1, hitBc2;
     float tMax = optixGetRayTmax();
     const float tMin = optixGetRayTmin();
+
+    // JP: レイと変位させたサーフェスの交叉判定はテクスチャー空間で考える。
+    // EN: Test ray vs displace surface intersection in the texture space.
     const Point3D rayOrgInTc = dispTriAuxInfo.matObjToTc * Point3D(optixGetObjectRayOrigin());
     const Vector3D rayDirInTc = dispTriAuxInfo.matObjToTc * Vector3D(optixGetObjectRayDirection());
     const bool signX = rayDirInTc.x < 0;

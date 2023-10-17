@@ -1125,6 +1125,10 @@ int32_t main(int32_t argc, const char* argv[]) try {
             instXfm * mesh->groupInsts[0].transform * mesh->groupInsts[0].geomGroup->aabb);
     }
 
+    float heightOffset = 0.0f;
+    float heightScale = 0.2f;
+    float heightBias = 0.0f;
+
 #define SHOW_BASE_MESH 0
     Material* tfdmMeshMaterial;
     GeometryInstance* tfdmMeshGeomInst;
@@ -1280,9 +1284,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
                 tfdmMeshGeomInst->dispTriAuxInfoBuffer.getROBuffer<shared::enableBufferOobCheck>();
             tfdmData.aabbBuffer =
                 tfdmMeshGeomInst->aabbBuffer.getROBuffer<shared::enableBufferOobCheck>();
-            tfdmData.hOffset = 0.0f;
-            tfdmData.hScale = 0.2f;
-            tfdmData.hBias = 0.0f;
+            tfdmData.hOffset = heightOffset;
+            tfdmData.hScale = heightScale;
+            tfdmData.hBias = heightBias;
 
 #if !SHOW_BASE_MESH
             tfdmMeshGeomInst->optixGeomInst.setCustomPrimitiveAABBBuffer(tfdmMeshGeomInst->aabbBuffer);
@@ -1918,6 +1922,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         bool lastFrameWasAnimated = false;
         static int32_t maxPathLength = 5;
         static int32_t targetMipLevel = 0;
+        bool heightParamChanged = false;
         static auto localIntersectionType = shared::LocalIntersectionType::TwoTriangle;
         bool localIntersectionTypeChanged = false;
         static bool debugSwitches[] = {
@@ -1977,15 +1982,25 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
                     ImGui::Separator();
 
+                    heightParamChanged |= ImGui::SliderFloat("Offset", &heightOffset, -1.0f, 1.0f);
+                    heightParamChanged |= ImGui::SliderFloat("Scale", &heightScale, -1.0f, 1.0f);
+                    heightParamChanged |= ImGui::SliderFloat("Bias", &heightBias, -1.0f, 1.0f);
+                    resetAccumulation |= heightParamChanged;
+
+                    ImGui::Separator();
+                    ImGui::Text("Local Intersection Type");
+
                     shared::LocalIntersectionType oldIsectType = localIntersectionType;
                     ImGui::RadioButtonE(
                         "Box", &localIntersectionType, shared::LocalIntersectionType::Box);
                     ImGui::RadioButtonE(
                         "Two-Triangle", &localIntersectionType, shared::LocalIntersectionType::TwoTriangle);
+                    ImGui::BeginDisabled();
                     ImGui::RadioButtonE(
                         "Bilinear", &localIntersectionType, shared::LocalIntersectionType::Bilinear);
                     ImGui::RadioButtonE(
                         "B-Spline", &localIntersectionType, shared::LocalIntersectionType::BSpline);
+                    ImGui::EndDisabled();
                     localIntersectionTypeChanged = localIntersectionType != oldIsectType || frameIndex == 0;
                     resetAccumulation |= localIntersectionTypeChanged;
 
@@ -2203,7 +2218,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
         // JP: ディスプレイスメントを適用した各プリミティブのAABBを計算する。
         // EN: Compute the AABB of each displacement-enabled primitive.
-        if (localIntersectionTypeChanged/* || geomChanged || tfdmParamChanged*/) {
+        if (localIntersectionTypeChanged || heightParamChanged/* || geomChanged*/) {
             const GeometryInstance* geomInst = tfdmMeshGeomInst;
             const Material* mat = tfdmMeshMaterial;
 
@@ -2213,6 +2228,16 @@ int32_t main(int32_t argc, const char* argv[]) try {
                 tfdmDataBuffer.getDevicePointerAt(geomInst->geomInstSlot);
             const shared::MaterialData* const matData =
                 scene.materialDataBuffer.getDevicePointerAt(mat->materialSlot);
+
+            CUDADRV_CHECK(cuMemcpyHtoDAsync(
+                reinterpret_cast<CUdeviceptr>(&tfdmData->hOffset), &heightOffset, sizeof(heightOffset),
+                curCuStream));
+            CUDADRV_CHECK(cuMemcpyHtoDAsync(
+                reinterpret_cast<CUdeviceptr>(&tfdmData->hScale), &heightScale, sizeof(heightScale),
+                curCuStream));
+            CUDADRV_CHECK(cuMemcpyHtoDAsync(
+                reinterpret_cast<CUdeviceptr>(&tfdmData->hBias), &heightBias, sizeof(heightBias),
+                curCuStream));
 
             gpuEnv.kernelComputeAABBs.launchWithThreadDim(
                 curCuStream, cudau::dim3(geomInst->aabbBuffer.numElements()),
@@ -2227,7 +2252,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
         // JP: ASesのリビルドを行う。
         // EN: Rebuild the ASes.
         curGPUTimer.update.start(curCuStream);
-        if (animate || frameIndex == 0)
+        if (animate || frameIndex == 0 ||
+            localIntersectionTypeChanged || heightParamChanged)
             perFramePlp.travHandle = scene.updateASs(curCuStream);
         curGPUTimer.update.stop(curCuStream);
 
