@@ -99,8 +99,8 @@ CUDA_DEVICE_FUNCTION void generateMinMaxMipMap_generic(
     minHeight = std::fmin(minMax.x, minHeight);
     maxHeight = std::fmax(minMax.y, maxHeight);
 
-    // JP: 常に最低MIPレベルしか使わないのなら不要。
-    // EN: 
+    // JP: 常に最高解像度のMIPレベルしか使わないのなら不要。
+    // EN: This is not necessary when using only the finest mip level.
     if (dstImageSize.x >= 4 || !USE_WORKAROUND_FOR_CUDA_BC_TEX) {
         const float2 minMaxOfThisMipTexel = computeTexelMinMax<intersectionType>(
             material->heightMap, srcMipLevel + 1, dstImageSize, dstPixIdx);

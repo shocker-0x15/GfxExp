@@ -724,13 +724,13 @@ CUDA_DEVICE_FUNCTION TriangleSquareIntersection2DResult testTriangleSquareInters
     };
 
     // JP: テクセルのAABBと三角形のAABBのIntersectionを計算する。
-    // EN: 
+    // EN: Test intersection between the texel AABB and the triangle AABB.
     if (any(min(Point2D(squareHalfWidth), triAabbMaxP - vSquareCenter) <=
             max(Point2D(-squareHalfWidth), triAabbMinP - vSquareCenter)))
         return TriangleSquareIntersection2DResult::SquareOutsideTriangle;
 
-    // JP: 
-    // EN: 
+    // JP: いずれかの三角形のエッジの法線方向にテクセルがあるならテクセルは三角形の外にある。
+    // EN: Texel is outside of the triangle if the texel is in the normal direction of any edge.
     for (int eIdx = 0; eIdx < 3; ++eIdx) {
         const Vector2D &eNormal = triEdgeNormals[eIdx];
         Bool2D b = eNormal >= Vector2D(0.0f);
@@ -741,6 +741,8 @@ CUDA_DEVICE_FUNCTION TriangleSquareIntersection2DResult testTriangleSquareInters
             return TriangleSquareIntersection2DResult::SquareOutsideTriangle;
     }
 
+    // JP: テクセルが三角形のエッジとかぶっているかどうかを調べる。
+    // EN: Test if the texel is overlapping with some edges of the triangle.
     for (int i = 0; i < 4; ++i) {
         Point2D corner(
             (i % 2 ? -1 : 1) * squareHalfWidth,
@@ -754,6 +756,8 @@ CUDA_DEVICE_FUNCTION TriangleSquareIntersection2DResult testTriangleSquareInters
         }
     }
 
+    // JP: それ以外の場合はテクセルは三角形に囲まれている。
+    // EN: Otherwise, the texel is encompassed by the triangle.
     return TriangleSquareIntersection2DResult::SquareInsideTriangle;
 }
 
