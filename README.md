@@ -91,7 +91,7 @@ In TFDM, a minmax mipmap is used to store the minimum and maximum values of each
 - [x] Basic Implementation (Min-Max mipmap traversal, box/two-triangle local intersection)
 - [ ] Advanced Items
   - [x] Better root choice
-  - [ ] Flexible traversal order
+  - [x] Flexible traversal order
   - [ ] Bilinear/B-spline local intersection
   - [ ] Watertightness consideration
   - [ ] Continous LoD

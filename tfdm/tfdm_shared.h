@@ -658,6 +658,14 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void down(Texel &texel) {
     texel.y *= 2;
 }
 
+CUDA_DEVICE_FUNCTION CUDA_INLINE void down(Texel &texel, bool signX, bool signY) {
+    --texel.lod;
+    texel.x *= 2;
+    texel.x += signX;
+    texel.y *= 2;
+    texel.y += signY;
+}
+
 CUDA_DEVICE_FUNCTION CUDA_INLINE void up(Texel &texel) {
     ++texel.lod;
     texel.x /= 2;
@@ -681,6 +689,23 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void next(Texel &texel) {
     }
 }
 
+CUDA_DEVICE_FUNCTION CUDA_INLINE void next(Texel &texel, bool signX, bool signY, uint32_t maxDepth) {
+    while (texel.lod <= maxDepth) {
+        switch (2 * ((texel.x + signX) % 2) + (texel.y + signY) % 2) {
+        case 1:
+            texel.y += signY ? 1 : -1;
+            texel.x += signX ? -1 : 1;
+            return;
+        case 3:
+            up(texel);
+            break;
+        default:
+            texel.y += signY ? -1 : 1;
+            return;
+        }
+    }
+}
+
 enum class TriangleSquareIntersection2DResult {
     SquareOutsideTriangle = 0,
     SquareInsideTriangle,
@@ -691,8 +716,8 @@ CUDA_DEVICE_FUNCTION TriangleSquareIntersection2DResult testTriangleSquareInters
     const Point2D triPs[3], const Vector2D triEdgeNormals[3],
     const Point2D &triAabbMinP, const Point2D &triAabbMaxP,
     const Point2D &squareCenter, float squareHalfWidth) {
-    Vector2D vSquareCenter = static_cast<Vector2D>(squareCenter);
-    Point2D relTriPs[] = {
+    const Vector2D vSquareCenter = static_cast<Vector2D>(squareCenter);
+    const Point2D relTriPs[] = {
         triPs[0] - vSquareCenter,
         triPs[1] - vSquareCenter,
         triPs[2] - vSquareCenter,
@@ -876,6 +901,8 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
     const float tMin = optixGetRayTmin();
     const Point3D rayOrgInTc = dispTriAuxInfo.matObjToTc * Point3D(optixGetObjectRayOrigin());
     const Vector3D rayDirInTc = dispTriAuxInfo.matObjToTc * Vector3D(optixGetObjectRayDirection());
+    const bool signX = rayDirInTc.x < 0;
+    const bool signY = rayDirInTc.y < 0;
 
     const uint32_t maxDepth =
         prevPowOf2Exponent(max(mat.heightMapSize.x, mat.heightMapSize.y));
@@ -887,7 +914,7 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
             break;
         Texel curTexel = roots[rootIdx];
         Texel endTexel = curTexel;
-        next(endTexel);
+        next(endTexel, signX, signY, maxDepth);
         while (curTexel != endTexel) {
             const float texelScale = 1.0f / (1 << (maxDepth - curTexel.lod));
             const Point2D texelCenter = Point2D(curTexel.x + 0.5f, curTexel.y + 0.5f) * texelScale;
@@ -899,7 +926,7 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
             // JP: テクセルがベース三角形の外にある場合はテクセルをスキップ。
             // EN: Skip the texel if it is outside of the base triangle.
             if (isectResult == TriangleSquareIntersection2DResult::SquareOutsideTriangle) {
-                next(curTexel);
+                next(curTexel, signX, signY, maxDepth);
                 continue;
             }
 
@@ -938,7 +965,7 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
             // EN: Don't descend more when the ray does not hit the AABB since
             //     the ray will never hit the surface inside the texel
             if (!texelAabb.intersect(rayOrgInTc, rayDirInTc, tMin, tMax)) {
-                next(curTexel);
+                next(curTexel, signX, signY, maxDepth);
                 continue;
             }
 
@@ -949,7 +976,7 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
 #else
             if (curTexel.lod > plp.f->targetMipLevel) {
 #endif
-                down(curTexel);
+                down(curTexel, signX, signY);
                 continue;
             }
 
@@ -1053,7 +1080,7 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
                 break;
             }
 
-            next(curTexel);
+            next(curTexel, signX, signY, maxDepth);
         }
     }
 

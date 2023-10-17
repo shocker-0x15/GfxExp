@@ -187,7 +187,7 @@
     <CudaCompile Include="gpu_kernels\optix_gbuffer_kernels.cu">
       <Filter>GPU kernels</Filter>
     </CudaCompile>
-    <CudaCompile Include="tfdm.cu">
+    <CudaCompile Include="gpu_kernels\tfdm.cu">
       <Filter>GPU kernels</Filter>
     </CudaCompile>
   </ItemGroup>

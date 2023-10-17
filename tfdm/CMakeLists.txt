@@ -7,6 +7,7 @@ file(
 set(
     CUDA_KERNELS
     "gpu_kernels/copy_buffers.cu"
+    "gpu_kernels/tfdm.cu"
 )
 
 set(

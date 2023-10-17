@@ -1,5 +1,5 @@
 ﻿#define PURE_CUDA
-#include "tfdm_shared.h"
+#include "../tfdm_shared.h"
 
 using namespace shared;
 
