@@ -23,7 +23,7 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(aabb)() {
 
     AABBAttributeSignature::reportIntersection(
         t,
-        static_cast<uint32_t>(isFrontHit ? CustomHitKind::AABBFrontFace : CustomHitKind::AABBBackFace),
+        isFrontHit ? CustomHitKind_AABBFrontFace : CustomHitKind_AABBBackFace,
         u, v);
 }
 
@@ -72,7 +72,8 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
         vs[2].texCoord,
     };
     const float triAreaInTc = cross(tcs[1] - tcs[0], tcs[2] - tcs[0])/* * 0.5f*/;
-    if (triAreaInTc < 0)
+    const bool swapped = triAreaInTc < 0;
+    if (swapped)
         swap(tcs[1], tcs[2]);
     const float recTriAreaInTc = std::fabs(1.0f / triAreaInTc);
 
@@ -296,12 +297,13 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
     if (tMax == optixGetRayTmax())
         return;
 
+    if (swapped)
+        swap(hitBc1, hitBc2);
+
     const Normal3D normalInObj = normalize(dispTriAuxInfo.matTcToObj * hitNormalInTc);
+    const uint8_t hitKind = dot(rayDirInTc, hitNormalInTc) <= 0 ?
+        CustomHitKind_DisplacedSurfaceFrontFace :
+        CustomHitKind_DisplacedSurfaceBackFace;
     DisplacedSurfaceAttributeSignature::reportIntersection(
-        tMax,
-        static_cast<uint32_t>(
-            dot(rayDirInTc, hitNormalInTc) <= 0 ?
-            CustomHitKind::DisplacedSurfaceFrontFace :
-            CustomHitKind::DisplacedSurfaceBackFace),
-        hitBc1, hitBc2, normalInObj);
+        tMax, hitKind, hitBc1, hitBc2, normalInObj);
 }

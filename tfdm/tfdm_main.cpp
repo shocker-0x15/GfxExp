@@ -108,7 +108,7 @@ struct GPUEnvironment {
 
         CUDADRV_CHECK(cuModuleLoad(
             &tfdmModule,
-            (getExecutableDirectory() / "tfdm/ptxes/tfdm.ptx").string().c_str()));
+            (getExecutableDirectory() / "tfdm/ptxes/tfdm_preprocess_kernels.ptx").string().c_str()));
         kernelGenerateFirstMinMaxMipMap_Box =
             cudau::Kernel(tfdmModule, "generateFirstMinMaxMipMap_Box", cudau::dim3(8, 8), 0);
         kernelGenerateFirstMinMaxMipMap_TwoTriangle =
@@ -1134,8 +1134,22 @@ int32_t main(int32_t argc, const char* argv[]) try {
     GeometryInstance* tfdmMeshGeomInst;
     GeometryGroup* tfdmGeomGroup;
     {
+        //const std::filesystem::path albedoPath = R"(..\data\TCom_Ground_PebblesRiver2_2.5x2.5_1K_albedo.dds)";
+        //const std::filesystem::path heightMapPath = R"(..\data\TCom_Ground_PebblesRiver2_2.5x2.5_1K_height.dds)";
+        //const std::filesystem::path albedoPath = R"(..\data\TCom_Pavement_CobblestoneMedieval15_3x3_1K_albedo.dds)";
+        //const std::filesystem::path heightMapPath = R"(..\data\TCom_Pavement_CobblestoneMedieval15_3x3_1K_height.dds)";
+        const std::filesystem::path albedoPath = R"(..\data\TCom_Rock_Cliff3_2x2_1K_albedo.dds)";
+        const std::filesystem::path heightMapPath = R"(..\data\TCom_Rock_Cliff3_2x2_1K_height.dds)";
+        //const std::filesystem::path albedoPath = R"(..\data\TCom_Rock_CliffLayered_1.5x1.5_1K_albedo.dds)";
+        //const std::filesystem::path heightMapPath = R"(..\data\TCom_Rock_CliffLayered_1.5x1.5_1K_height.dds)";
+        //const std::filesystem::path albedoPath = R"(..\data\TCom_Wall_Stone4_2x2_1K_albedo.dds)";
+        //const std::filesystem::path heightMapPath = R"(..\data\TCom_Wall_Stone4_2x2_1K_height.dds)";
+
         createLambertMaterial(
-            gpuEnv.cuContext, &scene, "", RGB(0.8f, 0.8f, 0.8f), "", "", RGB(0.0f));
+            gpuEnv.cuContext, &scene,
+            albedoPath, RGB(0.8f, 0.8f, 0.8f),
+            "",
+            "", RGB(0.0f));
         tfdmMeshMaterial = scene.materials.back();
 
         constexpr uint32_t numEdges = 1;
@@ -1175,8 +1189,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
             shared::MaterialData &matDataOnHost =
                 scene.materialDataBuffer.getMappedPointer()[tfdmMeshMaterial->materialSlot];
 
-            const std::filesystem::path heightMapPath =
-                R"(..\data\TCom_Rock_Cliff3_2x2_1K_height.dds)";
             bool needsDegamma;
             hpprintf("Reading: %s ... ", heightMapPath.string().c_str());
             if (loadTexture<float, true>(
@@ -1921,6 +1933,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         static bool enableBumpMapping = false;
         bool lastFrameWasAnimated = false;
         static int32_t maxPathLength = 5;
+        static bool enableAlbedo = true;
         static int32_t targetMipLevel = 0;
         bool heightParamChanged = false;
         static auto localIntersectionType = shared::LocalIntersectionType::TwoTriangle;
@@ -1975,6 +1988,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
             if (ImGui::BeginTabBar("MyTabBar")) {
                 if (ImGui::BeginTabItem("Renderer")) {
                     resetAccumulation |= ImGui::SliderInt("Max Path Length", &maxPathLength, 2, 15);
+                    resetAccumulation |= ImGui::Checkbox("Albedo", &enableAlbedo);
 
                     ImGui::Separator();
 
@@ -2294,6 +2308,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         perFramePlp.enableJittering = enableJittering;
         perFramePlp.enableEnvLight = enableEnvLight;
         perFramePlp.enableBumpMapping = enableBumpMapping;
+        perFramePlp.enableAlbedo = enableAlbedo;
         perFramePlp.localIntersectionType = static_cast<uint32_t>(localIntersectionType);
         perFramePlp.targetMipLevel = targetMipLevel;
         perFramePlp.enableDebugPrint = g_keyDebugPrint.getState();

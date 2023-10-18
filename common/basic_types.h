@@ -2127,6 +2127,14 @@ struct Matrix3x3_T {
         m20 = dot(rs[2], r.c0); m21 = dot(rs[2], r.c1); m22 = dot(rs[2], r.c2);
         return *this;
     }
+    template <Number N>
+    CUDA_COMMON_FUNCTION Matrix3x3_T &operator/=(N r) {
+        F rr = 1 / r;
+        c0 *= rr;
+        c1 *= rr;
+        c2 *= rr;
+        return *this;
+    }
 
     template <std::integral I>
     CUDA_COMMON_FUNCTION Vector3D_T<F, false> row(I index) const {
@@ -2170,6 +2178,22 @@ struct Matrix3x3_T {
     }
 };
 
+template <std::floating_point F, Number N>
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix3x3_T<F> operator*(
+    const Matrix3x3_T<F> &a, N b) {
+    Matrix3x3_T<F> ret = a;
+    ret *= static_cast<F>(b);
+    return ret;
+}
+
+template <Number N, std::floating_point F, bool isNormal>
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix3x3_T<F> operator*(
+    N a, const Matrix3x3_T<F> &b) {
+    Matrix3x3_T<F> ret = b;
+    ret *= static_cast<F>(a);
+    return ret;
+}
+
 template <std::floating_point F>
 CUDA_COMMON_FUNCTION CUDA_INLINE Matrix3x3_T<F> operator*(
     const Matrix3x3_T<F> &a, const Matrix3x3_T<F> &b) {
@@ -2199,6 +2223,14 @@ CUDA_COMMON_FUNCTION CUDA_INLINE Point3D_T<F> operator*(
         dot(a.row(0), vb),
         dot(a.row(1), vb),
         dot(a.row(2), vb));
+}
+
+template <std::floating_point F, Number N>
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix3x3_T<F> operator/(
+    const Matrix3x3_T<F> &a, N b) {
+    Matrix3x3_T<F> ret = a;
+    ret /= static_cast<F>(b);
+    return ret;
 }
 
 template <std::floating_point F>

@@ -707,12 +707,14 @@ struct InstanceController {
     }
 
     void update(shared::InstanceData* instDataBuffer, float dt) {
-        inst->prevMatM2W = inst->matM2W;
+        Matrix4x4 prevTransform = inst->matM2W;
         updateBody(dt);
+        Matrix3x3 matRot = curOrientation.toMatrix3x3();
+
         inst->matM2W =
-            Matrix4x4(curOrientation.toMatrix3x3() * scale3x3(curScale), curPosition) *
+            Matrix4x4(matRot * curScale, curPosition) *
             inst->geomGroupInst.transform;
-        inst->nMatM2W = transpose(invert(inst->matM2W.getUpperLeftMatrix()));
+        inst->nMatM2W = matRot / curScale;
 
         Matrix4x4 tMatM2W = transpose(inst->matM2W);
         inst->optixInst.setTransform(reinterpret_cast<const float*>(&tMatM2W));
@@ -722,7 +724,7 @@ struct InstanceController {
         float uniformScale = scale.x;
 
         shared::InstanceData &instData = instDataBuffer[inst->instSlot];
-        instData.prevTransform = inst->prevMatM2W;
+        instData.curToPrevTransform = prevTransform * invert(inst->matM2W);
         instData.transform = inst->matM2W;
         instData.normalMatrix = inst->nMatM2W;
         instData.uniformScale = uniformScale;

@@ -850,7 +850,7 @@ namespace shared {
 
     struct InstanceData {
         Matrix4x4 transform;
-        Matrix4x4 prevTransform;
+        Matrix4x4 curToPrevTransform;
         Matrix3x3 normalMatrix;
         float uniformScale;
 

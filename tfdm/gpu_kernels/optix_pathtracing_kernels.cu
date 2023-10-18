@@ -121,6 +121,11 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_rayGen_generic() {
             BSDF bsdf;
             bsdf.setup(mat, texCoord);
 
+            if (!plp.f->enableAlbedo) {
+                float4 albedo = plp.s->albedoAccumBuffer.read(launchIndex);
+                alpha = safeDivide(alpha, RGB(albedo.x, albedo.y, albedo.z));
+            }
+
             // Next event estimation (explicit light sampling) on the first hit.
             contribution += alpha * performNextEventEstimation(
                 positionInWorld, vOutLocal, shadingFrame, bsdf, rng);
@@ -222,34 +227,33 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_closestHit_generic() {
     Normal3D geometricNormalInWorld;
     Point2D texCoord;
     float hypAreaPDensity;
-    if (optixGetPrimitiveType() == OPTIX_PRIMITIVE_TYPE_TRIANGLE) {
+
+    const uint32_t hitKind = optixGetHitKind();
+    const bool isTriangleHit =
+        hitKind == OPTIX_HIT_KIND_TRIANGLE_FRONT_FACE
+        || hitKind == OPTIX_HIT_KIND_TRIANGLE_BACK_FACE;
+    const bool isDisplacedTriangleHit =
+        hitKind == CustomHitKind_DisplacedSurfaceFrontFace
+        || hitKind == CustomHitKind_DisplacedSurfaceBackFace;
+    if (isTriangleHit || isDisplacedTriangleHit) {
         computeSurfacePoint<useMultipleImportanceSampling, useSolidAngleSampling>(
-            inst, geomInst, hp.primIndex, hp.b1, hp.b2,
+            inst, geomInst, isDisplacedTriangleHit, hp.primIndex, hp.b1, hp.b2,
             rayOrigin,
             &positionInWorld, &shadingNormalInWorld, &texCoord0DirInWorld,
             &geometricNormalInWorld, &texCoord, &hypAreaPDensity);
     }
-    else {
+    else { // for AABB debugging
+        const TFDMData &tfdm = plp.s->tfdmDataBuffer[sbtr.geomInstSlot];
+        const AABB &aabb = tfdm.aabbBuffer[hp.primIndex];
         Normal3D n;
-#if USE_DISPLACED_SURFACES
-        positionInWorld =
-            Point3D(optixGetWorldRayOrigin()) + optixGetRayTmax() * Vector3D(optixGetWorldRayDirection());
-        DisplacedSurfaceAttributeSignature::get(nullptr, nullptr, &n);
-#else
-        const AABB &aabb = geomInst.aabbBuffer[hp.primIndex];
         Point3D p = aabb.restoreHitPoint(hp.b1, hp.b2, &n);
-
-        //geometricNormalInWorld = shadingNormalInWorld;
-        const auto hitPlane = static_cast<uint32_t>(hp.b1);
-        texCoord = Point2D(hp.b1 - hitPlane, hp.b2);
-        texCoord0DirInWorld = Vector3D(0, 0, 0);
-
         positionInWorld = transformPointFromObjectToWorldSpace(p);
-#endif
-
         shadingNormalInWorld = normalize(transformNormalFromObjectToWorldSpace(n));
+        //geometricNormalInWorld = shadingNormalInWorld;
+        texCoord = Point2D(0.0f, 0.0f);
         Vector3D bitangent;
         makeCoordinateSystem(shadingNormalInWorld, &texCoord0DirInWorld, &bitangent);
+
         geometricNormalInWorld = shadingNormalInWorld;
         hypAreaPDensity = 0.0f;
     }

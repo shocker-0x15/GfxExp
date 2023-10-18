@@ -72,13 +72,16 @@ CUDA_DEVICE_KERNEL void visualizeToOutputBuffer(
         Point2D texCoord;
         texCoord.x = gBuffer0.read(launchIndex).texCoord_x;
         texCoord.y = gBuffer1.read(launchIndex).texCoord_y;
+#if STORE_BARYCENTRICS
+        value.x = 1 - texCoord.x - texCoord.y;
+        value.y = texCoord.x;
+        value.z = texCoord.y;
+#else
         value.x = std::fmod(texCoord.x, 1.0f);
         value.y = std::fmod(texCoord.y, 1.0f);
         value.z = 0.5f * std::fmod((texCoord.x - value.x) / 10.0f, 1.0f)
             + 0.5f * std::fmod(texCoord.y - value.y, 2.0f);
-        //value.x = 1 - texCoord.x - texCoord.y;
-        //value.y = texCoord.x;
-        //value.z = texCoord.y;
+#endif
         break;
     }
     case shared::BufferToDisplay::Flow: {

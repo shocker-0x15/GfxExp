@@ -107,8 +107,19 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
     Normal3D shadingNormalInWorld;
     Vector3D texCoord0DirInWorld;
     //Normal3D geometricNormalInWorld;
+#if STORE_BARYCENTRICS
+    Point2D texCoord(hp.b1, hp.b2);
+#else
     Point2D texCoord;
-    if (optixGetPrimitiveType() == OPTIX_PRIMITIVE_TYPE_TRIANGLE) {
+#endif
+    const uint32_t hitKind = optixGetHitKind();
+    const bool isTriangleHit =
+        hitKind == OPTIX_HIT_KIND_TRIANGLE_FRONT_FACE
+        || hitKind == OPTIX_HIT_KIND_TRIANGLE_BACK_FACE;
+    const bool isDisplacedTriangleHit =
+        hitKind == CustomHitKind_DisplacedSurfaceFrontFace
+        || hitKind == CustomHitKind_DisplacedSurfaceBackFace;
+    if (isTriangleHit || isDisplacedTriangleHit) {
         const Triangle &tri = geomInst.triangleBuffer[hp.primIndex];
         const Vertex &v0 = geomInst.vertexBuffer[tri.index0];
         const Vertex &v1 = geomInst.vertexBuffer[tri.index1];
@@ -116,14 +127,24 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
         float b1 = hp.b1;
         float b2 = hp.b2;
         float b0 = 1 - (b1 + b2);
-        Point3D localP = b0 * v0.position + b1 * v1.position + b2 * v2.position;
-        shadingNormalInWorld = b0 * v0.normal + b1 * v1.normal + b2 * v2.normal;
         texCoord0DirInWorld = b0 * v0.texCoord0Dir + b1 * v1.texCoord0Dir + b2 * v2.texCoord0Dir;
+        if (isTriangleHit) {
+            Point3D localP = b0 * v0.position + b1 * v1.position + b2 * v2.position;
+            positionInWorld = transformPointFromObjectToWorldSpace(localP);
+            shadingNormalInWorld = b0 * v0.normal + b1 * v1.normal + b2 * v2.normal;
+        }
+        else {
+            positionInWorld = Point3D(optixGetWorldRayOrigin())
+                + optixGetRayTmax() * Vector3D(optixGetWorldRayDirection());
+            DisplacedSurfaceAttributeSignature::get(nullptr, nullptr, &shadingNormalInWorld);
+            texCoord0DirInWorld += -dot(shadingNormalInWorld, texCoord0DirInWorld) * shadingNormalInWorld;
+        }
+        prevPositionInWorld = inst.curToPrevTransform * positionInWorld;
         //geometricNormalInWorld = Normal3D(cross(v1.position - v0.position, v2.position - v0.position));
+#if !STORE_BARYCENTRICS
         texCoord = b0 * v0.texCoord + b1 * v1.texCoord + b2 * v2.texCoord;
+#endif
 
-        positionInWorld = transformPointFromObjectToWorldSpace(localP);
-        prevPositionInWorld = inst.prevTransform * localP;
         shadingNormalInWorld = normalize(transformNormalFromObjectToWorldSpace(shadingNormalInWorld));
         texCoord0DirInWorld = normalize(transformVectorFromObjectToWorldSpace(texCoord0DirInWorld));
         //geometricNormalInWorld = normalize(transformNormalFromObjectToWorldSpace(geometricNormalInWorld));
@@ -132,25 +153,15 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
             texCoord0DirInWorld = Vector3D(1, 0, 0);
         }
     }
-    else {
+    else { // for AABB debugging
+        const TFDMData &tfdm = plp.s->tfdmDataBuffer[sbtr.geomInstSlot];
+        const AABB &aabb = tfdm.aabbBuffer[hp.primIndex];
         Normal3D n;
-#if USE_DISPLACED_SURFACES
-        positionInWorld =
-            Point3D(optixGetWorldRayOrigin()) + optixGetRayTmax() * Vector3D(optixGetWorldRayDirection());
-        DisplacedSurfaceAttributeSignature::get(nullptr, nullptr, &n);
-#else
-        const AABB &aabb = geomInst.aabbBuffer[hp.primIndex];
         Point3D p = aabb.restoreHitPoint(hp.b1, hp.b2, &n);
-
-        //geometricNormalInWorld = shadingNormalInWorld;
-        const auto hitPlane = static_cast<uint32_t>(hp.b1);
-        texCoord = Point2D(hp.b1 - hitPlane, hp.b2);
-        texCoord0DirInWorld = Vector3D(0, 0, 0);
-
         positionInWorld = transformPointFromObjectToWorldSpace(p);
-#endif
-
         shadingNormalInWorld = normalize(transformNormalFromObjectToWorldSpace(n));
+        //geometricNormalInWorld = shadingNormalInWorld;
+        texCoord = Point2D(0.0f, 0.0f);
         Vector3D bitangent;
         makeCoordinateSystem(shadingNormalInWorld, &texCoord0DirInWorld, &bitangent);
     }

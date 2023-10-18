@@ -5,6 +5,7 @@
 
 #define USE_DISPLACED_SURFACES 1
 #define USE_WORKAROUND_FOR_CUDA_BC_TEX 1
+#define STORE_BARYCENTRICS 0
 
 namespace shared {
     static constexpr bool useMultipleRootOptimization = 1;
@@ -20,11 +21,11 @@ namespace shared {
         BSpline
     };
 
-    enum class CustomHitKind {
-        AABBFrontFace = 0,
-        AABBBackFace,
-        DisplacedSurfaceFrontFace,
-        DisplacedSurfaceBackFace,
+    enum CustomHitKind : uint8_t {
+        CustomHitKind_AABBFrontFace = 0,
+        CustomHitKind_AABBBackFace,
+        CustomHitKind_DisplacedSurfaceFrontFace,
+        CustomHitKind_DisplacedSurfaceBackFace,
     };
 
 
@@ -191,6 +192,7 @@ namespace shared {
         unsigned int enableJittering : 1;
         unsigned int enableEnvLight : 1;
         unsigned int enableBumpMapping : 1;
+        unsigned int enableAlbedo : 1;
         unsigned int localIntersectionType : 2;
         unsigned int targetMipLevel : 4;
         unsigned int enableDebugPrint : 1;
@@ -510,6 +512,7 @@ template <bool computeHypotheticalAreaPDensity, bool useSolidAngleSampling>
 CUDA_DEVICE_FUNCTION CUDA_INLINE void computeSurfacePoint(
     const shared::InstanceData &inst,
     const shared::GeometryInstanceData &geomInst,
+    bool isDisplacedTriangleHit,
     uint32_t primIndex, float b1, float b2,
     const Point3D &referencePoint,
     Point3D* positionInWorld, Normal3D* shadingNormalInWorld, Vector3D* texCoord0DirInWorld,
@@ -529,10 +532,22 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void computeSurfacePoint(
 
     // JP: ヒットポイントのローカル座標中の各値を計算する。
     // EN: Compute hit point properties in the local coordinates.
-    *positionInWorld = b0 * p[0] + b1 * p[1] + b2 * p[2];
-    Normal3D shadingNormal = b0 * v0.normal + b1 * v1.normal + b2 * v2.normal;
+    Normal3D shadingNormal;
+    Normal3D geometricNormal;
     Vector3D texCoord0Dir = b0 * v0.texCoord0Dir + b1 * v1.texCoord0Dir + b2 * v2.texCoord0Dir;
-    Normal3D geometricNormal(cross(p[1] - p[0], p[2] - p[0]));
+    if (isDisplacedTriangleHit) {
+        DisplacedSurfaceAttributeSignature::get(nullptr, nullptr, &shadingNormal);
+        geometricNormal = transformNormalFromObjectToWorldSpace(shadingNormal);
+        *positionInWorld = Point3D(optixGetWorldRayOrigin())
+            + optixGetRayTmax() * Vector3D(optixGetWorldRayDirection());
+        texCoord0Dir += -dot(shadingNormal, texCoord0Dir) * shadingNormal;
+    }
+    else {
+        shadingNormal = b0 * v0.normal + b1 * v1.normal + b2 * v2.normal;
+        geometricNormal = Normal3D(cross(p[1] - p[0], p[2] - p[0]));
+        *positionInWorld = b0 * p[0] + b1 * p[1] + b2 * p[2];
+    }
+
     float area;
     if constexpr (computeHypotheticalAreaPDensity && !useSolidAngleSampling)
         area = 0.5f * length(geometricNormal);

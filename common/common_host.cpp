@@ -2405,7 +2405,7 @@ Instance* createInstance(
 
     shared::InstanceData instData = {};
     instData.transform = finalTransform;
-    instData.prevTransform = finalTransform;
+    instData.curToPrevTransform = Matrix4x4();
     instData.normalMatrix = transpose(invert(finalTransform.getUpperLeftMatrix()));
     instData.uniformScale = uniformScale;
     instData.geomInstSlots = inst->geomInstSlots.getROBuffer<shared::enableBufferOobCheck>();
