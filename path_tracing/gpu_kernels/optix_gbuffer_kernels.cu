@@ -114,14 +114,14 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
         float b1 = hp.b1;
         float b2 = hp.b2;
         float b0 = 1 - (b1 + b2);
-        Point3D localP = b0 * v0.position + b1 * v1.position + b2 * v2.position;
+        positionInWorld = b0 * v0.position + b1 * v1.position + b2 * v2.position;
         shadingNormalInWorld = b0 * v0.normal + b1 * v1.normal + b2 * v2.normal;
         texCoord0DirInWorld = b0 * v0.texCoord0Dir + b1 * v1.texCoord0Dir + b2 * v2.texCoord0Dir;
         //geometricNormalInWorld = Normal3D(cross(v1.position - v0.position, v2.position - v0.position));
         texCoord = b0 * v0.texCoord + b1 * v1.texCoord + b2 * v2.texCoord;
 
-        positionInWorld = transformPointFromObjectToWorldSpace(localP);
-        prevPositionInWorld = inst.prevTransform * localP;
+        positionInWorld = transformPointFromObjectToWorldSpace(positionInWorld);
+        prevPositionInWorld = inst.curToPrevTransform * positionInWorld;
         shadingNormalInWorld = normalize(transformNormalFromObjectToWorldSpace(shadingNormalInWorld));
         texCoord0DirInWorld = normalize(transformVectorFromObjectToWorldSpace(texCoord0DirInWorld));
         //geometricNormalInWorld = normalize(transformNormalFromObjectToWorldSpace(geometricNormalInWorld));
