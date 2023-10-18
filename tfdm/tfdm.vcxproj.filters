@@ -173,6 +173,9 @@
     <ClInclude Include="..\common\basic_types.h">
       <Filter>non-essentials</Filter>
     </ClInclude>
+    <ClInclude Include="gpu_kernels\tfdm_intersection_kernels.h">
+      <Filter>GPU kernels</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <CudaCompile Include="..\common\gpu_kernels\compute_light_probs.cu">
@@ -187,7 +190,7 @@
     <CudaCompile Include="gpu_kernels\optix_gbuffer_kernels.cu">
       <Filter>GPU kernels</Filter>
     </CudaCompile>
-    <CudaCompile Include="gpu_kernels\tfdm.cu">
+    <CudaCompile Include="gpu_kernels\tfdm_preprocess_kernels.cu">
       <Filter>GPU kernels</Filter>
     </CudaCompile>
   </ItemGroup>

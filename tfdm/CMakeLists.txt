@@ -7,7 +7,7 @@ file(
 set(
     CUDA_KERNELS
     "gpu_kernels/copy_buffers.cu"
-    "gpu_kernels/tfdm.cu"
+    "gpu_kernels/tfdm_preprocess_kernels.cu"
 )
 
 set(
@@ -24,6 +24,7 @@ set(
     "../common/common_shared.h"
     "../common/common_device.cuh"
     "${TARGET_NAME}_shared.h"
+    "gpu_kernels/tfdm_intersection_kernels.h"
 )
 
 nvcuda_compile_ptx(
@@ -72,7 +73,7 @@ source_group(
     "${CMAKE_CURRENT_SOURCE_DIR}/[^/]*\.(h|hpp|c|cpp)$")
 source_group(
     "essentials/GPU kernels" REGULAR_EXPRESSION
-    "${CMAKE_CURRENT_SOURCE_DIR}/gpu_kernels/[^/]*\.(cu)$")
+    "${CMAKE_CURRENT_SOURCE_DIR}/gpu_kernels/[^/]*\.(h|cu)$")
 
 add_executable(
     "${TARGET_NAME}"

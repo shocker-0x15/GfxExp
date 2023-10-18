@@ -1,4 +1,5 @@
 ﻿#include "../tfdm_shared.h"
+#include "tfdm_intersection_kernels.h"
 
 using namespace shared;
 
