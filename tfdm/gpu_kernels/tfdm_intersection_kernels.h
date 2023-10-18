@@ -2,9 +2,11 @@
 
 #include "../tfdm_shared.h"
 
-CUDA_DEVICE_KERNEL void RT_IS_NAME(aabb)() {
-    using namespace shared;
+using namespace shared;
 
+
+
+CUDA_DEVICE_KERNEL void RT_IS_NAME(aabb)() {
     const auto sbtr = HitGroupSBTRecordData::get();
     const TFDMData &tfdm = plp.s->tfdmDataBuffer[sbtr.geomInstSlot];
 
@@ -53,8 +55,6 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void next(Texel &texel, bool signX, bool signY,
 }
 
 CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
-    using namespace shared;
-
     const auto sbtr = HitGroupSBTRecordData::get();
     const GeometryInstanceData &geomInst = plp.s->geometryInstanceDataBuffer[sbtr.geomInstSlot];
     const MaterialData &mat = plp.s->materialDataBuffer[geomInst.materialSlot];

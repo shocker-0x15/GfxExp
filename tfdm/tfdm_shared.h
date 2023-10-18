@@ -687,7 +687,7 @@ enum class TriangleSquareIntersection2DResult {
     SquareOverlappingTriangle
 };
 
-CUDA_DEVICE_FUNCTION TriangleSquareIntersection2DResult testTriangleSquareIntersection2D(
+CUDA_DEVICE_FUNCTION CUDA_INLINE TriangleSquareIntersection2DResult testTriangleSquareIntersection2D(
     const Point2D triPs[3], const Vector2D triEdgeNormals[3],
     const Point2D &triAabbMinP, const Point2D &triAabbMaxP,
     const Point2D &squareCenter, float squareHalfWidth) {
