@@ -774,6 +774,101 @@ static void parseCommandline(int32_t argc, const char* argv[]) {
 
 
 
+static void createQuad(
+    std::vector<shared::Vertex>* vertices,
+    std::vector<shared::Triangle>* triangles) {
+    constexpr uint32_t numEdges = 1;
+    vertices->resize(pow2(numEdges + 1));
+    triangles->resize(2 * pow2(numEdges));
+    for (int iy = 0; iy < numEdges + 1; ++iy) {
+        float py = static_cast<float>(iy) / numEdges;
+        float y = -0.5f + 1.0f * py;
+        for (int ix = 0; ix < numEdges + 1; ++ix) {
+            float px = static_cast<float>(ix) / numEdges;
+            float x = -0.5f + 1.0f * px;
+            (*vertices)[iy * (numEdges + 1) + ix] = shared::Vertex{
+                Point3D(x, 0, y),
+                normalize(Normal3D(/*-0.5f + px*/0, 1, /*-0.5f + py*/0)),
+                Vector3D(1, 0, 0), Point2D(px, py)
+            };
+            if (iy < numEdges && ix < numEdges) {
+                uint32_t baseIdx = iy * (numEdges + 1) + ix;
+                (*triangles)[2 * (iy * numEdges + ix) + 0] = shared::Triangle{
+                    baseIdx, baseIdx + (numEdges + 1) + 1, baseIdx + 1
+                };
+                (*triangles)[2 * (iy * numEdges + ix) + 1] = shared::Triangle{
+                    baseIdx, baseIdx + (numEdges + 1), baseIdx + (numEdges + 1) + 1
+                };
+            }
+        }
+    }
+}
+
+static void computeDisplacedTriangleAuxiliaryInfos(
+    const std::vector<shared::Vertex> &vertices,
+    const std::vector<shared::Triangle> &triangles,
+    std::vector<shared::DisplacedTriangleAuxInfo>* dispTriAuxInfos) {
+    dispTriAuxInfos->resize(triangles.size());
+    for (int triIdx = 0; triIdx < triangles.size(); ++triIdx) {
+        const shared::Triangle &tri = triangles[triIdx];
+        shared::DisplacedTriangleAuxInfo &dispTriAuxInfo = (*dispTriAuxInfos)[triIdx];
+
+        using Vector2Dd = Vector2D_T<double>;
+        using Vector3Dd = Vector3D_T<double, false>;
+        using Point3Dd = Point3D_T<double>;
+        using Matrix3x3d = Matrix3x3_T<double>;
+        using Matrix4x4d = Matrix4x4_T<double>;
+
+        const shared::Vertex (&vs)[] = {
+            vertices[tri.index0],
+            vertices[tri.index1],
+            vertices[tri.index2]
+        };
+
+        Vector3Dd tc0Dir;
+        Vector3Dd tc1Dir;
+        {
+            Vector3Dd dp01 = vs[1].position - vs[0].position;
+            Vector3Dd dp02 = vs[2].position - vs[0].position;
+            Vector2Dd dt01 = vs[1].texCoord - vs[0].texCoord;
+            Vector2Dd dt02 = vs[2].texCoord - vs[0].texCoord;
+
+            double recDet = 1.0f / (dt01.x * dt02.y - dt01.y * dt02.x);
+            tc0Dir.x = recDet * (dt02.y * dp01.x - dt01.y * dp02.x);
+            tc0Dir.y = recDet * (dt02.y * dp01.y - dt01.y * dp02.y);
+            tc0Dir.z = recDet * (dt02.y * dp01.z - dt01.y * dp02.z);
+            tc1Dir.x = recDet * (-dt02.x * dp01.x + dt01.x * dp02.x);
+            tc1Dir.y = recDet * (-dt02.x * dp01.y + dt01.x * dp02.y);
+            tc1Dir.z = recDet * (-dt02.x * dp01.z + dt01.x * dp02.z);
+        }
+
+        Vector3Dd geomNormal = normalize(
+            cross(vs[1].position - vs[0].position, vs[2].position - vs[0].position));
+
+        const Point3D tcs3D[] = {
+            Point3D(vs[0].texCoord, 1.0f),
+            Point3D(vs[1].texCoord, 1.0f),
+            Point3D(vs[2].texCoord, 1.0f),
+        };
+
+        Matrix4x4d matObjToTc(invert(Matrix3x3d(tc0Dir, tc1Dir, geomNormal)));
+        matObjToTc = translate4x4(Point3Dd(vs[0].texCoord, 0.0f) - matObjToTc * vs[0].position) * matObjToTc;
+
+        const Matrix3x3d matTcToBc = invert(Matrix3x3d(tcs3D[0], tcs3D[1], tcs3D[2]));
+        const Matrix3x3d matBcToNInObj(vs[0].normal, vs[1].normal, vs[2].normal);
+        const Matrix3x3d matTcToNInObj = matBcToNInObj * matTcToBc;
+
+        dispTriAuxInfo.matObjToTc = static_cast<Matrix4x4>(matObjToTc);
+        dispTriAuxInfo.matTcToBc = static_cast<Matrix3x3>(matTcToBc);
+        dispTriAuxInfo.matTcToNInObj = static_cast<Matrix3x3>(matTcToNInObj);
+        dispTriAuxInfo.matTcToObj = Matrix3x3(
+            static_cast<Vector3D>(tc0Dir),
+            static_cast<Vector3D>(tc1Dir),
+            static_cast<Vector3D>(geomNormal));
+    }
+}
+
+
 static void glfw_error_callback(int32_t error, const char* description) {
     hpprintf("Error %d: %s\n", error, description);
 }
@@ -1130,9 +1225,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
     float heightBias = 0.0f;
 
 #define SHOW_BASE_MESH 0
+
     Material* tfdmMeshMaterial;
-    GeometryInstance* tfdmMeshGeomInst;
-    GeometryGroup* tfdmGeomGroup;
     {
         //const std::filesystem::path albedoPath = R"(..\data\TCom_Ground_PebblesRiver2_2.5x2.5_1K_albedo.dds)";
         //const std::filesystem::path heightMapPath = R"(..\data\TCom_Ground_PebblesRiver2_2.5x2.5_1K_height.dds)";
@@ -1150,161 +1244,92 @@ int32_t main(int32_t argc, const char* argv[]) try {
             albedoPath, RGB(0.8f, 0.8f, 0.8f),
             "",
             "", RGB(0.0f));
+
         tfdmMeshMaterial = scene.materials.back();
 
-        constexpr uint32_t numEdges = 1;
-        std::vector<shared::Vertex> vertices(pow2(numEdges + 1));
-        std::vector<shared::Triangle> triangles(2 * pow2(numEdges));
-        for (int iy = 0; iy < numEdges + 1; ++iy) {
-            float py = static_cast<float>(iy) / numEdges;
-            float y = -0.5f + 1.0f * py;
-            for (int ix = 0; ix < numEdges + 1; ++ix) {
-                float px = static_cast<float>(ix) / numEdges;
-                float x = -0.5f + 1.0f * px;
-                vertices[iy * (numEdges + 1) + ix] = shared::Vertex{
-                    Point3D(x, 0, y),
-                    normalize(Normal3D(/*-0.5f + px*/0, 1, /*-0.5f + py*/0)),
-                    Vector3D(1, 0, 0), Point2D(px, py)
-                };
-                if (iy < numEdges && ix < numEdges) {
-                    uint32_t baseIdx = iy * (numEdges + 1) + ix;
-                    triangles[2 * (iy * numEdges + ix) + 0] = shared::Triangle{
-                        baseIdx, baseIdx + (numEdges + 1) + 1, baseIdx + 1
-                    };
-                    triangles[2 * (iy * numEdges + ix) + 1] = shared::Triangle{
-                        baseIdx, baseIdx + (numEdges + 1), baseIdx + (numEdges + 1) + 1
-                    };
-                }
-            }
-        }
+#if !SHOW_BASE_MESH
+        shared::MaterialData &matDataOnHost =
+            scene.materialDataBuffer.getMappedPointer()[tfdmMeshMaterial->materialSlot];
+
+        bool needsDegamma;
+        hpprintf("Reading: %s ... ", heightMapPath.string().c_str());
+        if (loadTexture<float, true>(
+            heightMapPath, 0.0f, gpuEnv.cuContext, &tfdmMeshMaterial->heightMap, &needsDegamma))
+            hpprintf("done.\n");
+        else
+            hpprintf("failed.\n");
+
+        cudau::TextureSampler sampler = {};
+        sampler.setXyFilterMode(cudau::TextureFilterMode::Linear);
+        sampler.setWrapMode(0, cudau::TextureWrapMode::Repeat);
+        sampler.setWrapMode(1, cudau::TextureWrapMode::Repeat);
+        sampler.setMipMapFilterMode(cudau::TextureFilterMode::Point);
+        sampler.setReadMode(cudau::TextureReadMode::NormalizedFloat);
+        tfdmMeshMaterial->heightMapTex = sampler.createTextureObject(*tfdmMeshMaterial->heightMap);
+        matDataOnHost.heightMapSize = int2(
+            tfdmMeshMaterial->heightMap->getWidth(), tfdmMeshMaterial->heightMap->getHeight());
+        matDataOnHost.heightMap = tfdmMeshMaterial->heightMapTex;
+
+        if (matDataOnHost.heightMapSize.x != matDataOnHost.heightMapSize.y)
+            throw std::runtime_error("Non-square height map is not supported.");
+        if (popcnt(matDataOnHost.heightMapSize.x) != 1)
+            throw std::runtime_error("Non-power-of-two height map is not supported.");
+
+        const uint32_t numMinMaxMipMapLevels = nextPowOf2Exponent(matDataOnHost.heightMapSize.x) + 1;
+        tfdmMeshMaterial->minMaxMipMap.initialize2D(
+            gpuEnv.cuContext,
+            cudau::ArrayElementType::Float32, 2,
+            cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable,
+            matDataOnHost.heightMapSize.x, matDataOnHost.heightMapSize.y,
+            numMinMaxMipMapLevels);
+
+        std::vector<optixu::NativeBlockBuffer2D<float2>> surfObjs(numMinMaxMipMapLevels);
+        for (int mipLevel = 0; mipLevel < numMinMaxMipMapLevels; ++mipLevel)
+            surfObjs[mipLevel] = tfdmMeshMaterial->minMaxMipMap.getSurfaceObject(mipLevel);
+
+        tfdmMeshMaterial->minMaxMipMapSurfs.initialize(gpuEnv.cuContext, cudau::BufferType::Device, surfObjs);
+        matDataOnHost.minMaxMipMap = tfdmMeshMaterial->minMaxMipMapSurfs.getDevicePointer();
+#endif
+    }
+
+    GeometryInstance* tfdmMeshGeomInst;
+    {
+        std::vector<shared::Vertex> vertices;
+        std::vector<shared::Triangle> triangles;
+        createQuad(&vertices, &triangles);
+
 #if SHOW_BASE_MESH
         tfdmMeshGeomInst = createGeometryInstance(
             gpuEnv.cuContext, &scene, vertices, triangles, tfdmMeshMaterial, gpuEnv.optixDefaultMaterial, false);
 #else
         tfdmMeshGeomInst = createTFDMGeometryInstance(
             gpuEnv.cuContext, &scene, vertices, triangles, tfdmMeshMaterial, gpuEnv.optixTFDMMaterial);
+
+        std::vector<shared::DisplacedTriangleAuxInfo> dispTriAuxInfos;
+        computeDisplacedTriangleAuxiliaryInfos(vertices, triangles, &dispTriAuxInfos);
+
+        tfdmMeshGeomInst->dispTriAuxInfoBuffer.initialize(
+            gpuEnv.cuContext, cudau::BufferType::Device, dispTriAuxInfos);
+        tfdmMeshGeomInst->aabbBuffer.initialize(
+            gpuEnv.cuContext, cudau::BufferType::Device, triangles.size());
+
+        shared::TFDMData &tfdmData = tfdmDataBuffer.getMappedPointer()[tfdmMeshGeomInst->geomInstSlot];
+        tfdmData.dispTriAuxInfoBuffer =
+            tfdmMeshGeomInst->dispTriAuxInfoBuffer.getROBuffer<shared::enableBufferOobCheck>();
+        tfdmData.aabbBuffer =
+            tfdmMeshGeomInst->aabbBuffer.getROBuffer<shared::enableBufferOobCheck>();
+        tfdmData.hOffset = heightOffset;
+        tfdmData.hScale = heightScale;
+        tfdmData.hBias = heightBias;
+
+        tfdmMeshGeomInst->optixGeomInst.setCustomPrimitiveAABBBuffer(tfdmMeshGeomInst->aabbBuffer);
 #endif
+
         scene.geomInsts.push_back(tfdmMeshGeomInst);
-        {
-            shared::MaterialData &matDataOnHost =
-                scene.materialDataBuffer.getMappedPointer()[tfdmMeshMaterial->materialSlot];
+    }
 
-            bool needsDegamma;
-            hpprintf("Reading: %s ... ", heightMapPath.string().c_str());
-            if (loadTexture<float, true>(
-                heightMapPath, 0.0f, gpuEnv.cuContext, &tfdmMeshMaterial->heightMap, &needsDegamma))
-                hpprintf("done.\n");
-            else
-                hpprintf("failed.\n");
-
-            cudau::TextureSampler sampler = {};
-            sampler.setXyFilterMode(cudau::TextureFilterMode::Linear);
-            sampler.setWrapMode(0, cudau::TextureWrapMode::Repeat);
-            sampler.setWrapMode(1, cudau::TextureWrapMode::Repeat);
-            sampler.setMipMapFilterMode(cudau::TextureFilterMode::Point);
-            sampler.setReadMode(cudau::TextureReadMode::NormalizedFloat);
-            tfdmMeshMaterial->heightMapTex = sampler.createTextureObject(*tfdmMeshMaterial->heightMap);
-            matDataOnHost.heightMapSize = int2(
-                tfdmMeshMaterial->heightMap->getWidth(), tfdmMeshMaterial->heightMap->getHeight());
-            matDataOnHost.heightMap = tfdmMeshMaterial->heightMapTex;
-
-            if (matDataOnHost.heightMapSize.x != matDataOnHost.heightMapSize.y)
-                throw std::runtime_error("Non-square height map is not supported.");
-            if (popcnt(matDataOnHost.heightMapSize.x) != 1)
-                throw std::runtime_error("Non-power-of-two height map is not supported.");
-            const uint32_t numMinMaxMipMapLevels = nextPowOf2Exponent(matDataOnHost.heightMapSize.x) + 1;
-            tfdmMeshMaterial->minMaxMipMap.initialize2D(
-                gpuEnv.cuContext,
-                cudau::ArrayElementType::Float32, 2,
-                cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable,
-                matDataOnHost.heightMapSize.x, matDataOnHost.heightMapSize.y,
-                numMinMaxMipMapLevels);
-            std::vector<optixu::NativeBlockBuffer2D<float2>> surfObjs(numMinMaxMipMapLevels);
-            for (int mipLevel = 0; mipLevel < numMinMaxMipMapLevels; ++mipLevel)
-                surfObjs[mipLevel] = tfdmMeshMaterial->minMaxMipMap.getSurfaceObject(mipLevel);
-            tfdmMeshMaterial->minMaxMipMapSurfs.initialize(gpuEnv.cuContext, cudau::BufferType::Device, surfObjs);
-            matDataOnHost.minMaxMipMap = tfdmMeshMaterial->minMaxMipMapSurfs.getDevicePointer();
-
-            std::vector<shared::DisplacedTriangleAuxInfo> dispTriAuxInfos(triangles.size());
-            for (int triIdx = 0; triIdx < triangles.size(); ++triIdx) {
-                const shared::Triangle &tri = triangles[triIdx];
-                shared::DisplacedTriangleAuxInfo &dispTriAuxInfo = dispTriAuxInfos[triIdx];
-
-                using Vector2Dd = Vector2D_T<double>;
-                using Vector3Dd = Vector3D_T<double, false>;
-                using Point3Dd = Point3D_T<double>;
-                using Matrix3x3d = Matrix3x3_T<double>;
-                using Matrix4x4d = Matrix4x4_T<double>;
-
-                const shared::Vertex (&vs)[] = {
-                    vertices[tri.index0],
-                    vertices[tri.index1],
-                    vertices[tri.index2]
-                };
-
-                Vector3Dd tc0Dir;
-                Vector3Dd tc1Dir;
-                {
-                    Vector3Dd dp01 = vs[1].position - vs[0].position;
-                    Vector3Dd dp02 = vs[2].position - vs[0].position;
-                    Vector2Dd dt01 = vs[1].texCoord - vs[0].texCoord;
-                    Vector2Dd dt02 = vs[2].texCoord - vs[0].texCoord;
-
-                    double recDet = 1.0f / (dt01.x * dt02.y - dt01.y * dt02.x);
-                    tc0Dir.x = recDet * (dt02.y * dp01.x - dt01.y * dp02.x);
-                    tc0Dir.y = recDet * (dt02.y * dp01.y - dt01.y * dp02.y);
-                    tc0Dir.z = recDet * (dt02.y * dp01.z - dt01.y * dp02.z);
-                    tc1Dir.x = recDet * (-dt02.x * dp01.x + dt01.x * dp02.x);
-                    tc1Dir.y = recDet * (-dt02.x * dp01.y + dt01.x * dp02.y);
-                    tc1Dir.z = recDet * (-dt02.x * dp01.z + dt01.x * dp02.z);
-                }
-
-                Vector3Dd geomNormal = normalize(
-                    cross(vs[1].position - vs[0].position, vs[2].position - vs[0].position));
-
-                const Point3D tcs3D[] = {
-                    Point3D(vs[0].texCoord, 1.0f),
-                    Point3D(vs[1].texCoord, 1.0f),
-                    Point3D(vs[2].texCoord, 1.0f),
-                };
-
-                Matrix4x4d matObjToTc(invert(Matrix3x3d(tc0Dir, tc1Dir, geomNormal)));
-                matObjToTc = translate4x4(Point3Dd(vs[0].texCoord, 0.0f) - matObjToTc * vs[0].position) * matObjToTc;
-
-                const Matrix3x3d matTcToBc = invert(Matrix3x3d(tcs3D[0], tcs3D[1], tcs3D[2]));
-                const Matrix3x3d matBcToNInObj(vs[0].normal, vs[1].normal, vs[2].normal);
-                const Matrix3x3d matTcToNInObj = matBcToNInObj * matTcToBc;
-
-                dispTriAuxInfo.matObjToTc = static_cast<Matrix4x4>(matObjToTc);
-                dispTriAuxInfo.matTcToBc = static_cast<Matrix3x3>(matTcToBc);
-                dispTriAuxInfo.matTcToNInObj = static_cast<Matrix3x3>(matTcToNInObj);
-                dispTriAuxInfo.matTcToObj = Matrix3x3(
-                    static_cast<Vector3D>(tc0Dir),
-                    static_cast<Vector3D>(tc1Dir),
-                    static_cast<Vector3D>(geomNormal));
-            }
-
-            shared::GeometryInstanceData &geomInstData =
-                scene.geomInstDataBuffer.getMappedPointer()[tfdmMeshGeomInst->geomInstSlot];
-            tfdmMeshGeomInst->dispTriAuxInfoBuffer.initialize(
-                gpuEnv.cuContext, cudau::BufferType::Device, dispTriAuxInfos);
-            tfdmMeshGeomInst->aabbBuffer.initialize(
-                gpuEnv.cuContext, cudau::BufferType::Device, triangles.size());
-
-            shared::TFDMData &tfdmData = tfdmDataBuffer.getMappedPointer()[tfdmMeshGeomInst->geomInstSlot];
-            tfdmData.dispTriAuxInfoBuffer =
-                tfdmMeshGeomInst->dispTriAuxInfoBuffer.getROBuffer<shared::enableBufferOobCheck>();
-            tfdmData.aabbBuffer =
-                tfdmMeshGeomInst->aabbBuffer.getROBuffer<shared::enableBufferOobCheck>();
-            tfdmData.hOffset = heightOffset;
-            tfdmData.hScale = heightScale;
-            tfdmData.hBias = heightBias;
-
-#if !SHOW_BASE_MESH
-            tfdmMeshGeomInst->optixGeomInst.setCustomPrimitiveAABBBuffer(tfdmMeshGeomInst->aabbBuffer);
-#endif
-        }
-
+    GeometryGroup* tfdmGeomGroup;
+    {
         std::set<const GeometryInstance*> srcGeomInsts = { tfdmMeshGeomInst };
         tfdmGeomGroup = createGeometryGroup(&scene, srcGeomInsts);
         scene.geomGroups.push_back(tfdmGeomGroup);
@@ -2154,6 +2179,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
             curInstDataBuffer.unmap();
         }
 
+#if !SHOW_BASE_MESH
         // JP: Minmax mipmapを計算する。
         // EN: Compute the minmax mipmap.
         if (localIntersectionTypeChanged) {
@@ -2263,6 +2289,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
             tfdmGeomGroup->needsRebuild = true;
         }
+#endif
 
         // JP: ASesのリビルドを行う。
         // EN: Rebuild the ASes.

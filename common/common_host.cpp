@@ -1896,7 +1896,7 @@ GeometryInstance* createTFDMGeometryInstance(
 
     for (int triIdx = 0; triIdx < triangles.size(); ++triIdx) {
         const shared::Triangle &tri = triangles[triIdx];
-        const shared::Vertex(&vs)[3] = {
+        const shared::Vertex (&vs)[3] = {
             vertices[tri.index0],
             vertices[tri.index1],
             vertices[tri.index2],
