@@ -247,7 +247,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_rayGen_generic() {
         }
 
         BSDF bsdf;
-        bsdf.setup(mat, texCoord);
+        bsdf.setup(mat, texCoord, 0.0f);
 
         dhReflectance = bsdf.evaluateDHReflectanceEstimate(vOutLocal);
 
@@ -407,7 +407,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_closestHit_generic() {
 
     ReferenceFrame shadingFrame(shadingNormalInWorld, texCoord0DirInWorld);
     if (plp.f->enableBumpMapping) {
-        Normal3D modLocalNormal = mat.readModifiedNormal(mat.normal, mat.normalDimInfo, texCoord);
+        Normal3D modLocalNormal = mat.readModifiedNormal(mat.normal, mat.normalDimInfo, texCoord, 0.0f);
         applyBumpMapping(modLocalNormal, &shadingFrame);
     }
     positionInWorld = offsetRayOrigin(positionInWorld, frontHit * geometricNormalInWorld);

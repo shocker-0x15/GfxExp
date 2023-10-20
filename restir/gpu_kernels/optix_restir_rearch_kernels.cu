@@ -326,7 +326,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE float computeMISWeight(
                 Vector3D nbVOut = plp.f->prevCamera.position - nbPositionInWorld;
                 float nbFrontHit = dot(nbVOut, nbGeometricNormalInWorld) >= 0.0f ? 1.0f : -1.0f;
 
-                nbBsdf.setup(nbMat, nbTexCoord);
+                nbBsdf.setup(nbMat, nbTexCoord, 0.0f);
                 nbShadingFrame = ReferenceFrame(nbShadingNormalInWorld);
                 nbPositionInWorld = offsetRayOriginNaive(nbPositionInWorld, nbFrontHit * nbGeometricNormalInWorld);
                 float nbDist = length(nbVOut);
@@ -382,7 +382,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE float computeMISWeight(
                 Vector3D nbVOut = plp.f->prevCamera.position - nbPositionInWorld;
                 float nbFrontHit = dot(nbVOut, nbGeometricNormalInWorld) >= 0.0f ? 1.0f : -1.0f;
 
-                nbBsdf.setup(nbMat, nbTexCoord);
+                nbBsdf.setup(nbMat, nbTexCoord, 0.0f);
                 nbShadingFrame = ReferenceFrame(nbShadingNormalInWorld);
                 nbPositionInWorld = offsetRayOriginNaive(nbPositionInWorld, nbFrontHit * nbGeometricNormalInWorld);
                 float nbDist = length(nbVOut);
@@ -496,7 +496,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void shadeAndResample() {
         float frontHit = dot(vOut, geometricNormalInWorld) >= 0.0f ? 1.0f : -1.0f;
 
         BSDF bsdf;
-        bsdf.setup(mat, texCoord);
+        bsdf.setup(mat, texCoord, 0.0f);
         ReferenceFrame shadingFrame(shadingNormalInWorld);
         positionInWorld = offsetRayOriginNaive(positionInWorld, frontHit * geometricNormalInWorld);
         float dist = length(vOut);

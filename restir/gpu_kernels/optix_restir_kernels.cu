@@ -41,7 +41,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void performInitialAndTemporalRIS() {
     float frontHit = dot(vOut, geometricNormalInWorld) >= 0.0f ? 1.0f : -1.0f;
 
     BSDF bsdf;
-    bsdf.setup(mat, texCoord);
+    bsdf.setup(mat, texCoord, 0.0f);
     ReferenceFrame shadingFrame(shadingNormalInWorld);
     positionInWorld = offsetRayOriginNaive(positionInWorld, frontHit * geometricNormalInWorld);
     float dist = length(vOut);
@@ -231,7 +231,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void performInitialAndTemporalRIS() {
                     float nbFrontHit = dot(nbVOut, nbGeometricNormalInWorld) >= 0.0f ? 1.0f : -1.0f;
 
                     BSDF nbBsdf;
-                    nbBsdf.setup(nbMat, nbTexCoord);
+                    nbBsdf.setup(nbMat, nbTexCoord, 0.0f);
                     ReferenceFrame nbShadingFrame(nbShadingNormalInWorld);
                     nbPositionInWorld = offsetRayOriginNaive(nbPositionInWorld, nbFrontHit * nbGeometricNormalInWorld);
                     float nbDist = length(nbVOut);
@@ -326,7 +326,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void performSpatialRIS() {
     float frontHit = dot(vOut, geometricNormalInWorld) >= 0.0f ? 1.0f : -1.0f;
 
     BSDF bsdf;
-    bsdf.setup(mat, texCoord);
+    bsdf.setup(mat, texCoord, 0.0f);
     ReferenceFrame shadingFrame(shadingNormalInWorld);
     positionInWorld = offsetRayOriginNaive(positionInWorld, frontHit * geometricNormalInWorld);
     float dist = length(vOut);
@@ -492,7 +492,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void performSpatialRIS() {
                     float nbFrontHit = dot(nbVOut, nbGeometricNormalInWorld) >= 0.0f ? 1.0f : -1.0f;
 
                     BSDF nbBsdf;
-                    nbBsdf.setup(nbMat, nbTexCoord);
+                    nbBsdf.setup(nbMat, nbTexCoord, 0.0f);
                     ReferenceFrame nbShadingFrame(nbShadingNormalInWorld);
                     nbPositionInWorld = offsetRayOriginNaive(nbPositionInWorld, nbFrontHit * nbGeometricNormalInWorld);
                     float nbDist = length(nbVOut);
@@ -584,7 +584,7 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(shading)() {
         float frontHit = dot(vOut, geometricNormalInWorld) >= 0.0f ? 1.0f : -1.0f;
 
         BSDF bsdf;
-        bsdf.setup(mat, texCoord);
+        bsdf.setup(mat, texCoord, 0.0f);
         ReferenceFrame shadingFrame(shadingNormalInWorld);
         positionInWorld = offsetRayOriginNaive(positionInWorld, frontHit * geometricNormalInWorld);
         Vector3D vOutLocal = shadingFrame.toLocal(vOut);

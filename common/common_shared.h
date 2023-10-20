@@ -740,7 +740,7 @@ namespace shared {
 
 
     using ReadModifiedNormal = DynamicFunction<
-        Normal3D(CUtexObject texture, TexDimInfo dimInfo, Point2D texCoord)>;
+        Normal3D(CUtexObject texture, TexDimInfo dimInfo, Point2D texCoord, float mipLevel)>;
 
     using BSDFGetSurfaceParameters = DynamicFunction<
         void(const uint32_t* data, RGB* diffuseReflectance, RGB* specularReflectance, float* roughness)>;
@@ -783,7 +783,8 @@ namespace shared {
     };
 
     using SetupBSDFBody = DynamicFunction<
-        void(const MaterialData &matData, Point2D texCoord, uint32_t* bodyData, BSDFFlags flags)>;
+        void(const MaterialData &matData, Point2D texCoord, float mipLevel,
+             uint32_t* bodyData, BSDFFlags flags)>;
 
     struct MaterialData {
         union {

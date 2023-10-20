@@ -180,7 +180,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_raygen_generic() {
             }
 
             BSDF bsdf;
-            bsdf.setup(mat, texCoord);
+            bsdf.setup(mat, texCoord, 0.0f);
 
             // Next event estimation (explicit light sampling) on the first hit.
             RGB directContNEE = performNextEventEstimation(
@@ -381,7 +381,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_closestHit_generic() {
     float frontHit = dot(vOut, geometricNormalInWorld) >= 0.0f ? 1.0f : -1.0f;
 
     ReferenceFrame shadingFrame(shadingNormalInWorld, texCoord0DirInWorld);
-    Normal3D modLocalNormal = mat.readModifiedNormal(mat.normal, mat.normalDimInfo, texCoord);
+    Normal3D modLocalNormal = mat.readModifiedNormal(mat.normal, mat.normalDimInfo, texCoord, 0.0f);
     if (plp.f->enableBumpMapping)
         applyBumpMapping(modLocalNormal, &shadingFrame);
     positionInWorld = offsetRayOrigin(positionInWorld, frontHit * geometricNormalInWorld);
@@ -452,7 +452,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_closestHit_generic() {
     }
 
     BSDF bsdf;
-    bsdf.setup(mat, texCoord);
+    bsdf.setup(mat, texCoord, 0.0f);
 
     if constexpr (useNRC) {
         bool endsWithCache = false;
@@ -715,7 +715,7 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(visualizePrediction)() {
         positionInWorld = offsetRayOriginNaive(positionInWorld, frontHit * geometricNormalInWorld);
 
         BSDF bsdf;
-        bsdf.setup(mat, texCoord);
+        bsdf.setup(mat, texCoord, 0.0f);
 
         float roughness;
         RGB diffuseReflectance, specularReflectance;

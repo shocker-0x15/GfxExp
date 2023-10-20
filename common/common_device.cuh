@@ -104,9 +104,9 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE Point2D adjustTexCoord(
 
 template <typename T>
 CUDA_DEVICE_FUNCTION CUDA_INLINE T sample(
-    CUtexObject texture, shared::TexDimInfo dimInfo, const Point2D &texCoord) {
+    CUtexObject texture, shared::TexDimInfo dimInfo, const Point2D &texCoord, float mipLevel) {
     Point2D mTexCoord = adjustTexCoord(dimInfo, texCoord);
-    return tex2DLod<T>(texture, mTexCoord.x, mTexCoord.y, 0.0f);
+    return tex2DLod<T>(texture, mTexCoord.x, mTexCoord.y, mipLevel);
 }
 
 struct ReferenceFrame {
@@ -165,8 +165,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void applyBumpMapping(
 }
 
 RT_CALLABLE_PROGRAM Normal3D RT_DC_NAME(readModifiedNormalFromNormalMap)
-(CUtexObject texture, shared::TexDimInfo dimInfo, Point2D texCoord) {
-    float4 texValue = sample<float4>(texture, dimInfo, texCoord);
+(CUtexObject texture, shared::TexDimInfo dimInfo, Point2D texCoord, float mipLevel) {
+    float4 texValue = sample<float4>(texture, dimInfo, texCoord, mipLevel);
     Normal3D modLocalNormal(getXYZ(texValue));
     modLocalNormal = 2.0f * modLocalNormal - Normal3D(1.0f);
     if (dimInfo.isLeftHanded)
@@ -176,8 +176,8 @@ RT_CALLABLE_PROGRAM Normal3D RT_DC_NAME(readModifiedNormalFromNormalMap)
 CUDA_DECLARE_CALLABLE_PROGRAM_POINTER(readModifiedNormalFromNormalMap);
 
 RT_CALLABLE_PROGRAM Normal3D RT_DC_NAME(readModifiedNormalFromNormalMap2ch)
-(CUtexObject texture, shared::TexDimInfo dimInfo, Point2D texCoord) {
-    float2 texValue = sample<float2>(texture, dimInfo, texCoord);
+(CUtexObject texture, shared::TexDimInfo dimInfo, Point2D texCoord, float mipLevel) {
+    float2 texValue = sample<float2>(texture, dimInfo, texCoord, mipLevel);
     Vector2D xy(texValue.x, texValue.y);
     xy = 2.0f * xy - Vector2D(1.0f);
     float z = std::sqrt(1.0f - pow2(xy.x) - pow2(xy.y));
@@ -254,7 +254,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE Vector3D cosineSampleHemisphere(float u0, float
 
 template <typename BSDFType>
 CUDA_DEVICE_FUNCTION CUDA_INLINE void setupBSDFBody(
-    const shared::MaterialData &matData, Point2D texCoord, uint32_t* bodyData, shared::BSDFFlags flags);
+    const shared::MaterialData &matData, Point2D texCoord, float mipLevel,
+    uint32_t* bodyData, shared::BSDFFlags flags);
 
 
 
@@ -300,9 +301,10 @@ public:
 
 template <>
 CUDA_DEVICE_FUNCTION CUDA_INLINE void setupBSDFBody<LambertBRDF>(
-    const shared::MaterialData &matData, Point2D texCoord, uint32_t* bodyData, shared::BSDFFlags /*flags*/) {
+    const shared::MaterialData &matData, Point2D texCoord, float mipLevel,
+    uint32_t* bodyData, shared::BSDFFlags /*flags*/) {
     float4 reflectance = sample<float4>(
-        matData.asLambert.reflectance, matData.asLambert.reflectanceDimInfo, texCoord);
+        matData.asLambert.reflectance, matData.asLambert.reflectanceDimInfo, texCoord, mipLevel);
     auto &bsdfBody = *reinterpret_cast<LambertBRDF*>(bodyData);
     bsdfBody = LambertBRDF(RGB(getXYZ(reflectance)));
 }
@@ -693,19 +695,20 @@ public:
 
 template <>
 CUDA_DEVICE_FUNCTION CUDA_INLINE void setupBSDFBody<DiffuseAndSpecularBRDF>(
-    const shared::MaterialData &matData, Point2D texCoord, uint32_t* bodyData, shared::BSDFFlags flags) {
+    const shared::MaterialData &matData, Point2D texCoord, float mipLevel,
+    uint32_t* bodyData, shared::BSDFFlags flags) {
     float4 diffuseColor = sample<float4>(
         matData.asDiffuseAndSpecular.diffuse,
         matData.asDiffuseAndSpecular.diffuseDimInfo,
-        texCoord);
+        texCoord, mipLevel);
     float4 specularF0Color = sample<float4>(
         matData.asDiffuseAndSpecular.specular,
         matData.asDiffuseAndSpecular.specularDimInfo,
-        texCoord);
+        texCoord, mipLevel);
     float smoothness = sample<float>(
         matData.asDiffuseAndSpecular.smoothness,
         matData.asDiffuseAndSpecular.smoothnessDimInfo,
-        texCoord);
+        texCoord, mipLevel);
     bool regularize = (flags & shared::BSDFFlags::Regularize) != 0;
     if (regularize)
         smoothness *= 0.5f;
@@ -718,15 +721,16 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void setupBSDFBody<DiffuseAndSpecularBRDF>(
 
 template <>
 CUDA_DEVICE_FUNCTION CUDA_INLINE void setupBSDFBody<SimplePBR_BRDF>(
-    const shared::MaterialData &matData, Point2D texCoord, uint32_t* bodyData, shared::BSDFFlags flags) {
+    const shared::MaterialData &matData, Point2D texCoord, float mipLevel,
+    uint32_t* bodyData, shared::BSDFFlags flags) {
     float4 baseColor_opacity = sample<float4>(
         matData.asSimplePBR.baseColor_opacity,
         matData.asSimplePBR.baseColor_opacity_dimInfo,
-        texCoord);
+        texCoord, mipLevel);
     float4 occlusion_roughness_metallic = sample<float4>(
         matData.asSimplePBR.occlusion_roughness_metallic,
         matData.asSimplePBR.occlusion_roughness_metallic_dimInfo,
-        texCoord);
+        texCoord, mipLevel);
     RGB baseColor(baseColor_opacity.x, baseColor_opacity.y, baseColor_opacity.z);
     float smoothness = min(1.0f - occlusion_roughness_metallic.y, 0.999f);
     float metallic = occlusion_roughness_metallic.z;
@@ -779,8 +783,9 @@ DEFINE_BSDF_CALLABLES(DiffuseAndSpecularBRDF);
 
 #define DEFINE_SETUP_BSDF_CALLABLE(BSDFType) \
     RT_CALLABLE_PROGRAM void RT_DC_NAME(setup ## BSDFType)(\
-        const shared::MaterialData &matData, Point2D texCoord, uint32_t* bodyData, shared::BSDFFlags flags) {\
-        setupBSDFBody<BSDFType>(matData, texCoord, bodyData, flags);\
+        const shared::MaterialData &matData, Point2D texCoord, float mipLevel,\
+        uint32_t* bodyData, shared::BSDFFlags flags) {\
+        setupBSDFBody<BSDFType>(matData, texCoord, mipLevel, bodyData, flags);\
     }\
     CUDA_DECLARE_CALLABLE_PROGRAM_POINTER(setup ## BSDFType)
 
@@ -806,17 +811,17 @@ struct BSDF {
 #endif
 
     CUDA_DEVICE_FUNCTION void setup(
-        const shared::MaterialData &matData, const Point2D &texCoord,
+        const shared::MaterialData &matData, const Point2D &texCoord, float mipLevel,
         shared::BSDFFlags flags = shared::BSDFFlags::None) {
 #if defined(USE_HARD_CODED_BSDF_FUNCTIONS)
-        setupBSDFBody<HARD_CODED_BSDF>(matData, texCoord, m_data, flags);
+        setupBSDFBody<HARD_CODED_BSDF>(matData, texCoord, mipLevel, m_data, flags);
 #else
         m_getSurfaceParameters = matData.bsdfGetSurfaceParameters;
         m_sampleThroughput = matData.bsdfSampleThroughput;
         m_evaluate = matData.bsdfEvaluate;
         m_evaluatePDF = matData.bsdfEvaluatePDF;
         m_evaluateDHReflectanceEstimate = matData.bsdfEvaluateDHReflectanceEstimate;
-        matData.setupBSDFBody(matData, texCoord, m_data, flags);
+        matData.setupBSDFBody(matData, texCoord, mipLevel, m_data, flags);
 #endif
     }
     CUDA_DEVICE_FUNCTION void getSurfaceParameters(

@@ -119,7 +119,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_rayGen_generic() {
             }
 
             BSDF bsdf;
-            bsdf.setup(mat, texCoord);
+            bsdf.setup(mat, texCoord, plp.f->targetMipLevel);
 
             if (!plp.f->enableAlbedo) {
                 float4 albedo = plp.s->albedoAccumBuffer.read(launchIndex);
@@ -267,7 +267,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_closestHit_generic() {
 
     ReferenceFrame shadingFrame(shadingNormalInWorld, texCoord0DirInWorld);
     if (plp.f->enableBumpMapping) {
-        Normal3D modLocalNormal = mat.readModifiedNormal(mat.normal, mat.normalDimInfo, texCoord);
+        Normal3D modLocalNormal = mat.readModifiedNormal(
+            mat.normal, mat.normalDimInfo, texCoord, plp.f->targetMipLevel);
         applyBumpMapping(modLocalNormal, &shadingFrame);
     }
     positionInWorld = offsetRayOrigin(positionInWorld, frontHit * geometricNormalInWorld);
@@ -296,7 +297,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_closestHit_generic() {
     }
 
     BSDF bsdf;
-    bsdf.setup(mat, texCoord);
+    bsdf.setup(mat, texCoord, plp.f->targetMipLevel);
 
     // Next Event Estimation (Explicit Light Sampling)
     rwPayload->contribution += rwPayload->alpha * performNextEventEstimation(
