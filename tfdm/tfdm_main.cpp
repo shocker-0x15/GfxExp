@@ -794,12 +794,44 @@ static void createQuad(
             if (iy < numEdges && ix < numEdges) {
                 uint32_t baseIdx = iy * (numEdges + 1) + ix;
                 (*triangles)[2 * (iy * numEdges + ix) + 0] = shared::Triangle{
-                    baseIdx, baseIdx + (numEdges + 1) + 1, baseIdx + 1
-                };
-                (*triangles)[2 * (iy * numEdges + ix) + 1] = shared::Triangle{
                     baseIdx, baseIdx + (numEdges + 1), baseIdx + (numEdges + 1) + 1
                 };
+                (*triangles)[2 * (iy * numEdges + ix) + 1] = shared::Triangle{
+                    baseIdx, baseIdx + (numEdges + 1) + 1, baseIdx + 1
+                };
             }
+        }
+    }
+}
+
+static void createSphere(
+    std::vector<shared::Vertex>* vertices,
+    std::vector<shared::Triangle>* triangles) {
+    constexpr float radius = 0.3f;
+    constexpr uint32_t numAzimuthEdges = 16;
+    constexpr uint32_t numZenithEdges = 8;
+    vertices->resize((numZenithEdges + 1) * (numAzimuthEdges + 1));
+    triangles->resize(2 * numZenithEdges * numAzimuthEdges);
+    for (int iz = 0; iz < numZenithEdges + 1; ++iz) {
+        float pz = static_cast<float>(iz) / numZenithEdges;
+        float theta = pz * pi_v<float>;
+        for (int ia = 0; ia < numAzimuthEdges + 1; ++ia) {
+            float pa = static_cast<float>(ia) / numAzimuthEdges;
+            float phi = pa * 2 * pi_v<float>;
+            uint32_t vIdx = iz * (numAzimuthEdges + 1) + ia;
+            Normal3D n(std::sin(phi) * std::sin(theta), std::cos(theta), std::cos(phi) * std::sin(theta));
+            (*vertices)[vIdx] = shared::Vertex{
+                radius * Point3D(n.x, n.y, n.z), n,
+                Vector3D(std::cos(phi), 0, -std::sin(phi)),
+                Point2D(pa, pz) };
+
+            if (iz == numZenithEdges || ia == numAzimuthEdges)
+                continue;
+
+            (*triangles)[2 * (iz * numAzimuthEdges + ia) + 0] = shared::Triangle{
+                vIdx, vIdx + (numAzimuthEdges + 1), vIdx + (numAzimuthEdges + 1) + 1 };
+            (*triangles)[2 * (iz * numAzimuthEdges + ia) + 1] = shared::Triangle{
+                vIdx, vIdx + (numAzimuthEdges + 1) + 1, vIdx + 1 };
         }
     }
 }
@@ -815,6 +847,7 @@ static void computeDisplacedTriangleAuxiliaryInfos(
 
         using Vector2Dd = Vector2D_T<double>;
         using Vector3Dd = Vector3D_T<double, false>;
+        using Normal3Dd = Vector3D_T<double, true>;
         using Point3Dd = Point3D_T<double>;
         using Matrix3x3d = Matrix3x3_T<double>;
         using Matrix4x4d = Matrix4x4_T<double>;
@@ -825,6 +858,11 @@ static void computeDisplacedTriangleAuxiliaryInfos(
             vertices[tri.index2]
         };
 
+        Vector3Dd geomNormal = normalize(
+            cross(vs[1].position - vs[0].position, vs[2].position - vs[0].position));
+        if (!geomNormal.allFinite())
+            geomNormal = static_cast<Vector3Dd>(vs[0].normal);
+
         Vector3Dd tc0Dir;
         Vector3Dd tc1Dir;
         {
@@ -834,16 +872,22 @@ static void computeDisplacedTriangleAuxiliaryInfos(
             Vector2Dd dt02 = vs[2].texCoord - vs[0].texCoord;
 
             double recDet = 1.0f / (dt01.x * dt02.y - dt01.y * dt02.x);
-            tc0Dir.x = recDet * (dt02.y * dp01.x - dt01.y * dp02.x);
-            tc0Dir.y = recDet * (dt02.y * dp01.y - dt01.y * dp02.y);
-            tc0Dir.z = recDet * (dt02.y * dp01.z - dt01.y * dp02.z);
-            tc1Dir.x = recDet * (-dt02.x * dp01.x + dt01.x * dp02.x);
-            tc1Dir.y = recDet * (-dt02.x * dp01.y + dt01.x * dp02.y);
-            tc1Dir.z = recDet * (-dt02.x * dp01.z + dt01.x * dp02.z);
+            if (std::isinf(recDet)) {
+                geomNormal.makeCoordinateSystem(&tc0Dir, &tc1Dir);
+            }
+            else {
+                tc0Dir.x = recDet * (dt02.y * dp01.x - dt01.y * dp02.x);
+                tc0Dir.y = recDet * (dt02.y * dp01.y - dt01.y * dp02.y);
+                tc0Dir.z = recDet * (dt02.y * dp01.z - dt01.y * dp02.z);
+                tc1Dir.x = recDet * (-dt02.x * dp01.x + dt01.x * dp02.x);
+                tc1Dir.y = recDet * (-dt02.x * dp01.y + dt01.x * dp02.y);
+                tc1Dir.z = recDet * (-dt02.x * dp01.z + dt01.x * dp02.z);
+            }
         }
-
-        Vector3Dd geomNormal = normalize(
-            cross(vs[1].position - vs[0].position, vs[2].position - vs[0].position));
+        if (tc0Dir.allZero())
+            tc0Dir = cross(tc1Dir, geomNormal);
+        if (tc1Dir.allZero())
+            tc1Dir = cross(geomNormal, tc0Dir);
 
         const Point3D tcs3D[] = {
             Point3D(vs[0].texCoord, 1.0f),
@@ -1296,7 +1340,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
     {
         std::vector<shared::Vertex> vertices;
         std::vector<shared::Triangle> triangles;
-        createQuad(&vertices, &triangles);
+        //createQuad(&vertices, &triangles);
+        createSphere(&vertices, &triangles);
 
 #if SHOW_BASE_MESH
         tfdmMeshGeomInst = createGeometryInstance(
@@ -1344,7 +1389,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
             scene.meshes["obj"] = mesh;
         }
 
-        Matrix4x4 instXfm = /*translate4x4(0, -0.5f, 0) * */rotateX4x4(0.25f * pi_v<float>);
+        //Matrix4x4 instXfm = /*translate4x4(0, -0.5f, 0) * */rotateX4x4(0.25f * pi_v<float>);
+        Matrix4x4 instXfm = rotateY4x4(pi_v<float>);
         Instance* inst = createInstance(gpuEnv.cuContext, &scene, mesh->groupInsts[0], instXfm);
         scene.insts.push_back(inst);
 
@@ -1392,6 +1438,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
     cudau::Array gBuffer0[2];
     cudau::Array gBuffer1[2];
     cudau::Array gBuffer2[2];
+#if DEBUG_TRAVERSAL_STATS
+    cudau::Array numTravItrsBuffer;
+#endif
     
     cudau::Array beautyAccumBuffer;
     cudau::Array albedoAccumBuffer;
@@ -1420,6 +1469,13 @@ int32_t main(int32_t argc, const char* argv[]) try {
                 cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable,
                 renderTargetSizeX, renderTargetSizeY, 1);
         }
+
+#if DEBUG_TRAVERSAL_STATS
+        numTravItrsBuffer.initialize2D(
+            gpuEnv.cuContext, cudau::ArrayElementType::UInt32, 1,
+            cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable,
+            renderTargetSizeX, renderTargetSizeY, 1);
+#endif
 
         beautyAccumBuffer.initialize2D(gpuEnv.cuContext, cudau::ArrayElementType::Float32, 4,
                                        cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable,
@@ -1472,6 +1528,10 @@ int32_t main(int32_t argc, const char* argv[]) try {
         albedoAccumBuffer.finalize();
         beautyAccumBuffer.finalize();
 
+#if DEBUG_TRAVERSAL_STATS
+        numTravItrsBuffer.finalize();
+#endif
+
         for (int i = 1; i >= 0; --i) {
             gBuffer2[i].finalize();
             gBuffer1[i].finalize();
@@ -1485,6 +1545,10 @@ int32_t main(int32_t argc, const char* argv[]) try {
             gBuffer1[i].resize(width, height);
             gBuffer2[i].resize(width, height);
         }
+
+#if DEBUG_TRAVERSAL_STATS
+        numTravItrsBuffer.resize(width, height);
+#endif
 
         beautyAccumBuffer.resize(width, height);
         albedoAccumBuffer.resize(width, height);
@@ -1615,6 +1679,10 @@ int32_t main(int32_t argc, const char* argv[]) try {
         staticPlp.GBuffer1[1] = gBuffer1[1].getSurfaceObject(0);
         staticPlp.GBuffer2[0] = gBuffer2[0].getSurfaceObject(0);
         staticPlp.GBuffer2[1] = gBuffer2[1].getSurfaceObject(0);
+
+#if DEBUG_TRAVERSAL_STATS
+        staticPlp.numTravItrsBuffer = numTravItrsBuffer.getSurfaceObject(0);
+#endif
 
         staticPlp.materialDataBuffer =
             scene.materialDataBuffer.getROBuffer<shared::enableBufferOobCheck>();
@@ -1782,6 +1850,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
             staticPlp.GBuffer1[1] = gBuffer1[1].getSurfaceObject(0);
             staticPlp.GBuffer2[0] = gBuffer2[0].getSurfaceObject(0);
             staticPlp.GBuffer2[1] = gBuffer2[1].getSurfaceObject(0);
+#if DEBUG_TRAVERSAL_STATS
+            staticPlp.numTravItrsBuffer = numTravItrsBuffer.getSurfaceObject(0);
+#endif
             staticPlp.beautyAccumBuffer = beautyAccumBuffer.getSurfaceObject(0);
             staticPlp.albedoAccumBuffer = albedoAccumBuffer.getSurfaceObject(0);
             staticPlp.normalAccumBuffer = normalAccumBuffer.getSurfaceObject(0);
@@ -2067,6 +2138,11 @@ int32_t main(int32_t argc, const char* argv[]) try {
                     ImGui::RadioButtonE("Normal", &bufferTypeToDisplay, shared::BufferToDisplay::Normal);
                     ImGui::RadioButtonE("TexCoord", &bufferTypeToDisplay, shared::BufferToDisplay::TexCoord);
                     ImGui::RadioButtonE("Motion Vector", &bufferTypeToDisplay, shared::BufferToDisplay::Flow);
+#if DEBUG_TRAVERSAL_STATS
+                    ImGui::RadioButtonE(
+                        "Traversal Iterations", &bufferTypeToDisplay,
+                        shared::BufferToDisplay::TraversalIterations);
+#endif
                     ImGui::RadioButtonE(
                         "Denoised Beauty", &bufferTypeToDisplay, shared::BufferToDisplay::DenoisedBeauty);
 
@@ -2432,6 +2508,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
         case shared::BufferToDisplay::DenoisedBeauty:
             bufferToDisplay = linearDenoisedBeautyBuffer.getDevicePointer();
             break;
+        case shared::BufferToDisplay::TraversalIterations:
+            break;
         default:
             Assert_ShouldNotBeCalled();
             break;
@@ -2440,6 +2518,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
             curCuStream, kernelVisualizeToOutputBuffer.calcGridDim(renderTargetSizeX, renderTargetSizeY),
             staticPlp.GBuffer0[bufferIndex],
             staticPlp.GBuffer1[bufferIndex],
+#if DEBUG_TRAVERSAL_STATS
+            staticPlp.numTravItrsBuffer,
+#endif
             bufferToDisplay,
             bufferTypeToDisplay,
             0.5f, std::pow(10.0f, motionVectorScale),

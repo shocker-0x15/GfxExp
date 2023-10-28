@@ -6,6 +6,7 @@
 #define USE_DISPLACED_SURFACES 1
 #define USE_WORKAROUND_FOR_CUDA_BC_TEX 1
 #define STORE_BARYCENTRICS 0
+#define DEBUG_TRAVERSAL_STATS 1
 
 namespace shared {
     static constexpr bool useMultipleRootOptimization = 1;
@@ -26,6 +27,15 @@ namespace shared {
         CustomHitKind_AABBBackFace,
         CustomHitKind_DisplacedSurfaceFrontFace,
         CustomHitKind_DisplacedSurfaceBackFace,
+    };
+
+
+
+    struct DisplacedSurfaceAttributes {
+        Normal3D normalInObj;
+#if DEBUG_TRAVERSAL_STATS
+        uint32_t numIterations;
+#endif
     };
 
 
@@ -87,6 +97,9 @@ namespace shared {
         Normal3D normalInWorld;
         Point2D texCoord;
         uint32_t materialSlot;
+#if DEBUG_TRAVERSAL_STATS
+        uint32_t numTravIterations;
+#endif
     };
 
 
@@ -158,6 +171,10 @@ namespace shared {
         optixu::NativeBlockBuffer2D<GBuffer1> GBuffer1[2];
         optixu::NativeBlockBuffer2D<GBuffer2> GBuffer2[2];
 
+#if DEBUG_TRAVERSAL_STATS
+        optixu::NativeBlockBuffer2D<uint32_t> numTravItrsBuffer;
+#endif
+
         ROBuffer<MaterialData> materialDataBuffer;
         ROBuffer<GeometryInstanceData> geometryInstanceDataBuffer;
         ROBuffer<TFDMData> tfdmDataBuffer;
@@ -220,13 +237,14 @@ namespace shared {
         Normal,
         TexCoord,
         Flow,
+        TraversalIterations,
         DenoisedBeauty,
     };
 
 
 
     using AABBAttributeSignature = optixu::AttributeSignature<float, float>;
-    using DisplacedSurfaceAttributeSignature = optixu::AttributeSignature<float, float, Normal3D>;
+    using DisplacedSurfaceAttributeSignature = optixu::AttributeSignature<float, float, DisplacedSurfaceAttributes>;
 
     using PrimaryRayPayloadSignature =
         optixu::PayloadSignature<shared::HitPointParams*, shared::PickInfo*>;
@@ -536,7 +554,9 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void computeSurfacePoint(
     Normal3D geometricNormal;
     Vector3D texCoord0Dir = b0 * v0.texCoord0Dir + b1 * v1.texCoord0Dir + b2 * v2.texCoord0Dir;
     if (isDisplacedTriangleHit) {
-        DisplacedSurfaceAttributeSignature::get(nullptr, nullptr, &shadingNormal);
+        DisplacedSurfaceAttributes hitAttrs;
+        DisplacedSurfaceAttributeSignature::get(nullptr, nullptr, &hitAttrs);
+        shadingNormal = hitAttrs.normalInObj;
         geometricNormal = transformNormalFromObjectToWorldSpace(shadingNormal);
         *positionInWorld = Point3D(optixGetWorldRayOrigin())
             + optixGetRayTmax() * Vector3D(optixGetWorldRayDirection());
@@ -752,64 +772,54 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE TriangleSquareIntersection2DResult testTriangle
 }
 
 CUDA_DEVICE_FUNCTION CUDA_INLINE void findRoots(
-    const Point2D &triAabbMinP, const Point2D &triAabbMaxP, const uint32_t maxDepth,
+    const Point2D &triAabbMinP, const Point2D &triAabbMaxP, const uint32_t maxDepth, uint32_t targetMipLevel,
     Texel* const roots, uint32_t* const numRoots) {
     using namespace shared;
-
+    static_assert(useMultipleRootOptimization, "Naive method is not implemented.");
     const Vector2D d = triAabbMaxP - triAabbMinP;
+    const float shiftX = std::floor(triAabbMinP.x);
+    const float shiftY = std::floor(triAabbMinP.y);
     const Point2D shiftedMinP(
-        triAabbMinP.x - std::floor(triAabbMinP.x),
-        triAabbMinP.y - std::floor(triAabbMinP.y));
+        triAabbMinP.x - shiftX,
+        triAabbMinP.y - shiftY);
     const Point2D shiftedMaxP = shiftedMinP + d;
     const uint32_t largerDim = d.y > d.x;
-    int32_t log2Res = static_cast<int32_t>(std::floor(log2f(1.0f / d[largerDim])));
-    if constexpr (useMultipleRootOptimization)
-        ++log2Res;
-    if (log2Res <= 0) {
+    if (d[largerDim] >= 1.0f) {
         roots[0] = Texel{ 0, 0, maxDepth };
         *numRoots = 1;
         return;
     }
-
-    constexpr uint32_t maxWidth = useMultipleRootOptimization ? 2 : 1;
+    int32_t startMipLevel = maxDepth - prevPowOf2Exponent(static_cast<uint32_t>(1.0f / d[largerDim])) - 1;
+    startMipLevel = /*std::*/max(startMipLevel, 0);
     while (true) {
-        const uint32_t res = 1 << log2Res;
+        const uint32_t res = 1 << (maxDepth - startMipLevel);
         const uint32_t minTexelX = static_cast<uint32_t>(res * shiftedMinP.x);
         const uint32_t minTexelY = static_cast<uint32_t>(res * shiftedMinP.y);
         const uint32_t maxTexelX = static_cast<uint32_t>(res * shiftedMaxP.x);
         const uint32_t maxTexelY = static_cast<uint32_t>(res * shiftedMaxP.y);
-        if (log2Res == 0 || ((maxTexelX - minTexelX) < maxWidth && (maxTexelY - minTexelY) < maxWidth)) {
-            if constexpr (useMultipleRootOptimization) {
-                if (log2Res == 0) {
-                    Texel &root = roots[0];
-                    root.x = minTexelX;
-                    root.y = minTexelY;
-                    root.lod = maxDepth;
-                    *numRoots = 1;
-                }
-                else {
-                    const uint32_t lod = maxDepth - log2Res;
-                    *numRoots = 0;
-                    for (int y = minTexelY; y <= maxTexelY; ++y) {
-                        for (int x = minTexelX; x <= maxTexelX; ++x) {
-                            Texel &root = roots[(*numRoots)++];
-                            root.x = x % res;
-                            root.y = y % res;
-                            root.lod = lod;
-                        }
-                    }
-                }
-            }
-            else {
+        if ((startMipLevel == maxDepth
+             || ((maxTexelX - minTexelX) < 2 && (maxTexelY - minTexelY) < 2)) &&
+            startMipLevel >= targetMipLevel) {
+            if (startMipLevel == maxDepth) {
                 Texel &root = roots[0];
-                root.x = minTexelX;
-                root.y = minTexelY;
-                root.lod = maxDepth - log2Res;
+                root.x = 0;
+                root.y = 0;
+                root.lod = maxDepth;
                 *numRoots = 1;
+                return;
+            }
+            *numRoots = 0;
+            for (int y = minTexelY; y <= maxTexelY; ++y) {
+                for (int x = minTexelX; x <= maxTexelX; ++x) {
+                    Texel &root = roots[(*numRoots)++];
+                    root.x = x % res;
+                    root.y = y % res;
+                    root.lod = startMipLevel;
+                }
             }
             break;
         }
-        --log2Res;
+        ++startMipLevel;
     }
 }
 

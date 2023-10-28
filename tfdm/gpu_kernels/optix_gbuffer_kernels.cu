@@ -32,6 +32,9 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(setupGBuffers)() {
     hitPointParams.normalInWorld = Normal3D(NAN);
     hitPointParams.texCoord = Point2D(NAN);
     hitPointParams.materialSlot = 0xFFFFFFFF;
+#if DEBUG_TRAVERSAL_STATS
+    hitPointParams.numTravIterations = 0;
+#endif
 
     PickInfo pickInfo = {};
 
@@ -67,6 +70,10 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(setupGBuffers)() {
     plp.s->GBuffer0[bufIdx].write(launchIndex, gBuffer0);
     plp.s->GBuffer1[bufIdx].write(launchIndex, gBuffer1);
     plp.s->GBuffer2[bufIdx].write(launchIndex, gBuffer2);
+
+#if DEBUG_TRAVERSAL_STATS
+    plp.s->numTravItrsBuffer.write(launchIndex, hitPointParams.numTravIterations);
+#endif
 
     if (launchIndex.x == plp.f->mousePosition.x &&
         launchIndex.y == plp.f->mousePosition.y)
@@ -112,6 +119,9 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
 #else
     Point2D texCoord;
 #endif
+#if DEBUG_TRAVERSAL_STATS
+    uint32_t numTravIterations = 0;
+#endif
     const uint32_t hitKind = optixGetHitKind();
     const bool isTriangleHit =
         hitKind == OPTIX_HIT_KIND_TRIANGLE_FRONT_FACE
@@ -136,7 +146,12 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
         else {
             positionInWorld = Point3D(optixGetWorldRayOrigin())
                 + optixGetRayTmax() * Vector3D(optixGetWorldRayDirection());
-            DisplacedSurfaceAttributeSignature::get(nullptr, nullptr, &shadingNormalInWorld);
+            DisplacedSurfaceAttributes hitAttrs;
+            DisplacedSurfaceAttributeSignature::get(nullptr, nullptr, &hitAttrs);
+            shadingNormalInWorld = hitAttrs.normalInObj;
+#if DEBUG_TRAVERSAL_STATS
+            numTravIterations = hitAttrs.numIterations;
+#endif
             texCoord0DirInWorld += -dot(shadingNormalInWorld, texCoord0DirInWorld) * shadingNormalInWorld;
         }
         prevPositionInWorld = inst.curToPrevTransform * positionInWorld;
@@ -183,6 +198,9 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
     hitPointParams->normalInWorld = shadingFrame.normal;
     hitPointParams->texCoord = texCoord;
     hitPointParams->materialSlot = geomInst.materialSlot;
+#if DEBUG_TRAVERSAL_STATS
+    hitPointParams->numTravIterations = numTravIterations;
+#endif
 
     // JP: マウスが乗っているピクセルの情報を出力する。
     // EN: Export the information of the pixel on which the mouse is.

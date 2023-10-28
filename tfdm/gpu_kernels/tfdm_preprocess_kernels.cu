@@ -186,7 +186,7 @@ CUDA_DEVICE_KERNEL void computeAABBs(
         const uint32_t maxDepth = prevPowOf2Exponent(material->heightMapSize.x);
         Texel roots[useMultipleRootOptimization ? 4 : 1];
         uint32_t numRoots;
-        findRoots(texTriAabbMinP, texTriAabbMaxP, maxDepth, roots, &numRoots);
+        findRoots(texTriAabbMinP, texTriAabbMaxP, maxDepth, 0, roots, &numRoots);
         for (int rootIdx = 0; rootIdx < lengthof(roots); ++rootIdx) {
             if (rootIdx >= numRoots)
                 break;
@@ -226,8 +226,8 @@ CUDA_DEVICE_KERNEL void computeAABBs(
         Point3D(vs[2].texCoord, 1.0f),
     };
     const DisplacedTriangleAuxInfo &dispTriAuxInfo = tfdm->dispTriAuxInfoBuffer[primIndex];
-    const Matrix3x3 matBcToP(vs[0].position, vs[1].position, vs[2].position);
-    const Matrix3x3 matTcToPInObj = matBcToP * dispTriAuxInfo.matTcToBc;
+    const Matrix3x3 matBcToPInObj(vs[0].position, vs[1].position, vs[2].position);
+    const Matrix3x3 matTcToPInObj = matBcToPInObj * dispTriAuxInfo.matTcToBc;
     const Matrix3x3 &matTcToNInObj = dispTriAuxInfo.matTcToNInObj;
 
     RWBuffer aabbBuffer(tfdm->aabbBuffer);

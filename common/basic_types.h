@@ -719,6 +719,13 @@ struct Vector2D_T {
         F l = length();
         return *this /= l;
     }
+
+    CUDA_COMMON_FUNCTION bool allFinite() const {
+#if !defined(__CUDA_ARCH__)
+        using std::isfinite;
+#endif
+        return isfinite(x) && isfinite(y);
+    }
 };
 
 template <std::floating_point F>
@@ -968,6 +975,13 @@ struct Point2D_T {
         x /= r.x;
         y /= r.y;
         return *this;
+    }
+
+    CUDA_COMMON_FUNCTION bool allFinite() const {
+#if !defined(__CUDA_ARCH__)
+        using std::isfinite;
+#endif
+        return isfinite(x) && isfinite(y);
     }
 };
 
@@ -1311,11 +1325,23 @@ struct Vector3D_T {
         return *this /= l;
     }
 
+    CUDA_COMMON_FUNCTION bool allZero() const {
+        return x == 0 && y == 0 && z == 0;
+    }
     CUDA_COMMON_FUNCTION bool allFinite() const {
 #if !defined(__CUDA_ARCH__)
         using std::isfinite;
 #endif
         return isfinite(x) && isfinite(y) && isfinite(z);
+    }
+
+    void makeCoordinateSystem(
+        Vector3D_T<F, false>* tangent, Vector3D_T<F, false>* bitangent) {
+        F sign = z >= 0 ? 1 : -1;
+        const F a = -1 / (sign + z);
+        const F b = x * y * a;
+        *tangent = Vector3D_T<F, false>(1 + sign * x * x * a, sign * b, -sign * x);
+        *bitangent = Vector3D_T<F, false>(b, sign + y * y * a, -y);
     }
 };
 
@@ -2176,6 +2202,13 @@ struct Matrix3x3_T {
         temp = m21; m21 = m12; m12 = temp;
         return *this;
     }
+
+    CUDA_COMMON_FUNCTION bool allFinite() const {
+#if !defined(__CUDA_ARCH__)
+        using std::isfinite;
+#endif
+        return c0.allFinite() && c1.allFinite() && c2.allFinite();
+    }
 };
 
 template <std::floating_point F, Number N>
@@ -2560,6 +2593,13 @@ struct Matrix4x4_T {
             rotation->x = std::atan2(mat.c1.z, mat.c2.z);
             rotation->z = std::atan2(mat.c0.y, mat.c0.x);
         }
+    }
+
+    CUDA_COMMON_FUNCTION bool allFinite() const {
+#if !defined(__CUDA_ARCH__)
+        using std::isfinite;
+#endif
+        return c0.allFinite() && c1.allFinite() && c2.allFinite() && c3.allFinite();
     }
 };
 

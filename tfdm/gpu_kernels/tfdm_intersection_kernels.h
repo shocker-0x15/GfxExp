@@ -87,8 +87,6 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
 
     const TFDMData &tfdm = plp.s->tfdmDataBuffer[sbtr.geomInstSlot];
     const DisplacedTriangleAuxInfo &dispTriAuxInfo = tfdm.dispTriAuxInfoBuffer[optixGetPrimitiveIndex()];
-    const Matrix3x3 matTcToNInTc =
-        dispTriAuxInfo.matObjToTc.getUpperLeftMatrix() * dispTriAuxInfo.matTcToNInObj;
 
     Normal3D hitNormalInTc;
     float hitBc1, hitBc2;
@@ -104,9 +102,19 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
 
     const uint32_t maxDepth =
         prevPowOf2Exponent(max(mat.heightMapSize.x, mat.heightMapSize.y));
+#if USE_WORKAROUND_FOR_CUDA_BC_TEX
+    const uint32_t targetMipLevel = min(plp.f->targetMipLevel, maxDepth - 2);
+#else
+    const uint32_t targetMipLevel = plp.f->targetMipLevel;
+#endif
+
+#if DEBUG_TRAVERSAL_STATS
+    uint32_t numIterations = 0;
+#endif
+
     Texel roots[useMultipleRootOptimization ? 4 : 1];
     uint32_t numRoots;
-    findRoots(texTriAabbMinP, texTriAabbMaxP, maxDepth, roots, &numRoots);
+    findRoots(texTriAabbMinP, texTriAabbMaxP, maxDepth, targetMipLevel, roots, &numRoots);
     for (int rootIdx = 0; rootIdx < lengthof(roots); ++rootIdx) {
         if (rootIdx >= numRoots)
             break;
@@ -114,6 +122,9 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
         Texel endTexel = curTexel;
         next(endTexel, signX, signY, maxDepth);
         while (curTexel != endTexel) {
+#if DEBUG_TRAVERSAL_STATS
+            ++numIterations;
+#endif
             const float texelScale = 1.0f / (1 << (maxDepth - curTexel.lod));
             const Point2D texelCenter = Point2D(curTexel.x + 0.5f, curTexel.y + 0.5f) * texelScale;
             const TriangleSquareIntersection2DResult isectResult =
@@ -145,9 +156,10 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
                     Point3D(texelCenter.x, texelCenter.y, 1.0f) + (edge0 + edge1);
 
                 const AAFloatOn2D_Point3D pBoundInTc(texCoord.x, texCoord.y, AAFloatOn2D(0.0f));
-                AAFloatOn2D_Vector3D nBoundInTc =
-                    static_cast<AAFloatOn2D_Vector3D>(matTcToNInTc * texCoord);
-                nBoundInTc.normalize();
+                AAFloatOn2D_Vector3D nBoundInObj =
+                    static_cast<AAFloatOn2D_Vector3D>(dispTriAuxInfo.matTcToNInObj * texCoord);
+                nBoundInObj.normalize();
+                const AAFloatOn2D_Vector3D nBoundInTc = dispTriAuxInfo.matObjToTc.getUpperLeftMatrix() * nBoundInObj;
                 const AAFloatOn2D_Point3D boundsInTc = pBoundInTc + hBound * nBoundInTc;
 
                 const auto iaSx = boundsInTc.x.toIAFloat();
@@ -167,11 +179,7 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
 
             // JP: レイがAABBにヒットしているがターゲットのMIPレベルに到達していないときは下位MIPに下る。
             // EN: Descend to the lower mip when the ray hit the AABB but does not reach the target mip level.
-#if USE_WORKAROUND_FOR_CUDA_BC_TEX
-            if (curTexel.lod > min(plp.f->targetMipLevel, maxDepth - 2)) {
-#else
-            if (curTexel.lod > plp.f->targetMipLevel) {
-#endif
+            if (curTexel.lod > targetMipLevel) {
                 down(curTexel, signX, signY);
                 continue;
             }
@@ -215,18 +223,28 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
                 const Point2D tcBL(texelCenter + texelScale * Vector2D(-0.5f, 0.5f));
                 const Point2D tcBR(texelCenter + texelScale * Vector2D(0.5f, 0.5f));
 
-                const Point3D pUL = Point3D(tcUL, 0.0f)
-                    + (tfdm.hOffset + tfdm.hScale * (cornerHeightUL - tfdm.hBias))
-                    * normalize(static_cast<Vector3D>(matTcToNInTc * Point3D(tcUL, 1.0f)));
-                const Point3D pUR = Point3D(tcUR, 0.0f)
-                    + (tfdm.hOffset + tfdm.hScale * (cornerHeightUR - tfdm.hBias))
-                    * normalize(static_cast<Vector3D>(matTcToNInTc * Point3D(tcUR, 1.0f)));
-                const Point3D pBL = Point3D(tcBL, 0.0f)
-                    + (tfdm.hOffset + tfdm.hScale * (cornerHeightBL - tfdm.hBias))
-                    * normalize(static_cast<Vector3D>(matTcToNInTc * Point3D(tcBL, 1.0f)));
-                const Point3D pBR = Point3D(tcBR, 0.0f)
-                    + (tfdm.hOffset + tfdm.hScale * (cornerHeightBR - tfdm.hBias))
-                    * normalize(static_cast<Vector3D>(matTcToNInTc * Point3D(tcBR, 1.0f)));
+                const Vector3D nULInObj = normalize(static_cast<Vector3D>(
+                    dispTriAuxInfo.matTcToNInObj * Point3D(tcUL, 1.0f)));
+                const Vector3D nURInObj = normalize(static_cast<Vector3D>(
+                    dispTriAuxInfo.matTcToNInObj * Point3D(tcUR, 1.0f)));
+                const Vector3D nBLInObj = normalize(static_cast<Vector3D>(
+                    dispTriAuxInfo.matTcToNInObj * Point3D(tcBL, 1.0f)));
+                const Vector3D nBRInObj = normalize(static_cast<Vector3D>(
+                    dispTriAuxInfo.matTcToNInObj * Point3D(tcBR, 1.0f)));
+
+                const Vector3D offUL = (tfdm.hOffset + tfdm.hScale * (cornerHeightUL - tfdm.hBias))
+                    * dispTriAuxInfo.matObjToTc.getUpperLeftMatrix() * nULInObj;
+                const Vector3D offUR = (tfdm.hOffset + tfdm.hScale * (cornerHeightUR - tfdm.hBias))
+                    * dispTriAuxInfo.matObjToTc.getUpperLeftMatrix() * nURInObj;
+                const Vector3D offBL = (tfdm.hOffset + tfdm.hScale * (cornerHeightBL - tfdm.hBias))
+                    * dispTriAuxInfo.matObjToTc.getUpperLeftMatrix() * nBLInObj;
+                const Vector3D offBR = (tfdm.hOffset + tfdm.hScale * (cornerHeightBR - tfdm.hBias))
+                    * dispTriAuxInfo.matObjToTc.getUpperLeftMatrix() * nBRInObj;
+
+                const Point3D pUL = Point3D(tcUL, 0.0f) + offUL;
+                const Point3D pUR = Point3D(tcUR, 0.0f) + offUR;
+                const Point3D pBL = Point3D(tcBL, 0.0f) + offBL;
+                const Point3D pBR = Point3D(tcBR, 0.0f) + offBR;
 
                 const auto testRayVsTriangleIntersection = []
                 (const Point3D &org, const Vector3D &dir, float distMin, float distMax,
@@ -300,10 +318,13 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
     if (swapped)
         swap(hitBc1, hitBc2);
 
-    const Normal3D normalInObj = normalize(dispTriAuxInfo.matTcToObj * hitNormalInTc);
+    DisplacedSurfaceAttributes attr = {};
+    attr.normalInObj = normalize(dispTriAuxInfo.matTcToObj * hitNormalInTc);
+#if DEBUG_TRAVERSAL_STATS
+    attr.numIterations = numIterations;
+#endif
     const uint8_t hitKind = dot(rayDirInTc, hitNormalInTc) <= 0 ?
         CustomHitKind_DisplacedSurfaceFrontFace :
         CustomHitKind_DisplacedSurfaceBackFace;
-    DisplacedSurfaceAttributeSignature::reportIntersection(
-        tMax, hitKind, hitBc1, hitBc2, normalInObj);
+    DisplacedSurfaceAttributeSignature::reportIntersection(tMax, hitKind, hitBc1, hitBc2, attr);
 }
