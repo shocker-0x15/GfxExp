@@ -13,16 +13,14 @@ CUDA_DEVICE_FUNCTION float2 computeTexelMinMax(
     float minHeight = INFINITY;
     float maxHeight = -INFINITY;
     if constexpr (intersectionType == LocalIntersectionType::Box ||
-                  intersectionType == LocalIntersectionType::TwoTriangle) {
-        const float cornerHeightUL = sample(pixIdx.x - 0.5f, pixIdx.y - 0.5f);
-        const float cornerHeightUR = sample(pixIdx.x + 0.5f, pixIdx.y - 0.5f);
-        const float cornerHeightBL = sample(pixIdx.x - 0.5f, pixIdx.y + 0.5f);
-        const float cornerHeightBR = sample(pixIdx.x + 0.5f, pixIdx.y + 0.5f);
+                  intersectionType == LocalIntersectionType::TwoTriangle ||
+                  intersectionType == LocalIntersectionType::Bilinear) {
+        const float cornerHeightUL = sample(pixIdx.x - 0.0f, pixIdx.y - 0.0f);
+        const float cornerHeightUR = sample(pixIdx.x + 1.0f, pixIdx.y - 0.0f);
+        const float cornerHeightBL = sample(pixIdx.x - 0.0f, pixIdx.y + 1.0f);
+        const float cornerHeightBR = sample(pixIdx.x + 1.0f, pixIdx.y + 1.0f);
         minHeight = std::fmin(std::fmin(std::fmin(cornerHeightUL, cornerHeightUR), cornerHeightBL), cornerHeightBR);
         maxHeight = std::fmax(std::fmax(std::fmax(cornerHeightUL, cornerHeightUR), cornerHeightBL), cornerHeightBR);
-    }
-    if constexpr (intersectionType == LocalIntersectionType::Bilinear) {
-        Assert_NotImplemented();
     }
     if constexpr (intersectionType == LocalIntersectionType::BSpline) {
         Assert_NotImplemented();
@@ -161,21 +159,20 @@ CUDA_DEVICE_KERNEL void computeAABBs(
     float minHeight = INFINITY;
     float maxHeight = -INFINITY;
     {
-        Point2D tcs[] = {
+        const Point2D tcs[] = {
             vs[0].texCoord,
             vs[1].texCoord,
             vs[2].texCoord,
         };
-        if (cross(tcs[1] - tcs[0], tcs[2] - tcs[0]) < 0)
-            swap(tcs[1], tcs[2]);
+        const bool tcFlipped = cross(tcs[1] - tcs[0], tcs[2] - tcs[0]) < 0;
         //printf("prim %u: (" V2FMT "), (" V2FMT "), (" V2FMT ")\n",
         //       primIndex,
         //       vector2Arg(tcs[0]), vector2Arg(tcs[1]), vector2Arg(tcs[2]));
 
         const Vector2D texTriEdgeNormals[] = {
-            /*normalize(*/Vector2D(tcs[1].y - tcs[0].y, tcs[0].x - tcs[1].x)/*)*/,
-            /*normalize(*/Vector2D(tcs[2].y - tcs[1].y, tcs[1].x - tcs[2].x)/*)*/,
-            /*normalize(*/Vector2D(tcs[0].y - tcs[2].y, tcs[2].x - tcs[0].x)/*)*/,
+            Vector2D(tcs[1].y - tcs[0].y, tcs[0].x - tcs[1].x),
+            Vector2D(tcs[2].y - tcs[1].y, tcs[1].x - tcs[2].x),
+            Vector2D(tcs[0].y - tcs[2].y, tcs[2].x - tcs[0].x),
         };
         const Point2D texTriAabbMinP = min(tcs[0], min(tcs[1], tcs[2]));
         const Point2D texTriAabbMaxP = max(tcs[0], max(tcs[1], tcs[2]));
@@ -197,7 +194,7 @@ CUDA_DEVICE_KERNEL void computeAABBs(
                 const float texelScale = 1.0f / (1 << (maxDepth - curTexel.lod));
                 const TriangleSquareIntersection2DResult isectResult =
                     testTriangleSquareIntersection2D(
-                        tcs, texTriEdgeNormals, texTriAabbMinP, texTriAabbMaxP,
+                        tcs, tcFlipped, texTriEdgeNormals, texTriAabbMinP, texTriAabbMaxP,
                         Point2D((curTexel.x + 0.5f) * texelScale, (curTexel.y + 0.5f) * texelScale),
                         0.5f * texelScale);
                 //if (primIndex == 0)

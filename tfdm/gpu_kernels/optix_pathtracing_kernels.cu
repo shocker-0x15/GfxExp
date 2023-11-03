@@ -174,7 +174,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_rayGen_generic() {
                 rwPayload.alpha /= continueProb;
             }
 
-            constexpr PathTracingRayType pathTraceRayType = PathTracingRayType::Baseline;
+            constexpr PathTracingRayType pathTraceRayType = PathTracingRayType::Closest;
             PathTraceRayPayloadSignature::trace(
                 plp.f->travHandle, rayOrg.toNative(), rayDir.toNative(),
                 0.0f, FLT_MAX, 0.0f, 0xFF, OPTIX_RAY_FLAG_NONE,

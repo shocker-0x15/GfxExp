@@ -42,6 +42,12 @@ inline void drawLine(const Point3D &a, const Point3D &b) {
     vdb_line(a.x, a.y, a.z, b.x, b.y, b.z);
 }
 
+template <bool isNormal>
+inline void drawVector(const Point3D &p, const Vector3D_T<float, isNormal> &v, float scale = 1.0f) {
+    Point3D b = p + scale * v;
+    vdb_line(p.x, p.y, p.z, b.x, b.y, b.z);
+}
+
 inline void drawTriangle(const Point3D &a, const Point3D &b, const Point3D &c) {
     vdb_triangle(
         a.x, a.y, a.z,

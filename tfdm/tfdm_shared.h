@@ -55,12 +55,12 @@ namespace shared {
 
     struct PathTracingRayType {
         enum Value {
-            Baseline,
+            Closest,
             Visibility,
             NumTypes
         } value;
 
-        CUDA_DEVICE_FUNCTION constexpr PathTracingRayType(Value v = Baseline) : value(v) {}
+        CUDA_DEVICE_FUNCTION constexpr PathTracingRayType(Value v = Closest) : value(v) {}
 
         CUDA_DEVICE_FUNCTION operator uint32_t() const {
             return static_cast<uint32_t>(value);
@@ -723,7 +723,7 @@ enum class TriangleSquareIntersection2DResult {
 };
 
 CUDA_DEVICE_FUNCTION CUDA_INLINE TriangleSquareIntersection2DResult testTriangleSquareIntersection2D(
-    const Point2D triPs[3], const Vector2D triEdgeNormals[3],
+    const Point2D triPs[3], bool tcFlipped, const Vector2D triEdgeNormals[3],
     const Point2D &triAabbMinP, const Point2D &triAabbMaxP,
     const Point2D &squareCenter, float squareHalfWidth) {
     const Vector2D vSquareCenter = static_cast<Vector2D>(squareCenter);
@@ -742,7 +742,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE TriangleSquareIntersection2DResult testTriangle
     // JP: いずれかの三角形のエッジの法線方向にテクセルがあるならテクセルは三角形の外にある。
     // EN: Texel is outside of the triangle if the texel is in the normal direction of any edge.
     for (int eIdx = 0; eIdx < 3; ++eIdx) {
-        const Vector2D &eNormal = triEdgeNormals[eIdx];
+        Vector2D eNormal = (tcFlipped ? -1 : 1) * triEdgeNormals[eIdx];
         Bool2D b = eNormal >= Vector2D(0.0f);
         Vector2D e = static_cast<Vector2D>(relTriPs[eIdx]) +
             Vector2D((b.x ? 1 : -1) * squareHalfWidth,
@@ -761,7 +761,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE TriangleSquareIntersection2DResult testTriangle
             const Point2D &o = relTriPs[eIdx];
             const Vector2D &e1 = relTriPs[(eIdx + 1) % 3] - o;
             Vector2D e2 = corner - o;
-            if (cross(e1, e2) < 0)
+            if ((tcFlipped ? -1 : 1) * cross(e1, e2) < 0)
                 return TriangleSquareIntersection2DResult::SquareOverlappingTriangle;
         }
     }

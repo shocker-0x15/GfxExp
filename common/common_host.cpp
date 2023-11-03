@@ -2452,9 +2452,9 @@ void loadEnvironmentalTexture(
             float sinTheta = std::sin(theta);
             for (int x = 0; x < width; ++x) {
                 uint32_t idx = 4 * (y * width + x);
-                textureData[idx + 0] = std::max(textureData[idx + 0], 0.0f);
-                textureData[idx + 1] = std::max(textureData[idx + 1], 0.0f);
-                textureData[idx + 2] = std::max(textureData[idx + 2], 0.0f);
+                textureData[idx + 0] = std::clamp(textureData[idx + 0], 0.0f, 65504.0f);
+                textureData[idx + 1] = std::clamp(textureData[idx + 1], 0.0f, 65504.0f);
+                textureData[idx + 2] = std::clamp(textureData[idx + 2], 0.0f, 65504.0f);
                 RGB value(textureData[idx + 0],
                           textureData[idx + 1],
                           textureData[idx + 2]);

@@ -8,6 +8,7 @@
 #define v2print(v) (v).x, (v).y
 #define v3print(v) (v).x, (v).y, (v).z
 #define v4print(v) (v).x, (v).y, (v).z, (v).w
+#define rgbprint(v) (v).r, (v).g, (v).b
 
 
 

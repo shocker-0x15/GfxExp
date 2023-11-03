@@ -1335,13 +1335,32 @@ struct Vector3D_T {
         return isfinite(x) && isfinite(y) && isfinite(z);
     }
 
-    void makeCoordinateSystem(
-        Vector3D_T<F, false>* tangent, Vector3D_T<F, false>* bitangent) {
+    CUDA_COMMON_FUNCTION void makeCoordinateSystem(
+        Vector3D_T<F, false>* tangent, Vector3D_T<F, false>* bitangent) const {
         F sign = z >= 0 ? 1 : -1;
         const F a = -1 / (sign + z);
         const F b = x * y * a;
         *tangent = Vector3D_T<F, false>(1 + sign * x * x * a, sign * b, -sign * x);
         *bitangent = Vector3D_T<F, false>(b, sign + y * y * a, -y);
+    }
+
+    // ( 0, 0,  1) <=> phi:      0
+    // (-1, 0,  0) <=> phi: 1/2 pi
+    // ( 0, 0, -1) <=> phi:   1 pi
+    // ( 1, 0,  0) <=> phi: 3/2 pi
+    CUDA_COMMON_FUNCTION CUDA_INLINE static Vector3D_T fromPolarYUp(F phi, F theta) {
+        F sinPhi, cosPhi;
+        F sinTheta, cosTheta;
+#if defined(__CUDA_ARCH__)
+        sincosf(phi, &sinPhi, &cosPhi);
+        sincosf(theta, &sinTheta, &cosTheta);
+#else
+        sinPhi = std::sin(phi);
+        cosPhi = std::cos(phi);
+        sinTheta = std::sin(theta);
+        cosTheta = std::cos(theta);
+#endif
+        return Vector3D_T(-sinPhi * sinTheta, cosTheta, cosPhi * sinTheta);
     }
 };
 
@@ -2072,6 +2091,359 @@ CUDA_COMMON_FUNCTION CUDA_INLINE F dot(
 
 
 template <std::floating_point F>
+struct Matrix2x2_T {
+    union {
+        Vector2D_T<F> c0;
+        struct {
+            F m00, m10;
+        };
+    };
+    union {
+        Vector2D_T<F> c1;
+        struct {
+            F m01, m11;
+        };
+    };
+
+    CUDA_COMMON_FUNCTION Matrix2x2_T() :
+        c0(1, 0), c1(0, 1) {}
+    CUDA_COMMON_FUNCTION Matrix2x2_T(
+        const Vector2D_T<F> &cc0,
+        const Vector2D_T<F> &cc1) :
+        c0(cc0), c1(cc1) {}
+    CUDA_COMMON_FUNCTION Matrix2x2_T(
+        const Point2D_T<F> &cc0,
+        const Point2D_T<F> &cc1) :
+        c0(static_cast<Vector2D_T<F>>(cc0)),
+        c1(static_cast<Vector2D_T<F>>(cc1)) {}
+
+    template <typename F2 = F, std::enable_if_t<(sizeof(F2) <= sizeof(F)), int> = 0>
+    CUDA_COMMON_FUNCTION Matrix2x2_T(const Matrix2x2_T<F2> &v) :
+        c0(v.c0), c1(v.c1) {}
+    template <typename F2 = F, std::enable_if_t<(sizeof(F2) > sizeof(F)), int> = 0>
+    CUDA_COMMON_FUNCTION explicit Matrix2x2_T(const Matrix2x2_T<F2> &v) :
+        c0(static_cast<Vector2D_T<F>>(v.c0)),
+        c1(static_cast<Vector2D_T<F>>(v.c1)) {}
+
+    template <std::integral I>
+    CUDA_COMMON_FUNCTION Vector2D_T<F> &operator[](I idx) {
+        Assert(static_cast<uint32_t>(idx) < 2, "idx is out of bound.");
+        return *(&c0 + idx);
+    }
+    template <std::integral I>
+    CUDA_COMMON_FUNCTION Vector2D_T<F> operator[](I idx) const {
+        Assert(static_cast<uint32_t>(idx) < 2, "idx is out of bound.");
+        return *(&c0 + idx);
+    }
+
+    CUDA_COMMON_FUNCTION Matrix2x2_T operator+() const {
+        return *this;
+    }
+    CUDA_COMMON_FUNCTION Matrix2x2_T operator-() const {
+        return Matrix2x2_T(-c0, -c1);
+    }
+
+    template <Number N>
+    CUDA_COMMON_FUNCTION Matrix2x2_T &operator*=(N r) {
+        c0 *= r;
+        c1 *= r;
+        return *this;
+    }
+    CUDA_COMMON_FUNCTION Matrix2x2_T &operator*=(const Matrix2x2_T &r) {
+        Vector2D_T<F> rs[] = { row(0), row(1) };
+        m00 = dot(rs[0], r.c0); m01 = dot(rs[0], r.c1);
+        m10 = dot(rs[1], r.c0); m11 = dot(rs[1], r.c1);
+        return *this;
+    }
+    template <Number N>
+    CUDA_COMMON_FUNCTION Matrix2x2_T &operator/=(N r) {
+        F rr = 1 / r;
+        c0 *= rr;
+        c1 *= rr;
+        return *this;
+    }
+
+    template <std::integral I>
+    CUDA_COMMON_FUNCTION Vector2D_T<F> row(I index) const {
+        switch (index) {
+        case 0:
+            return Vector2D_T<F>(c0.x, c1.x);
+        case 1:
+            return Vector2D_T<F>(c0.y, c1.y);
+        default:
+            return Vector2D_T<F>(NAN);
+        }
+    }
+
+    CUDA_COMMON_FUNCTION Matrix2x2_T &invert() {
+        F det = 1 / (m00 * m11 - m01 * m10);
+        Matrix2x2_T m;
+        m.m00 = det * m11;
+        m.m01 = -det * m01;
+        m.m10 = -det * m10;
+        m.m11 = det * m00;
+        *this = m;
+
+        return *this;
+    }
+
+    CUDA_COMMON_FUNCTION Matrix2x2_T &transpose() {
+        F temp;
+        temp = m10; m10 = m01; m01 = temp;
+        return *this;
+    }
+
+    CUDA_COMMON_FUNCTION bool allFinite() const {
+#if !defined(__CUDA_ARCH__)
+        using std::isfinite;
+#endif
+        return c0.allFinite() && c1.allFinite();
+    }
+};
+
+template <std::floating_point F, Number N>
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix2x2_T<F> operator*(
+    const Matrix2x2_T<F> &a, N b) {
+    Matrix2x2_T<F> ret = a;
+    ret *= static_cast<F>(b);
+    return ret;
+}
+
+template <Number N, std::floating_point F>
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix2x2_T<F> operator*(
+    N a, const Matrix2x2_T<F> &b) {
+    Matrix2x2_T<F> ret = b;
+    ret *= static_cast<F>(a);
+    return ret;
+}
+
+template <std::floating_point F>
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix2x2_T<F> operator*(
+    const Matrix2x2_T<F> &a, const Matrix2x2_T<F> &b) {
+    Matrix2x2_T<F> ret = a;
+    ret *= b;
+    return ret;
+}
+
+template <std::floating_point F>
+CUDA_COMMON_FUNCTION CUDA_INLINE Vector2D_T<F> operator*(
+    const Matrix2x2_T<F> &a, const Vector2D_T<F> &b) {
+    return Vector2D_T<F>(dot(a.row(0), b), dot(a.row(1), b));
+}
+
+template <std::floating_point F>
+CUDA_COMMON_FUNCTION CUDA_INLINE Point2D_T<F> operator*(
+    const Matrix2x2_T<F> &a, const Point2D_T<F> &b) {
+    auto vb = static_cast<Vector2D_T<F>>(b);
+    return Point2D_T<F>(
+        dot(a.row(0), vb),
+        dot(a.row(1), vb));
+}
+
+template <std::floating_point F, Number N>
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix2x2_T<F> operator/(
+    const Matrix2x2_T<F> &a, N b) {
+    Matrix2x2_T<F> ret = a;
+    ret /= static_cast<F>(b);
+    return ret;
+}
+
+template <std::floating_point F>
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix2x2_T<F> invert(
+    const Matrix2x2_T<F> &m) {
+    Matrix2x2_T<F> ret = m;
+    ret.invert();
+    return ret;
+}
+
+template <std::floating_point F>
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix2x2_T<F> transpose(
+    const Matrix2x2_T<F> &m) {
+    Matrix2x2_T<F> ret = m;
+    ret.transpose();
+    return ret;
+}
+
+template <std::floating_point F>
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix2x2_T<F> scale2x2(
+    const Vector2D_T<F> &s) {
+    return Matrix2x2_T<F>(
+        Vector2D_T<F>(s.x, 0),
+        Vector2D_T<F>(0, s.y));
+}
+template <std::floating_point F>
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix2x2_T<F> scale2x2(
+    F sx, F sy) {
+    return scale2x2(Vector2D_T<F>(sx, sy));
+}
+template <std::floating_point F>
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix2x2_T<F> scale2x2(
+    F s) {
+    return scale2x2(Vector2D_T<F>(s, s));
+}
+
+template <std::floating_point F>
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix2x2_T<F> rotate2x2(
+    F angle) {
+
+    Matrix2x2_T<F> ret;
+    F s = std::sin(angle);
+    F c = std::cos(angle);
+
+    ret.m00 = c; ret.m01 = -s;
+    ret.m10 = s; ret.m11 = c;
+
+    return ret;
+}
+
+
+
+template <std::floating_point F>
+struct Matrix3x2_T {
+    union {
+        Vector3D_T<F, false> c0;
+        struct {
+            F m00, m10, m20;
+        };
+    };
+    union {
+        Vector3D_T<F, false> c1;
+        struct {
+            F m01, m11, m21;
+        };
+    };
+
+    CUDA_COMMON_FUNCTION Matrix3x2_T() :
+        c0(0, 0, 0), c1(0, 0, 0) {}
+    CUDA_COMMON_FUNCTION Matrix3x2_T(
+        const Vector3D_T<F, false> &cc0,
+        const Vector3D_T<F, false> &cc1) :
+        c0(cc0), c1(cc1) {}
+    CUDA_COMMON_FUNCTION Matrix3x2_T(
+        const Vector3D_T<F, true> &cc0,
+        const Vector3D_T<F, true> &cc1) :
+        c0(cc0), c1(cc1) {}
+    CUDA_COMMON_FUNCTION Matrix3x2_T(
+        const Point3D_T<F> &cc0,
+        const Point3D_T<F> &cc1) :
+        c0(static_cast<Vector3D_T<F, false>>(cc0)),
+        c1(static_cast<Vector3D_T<F, false>>(cc1)) {}
+
+    template <typename F2 = F, std::enable_if_t<(sizeof(F2) <= sizeof(F)), int> = 0>
+    CUDA_COMMON_FUNCTION Matrix3x2_T(const Matrix3x2_T<F2> &v) :
+        c0(v.c0), c1(v.c1) {}
+    template <typename F2 = F, std::enable_if_t<(sizeof(F2) > sizeof(F)), int> = 0>
+    CUDA_COMMON_FUNCTION explicit Matrix3x2_T(const Matrix3x2_T<F2> &v) :
+        c0(static_cast<Vector3D_T<F, false>>(v.c0)),
+        c1(static_cast<Vector3D_T<F, false>>(v.c1)) {}
+
+    template <std::integral I>
+    CUDA_COMMON_FUNCTION Vector3D_T<F, false> &operator[](I idx) {
+        Assert(static_cast<uint32_t>(idx) < 2, "idx is out of bound.");
+        return *(&c0 + idx);
+    }
+    template <std::integral I>
+    CUDA_COMMON_FUNCTION Vector3D_T<F, false> operator[](I idx) const {
+        Assert(static_cast<uint32_t>(idx) < 2, "idx is out of bound.");
+        return *(&c0 + idx);
+    }
+
+    CUDA_COMMON_FUNCTION Matrix3x2_T operator+() const {
+        return *this;
+    }
+    CUDA_COMMON_FUNCTION Matrix3x2_T operator-() const {
+        return Matrix3x2_T(-c0, -c1);
+    }
+
+    CUDA_COMMON_FUNCTION Matrix3x2_T &operator+=(const Matrix3x2_T &r) {
+        c0 += r.c0;
+        c1 += r.c1;
+        return *this;
+    }
+    CUDA_COMMON_FUNCTION Matrix3x2_T &operator-=(const Matrix3x2_T &r) {
+        c0 -= r.c0;
+        c1 -= r.c1;
+        return *this;
+    }
+    template <Number N>
+    CUDA_COMMON_FUNCTION Matrix3x2_T &operator*=(N r) {
+        c0 *= r;
+        c1 *= r;
+        return *this;
+    }
+    template <Number N>
+    CUDA_COMMON_FUNCTION Matrix3x2_T &operator/=(N r) {
+        F rr = 1 / r;
+        c0 *= rr;
+        c1 *= rr;
+        return *this;
+    }
+
+    template <std::integral I>
+    CUDA_COMMON_FUNCTION Vector2D_T<F> row(I index) const {
+        switch (index) {
+        case 0:
+            return Vector2D_T<F>(c0.x, c1.x);
+        case 1:
+            return Vector2D_T<F>(c0.y, c1.y);
+        case 2:
+            return Vector2D_T<F>(c0.z, c1.z);
+        default:
+            return Vector2D_T<F>(NAN);
+        }
+    }
+
+    CUDA_COMMON_FUNCTION bool allFinite() const {
+#if !defined(__CUDA_ARCH__)
+        using std::isfinite;
+#endif
+        return c0.allFinite() && c1.allFinite();
+    }
+};
+
+template <std::floating_point F>
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix3x2_T<F> operator+(
+    const Matrix3x2_T<F> &a, const Matrix3x2_T<F> &b) {
+    Matrix3x2_T<F> ret = a;
+    ret += b;
+    return ret;
+}
+
+template <std::floating_point F>
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix3x2_T<F> operator-(
+    const Matrix3x2_T<F> &a, const Matrix3x2_T<F> &b) {
+    Matrix3x2_T<F> ret = a;
+    ret -= b;
+    return ret;
+}
+
+template <std::floating_point F, Number N>
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix3x2_T<F> operator*(
+    const Matrix3x2_T<F> &a, N b) {
+    Matrix3x2_T<F> ret = a;
+    ret *= static_cast<F>(b);
+    return ret;
+}
+
+template <Number N, std::floating_point F>
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix3x2_T<F> operator*(
+    N a, const Matrix3x2_T<F> &b) {
+    Matrix3x2_T<F> ret = b;
+    ret *= static_cast<F>(a);
+    return ret;
+}
+
+template <std::floating_point F, Number N>
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix3x2_T<F> operator/(
+    const Matrix3x2_T<F> &a, N b) {
+    Matrix3x2_T<F> ret = a;
+    ret /= static_cast<F>(b);
+    return ret;
+}
+
+
+
+template <std::floating_point F>
 struct Matrix3x3_T {
     union {
         Vector3D_T<F, false> c0;
@@ -2139,8 +2511,7 @@ struct Matrix3x3_T {
         return Matrix3x3_T(-c0, -c1, -c2);
     }
 
-    template <Number N>
-    CUDA_COMMON_FUNCTION Matrix3x3_T &operator*=(N r) {
+    CUDA_COMMON_FUNCTION Matrix3x3_T &operator*=(F r) {
         c0 *= r;
         c1 *= r;
         c2 *= r;
@@ -2153,8 +2524,7 @@ struct Matrix3x3_T {
         m20 = dot(rs[2], r.c0); m21 = dot(rs[2], r.c1); m22 = dot(rs[2], r.c2);
         return *this;
     }
-    template <Number N>
-    CUDA_COMMON_FUNCTION Matrix3x3_T &operator/=(N r) {
+    CUDA_COMMON_FUNCTION Matrix3x3_T &operator/=(F r) {
         F rr = 1 / r;
         c0 *= rr;
         c1 *= rr;
@@ -2219,7 +2589,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE Matrix3x3_T<F> operator*(
     return ret;
 }
 
-template <Number N, std::floating_point F, bool isNormal>
+template <Number N, std::floating_point F>
 CUDA_COMMON_FUNCTION CUDA_INLINE Matrix3x3_T<F> operator*(
     N a, const Matrix3x3_T<F> &b) {
     Matrix3x3_T<F> ret = b;
@@ -2239,13 +2609,6 @@ template <std::floating_point F, bool isNormal>
 CUDA_COMMON_FUNCTION CUDA_INLINE Vector3D_T<F, isNormal> operator*(
     const Matrix3x3_T<F> &a, const Vector3D_T<F, isNormal> &b) {
     return Vector3D_T<F, isNormal>(dot(a.row(0), b), dot(a.row(1), b), dot(a.row(2), b));
-}
-
-template <Number N, std::floating_point F>
-CUDA_COMMON_FUNCTION CUDA_INLINE Matrix3x3_T<F> operator*(N a, const Matrix3x3_T<F> &b) {
-    Matrix3x3_T<F> ret = b;
-    ret *= a;
-    return ret;
 }
 
 template <std::floating_point F>
@@ -3345,6 +3708,8 @@ using Vector3D = Vector3D_T<float, false>;
 using Normal3D = Vector3D_T<float, true>;
 using Point3D = Point3D_T<float>;
 using Vector4D = Vector4D_T<float>;
+using Matrix2x2 = Matrix2x2_T<float>;
+using Matrix3x2 = Matrix3x2_T<float>;
 using Matrix3x3 = Matrix3x3_T<float>;
 using Matrix4x4 = Matrix4x4_T<float>;
 using Quaternion = Quaternion_T<float>;

@@ -174,10 +174,22 @@ struct GPUEnvironment {
                 m, RT_CH_NAME_STR("setupGBuffers"),
                 emptyModule, nullptr,
                 m, RT_IS_NAME_STR("aabb"));
-            pipeline.hitPrograms["displacedSurface"] = p.createHitProgramGroupForCustomIS(
+            pipeline.hitPrograms["displacedSurface_Box"] = p.createHitProgramGroupForCustomIS(
                 m, RT_CH_NAME_STR("setupGBuffers"),
                 emptyModule, nullptr,
-                m, RT_IS_NAME_STR("displacedSurface"));
+                m, RT_IS_NAME_STR("displacedSurface_Box"));
+            pipeline.hitPrograms["displacedSurface_TwoTriangle"] = p.createHitProgramGroupForCustomIS(
+                m, RT_CH_NAME_STR("setupGBuffers"),
+                emptyModule, nullptr,
+                m, RT_IS_NAME_STR("displacedSurface_TwoTriangle"));
+            pipeline.hitPrograms["displacedSurface_Bilinear"] = p.createHitProgramGroupForCustomIS(
+                m, RT_CH_NAME_STR("setupGBuffers"),
+                emptyModule, nullptr,
+                m, RT_IS_NAME_STR("displacedSurface_Bilinear"));
+            pipeline.hitPrograms["displacedSurface_BSpline"] = p.createHitProgramGroupForCustomIS(
+                m, RT_CH_NAME_STR("setupGBuffers"),
+                emptyModule, nullptr,
+                m, RT_IS_NAME_STR("displacedSurface_BSpline"));
 
             pipeline.hitPrograms["emptyHitGroup"] = p.createEmptyHitProgramGroup();
 
@@ -208,7 +220,10 @@ struct GPUEnvironment {
                     {
                         pipeline.hitPrograms.at("triangle").getCHStackSize(),
                         pipeline.hitPrograms.at("aabb").getCHStackSize(),
-                        pipeline.hitPrograms.at("displacedSurface").getCHStackSize(),
+                        pipeline.hitPrograms.at("displacedSurface_Box").getCHStackSize(),
+                        pipeline.hitPrograms.at("displacedSurface_TwoTriangle").getCHStackSize(),
+                        pipeline.hitPrograms.at("displacedSurface_Bilinear").getCHStackSize(),
+                        pipeline.hitPrograms.at("displacedSurface_BSpline").getCHStackSize(),
                         pipeline.programs.at("miss").getStackSize()
                     });
 
@@ -218,10 +233,7 @@ struct GPUEnvironment {
             for (uint32_t rayType = shared::GBufferRayType::NumTypes; rayType < shared::maxNumRayTypes; ++rayType)
                 optixDefaultMaterial.setHitGroup(rayType, pipeline.hitPrograms.at("emptyHitGroup"));
 
-#if USE_DISPLACED_SURFACES
-            optixTFDMMaterial.setHitGroup(
-                shared::GBufferRayType::Primary, pipeline.hitPrograms.at("displacedSurface"));
-#else
+#if !USE_DISPLACED_SURFACES
             optixTFDMMaterial.setHitGroup(
                 shared::GBufferRayType::Primary, pipeline.hitPrograms.at("aabb"));
 #endif
@@ -268,35 +280,67 @@ struct GPUEnvironment {
             pipeline.programs[RT_MS_NAME_STR("pathTrace")] = p.createMissProgram(
                 m, RT_MS_NAME_STR("pathTrace"));
 
-            pipeline.hitPrograms[RT_CH_NAME_STR("pathTraceTriangle")] = p.createHitProgramGroupForTriangleIS(
+            pipeline.hitPrograms["pathTraceClosestTriangle"] = p.createHitProgramGroupForTriangleIS(
                 m, RT_CH_NAME_STR("pathTrace"),
                 emptyModule, nullptr);
-            pipeline.hitPrograms[RT_CH_NAME_STR("pathTraceAabb")] = p.createHitProgramGroupForCustomIS(
+            pipeline.hitPrograms["pathTraceClosestAabb"] = p.createHitProgramGroupForCustomIS(
                 m, RT_CH_NAME_STR("pathTrace"),
                 emptyModule, nullptr,
                 m, RT_IS_NAME_STR("aabb"));
-            pipeline.hitPrograms[RT_CH_NAME_STR("pathTraceDisplacedSurface")] = p.createHitProgramGroupForCustomIS(
-                m, RT_CH_NAME_STR("pathTrace"),
-                emptyModule, nullptr,
-                m, RT_IS_NAME_STR("displacedSurface"));
+            pipeline.hitPrograms["pathTraceClosestDisplacedSurface_Box"] =
+                p.createHitProgramGroupForCustomIS(
+                    m, RT_CH_NAME_STR("pathTrace"),
+                    emptyModule, nullptr,
+                    m, RT_IS_NAME_STR("displacedSurface_Box"));
+            pipeline.hitPrograms["pathTraceClosestDisplacedSurface_TwoTriangle"] =
+                p.createHitProgramGroupForCustomIS(
+                    m, RT_CH_NAME_STR("pathTrace"),
+                    emptyModule, nullptr,
+                    m, RT_IS_NAME_STR("displacedSurface_TwoTriangle"));
+            pipeline.hitPrograms["pathTraceClosestDisplacedSurface_Bilinear"] =
+                p.createHitProgramGroupForCustomIS(
+                    m, RT_CH_NAME_STR("pathTrace"),
+                    emptyModule, nullptr,
+                    m, RT_IS_NAME_STR("displacedSurface_Bilinear"));
+            pipeline.hitPrograms["pathTraceClosestDisplacedSurface_BSpline"] =
+                p.createHitProgramGroupForCustomIS(
+                    m, RT_CH_NAME_STR("pathTrace"),
+                    emptyModule, nullptr,
+                    m, RT_IS_NAME_STR("displacedSurface_BSpline"));
 
-            pipeline.hitPrograms[RT_AH_NAME_STR("visibilityTriangle")] = p.createHitProgramGroupForTriangleIS(
+            pipeline.hitPrograms["pathTraceVisibilityTriangle"] = p.createHitProgramGroupForTriangleIS(
                 emptyModule, nullptr,
                 m, RT_AH_NAME_STR("visibility"));
-            pipeline.hitPrograms[RT_AH_NAME_STR("visibilityAabb")] = p.createHitProgramGroupForCustomIS(
+            pipeline.hitPrograms["pathTraceVisibilityAabb"] = p.createHitProgramGroupForCustomIS(
                 emptyModule, nullptr,
                 m, RT_AH_NAME_STR("visibility"),
                 m, RT_IS_NAME_STR("aabb"));
-            pipeline.hitPrograms[RT_AH_NAME_STR("visibilityDisplacedSurface")] = p.createHitProgramGroupForCustomIS(
-                emptyModule, nullptr,
-                m, RT_AH_NAME_STR("visibility"),
-                m, RT_IS_NAME_STR("displacedSurface"));
+            pipeline.hitPrograms["pathTraceVisibilityDisplacedSurface_Box"] =
+                p.createHitProgramGroupForCustomIS(
+                    emptyModule, nullptr,
+                    m, RT_AH_NAME_STR("visibility"),
+                    m, RT_IS_NAME_STR("displacedSurface_Box"));
+            pipeline.hitPrograms["pathTraceVisibilityDisplacedSurface_TwoTriangle"] =
+                p.createHitProgramGroupForCustomIS(
+                    emptyModule, nullptr,
+                    m, RT_AH_NAME_STR("visibility"),
+                    m, RT_IS_NAME_STR("displacedSurface_TwoTriangle"));
+            pipeline.hitPrograms["pathTraceVisibilityDisplacedSurface_Bilinear"] =
+                p.createHitProgramGroupForCustomIS(
+                    emptyModule, nullptr,
+                    m, RT_AH_NAME_STR("visibility"),
+                    m, RT_IS_NAME_STR("displacedSurface_Bilinear"));
+            pipeline.hitPrograms["pathTraceVisibilityDisplacedSurface_BSpline"] =
+                p.createHitProgramGroupForCustomIS(
+                    emptyModule, nullptr,
+                    m, RT_AH_NAME_STR("visibility"),
+                    m, RT_IS_NAME_STR("displacedSurface_BSpline"));
 
             pipeline.programs["emptyMiss"] = p.createMissProgram(emptyModule, nullptr);
 
             p.setNumMissRayTypes(shared::PathTracingRayType::NumTypes);
             p.setMissProgram(
-                shared::PathTracingRayType::Baseline, pipeline.programs.at(RT_MS_NAME_STR("pathTrace")));
+                shared::PathTracingRayType::Closest, pipeline.programs.at(RT_MS_NAME_STR("pathTrace")));
             p.setMissProgram(shared::PathTracingRayType::Visibility, pipeline.programs.at("emptyMiss"));
 
             p.setNumCallablePrograms(NumCallablePrograms);
@@ -321,14 +365,20 @@ struct GPUEnvironment {
                 std::max(
                     {
                         std::max({
-                            pipeline.hitPrograms.at(RT_CH_NAME_STR("pathTraceTriangle")).getCHStackSize(),
-                            pipeline.hitPrograms.at(RT_CH_NAME_STR("pathTraceAabb")).getCHStackSize(),
-                            pipeline.hitPrograms.at(RT_CH_NAME_STR("pathTraceDisplacedSurface")).getCHStackSize()
+                            pipeline.hitPrograms.at("pathTraceClosestTriangle").getCHStackSize(),
+                            pipeline.hitPrograms.at("pathTraceClosestAabb").getCHStackSize(),
+                            pipeline.hitPrograms.at("pathTraceClosestDisplacedSurface_Box").getCHStackSize(),
+                            pipeline.hitPrograms.at("pathTraceClosestDisplacedSurface_TwoTriangle").getCHStackSize(),
+                            pipeline.hitPrograms.at("pathTraceClosestDisplacedSurface_Bilinear").getCHStackSize(),
+                            pipeline.hitPrograms.at("pathTraceClosestDisplacedSurface_BSpline").getCHStackSize(),
                                  }) +
                         std::max({
-                            pipeline.hitPrograms.at(RT_AH_NAME_STR("visibilityTriangle")).getAHStackSize(),
-                            pipeline.hitPrograms.at(RT_AH_NAME_STR("visibilityAabb")).getAHStackSize(),
-                            pipeline.hitPrograms.at(RT_AH_NAME_STR("visibilityDisplacedSurface")).getAHStackSize(),
+                            pipeline.hitPrograms.at("pathTraceVisibilityTriangle").getAHStackSize(),
+                            pipeline.hitPrograms.at("pathTraceVisibilityAabb").getAHStackSize(),
+                            pipeline.hitPrograms.at("pathTraceVisibilityDisplacedSurface_Box").getAHStackSize(),
+                            pipeline.hitPrograms.at("pathTraceVisibilityDisplacedSurface_TwoTriangle").getAHStackSize(),
+                            pipeline.hitPrograms.at("pathTraceVisibilityDisplacedSurface_Bilinear").getAHStackSize(),
+                            pipeline.hitPrograms.at("pathTraceVisibilityDisplacedSurface_BSpline").getAHStackSize(),
                                  }),
                         pipeline.programs.at(RT_MS_NAME_STR("pathTrace")).getStackSize()
                     });
@@ -336,26 +386,19 @@ struct GPUEnvironment {
             p.setStackSize(0, maxDcStackSize, maxCcStackSize, 2);
 
             optixDefaultMaterial.setHitGroup(
-                shared::PathTracingRayType::Baseline,
-                pipeline.hitPrograms.at(RT_CH_NAME_STR("pathTraceTriangle")));
+                shared::PathTracingRayType::Closest,
+                pipeline.hitPrograms.at("pathTraceClosestTriangle"));
             optixDefaultMaterial.setHitGroup(
                 shared::PathTracingRayType::Visibility,
-                pipeline.hitPrograms.at(RT_AH_NAME_STR("visibilityTriangle")));
+                pipeline.hitPrograms.at("pathTraceVisibilityTriangle"));
 
-#if USE_DISPLACED_SURFACES
+#if !USE_DISPLACED_SURFACES
             optixTFDMMaterial.setHitGroup(
-                shared::PathTracingRayType::Baseline,
-                pipeline.hitPrograms.at(RT_CH_NAME_STR("pathTraceDisplacedSurface")));
-            optixTFDMMaterial.setHitGroup(
-                shared::PathTracingRayType::Visibility,
-                pipeline.hitPrograms.at(RT_AH_NAME_STR("visibilityDisplacedSurface")));
-#else
-            optixTFDMMaterial.setHitGroup(
-                shared::PathTracingRayType::Baseline,
-                pipeline.hitPrograms.at(RT_CH_NAME_STR("pathTraceAabb")));
+                shared::PathTracingRayType::Closest,
+                pipeline.hitPrograms.at("pathTraceClosestAabb"));
             optixTFDMMaterial.setHitGroup(
                 shared::PathTracingRayType::Visibility,
-                pipeline.hitPrograms.at(RT_AH_NAME_STR("visibilityAabb")));
+                pipeline.hitPrograms.at("pathTraceVisibilityAabb"));
 #endif
 
             size_t sbtSize;
@@ -1953,7 +1996,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
         bool resetAccumulation = false;
         
         // Camera Window
-        static shared::BufferToDisplay bufferTypeToDisplay = shared::BufferToDisplay::NoisyBeauty;
         static bool applyToneMapAndGammaCorrection = true;
         static float brightness = g_initBrightness;
         static bool enableEnvLight = true;
@@ -2028,6 +2070,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         static bool enableJittering = false;
         static bool enableBumpMapping = false;
         bool lastFrameWasAnimated = false;
+        static shared::BufferToDisplay bufferTypeToDisplay = shared::BufferToDisplay::/*NoisyBeauty*/Normal;
         static int32_t maxPathLength = 5;
         static bool enableAlbedo = true;
         static int32_t targetMipLevel = 0;
@@ -2106,9 +2149,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
                         "Box", &localIntersectionType, shared::LocalIntersectionType::Box);
                     ImGui::RadioButtonE(
                         "Two-Triangle", &localIntersectionType, shared::LocalIntersectionType::TwoTriangle);
-                    ImGui::BeginDisabled();
                     ImGui::RadioButtonE(
                         "Bilinear", &localIntersectionType, shared::LocalIntersectionType::Bilinear);
+                    ImGui::BeginDisabled();
                     ImGui::RadioButtonE(
                         "B-Spline", &localIntersectionType, shared::LocalIntersectionType::BSpline);
                     ImGui::EndDisabled();
@@ -2259,6 +2302,45 @@ int32_t main(int32_t argc, const char* argv[]) try {
         // JP: Minmax mipmapを計算する。
         // EN: Compute the minmax mipmap.
         if (localIntersectionTypeChanged) {
+#if USE_DISPLACED_SURFACES
+            optixu::HitProgramGroup gBufferHitProgramGroup;
+            optixu::HitProgramGroup ptClosestHitProgramGroup;
+            optixu::HitProgramGroup ptVisHitProgramGroup;
+            if (localIntersectionType == shared::LocalIntersectionType::Box) {
+                gBufferHitProgramGroup = gpuEnv.gBuffer.hitPrograms.at("displacedSurface_Box");
+                ptClosestHitProgramGroup = gpuEnv.pathTracing.hitPrograms.at(
+                    "pathTraceClosestDisplacedSurface_Box");
+                ptVisHitProgramGroup = gpuEnv.pathTracing.hitPrograms.at(
+                    "pathTraceVisibilityDisplacedSurface_Box");
+            }
+            else if (localIntersectionType == shared::LocalIntersectionType::TwoTriangle) {
+                gBufferHitProgramGroup = gpuEnv.gBuffer.hitPrograms.at("displacedSurface_TwoTriangle");
+                ptClosestHitProgramGroup = gpuEnv.pathTracing.hitPrograms.at(
+                    "pathTraceClosestDisplacedSurface_TwoTriangle");
+                ptVisHitProgramGroup = gpuEnv.pathTracing.hitPrograms.at(
+                    "pathTraceVisibilityDisplacedSurface_TwoTriangle");
+            }
+            else if (localIntersectionType == shared::LocalIntersectionType::Bilinear) {
+                gBufferHitProgramGroup = gpuEnv.gBuffer.hitPrograms.at("displacedSurface_Bilinear");
+                ptClosestHitProgramGroup = gpuEnv.pathTracing.hitPrograms.at(
+                    "pathTraceClosestDisplacedSurface_Bilinear");
+                ptVisHitProgramGroup = gpuEnv.pathTracing.hitPrograms.at(
+                    "pathTraceVisibilityDisplacedSurface_Bilinear");
+            }
+            else if (localIntersectionType == shared::LocalIntersectionType::BSpline) {
+                gBufferHitProgramGroup = gpuEnv.gBuffer.hitPrograms.at("displacedSurface_BSpline");
+                ptClosestHitProgramGroup = gpuEnv.pathTracing.hitPrograms.at(
+                    "pathTraceClosestDisplacedSurface_BSpline");
+                ptVisHitProgramGroup = gpuEnv.pathTracing.hitPrograms.at(
+                    "pathTraceVisibilityDisplacedSurface_BSpline");
+            }
+            gpuEnv.optixTFDMMaterial.setHitGroup(shared::GBufferRayType::Primary, gBufferHitProgramGroup);
+            gpuEnv.optixTFDMMaterial.setHitGroup(shared::PathTracingRayType::Closest, ptClosestHitProgramGroup);
+            gpuEnv.optixTFDMMaterial.setHitGroup(shared::PathTracingRayType::Visibility, ptVisHitProgramGroup);
+            gpuEnv.gBuffer.optixPipeline.markHitGroupShaderBindingTableDirty();
+            gpuEnv.pathTracing.optixPipeline.markHitGroupShaderBindingTableDirty();
+#endif
+
             const Material* mat = tfdmMeshMaterial;
 
             const shared::MaterialData* const matData =
