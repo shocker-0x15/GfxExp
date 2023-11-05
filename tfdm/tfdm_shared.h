@@ -177,7 +177,7 @@ namespace shared {
 
         ROBuffer<MaterialData> materialDataBuffer;
         ROBuffer<GeometryInstanceData> geometryInstanceDataBuffer;
-        ROBuffer<TFDMData> tfdmDataBuffer;
+        ROBuffer<GeometryInstanceDataForTFDM> geomInstTfdmDataBuffer;
         LightDistribution lightInstDist;
         RegularConstantContinuousDistribution2D envLightImportanceMap;
         CUtexObject envLightTexture;

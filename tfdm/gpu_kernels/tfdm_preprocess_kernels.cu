@@ -143,7 +143,7 @@ CUDA_DEVICE_KERNEL void generateMinMaxMipMap_BSpline(
 
 
 CUDA_DEVICE_KERNEL void computeAABBs(
-    const GeometryInstanceData* const geomInst, const TFDMData* const tfdm,
+    const GeometryInstanceData* const geomInst, const GeometryInstanceDataForTFDM* const tfdm,
     const MaterialData* const material) {
     const uint32_t primIndex = blockDim.x * blockIdx.x + threadIdx.x;
     if (primIndex >= geomInst->triangleBuffer.getNumElements())

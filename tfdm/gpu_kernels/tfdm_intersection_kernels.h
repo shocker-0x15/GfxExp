@@ -8,7 +8,7 @@ using namespace shared;
 
 CUDA_DEVICE_KERNEL void RT_IS_NAME(aabb)() {
     const auto sbtr = HitGroupSBTRecordData::get();
-    const TFDMData &tfdm = plp.s->tfdmDataBuffer[sbtr.geomInstSlot];
+    const GeometryInstanceDataForTFDM &tfdm = plp.s->geomInstTfdmDataBuffer[sbtr.geomInstSlot];
 
     const AABB &aabb = tfdm.aabbBuffer[optixGetPrimitiveIndex()];
     float u, v;
@@ -84,7 +84,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
     const Point2D texTriAabbMinP = min(tcs[0], min(tcs[1], tcs[2]));
     const Point2D texTriAabbMaxP = max(tcs[0], max(tcs[1], tcs[2]));
 
-    const TFDMData &tfdm = plp.s->tfdmDataBuffer[sbtr.geomInstSlot];
+    const GeometryInstanceDataForTFDM &tfdm = plp.s->geomInstTfdmDataBuffer[sbtr.geomInstSlot];
     const DisplacedTriangleAuxInfo &dispTriAuxInfo = tfdm.dispTriAuxInfoBuffer[optixGetPrimitiveIndex()];
     const Matrix3x3 matTcToPInObj =
         Matrix3x3(vs[0].position, vs[1].position, vs[2].position) * dispTriAuxInfo.matTcToBc;

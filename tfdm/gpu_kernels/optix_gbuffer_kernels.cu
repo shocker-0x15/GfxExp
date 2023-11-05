@@ -169,7 +169,7 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
         }
     }
     else { // for AABB debugging
-        const TFDMData &tfdm = plp.s->tfdmDataBuffer[sbtr.geomInstSlot];
+        const GeometryInstanceDataForTFDM &tfdm = plp.s->geomInstTfdmDataBuffer[sbtr.geomInstSlot];
         const AABB &aabb = tfdm.aabbBuffer[hp.primIndex];
         Normal3D n;
         Point3D p = aabb.restoreHitPoint(hp.b1, hp.b2, &n);

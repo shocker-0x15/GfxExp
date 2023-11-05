@@ -1202,7 +1202,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
     scene.initialize(
         getExecutableDirectory() / "tfdm/ptxes",
         gpuEnv.cuContext, gpuEnv.optixContext, shared::maxNumRayTypes);
-    cudau::TypedBuffer<shared::TFDMData> tfdmDataBuffer(
+    cudau::TypedBuffer<shared::GeometryInstanceDataForTFDM> geomInstTfdmDataBuffer(
         gpuEnv.cuContext, Scene::bufferType, Scene::maxNumGeometryInstances);
 
     StreamChain<2> streamChain;
@@ -1214,7 +1214,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
     // EN: Setup a scene.
 
     scene.map();
-    tfdmDataBuffer.map();
+    geomInstTfdmDataBuffer.map();
 
     for (auto it = g_meshInfos.cbegin(); it != g_meshInfos.cend(); ++it) {
         const MeshInfo &info = it->second;
@@ -1401,7 +1401,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
         tfdmMeshGeomInst->aabbBuffer.initialize(
             gpuEnv.cuContext, cudau::BufferType::Device, triangles.size());
 
-        shared::TFDMData &tfdmData = tfdmDataBuffer.getMappedPointer()[tfdmMeshGeomInst->geomInstSlot];
+        shared::GeometryInstanceDataForTFDM &tfdmData =
+            geomInstTfdmDataBuffer.getMappedPointer()[tfdmMeshGeomInst->geomInstSlot];
         tfdmData.dispTriAuxInfoBuffer =
             tfdmMeshGeomInst->dispTriAuxInfoBuffer.getROBuffer<shared::enableBufferOobCheck>();
         tfdmData.aabbBuffer =
@@ -1446,7 +1447,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
     g_cameraDirectionalMovingSpeed = 0.0015f;
     g_cameraTiltSpeed = 0.025f;
 
-    tfdmDataBuffer.unmap();
+    geomInstTfdmDataBuffer.unmap();
     scene.unmap();
 
     scene.setupASs(gpuEnv.cuContext);
@@ -1731,7 +1732,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
             scene.materialDataBuffer.getROBuffer<shared::enableBufferOobCheck>();
         staticPlp.geometryInstanceDataBuffer =
             scene.geomInstDataBuffer.getROBuffer<shared::enableBufferOobCheck>();
-        staticPlp.tfdmDataBuffer = tfdmDataBuffer.getROBuffer<shared::enableBufferOobCheck>();
+        staticPlp.geomInstTfdmDataBuffer = geomInstTfdmDataBuffer.getROBuffer<shared::enableBufferOobCheck>();
         envLightImportanceMap.getDeviceType(&staticPlp.envLightImportanceMap);
         staticPlp.envLightTexture = envLightTexture;
 
@@ -2165,7 +2166,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
                         tfdmMeshGeomInst->aabbBuffer.initialize(
                             gpuEnv.cuContext, cudau::BufferType::Device, triangles.size());
 
-                        shared::TFDMData tfdmData = {};
+                        shared::GeometryInstanceDataForTFDM tfdmData = {};
                         tfdmData.dispTriAuxInfoBuffer =
                             tfdmMeshGeomInst->dispTriAuxInfoBuffer.getROBuffer<shared::enableBufferOobCheck>();
                         tfdmData.aabbBuffer =
@@ -2174,7 +2175,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
                         tfdmData.hScale = heightScale;
                         tfdmData.hBias = heightBias;
                         CUDADRV_CHECK(cuMemcpyHtoDAsync(
-                            tfdmDataBuffer.getCUdeviceptrAt(tfdmMeshGeomInst->geomInstSlot),
+                            geomInstTfdmDataBuffer.getCUdeviceptrAt(tfdmMeshGeomInst->geomInstSlot),
                             &tfdmData, sizeof(tfdmData),
                             curCuStream));
 
@@ -2480,8 +2481,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
             const shared::GeometryInstanceData* const geomInstData =
                 scene.geomInstDataBuffer.getDevicePointerAt(geomInst->geomInstSlot);
-            const shared::TFDMData* const tfdmData =
-                tfdmDataBuffer.getDevicePointerAt(geomInst->geomInstSlot);
+            const shared::GeometryInstanceDataForTFDM* const tfdmData =
+                geomInstTfdmDataBuffer.getDevicePointerAt(geomInst->geomInstSlot);
             const shared::MaterialData* const matData =
                 scene.materialDataBuffer.getDevicePointerAt(mat->materialSlot);
 
@@ -2782,7 +2783,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
     streamChain.finalize();
 
-    tfdmDataBuffer.finalize();
+    geomInstTfdmDataBuffer.finalize();
     scene.finalize();
     
     gpuEnv.finalize();

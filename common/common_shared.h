@@ -826,14 +826,6 @@ namespace shared {
         optixu::NativeBlockBuffer2D<float2>* minMaxMipMap;
     };
 
-    // for TFDM
-    struct DisplacedTriangleAuxInfo {
-        Matrix4x4 matObjToTc;
-        Matrix3x3 matTcToBc;
-        Matrix3x3 matTcToNInObj;
-        Matrix3x3 matTcToObj;
-    };
-
     struct GeometryInstanceData {
         ROBuffer<Vertex> vertexBuffer;
         ROBuffer<Triangle> triangleBuffer;
@@ -843,12 +835,21 @@ namespace shared {
     };
 
     // for TFDM
-    struct TFDMData {
+    struct DisplacedTriangleAuxInfo {
+        Matrix4x4 matObjToTc;
+        Matrix3x3 matTcToBc;
+        Matrix3x3 matTcToNInObj;
+        Matrix3x3 matTcToObj;
+    };
+
+    // for TFDM
+    struct GeometryInstanceDataForTFDM {
         ROBuffer<DisplacedTriangleAuxInfo> dispTriAuxInfoBuffer;
         ROBuffer<AABB> aabbBuffer;
         float hOffset;
         float hScale;
         float hBias;
+        Matrix3x3 textureTransform;
     };
 
     struct InstanceData {
