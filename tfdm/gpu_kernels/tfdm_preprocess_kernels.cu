@@ -143,7 +143,7 @@ CUDA_DEVICE_KERNEL void generateMinMaxMipMap_BSpline(
 
 
 CUDA_DEVICE_KERNEL void computeAABBs(
-    const GeometryInstanceData* const geomInst, const GeometryInstanceDataForTFDM* const tfdm,
+    const GeometryInstanceData* const geomInst, const GeometryInstanceDataForTFDM* const tfdmGeomInst,
     const MaterialData* const material) {
     const uint32_t primIndex = blockDim.x * blockIdx.x + threadIdx.x;
     if (primIndex >= geomInst->triangleBuffer.getNumElements())
@@ -233,15 +233,15 @@ CUDA_DEVICE_KERNEL void computeAABBs(
         Point3D(vs[1].texCoord, 1.0f),
         Point3D(vs[2].texCoord, 1.0f),
     };
-    const DisplacedTriangleAuxInfo &dispTriAuxInfo = tfdm->dispTriAuxInfoBuffer[primIndex];
+    const DisplacedTriangleAuxInfo &dispTriAuxInfo = tfdmGeomInst->dispTriAuxInfoBuffer[primIndex];
     const Matrix3x3 matBcToPInObj(vs[0].position, vs[1].position, vs[2].position);
     const Matrix3x3 matTcToPInObj = matBcToPInObj * dispTriAuxInfo.matTcToBc;
     const Matrix3x3 &matTcToNInObj = dispTriAuxInfo.matTcToNInObj;
 
-    RWBuffer aabbBuffer(tfdm->aabbBuffer);
+    RWBuffer aabbBuffer(tfdmGeomInst->aabbBuffer);
 
-    const float amplitude = tfdm->hScale * (maxHeight - minHeight);
-    minHeight = tfdm->hOffset + tfdm->hScale * (minHeight - tfdm->hBias);
+    const float amplitude = tfdmGeomInst->hScale * (maxHeight - minHeight);
+    minHeight = tfdmGeomInst->hOffset + tfdmGeomInst->hScale * (minHeight - tfdmGeomInst->hBias);
     const AAFloatOn2D hBound(minHeight + 0.5f * amplitude, 0, 0, 0.5f * amplitude);
 
     /*
