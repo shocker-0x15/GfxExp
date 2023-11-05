@@ -939,7 +939,7 @@ static void computeDisplacedTriangleAuxiliaryInfos(
         };
 
         Matrix4x4d matObjToTc(invert(Matrix3x3d(tc0Dir, tc1Dir, geomNormal)));
-        matObjToTc = translate4x4(Point3Dd(vs[0].texCoord, 0.0f) - matObjToTc * vs[0].position) * matObjToTc;
+        matObjToTc = translate3D_4x4(Point3Dd(vs[0].texCoord, 0.0f) - matObjToTc * vs[0].position) * matObjToTc;
 
         const Matrix3x3d matTcToBc = invert(Matrix3x3d(tcs3D[0], tcs3D[1], tcs3D[2]));
         const Matrix3x3d matBcToNInObj(vs[0].normal, vs[1].normal, vs[2].normal);
@@ -954,6 +954,7 @@ static void computeDisplacedTriangleAuxiliaryInfos(
             static_cast<Vector3D>(geomNormal));
     }
 }
+
 
 
 static void glfw_error_callback(int32_t error, const char* description) {
@@ -1225,7 +1226,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
             createTriangleMeshes(
                 it->first,
                 meshInfo.path, meshInfo.matConv,
-                scale4x4(meshInfo.preScale),
+                scale3D_4x4(meshInfo.preScale),
                 gpuEnv.cuContext, &scene, gpuEnv.optixDefaultMaterial);
         }
         else if (std::holds_alternative<RectangleGeometryInfo>(info)) {
@@ -1299,7 +1300,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
             scene.meshes["floor"] = mesh;
         }
 
-        Matrix4x4 instXfm = translate4x4<float>(0, -1.0f, 0);
+        Matrix4x4 instXfm = translate3D_4x4<float>(0, -1.0f, 0);
         Instance* inst = createInstance(gpuEnv.cuContext, &scene, mesh->groupInsts[0], instXfm);
         scene.insts.push_back(inst);
 
@@ -1433,8 +1434,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
             scene.meshes["obj"] = mesh;
         }
 
-        //Matrix4x4 instXfm = /*translate4x4(0, -0.5f, 0) * */rotateX4x4(0.25f * pi_v<float>);
-        Matrix4x4 instXfm = rotateY4x4(pi_v<float>);
+        Matrix4x4 instXfm = /*translate3D_4x4(0, -0.5f, 0) * */rotate3DX_4x4(0.25f * pi_v<float>);
+        //Matrix4x4 instXfm = rotate3DY_4x4(pi_v<float>);
         Instance* inst = createInstance(gpuEnv.cuContext, &scene, mesh->groupInsts[0], instXfm);
         scene.insts.push_back(inst);
 

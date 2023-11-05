@@ -977,7 +977,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
             createTriangleMeshes(
                 it->first,
                 meshInfo.path, meshInfo.matConv,
-                scale4x4(meshInfo.preScale),
+                scale3D_4x4(meshInfo.preScale),
                 gpuEnv.cuContext, &scene, gpuEnv.optixDefaultMaterial,
                 allocateGfxResource);
         }

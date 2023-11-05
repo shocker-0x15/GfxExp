@@ -1205,7 +1205,9 @@ struct Vector3D_T {
     CUDA_COMMON_FUNCTION explicit Vector3D_T(F v) : x(v), y(v), z(v) {}
     CUDA_COMMON_FUNCTION Vector3D_T(F xx, F yy, F zz) :
         x(xx), y(yy), z(zz) {}
-    CUDA_COMMON_FUNCTION Vector3D_T(const Vector2D_T<F> &xy, F zz) :
+    CUDA_COMMON_FUNCTION Vector3D_T(const Vector2D_T<F> &xy, F zz = 0) :
+        x(xy.x), y(xy.y), z(zz) {}
+    CUDA_COMMON_FUNCTION Vector3D_T(const Point2D_T<F> &xy, F zz = 1) :
         x(xy.x), y(xy.y), z(zz) {}
     CUDA_COMMON_FUNCTION explicit Vector3D_T(const Vector3D_T<F, !isNormal> &v) :
         x(v.x), y(v.y), z(v.z) {}
@@ -1337,7 +1339,7 @@ struct Vector3D_T {
 
     CUDA_COMMON_FUNCTION void makeCoordinateSystem(
         Vector3D_T<F, false>* tangent, Vector3D_T<F, false>* bitangent) const {
-        F sign = z >= 0 ? 1 : -1;
+        F sign = z >= 0 ? 1.0f : -1.0f;
         const F a = -1 / (sign + z);
         const F b = x * y * a;
         *tangent = Vector3D_T<F, false>(1 + sign * x * x * a, sign * b, -sign * x);
@@ -1869,10 +1871,10 @@ struct Vector4D_T {
     CUDA_COMMON_FUNCTION explicit Vector4D_T(F v) : x(v), y(v), z(v), w(v) {}
     CUDA_COMMON_FUNCTION Vector4D_T(F xx, F yy, F zz, F ww) :
         x(xx), y(yy), z(zz), w(ww) {}
-    CUDA_COMMON_FUNCTION Vector4D_T(const Vector3D_T<F, false> &v, F ww = 0) :
-        x(v.x), y(v.y), z(v.z), w(ww) {}
-    CUDA_COMMON_FUNCTION Vector4D_T(const Point3D_T<F> &p, F ww = 1) :
-        x(p.x), y(p.y), z(p.z), w(ww) {}
+    CUDA_COMMON_FUNCTION Vector4D_T(const Vector3D_T<F, false> &xyz, F ww = 0) :
+        x(xyz.x), y(xyz.y), z(xyz.z), w(ww) {}
+    CUDA_COMMON_FUNCTION Vector4D_T(const Point3D_T<F> &xyz, F ww = 1) :
+        x(xyz.x), y(xyz.y), z(xyz.z), w(ww) {}
 
     template <typename F2 = F, std::enable_if_t<(sizeof(F2) <= sizeof(F)), int> = 0>
     CUDA_COMMON_FUNCTION Vector4D_T(const Vector4D_T<F2> &v) :
@@ -2265,25 +2267,25 @@ CUDA_COMMON_FUNCTION CUDA_INLINE Matrix2x2_T<F> transpose(
 }
 
 template <std::floating_point F>
-CUDA_COMMON_FUNCTION CUDA_INLINE Matrix2x2_T<F> scale2x2(
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix2x2_T<F> scale2D_2x2(
     const Vector2D_T<F> &s) {
     return Matrix2x2_T<F>(
         Vector2D_T<F>(s.x, 0),
         Vector2D_T<F>(0, s.y));
 }
 template <std::floating_point F>
-CUDA_COMMON_FUNCTION CUDA_INLINE Matrix2x2_T<F> scale2x2(
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix2x2_T<F> scale2D_2x2(
     F sx, F sy) {
-    return scale2x2(Vector2D_T<F>(sx, sy));
+    return scale2D_2x2(Vector2D_T<F>(sx, sy));
 }
 template <std::floating_point F>
-CUDA_COMMON_FUNCTION CUDA_INLINE Matrix2x2_T<F> scale2x2(
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix2x2_T<F> scale2D_2x2(
     F s) {
-    return scale2x2(Vector2D_T<F>(s, s));
+    return scale2D_2x2(Vector2D_T<F>(s, s));
 }
 
 template <std::floating_point F>
-CUDA_COMMON_FUNCTION CUDA_INLINE Matrix2x2_T<F> rotate2x2(
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix2x2_T<F> rotate2D_2x2(
     F angle) {
 
     Matrix2x2_T<F> ret;
@@ -2483,6 +2485,12 @@ struct Matrix3x3_T {
         c0(static_cast<Vector3D_T<F, false>>(cc0)),
         c1(static_cast<Vector3D_T<F, false>>(cc1)),
         c2(static_cast<Vector3D_T<F, false>>(cc2)) {}
+    CUDA_COMMON_FUNCTION Matrix3x3_T(
+        const Matrix2x2_T<F> &mat2x2, const Point2D_T<F> &position = Point2D_T<F>(0.0f)) :
+        c0(Vector3D_T<F, false>(mat2x2.c0)),
+        c1(Vector3D_T<F, false>(mat2x2.c1)),
+        c2(Vector3D_T<F, false>(position))
+    {}
 
     template <typename F2 = F, std::enable_if_t<(sizeof(F2) <= sizeof(F)), int> = 0>
     CUDA_COMMON_FUNCTION Matrix3x3_T(const Matrix3x3_T<F2> &v) :
@@ -2646,7 +2654,54 @@ CUDA_COMMON_FUNCTION CUDA_INLINE Matrix3x3_T<F> transpose(
 }
 
 template <std::floating_point F>
-CUDA_COMMON_FUNCTION CUDA_INLINE Matrix3x3_T<F> scale3x3(
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix3x3_T<F> scale2D_3x3(
+    const Vector2D_T<F> &s) {
+    return Matrix3x3_T<F>(
+        Vector3D_T<F, false>(s.x, 0, 0),
+        Vector3D_T<F, false>(0, s.y, 0),
+        Vector3D_T<F, false>(0, 0, 1.0f));
+}
+template <std::floating_point F>
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix3x3_T<F> scale2D_3x3(
+    F sx, F sy) {
+    return scale2D_3x3(Vector2D_T<F>(sx, sy));
+}
+template <std::floating_point F>
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix3x3_T<F> scale2D_3x3(
+    F s) {
+    return scale2D_3x3(Vector2D_T<F>(s, s));
+}
+
+template <std::floating_point F>
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix3x3_T<F> rotate2D_3x3(
+    F angle) {
+
+    Matrix3x3_T<F> ret;
+    F s = std::sin(angle);
+    F c = std::cos(angle);
+
+    ret.m00 = c; ret.m01 = -s;
+    ret.m10 = s; ret.m11 = c;
+
+    return ret;
+}
+
+template <std::floating_point F>
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix3x3_T<F> translate2D_3x3(
+    const Vector2D_T<F> &t) {
+    return Matrix3x3_T<F>(
+        Vector3D_T<F, false>(1, 0, 0),
+        Vector3D_T<F, false>(0, 1, 0),
+        Vector3D_T<F, false>(t, 1.0f));
+}
+template <std::floating_point F>
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix3x3_T<F> translate2D_3x3(
+    F tx, F ty) {
+    return translate2D_3x3(Vector2D_T<F>(tx, ty));
+}
+
+template <std::floating_point F>
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix3x3_T<F> scale3D_3x3(
     const Vector3D_T<F, false> &s) {
     return Matrix3x3_T<F>(
         Vector3D_T<F, false>(s.x, 0, 0),
@@ -2654,18 +2709,18 @@ CUDA_COMMON_FUNCTION CUDA_INLINE Matrix3x3_T<F> scale3x3(
         Vector3D_T<F, false>(0, 0, s.z));
 }
 template <std::floating_point F>
-CUDA_COMMON_FUNCTION CUDA_INLINE Matrix3x3_T<F> scale3x3(
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix3x3_T<F> scale3D_3x3(
     F sx, F sy, F sz) {
-    return scale3x3(Vector3D_T<F, false>(sx, sy, sz));
+    return scale3D_3x3(Vector3D_T<F, false>(sx, sy, sz));
 }
 template <std::floating_point F>
-CUDA_COMMON_FUNCTION CUDA_INLINE Matrix3x3_T<F> scale3x3(
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix3x3_T<F> scale3D_3x3(
     F s) {
-    return scale3x3(Vector3D_T<F, false>(s, s, s));
+    return scale3D_3x3(Vector3D_T<F, false>(s, s, s));
 }
 
 template <std::floating_point F>
-CUDA_COMMON_FUNCTION CUDA_INLINE Matrix3x3_T<F> rotate3x3(
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix3x3_T<F> rotate3D_3x3(
     F angle, const Vector3D_T<F, false> &axis) {
 
     Matrix3x3_T<F> ret;
@@ -2687,24 +2742,24 @@ CUDA_COMMON_FUNCTION CUDA_INLINE Matrix3x3_T<F> rotate3x3(
     return ret;
 }
 template <std::floating_point F>
-CUDA_COMMON_FUNCTION CUDA_INLINE Matrix3x3_T<F> rotate3x3(
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix3x3_T<F> rotate3D_3x3(
     F angle, F ax, F ay, F az) {
-    return rotate3x3(angle, Vector3D_T<F, false>(ax, ay, az));
+    return rotate3D_3x3(angle, Vector3D_T<F, false>(ax, ay, az));
 }
 template <std::floating_point F>
-CUDA_COMMON_FUNCTION CUDA_INLINE Matrix3x3_T<F> rotateX3x3(
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix3x3_T<F> rotate3DX_3x3(
     F angle) {
-    return rotate3x3(angle, Vector3D_T<F, false>(1, 0, 0));
+    return rotate3D_3x3(angle, Vector3D_T<F, false>(1, 0, 0));
 }
 template <std::floating_point F>
-CUDA_COMMON_FUNCTION CUDA_INLINE Matrix3x3_T<F> rotateY3x3(
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix3x3_T<F> rotate3DY_3x3(
     F angle) {
-    return rotate3x3(angle, Vector3D_T<F, false>(0, 1, 0));
+    return rotate3D_3x3(angle, Vector3D_T<F, false>(0, 1, 0));
 }
 template <std::floating_point F>
-CUDA_COMMON_FUNCTION CUDA_INLINE Matrix3x3_T<F> rotateZ3x3(
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix3x3_T<F> rotate3DZ_3x3(
     F angle) {
-    return rotate3x3(angle, Vector3D_T<F, false>(0, 0, 1));
+    return rotate3D_3x3(angle, Vector3D_T<F, false>(0, 0, 1));
 }
 
 
@@ -2981,7 +3036,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE Matrix4x4_T<F> invert(
 }
 
 template <std::floating_point F>
-CUDA_COMMON_FUNCTION CUDA_INLINE Matrix4x4_T<F> scale4x4(
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix4x4_T<F> scale3D_4x4(
     const Vector3D_T<F, false> &s) {
     return Matrix4x4_T<F>(
         Vector4D_T<F>(s.x, 0, 0, 0),
@@ -2990,18 +3045,18 @@ CUDA_COMMON_FUNCTION CUDA_INLINE Matrix4x4_T<F> scale4x4(
         Vector4D_T<F>(0, 0, 0, 1));
 }
 template <std::floating_point F>
-CUDA_COMMON_FUNCTION CUDA_INLINE Matrix4x4_T<F> scale4x4(
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix4x4_T<F> scale3D_4x4(
     F sx, F sy, F sz) {
-    return scale4x4(Vector3D_T<F, false>(sx, sy, sz));
+    return scale3D_4x4(Vector3D_T<F, false>(sx, sy, sz));
 }
 template <std::floating_point F>
-CUDA_COMMON_FUNCTION CUDA_INLINE Matrix4x4_T<F> scale4x4(
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix4x4_T<F> scale3D_4x4(
     F s) {
-    return scale4x4(Vector3D_T<F, false>(s, s, s));
+    return scale3D_4x4(Vector3D_T<F, false>(s, s, s));
 }
 
 template <std::floating_point F>
-CUDA_COMMON_FUNCTION CUDA_INLINE Matrix4x4_T<F> rotate4x4(
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix4x4_T<F> rotate3D_4x4(
     F angle, const Vector3D_T<F, false> &axis) {
     Matrix4x4_T<F> matrix;
     Vector3D_T<F, false> nAxis = normalize(axis);
@@ -3029,28 +3084,28 @@ CUDA_COMMON_FUNCTION CUDA_INLINE Matrix4x4_T<F> rotate4x4(
     return matrix;
 }
 template <std::floating_point F>
-CUDA_COMMON_FUNCTION CUDA_INLINE Matrix4x4_T<F> rotate4x4(
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix4x4_T<F> rotate3D_4x4(
     F angle, F ax, F ay, F az) {
-    return rotate4x4(angle, Vector3D_T<F, false>(ax, ay, az));
+    return rotate3D_4x4(angle, Vector3D_T<F, false>(ax, ay, az));
 }
 template <std::floating_point F>
-CUDA_COMMON_FUNCTION CUDA_INLINE Matrix4x4_T<F> rotateX4x4(
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix4x4_T<F> rotate3DX_4x4(
     F angle) {
-    return rotate4x4(angle, Vector3D_T<F, false>(1, 0, 0));
+    return rotate3D_4x4(angle, Vector3D_T<F, false>(1, 0, 0));
 }
 template <std::floating_point F>
-CUDA_COMMON_FUNCTION CUDA_INLINE Matrix4x4_T<F> rotateY4x4(
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix4x4_T<F> rotate3DY_4x4(
     F angle) {
-    return rotate4x4(angle, Vector3D_T<F, false>(0, 1, 0));
+    return rotate3D_4x4(angle, Vector3D_T<F, false>(0, 1, 0));
 }
 template <std::floating_point F>
-CUDA_COMMON_FUNCTION CUDA_INLINE Matrix4x4_T<F> rotateZ4x4(
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix4x4_T<F> rotate3DZ_4x4(
     F angle) {
-    return rotate4x4(angle, Vector3D_T<F, false>(0, 0, 1));
+    return rotate3D_4x4(angle, Vector3D_T<F, false>(0, 0, 1));
 }
 
 template <std::floating_point F>
-CUDA_COMMON_FUNCTION CUDA_INLINE Matrix4x4_T<F> translate4x4(
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix4x4_T<F> translate3D_4x4(
     const Vector3D_T<F, false> &t) {
     return Matrix4x4_T<F>(
         Vector4D_T<F>(1, 0, 0, 0),
@@ -3059,9 +3114,9 @@ CUDA_COMMON_FUNCTION CUDA_INLINE Matrix4x4_T<F> translate4x4(
         Vector4D_T<F>(t, 1.0f));
 }
 template <std::floating_point F>
-CUDA_COMMON_FUNCTION CUDA_INLINE Matrix4x4_T<F> translate4x4(
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix4x4_T<F> translate3D_4x4(
     F tx, F ty, F tz) {
-    return translate4x4(Vector3D_T<F, false>(tx, ty, tz));
+    return translate3D_4x4(Vector3D_T<F, false>(tx, ty, tz));
 }
 
 template <std::floating_point F>
