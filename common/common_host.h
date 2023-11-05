@@ -639,6 +639,7 @@ struct GeometryGroup {
     cudau::Buffer optixGasMem;
     uint32_t numEmitterPrimitives;
     AABB aabb;
+    uint32_t needsReallocation : 1;
     uint32_t needsRebuild : 1;
     uint32_t refittable : 1;
 
@@ -963,6 +964,24 @@ struct Scene {
     }
 
     OptixTraversableHandle updateASs(CUstream stream) {
+        size_t asScratchSize = asScratchMem.sizeInBytes();
+        bool gasReallocated = false;
+        for (int i = 0; i < geomGroups.size(); ++i) {
+            GeometryGroup* geomGroup = geomGroups[i];
+            if (!geomGroup->needsReallocation)
+                continue;
+            OptixAccelBufferSizes asSizes;
+            geomGroup->optixGas.prepareForBuild(&asSizes);
+            geomGroup->optixGasMem.resize(asSizes.outputSizeInBytes, 1);
+            asScratchSize = std::max(asSizes.tempSizeInBytes, asScratchSize);
+            geomGroup->needsReallocation = false;
+            gasReallocated = true;
+        }
+        if (asScratchSize > asScratchMem.sizeInBytes())
+            asScratchMem.resize(asScratchSize, 1);
+        if (gasReallocated)
+            optixScene.generateShaderBindingTableLayout(&hitGroupSbtSize);
+
         for (int i = 0; i < geomGroups.size(); ++i) {
             GeometryGroup* geomGroup = geomGroups[i];
             if (geomGroup->needsRebuild)

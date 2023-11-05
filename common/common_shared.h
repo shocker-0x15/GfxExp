@@ -826,6 +826,7 @@ namespace shared {
         optixu::NativeBlockBuffer2D<float2>* minMaxMipMap;
     };
 
+    // for TFDM
     struct DisplacedTriangleAuxInfo {
         Matrix4x4 matObjToTc;
         Matrix3x3 matTcToBc;
@@ -841,6 +842,7 @@ namespace shared {
         uint32_t geomInstSlot;
     };
 
+    // for TFDM
     struct TFDMData {
         ROBuffer<DisplacedTriangleAuxInfo> dispTriAuxInfoBuffer;
         ROBuffer<AABB> aabbBuffer;

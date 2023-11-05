@@ -15,6 +15,8 @@ CUDA_DEVICE_FUNCTION float2 computeTexelMinMax(
     if constexpr (intersectionType == LocalIntersectionType::Box ||
                   intersectionType == LocalIntersectionType::TwoTriangle ||
                   intersectionType == LocalIntersectionType::Bilinear) {
+        // TODO?: テクセルコーナー間の補間ではなくテクセルセンター間の補間とすることで
+        //        Bilinearサンプル4点じゃなくてPointサンプル4点にできる？
         const float cornerHeightUL = sample(pixIdx.x - 0.0f, pixIdx.y - 0.0f);
         const float cornerHeightUR = sample(pixIdx.x + 1.0f, pixIdx.y - 0.0f);
         const float cornerHeightBL = sample(pixIdx.x - 0.0f, pixIdx.y + 1.0f);
@@ -23,6 +25,15 @@ CUDA_DEVICE_FUNCTION float2 computeTexelMinMax(
         maxHeight = std::fmax(std::fmax(std::fmax(cornerHeightUL, cornerHeightUR), cornerHeightBL), cornerHeightBR);
     }
     if constexpr (intersectionType == LocalIntersectionType::BSpline) {
+        //const float cornerHeightUL = sample(pixIdx.x - 0.5f, pixIdx.y - 0.5f);
+        //const float cornerHeightUC = sample(pixIdx.x + 0.5f, pixIdx.y - 0.5f);
+        //const float cornerHeightUR = sample(pixIdx.x + 1.5f, pixIdx.y - 0.5f);
+        //const float cornerHeightCL = sample(pixIdx.x - 0.5f, pixIdx.y + 0.5f);
+        //const float cornerHeightCC = sample(pixIdx.x + 0.5f, pixIdx.y + 0.5f);
+        //const float cornerHeightCR = sample(pixIdx.x + 1.5f, pixIdx.y + 0.5f);
+        //const float cornerHeightBL = sample(pixIdx.x - 0.5f, pixIdx.y + 1.5f);
+        //const float cornerHeightBC = sample(pixIdx.x + 0.5f, pixIdx.y + 1.5f);
+        //const float cornerHeightBR = sample(pixIdx.x + 1.5f, pixIdx.y + 1.5f);
         Assert_NotImplemented();
     }
 

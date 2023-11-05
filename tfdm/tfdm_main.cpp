@@ -1383,8 +1383,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
     {
         std::vector<shared::Vertex> vertices;
         std::vector<shared::Triangle> triangles;
-        //createQuad(&vertices, &triangles);
-        createSphere(&vertices, &triangles);
+        createQuad(&vertices, &triangles);
+        //createSphere(&vertices, &triangles);
 
 #if SHOW_BASE_MESH
         tfdmMeshGeomInst = createGeometryInstance(
@@ -1760,20 +1760,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
     plp.s = reinterpret_cast<shared::StaticPipelineLaunchParameters*>(staticPlpOnDevice);
     plp.f = reinterpret_cast<shared::PerFramePipelineLaunchParameters*>(perFramePlpOnDevice);
 
-    gpuEnv.gBuffer.hitGroupSbt.initialize(
-        gpuEnv.cuContext, Scene::bufferType, scene.hitGroupSbtSize, 1);
-    gpuEnv.gBuffer.hitGroupSbt.setMappedMemoryPersistent(true);
-    gpuEnv.gBuffer.optixPipeline.setScene(scene.optixScene);
-    gpuEnv.gBuffer.optixPipeline.setHitGroupShaderBindingTable(
-        gpuEnv.gBuffer.hitGroupSbt, gpuEnv.gBuffer.hitGroupSbt.getMappedPointer());
-
-    gpuEnv.pathTracing.hitGroupSbt.initialize(
-        gpuEnv.cuContext, Scene::bufferType, scene.hitGroupSbtSize, 1);
-    gpuEnv.pathTracing.hitGroupSbt.setMappedMemoryPersistent(true);
-    gpuEnv.pathTracing.optixPipeline.setScene(scene.optixScene);
-    gpuEnv.pathTracing.optixPipeline.setHitGroupShaderBindingTable(
-        gpuEnv.pathTracing.hitGroupSbt, gpuEnv.pathTracing.hitGroupSbt.getMappedPointer());
-
     shared::PickInfo initPickInfo = {};
     initPickInfo.hit = false;
     initPickInfo.instSlot = 0xFFFFFFFF;
@@ -2073,6 +2059,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
         static shared::BufferToDisplay bufferTypeToDisplay = shared::BufferToDisplay::/*NoisyBeauty*/Normal;
         static int32_t maxPathLength = 5;
         static bool enableAlbedo = true;
+        static int32_t baseSurfaceIndex = 0;
+        bool geomChanged = false;
         static int32_t targetMipLevel = 0;
         bool heightParamChanged = false;
         static auto localIntersectionType = shared::LocalIntersectionType::TwoTriangle;
@@ -2130,8 +2118,75 @@ int32_t main(int32_t argc, const char* argv[]) try {
                     resetAccumulation |= ImGui::Checkbox("Albedo", &enableAlbedo);
 
                     ImGui::Separator();
+                    ImGui::Text("Base Surface");
+                    const char* baseSurfaceNames[] = {
+                        "Quad",
+                        "Sphere",
+                    };
+                    if (ImGui::Combo("Shape", &baseSurfaceIndex, baseSurfaceNames, lengthof(baseSurfaceNames))) {
+                        streamChain.waitAllWorkDone();
 
-                    resetAccumulation |= ImGui::SliderInt("Target Mip Level", &targetMipLevel, 0, 15);
+                        std::vector<shared::Vertex> vertices;
+                        std::vector<shared::Triangle> triangles;
+                        if (baseSurfaceIndex == 0)
+                            createQuad(&vertices, &triangles);
+                        else if (baseSurfaceIndex == 1)
+                            createSphere(&vertices, &triangles);
+
+                        tfdmMeshGeomInst->vertexBuffer.finalize();
+                        tfdmMeshGeomInst->vertexBuffer.initialize(gpuEnv.cuContext, Scene::bufferType, vertices);
+                        tfdmMeshGeomInst->triangleBuffer.finalize();
+                        tfdmMeshGeomInst->triangleBuffer.initialize(gpuEnv.cuContext, Scene::bufferType, triangles);
+
+                        shared::GeometryInstanceData geomInstData = {};
+                        geomInstData.vertexBuffer =
+                            tfdmMeshGeomInst->vertexBuffer.getROBuffer<shared::enableBufferOobCheck>();
+                        geomInstData.triangleBuffer =
+                            tfdmMeshGeomInst->triangleBuffer.getROBuffer<shared::enableBufferOobCheck>();
+                        tfdmMeshGeomInst->emitterPrimDist.getDeviceType(&geomInstData.emitterPrimDist);
+                        geomInstData.materialSlot = tfdmMeshMaterial->materialSlot;
+                        geomInstData.geomInstSlot = tfdmMeshGeomInst->geomInstSlot;
+                        CUDADRV_CHECK(cuMemcpyHtoDAsync(
+                            scene.geomInstDataBuffer.getCUdeviceptrAt(tfdmMeshGeomInst->geomInstSlot),
+                            &geomInstData, sizeof(geomInstData),
+                            curCuStream));
+
+#if SHOW_BASE_MESH
+                        tfdmMeshGeomInst->optixGeomInst.setVertexBuffer(tfdmMeshGeomInst->vertexBuffer);
+                        tfdmMeshGeomInst->optixGeomInst.setTriangleBuffer(tfdmMeshGeomInst->triangleBuffer);
+#else
+                        std::vector<shared::DisplacedTriangleAuxInfo> dispTriAuxInfos;
+                        computeDisplacedTriangleAuxiliaryInfos(vertices, triangles, &dispTriAuxInfos);
+
+                        tfdmMeshGeomInst->dispTriAuxInfoBuffer.finalize();
+                        tfdmMeshGeomInst->dispTriAuxInfoBuffer.initialize(
+                            gpuEnv.cuContext, cudau::BufferType::Device, dispTriAuxInfos);
+                        tfdmMeshGeomInst->aabbBuffer.finalize();
+                        tfdmMeshGeomInst->aabbBuffer.initialize(
+                            gpuEnv.cuContext, cudau::BufferType::Device, triangles.size());
+
+                        shared::TFDMData tfdmData = {};
+                        tfdmData.dispTriAuxInfoBuffer =
+                            tfdmMeshGeomInst->dispTriAuxInfoBuffer.getROBuffer<shared::enableBufferOobCheck>();
+                        tfdmData.aabbBuffer =
+                            tfdmMeshGeomInst->aabbBuffer.getROBuffer<shared::enableBufferOobCheck>();
+                        tfdmData.hOffset = heightOffset;
+                        tfdmData.hScale = heightScale;
+                        tfdmData.hBias = heightBias;
+                        CUDADRV_CHECK(cuMemcpyHtoDAsync(
+                            tfdmDataBuffer.getCUdeviceptrAt(tfdmMeshGeomInst->geomInstSlot),
+                            &tfdmData, sizeof(tfdmData),
+                            curCuStream));
+
+                        tfdmMeshGeomInst->optixGeomInst.setCustomPrimitiveAABBBuffer(tfdmMeshGeomInst->aabbBuffer);
+#endif
+
+                        geomChanged = true;
+                        resetAccumulation = true;
+                        tfdmGeomGroup->needsRebuild = true;
+                        tfdmGeomGroup->needsReallocation = true;
+                        tfdmGeomGroup->optixGas.markDirty();
+                    }
 
                     ImGui::Separator();
                     ImGui::Text("Displacement Parameters");
@@ -2140,6 +2195,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
                     heightParamChanged |= ImGui::SliderFloat("Scale", &heightScale, -1.0f, 1.0f);
                     heightParamChanged |= ImGui::SliderFloat("Bias", &heightBias, 0.0f, 1.0f);
                     resetAccumulation |= heightParamChanged;
+
+                    resetAccumulation |= ImGui::SliderInt("Target Mip Level", &targetMipLevel, 0, 15);
 
                     ImGui::Separator();
                     ImGui::Text("Local Intersection Type");
@@ -2417,7 +2474,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
         // JP: ディスプレイスメントを適用した各プリミティブのAABBを計算する。
         // EN: Compute the AABB of each displacement-enabled primitive.
-        if (localIntersectionTypeChanged || heightParamChanged/* || geomChanged*/) {
+        if (localIntersectionTypeChanged || heightParamChanged || geomChanged) {
             const GeometryInstance* geomInst = tfdmMeshGeomInst;
             const Material* mat = tfdmMeshMaterial;
 
@@ -2453,8 +2510,31 @@ int32_t main(int32_t argc, const char* argv[]) try {
         // EN: Rebuild the ASes.
         curGPUTimer.update.start(curCuStream);
         if (animate || frameIndex == 0 ||
-            localIntersectionTypeChanged || heightParamChanged)
+            localIntersectionTypeChanged || heightParamChanged || geomChanged) {
             perFramePlp.travHandle = scene.updateASs(curCuStream);
+
+            if (!gpuEnv.gBuffer.hitGroupSbt.isInitialized() ||
+                gpuEnv.gBuffer.hitGroupSbt.sizeInBytes() < scene.hitGroupSbtSize) {
+                gpuEnv.gBuffer.hitGroupSbt.finalize();
+                gpuEnv.gBuffer.hitGroupSbt.initialize(
+                    gpuEnv.cuContext, Scene::bufferType, scene.hitGroupSbtSize, 1);
+                gpuEnv.gBuffer.hitGroupSbt.setMappedMemoryPersistent(true);
+                gpuEnv.gBuffer.optixPipeline.setScene(scene.optixScene);
+                gpuEnv.gBuffer.optixPipeline.setHitGroupShaderBindingTable(
+                    gpuEnv.gBuffer.hitGroupSbt, gpuEnv.gBuffer.hitGroupSbt.getMappedPointer());
+            }
+
+            if (!gpuEnv.pathTracing.hitGroupSbt.isInitialized() ||
+                gpuEnv.pathTracing.hitGroupSbt.sizeInBytes() < scene.hitGroupSbtSize) {
+                gpuEnv.pathTracing.hitGroupSbt.finalize();
+                gpuEnv.pathTracing.hitGroupSbt.initialize(
+                    gpuEnv.cuContext, Scene::bufferType, scene.hitGroupSbtSize, 1);
+                gpuEnv.pathTracing.hitGroupSbt.setMappedMemoryPersistent(true);
+                gpuEnv.pathTracing.optixPipeline.setScene(scene.optixScene);
+                gpuEnv.pathTracing.optixPipeline.setHitGroupShaderBindingTable(
+                    gpuEnv.pathTracing.hitGroupSbt, gpuEnv.pathTracing.hitGroupSbt.getMappedPointer());
+            }
+        }
         curGPUTimer.update.stop(curCuStream);
 
         // JP: 光源となるインスタンスのProbability Textureを計算する。

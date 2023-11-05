@@ -364,20 +364,23 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
                     const Matrix3x2 jacobP(matTcToP[0], matTcToP[1]);
                     const Matrix3x2 jacobN(matTcToN[0], matTcToN[1]);
                     Point2D curGuess = avgTc;
-                    float ut = imgSize.x * curGuess.x - curTexel.x;
-                    float vt = imgSize.y * curGuess.y - curTexel.y;
-                    Normal3D n;
-                    float nLength;
-                    float h;
-                    Vector2D F;
-                    float errDist2;
                     float hitDist2;
-                    {
-                        n = Normal3D(matTcToN * Point3D(curGuess, 1.0f));
-                        nLength = n.length();
+                    Matrix3x2 jacobS;
+                    const Point2D hitGuessMin = texelCenter - Vector2D(0.5f, 0.5f) * texelScale;
+                    const Point2D hitGuessMax = texelCenter + Vector2D(0.5f, 0.5f) * texelScale;
+                    float prevErrDist2 = INFINITY;
+                    uint32_t errDistStreak = 0;
+                    uint32_t invalidRegionStreak = 0;
+                    uint32_t itr = 0;
+                    constexpr uint32_t numIterations = 10;
+                    for (; itr < numIterations; ++itr) {
+                        Normal3D n(matTcToN * Point3D(curGuess, 1.0f));
+                        const float nLength = n.length();
                         n /= nLength;
 
-                        h =
+                        const float ut = imgSize.x * curGuess.x - curTexel.x;
+                        const float vt = imgSize.y * curGuess.y - curTexel.y;
+                        const float h =
                             (1 - ut) * (1 - vt) * cornerHeightUL
                             + ut * (1 - vt) * cornerHeightUR
                             + (1 - ut) * vt * cornerHeightBL
@@ -385,31 +388,19 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
 
                         const Point3D S = matTcToP * Point3D(curGuess, 1.0f) + h * n;
                         const Vector3D delta = S - rayOrg;
-                        F = Vector2D(dot(delta, d1), dot(delta, d2));
-                        errDist2 = F.sqLength();
+                        const Vector2D F(dot(delta, d1), dot(delta, d2));
+                        const float errDist2 = F.sqLength();
+                        if (errDist2 > prevErrDist2)
+                            ++errDistStreak;
+                        else
+                            errDistStreak = 0;
+                        if (errDistStreak >= 2) {
+                            *hitDist = INFINITY;
+                            return false;
+                        }
+                        prevErrDist2 = errDist2;
                         hitDist2 = sqDistance(S, rayOrg);
 
-#if DEBUG_BILINEAR
-                        if (isDebugPixel && getDebugPrintEnabled()) {
-                            printf(
-                                "%u-%u: guess: (%g, %g), n: (%g, %g, %g), st: (%g, %g)\n",
-                                plp.f->frameIndex, optixGetPrimitiveIndex(),
-                                curGuess.x, curGuess.y,
-                                v3print(n),
-                                ut, vt);
-                            printf(
-                                "%u-%u: S: (%g, %g, %g), F: (%g, %g), %g\n",
-                                plp.f->frameIndex, optixGetPrimitiveIndex(),
-                                v3print(S), v2print(F), errDist2);
-                        }
-#endif
-                    }
-                    Matrix3x2 jacobS;
-                    float prevErrDist2 = INFINITY;
-                    uint32_t itr = 0;
-                    uint32_t invalidRegionCount = 0;
-                    constexpr uint32_t numIterations = 10;
-                    for (; itr < numIterations; ++itr) {
                         const float jacobHu = imgSize.x *
                             (-(1 - vt) * cornerHeightUL + (1 - vt) * cornerHeightUR
                              - vt * cornerHeightBL + vt * cornerHeightBR);
@@ -421,50 +412,20 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
                             jacobP + Matrix3x2(jacobHu * n, jacobHv * n)
                             + (h / nLength) * (jacobN - Matrix3x2(dot(jacobN[0], n) * n, dot(jacobN[1], n) * n));
 
-                        const Point3D bc = matTcToBc * Point3D(curGuess, 1.0f);
-#if DEBUG_BILINEAR
-                        if (isDebugPixel && getDebugPrintEnabled()) {
-                            printf(
-                                "%u-%u-%u: bc: (%g, %g, %g), utvt: (%g, %g)\n",
-                                plp.f->frameIndex, optixGetPrimitiveIndex(), itr,
-                                bc[0], bc[1], bc[2], ut, vt);
-                        }
-#endif
-                        if (bc[0] < -0.1f || bc[1] < -0.1f || bc[2] < -0.1f
-                            || bc[0] > 1.1f || bc[1] > 1.1f || bc[2] > 1.1f
-                            || ut < -0.1f || ut > 1.1f || vt < -0.1f || vt > 1.1f)
-                            ++invalidRegionCount;
-                        else
-                            invalidRegionCount = 0;
-                        if (invalidRegionCount >= 2) {
+                        if (errDist2 < pow2(1e-5f)) {
+                            *hitDist = std::sqrt(hitDist2/* / rayDir.sqLength()*/);
+                            *hitNormal = static_cast<Normal3D>(normalize(cross(jacobS[1], jacobS[0])));
 #if DEBUG_BILINEAR
                             if (isDebugPixel && getDebugPrintEnabled()) {
                                 printf(
-                                    "%u-%u-%u: Failed: Stayed in invalid region.\n",
-                                    plp.f->frameIndex, optixGetPrimitiveIndex(), itr);
+                                    "%u-%u-%u: guess: (%g, %g), dist: %g, S: (%g, %g, %g), n: (%g, %g, %g)\n",
+                                    plp.f->frameIndex, optixGetPrimitiveIndex(), itr,
+                                    curGuess.x, curGuess.y, *hitDist,
+                                    v3print(S), v3print(*hitNormal));
                             }
 #endif
-                            *hitDist = INFINITY;
-                            return false;
+                            return true;
                         }
-
-                        if (errDist2 > prevErrDist2) {
-#if DEBUG_BILINEAR
-                            if (isDebugPixel && getDebugPrintEnabled()) {
-                                printf(
-                                    "%u-%u-%u: Failed: Error growed.\n",
-                                    plp.f->frameIndex, optixGetPrimitiveIndex(), itr);
-                            }
-#endif
-                            *hitDist = INFINITY;
-                            return false;
-                        }
-
-                        *b1 = bc[1];
-                        *b2 = bc[2];
-                        if (errDist2 < pow2(1e-5f))
-                            break;
-                        prevErrDist2 = errDist2;
 
                         if (itr + 1 < numIterations) {
                             const Matrix2x2 jacobF(
@@ -472,83 +433,29 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
                                 Vector2D(dot(d1, jacobS[1]), dot(d2, jacobS[1])));
                             const Matrix2x2 invJacobF = invert(jacobF);
                             const Vector2D deltaGuess = invJacobF * F;
-                            //curGuess -= deltaGuess;
-                            const Point2D prevGuess = curGuess;
-                            float coeff = 1.0f;
-                            for (int decStep = 0; decStep < 3; ++decStep) {
-                                curGuess = prevGuess - coeff * deltaGuess;
-                                ut = imgSize.x * curGuess.x - curTexel.x;
-                                vt = imgSize.y * curGuess.y - curTexel.y;
+                            curGuess -= deltaGuess;
 
-                                n = Normal3D(matTcToN * Point3D(curGuess, 1.0f));
-                                nLength = n.length();
-                                n /= nLength;
-
-                                h =
-                                    (1 - ut) * (1 - vt) * cornerHeightUL
-                                    + ut * (1 - vt) * cornerHeightUR
-                                    + (1 - ut) * vt * cornerHeightBL
-                                    + ut * vt * cornerHeightBR;
-
-                                const Point3D S = matTcToP * Point3D(curGuess, 1.0f) + h * n;
-                                const Vector3D delta = S - rayOrg;
-                                F = Vector2D(dot(delta, d1), dot(delta, d2));
-                                errDist2 = F.sqLength();
-                                hitDist2 = sqDistance(S, rayOrg);
-
-#if DEBUG_BILINEAR
-                                if (isDebugPixel && getDebugPrintEnabled()) {
-                                    printf(
-                                        "%u-%u-%u-%u: guess: (%g, %g), n: (%g, %g, %g), st: (%g, %g)\n",
-                                        plp.f->frameIndex, optixGetPrimitiveIndex(), itr, decStep,
-                                        curGuess.x, curGuess.y,
-                                        v3print(n),
-                                        ut, vt);
-                                    printf(
-                                        "%u-%u-%u-%u: S: (%g, %g, %g), F: (%g, %g), %g\n",
-                                        plp.f->frameIndex, optixGetPrimitiveIndex(), itr, decStep,
-                                        v3print(S), v2print(F), errDist2);
+                            Point3D bc = matTcToBc * Point3D(curGuess, 1.0f);
+                            if (any(curGuess < hitGuessMin) || any(curGuess > hitGuessMax)
+                                || bc[0] < 0.0f || bc[1] < 0.0f || bc[2] < 0.0f
+                                || bc[0] > 1.0f || bc[1] > 1.0f || bc[2] > 1.0f) {
+                                ++invalidRegionStreak;
+                                if (invalidRegionStreak >= 3) {
+                                    *hitDist = INFINITY;
+                                    return false;
                                 }
-#endif
-
-                                if (errDist2 < (1 - 0.25f * coeff) * prevErrDist2)
-                                    break;
-
-                                coeff *= 0.5f;
+                                curGuess = min(max(curGuess, hitGuessMin), hitGuessMax);
+                                bc = matTcToBc * Point3D(curGuess, 1.0f);
                             }
+                            else {
+                                invalidRegionStreak = 0;
+                            }
+                            *b1 = bc[1];
+                            *b2 = bc[2];
                         }
                     }
 
-                    const Point3D bc = matTcToBc * Point3D(curGuess, 1.0f);
-                    if (bc[0] < 0.0f || bc[1] < 0.0f || bc[2] < 0.0f
-                        || bc[0] > 1.0f || bc[1] > 1.0f || bc[2] > 1.0f
-                        || ut < 0.0f || ut > 1.0f || vt < 0.0f || vt > 1.0f) {
-#if DEBUG_BILINEAR
-                        if (isDebugPixel && getDebugPrintEnabled()) {
-                            printf(
-                                "%u-%u-%u: Failed: Invalid region.\n",
-                                plp.f->frameIndex, optixGetPrimitiveIndex(), itr);
-                        }
-#endif
-                        *hitDist = INFINITY;
-                        return false;
-                    }
-
-                    *hitDist = std::sqrt(hitDist2/* / rayDir.sqLength()*/);
-                    *hitNormal = static_cast<Normal3D>(normalize(cross(jacobS[1], jacobS[0])));
-
-#if DEBUG_BILINEAR
-                    if (isDebugPixel && getDebugPrintEnabled()) {
-                        Point3D S = rayOrg + *hitDist * rayDir;
-                        printf(
-                            "%u-%u-%u: guess: (%g, %g), dist: %g, S: (%g, %g, %g), n: (%g, %g, %g)\n",
-                            plp.f->frameIndex, optixGetPrimitiveIndex(), itr,
-                            curGuess.x, curGuess.y, *hitDist,
-                            v3print(S), v3print(*hitNormal));
-                    }
-#endif
-
-                    return true;
+                    return false;
                 };
 
                 // TODO?: Can we test in texture space?

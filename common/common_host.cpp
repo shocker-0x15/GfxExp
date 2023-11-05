@@ -1947,6 +1947,7 @@ GeometryGroup* createGeometryGroup(
     }
     geomGroup->optixGas.setNumMaterialSets(1);
     geomGroup->optixGas.setNumRayTypes(0, scene->numRayTypes);
+    geomGroup->needsReallocation = true;
     geomGroup->needsRebuild = true;
     geomGroup->refittable = geomType == optixu::GeometryType::CustomPrimitives;
 
