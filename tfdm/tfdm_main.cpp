@@ -508,6 +508,13 @@ static Quaternion g_tempCameraOrientation;
 static Point3D g_cameraPosition;
 static std::filesystem::path g_envLightTexturePath;
 
+static constexpr float initHeightOffset = 0.0f;
+static constexpr float initHeightScale = /*0.2f*/0.5f;
+static constexpr float initHeightBias = 0.0f;
+static constexpr int32_t initTargetMipLevel = /*0*/8;
+static constexpr shared::LocalIntersectionType initLocalIntersectionType =
+    /*shared::LocalIntersectionType::TwoTriangle*/shared::LocalIntersectionType::Bilinear;
+
 static bool g_takeScreenShot = false;
 
 struct MeshGeometryInfo {
@@ -851,8 +858,8 @@ static void createSphere(
     std::vector<shared::Vertex>* vertices,
     std::vector<shared::Triangle>* triangles) {
     constexpr float radius = 0.3f;
-    constexpr uint32_t numAzimuthEdges = 16;
-    constexpr uint32_t numZenithEdges = 8;
+    constexpr uint32_t numAzimuthEdges = 64;
+    constexpr uint32_t numZenithEdges = 32;
     vertices->resize((numZenithEdges + 1) * (numAzimuthEdges + 1));
     triangles->resize(2 * numZenithEdges * numAzimuthEdges);
     for (int iz = 0; iz < numZenithEdges + 1; ++iz) {
@@ -1308,10 +1315,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
             instXfm * mesh->groupInsts[0].transform * mesh->groupInsts[0].geomGroup->aabb);
     }
 
-    float heightOffset = 0.0f;
-    float heightScale = 0.2f;
-    float heightBias = 0.0f;
-
 #define SHOW_BASE_MESH 0
 
     Material* tfdmMeshMaterial;
@@ -1385,8 +1388,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
     {
         std::vector<shared::Vertex> vertices;
         std::vector<shared::Triangle> triangles;
-        createQuad(&vertices, &triangles);
-        //createSphere(&vertices, &triangles);
+        //createQuad(&vertices, &triangles);
+        createSphere(&vertices, &triangles);
 
 #if SHOW_BASE_MESH
         tfdmMeshGeomInst = createGeometryInstance(
@@ -1409,9 +1412,12 @@ int32_t main(int32_t argc, const char* argv[]) try {
             tfdmMeshGeomInst->dispTriAuxInfoBuffer.getROBuffer<shared::enableBufferOobCheck>();
         tfdmData.aabbBuffer =
             tfdmMeshGeomInst->aabbBuffer.getROBuffer<shared::enableBufferOobCheck>();
-        tfdmData.hOffset = heightOffset;
-        tfdmData.hScale = heightScale;
-        tfdmData.hBias = heightBias;
+        tfdmData.params.textureTransform = Matrix3x3();
+        tfdmData.params.hOffset = initHeightOffset;
+        tfdmData.params.hScale = initHeightScale;
+        tfdmData.params.hBias = initHeightBias;
+        tfdmData.params.targetMipLevel = initTargetMipLevel;
+        tfdmData.params.localIntersectionType = static_cast<uint32_t>(initLocalIntersectionType);
 
         tfdmMeshGeomInst->optixGeomInst.setCustomPrimitiveAABBBuffer(tfdmMeshGeomInst->aabbBuffer);
 #endif
@@ -2064,9 +2070,17 @@ int32_t main(int32_t argc, const char* argv[]) try {
         static bool enableAlbedo = true;
         static int32_t baseSurfaceIndex = 0;
         bool geomChanged = false;
-        static int32_t targetMipLevel = 0;
+        static int32_t textureIndex = 0;
+        bool textureChanged = false;
+        static Vector2D heightMapTexScale(1, 1);
+        static Point2D heightMapTexOffset(0, 0);
+        static float heightMapTexRotation = 0.0f;
+        static float heightOffset = initHeightOffset;
+        static float heightScale = initHeightScale;
+        static float heightBias = initHeightBias;
+        static int32_t targetMipLevel = initTargetMipLevel;
+        static shared::LocalIntersectionType localIntersectionType = initLocalIntersectionType;
         bool heightParamChanged = false;
-        static auto localIntersectionType = shared::LocalIntersectionType::TwoTriangle;
         bool localIntersectionTypeChanged = false;
         static bool debugSwitches[] = {
             false, false, false, false, false, false, false, false
@@ -2121,12 +2135,13 @@ int32_t main(int32_t argc, const char* argv[]) try {
                     resetAccumulation |= ImGui::Checkbox("Albedo", &enableAlbedo);
 
                     ImGui::Separator();
-                    ImGui::Text("Base Surface");
+                    ImGui::Text("Assets");
                     const char* baseSurfaceNames[] = {
                         "Quad",
                         "Sphere",
                     };
                     if (ImGui::Combo("Shape", &baseSurfaceIndex, baseSurfaceNames, lengthof(baseSurfaceNames))) {
+                        glFinish();
                         streamChain.waitAllWorkDone();
 
                         std::vector<shared::Vertex> vertices;
@@ -2173,9 +2188,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
                             tfdmMeshGeomInst->dispTriAuxInfoBuffer.getROBuffer<shared::enableBufferOobCheck>();
                         tfdmData.aabbBuffer =
                             tfdmMeshGeomInst->aabbBuffer.getROBuffer<shared::enableBufferOobCheck>();
-                        tfdmData.hOffset = heightOffset;
-                        tfdmData.hScale = heightScale;
-                        tfdmData.hBias = heightBias;
                         CUDADRV_CHECK(cuMemcpyHtoDAsync(
                             geomInstTfdmDataBuffer.getCUdeviceptrAt(tfdmMeshGeomInst->geomInstSlot),
                             &tfdmData, sizeof(tfdmData),
@@ -2191,17 +2203,169 @@ int32_t main(int32_t argc, const char* argv[]) try {
                         tfdmGeomGroup->optixGas.markDirty();
                     }
 
+                    struct TextureAsset {
+                        const char* name;
+                        std::filesystem::path albedo;
+                        std::filesystem::path height;
+                    };
+                    std::filesystem::path dataDir = R"(C:\Users\shocker_0x15\repos\GfxExp\data)";
+                    const TextureAsset textureAssets[] = {
+                        {
+                            "River Pebbles",
+                            R"(TCom_Ground_PebblesRiver2_2.5x2.5_1K_albedo.dds)",
+                            R"(TCom_Ground_PebblesRiver2_2.5x2.5_1K_height.dds)"
+                        },
+                        {
+                            "Cobble Stones",
+                            R"(TCom_Pavement_CobblestoneMedieval15_3x3_1K_albedo.dds)",
+                            R"(TCom_Pavement_CobblestoneMedieval15_3x3_1K_height.dds)"
+                        },
+                        {
+                            "Cliff",
+                            R"(TCom_Rock_Cliff3_2x2_1K_albedo.dds)",
+                            R"(TCom_Rock_Cliff3_2x2_1K_height.dds)"
+                        },
+                        {
+                            "Cliff Layered",
+                            R"(TCom_Rock_CliffLayered_1.5x1.5_1K_albedo.dds)",
+                            R"(TCom_Rock_CliffLayered_1.5x1.5_1K_height.dds)"
+                        },
+                        {
+                            "Wall Stones",
+                            R"(TCom_Wall_Stone4_2x2_1K_albedo.dds)",
+                            R"(TCom_Wall_Stone4_2x2_1K_height.dds)"
+                        },
+                        {
+                            "Earth",
+                            R"()",
+                            R"(earth_heightmap_4k.dds)"
+                        },
+                    };
+                    if (ImGui::Combo(
+                            "Texture", &textureIndex,
+                            [](void* data, int32_t idx, const char** outStr) {
+                                const TextureAsset &asset = reinterpret_cast<const TextureAsset*>(data)[idx];
+                                *outStr = asset.name;
+                                return true;
+                            },
+                            const_cast<TextureAsset*>(textureAssets), lengthof(textureAssets))) {
+                        glFinish();
+                        streamChain.waitAllWorkDone();
+
+                        const TextureAsset &asset = textureAssets[textureIndex];
+
+                        //auto &body = std::get<Material::Lambert>(tfdmMeshMaterial->body);
+                        //if (body.texReflectance.texObj)
+                        //    CUDADRV_CHECK(cuTexObjectDestroy(body.texReflectance.texObj));
+                        //body.texReflectance.cudaArray->finalize();
+
+                        CUDADRV_CHECK(cuTexObjectDestroy(tfdmMeshMaterial->texHeight.texObj));
+                        //tfdmMeshMaterial->texHeight.cudaArray->finalize();
+                        tfdmMeshMaterial->minMaxMipMap.finalize();
+                        tfdmMeshMaterial->minMaxMipMapSurfs.finalize();
+
+                        const CUdeviceptr matAddrOnDevice =
+                            scene.materialDataBuffer.getCUdeviceptrAt(tfdmMeshMaterial->materialSlot);
+
+                        shared::MaterialData matData = {};
+                        CUDADRV_CHECK(cuMemcpyDtoH(&matData, matAddrOnDevice, sizeof(matData)));
+
+                        bool needsDegamma;
+                        //loadTexture(
+                        //    dataDir / asset.albedo, float4(1.0f, 0.0f, 1.0f, 1.0f), gpuEnv.cuContext,
+                        //    &body.texReflectance.cudaArray, &needsDegamma);
+
+                        cudau::TextureSampler sampler_sRGB;
+                        sampler_sRGB.setXyFilterMode(cudau::TextureFilterMode::Linear);
+                        sampler_sRGB.setWrapMode(0, cudau::TextureWrapMode::Repeat);
+                        sampler_sRGB.setWrapMode(1, cudau::TextureWrapMode::Repeat);
+                        sampler_sRGB.setMipMapFilterMode(cudau::TextureFilterMode::Linear);
+                        sampler_sRGB.setReadMode(cudau::TextureReadMode::NormalizedFloat_sRGB);
+
+                        cudau::TextureSampler sampler_normFloat;
+                        sampler_normFloat.setXyFilterMode(cudau::TextureFilterMode::Linear);
+                        sampler_normFloat.setWrapMode(0, cudau::TextureWrapMode::Repeat);
+                        sampler_normFloat.setWrapMode(1, cudau::TextureWrapMode::Repeat);
+                        sampler_normFloat.setMipMapFilterMode(cudau::TextureFilterMode::Linear);
+                        sampler_normFloat.setReadMode(cudau::TextureReadMode::NormalizedFloat);
+
+                        //if (needsDegamma) {
+                        //    body.texReflectance.texObj =
+                        //        sampler_sRGB.createTextureObject(*body.texReflectance.cudaArray);
+                        //}
+                        //else {
+                        //    body.texReflectance.texObj =
+                        //        sampler_normFloat.createTextureObject(*body.texReflectance.cudaArray);
+                        //}
+
+                        //matData.asLambert.reflectance = body.texReflectance.texObj;
+                        //matData.asLambert.reflectanceDimInfo = calcDimInfo(*body.texReflectance.cudaArray);
+
+                        loadTexture<float, true>(
+                            dataDir / asset.height, 0.0f, gpuEnv.cuContext,
+                            &tfdmMeshMaterial->texHeight.cudaArray, &needsDegamma);
+
+                        cudau::TextureSampler heightSampler = {};
+                        heightSampler.setXyFilterMode(cudau::TextureFilterMode::Linear);
+                        heightSampler.setWrapMode(0, cudau::TextureWrapMode::Repeat);
+                        heightSampler.setWrapMode(1, cudau::TextureWrapMode::Repeat);
+                        heightSampler.setMipMapFilterMode(cudau::TextureFilterMode::Point);
+                        heightSampler.setReadMode(cudau::TextureReadMode::NormalizedFloat);
+                        tfdmMeshMaterial->texHeight.texObj =
+                            heightSampler.createTextureObject(*tfdmMeshMaterial->texHeight.cudaArray);
+
+                        matData.heightMapSize = int2(
+                            tfdmMeshMaterial->texHeight.cudaArray->getWidth(),
+                            tfdmMeshMaterial->texHeight.cudaArray->getHeight());
+                        matData.heightMap = tfdmMeshMaterial->texHeight.texObj;
+
+                        if (matData.heightMapSize.x != matData.heightMapSize.y)
+                            throw std::runtime_error("Non-square height map is not supported.");
+                        if (popcnt(matData.heightMapSize.x) != 1)
+                            throw std::runtime_error("Non-power-of-two height map is not supported.");
+
+                        const uint32_t numMinMaxMipMapLevels = nextPowOf2Exponent(matData.heightMapSize.x) + 1;
+                        tfdmMeshMaterial->minMaxMipMap.initialize2D(
+                            gpuEnv.cuContext,
+                            cudau::ArrayElementType::Float32, 2,
+                            cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable,
+                            matData.heightMapSize.x, matData.heightMapSize.y,
+                            numMinMaxMipMapLevels);
+
+                        std::vector<optixu::NativeBlockBuffer2D<float2>> surfObjs(numMinMaxMipMapLevels);
+                        for (int mipLevel = 0; mipLevel < numMinMaxMipMapLevels; ++mipLevel)
+                            surfObjs[mipLevel] = tfdmMeshMaterial->minMaxMipMap.getSurfaceObject(mipLevel);
+
+                        tfdmMeshMaterial->minMaxMipMapSurfs.initialize(gpuEnv.cuContext, cudau::BufferType::Device, surfObjs);
+                        matData.minMaxMipMap = tfdmMeshMaterial->minMaxMipMapSurfs.getDevicePointer();
+                        CUDADRV_CHECK(cuMemcpyHtoD(matAddrOnDevice, &matData, sizeof(matData)));
+
+                        textureChanged = true;
+                        resetAccumulation = true;
+                        tfdmGeomGroup->needsRebuild = true;
+                        tfdmGeomGroup->needsReallocation = true;
+                        tfdmGeomGroup->optixGas.markDirty();
+                    }
+
                     ImGui::Separator();
                     ImGui::Text("Displacement Parameters");
 
-                    heightParamChanged |= ImGui::SliderFloat("Offset", &heightOffset, -1.0f, 1.0f);
-                    heightParamChanged |= ImGui::SliderFloat("Scale", &heightScale, -1.0f, 1.0f);
                     heightParamChanged |= ImGui::SliderFloat("Bias", &heightBias, 0.0f, 1.0f);
+                    heightParamChanged |= ImGui::SliderFloat("Scale", &heightScale, -1.0f, 1.0f);
+                    heightParamChanged |= ImGui::SliderFloat("Offset", &heightOffset, -1.0f, 1.0f);
+                    heightParamChanged |= ImGui::SliderInt("Target Mip Level", &targetMipLevel, 0, 15);
                     resetAccumulation |= heightParamChanged;
 
-                    resetAccumulation |= ImGui::SliderInt("Target Mip Level", &targetMipLevel, 0, 15);
+                    ImGui::Text("Texture Transform");
+                    ImGui::PushID("Texture");
+                    heightParamChanged |= ImGui::SliderFloat2(
+                        "Scale", reinterpret_cast<float*>(&heightMapTexScale), 0.1f, 10.0f);
+                    heightParamChanged |= ImGui::SliderFloat(
+                        "Rotation", &heightMapTexRotation, 0.0f, 360.0f);
+                    heightParamChanged |= ImGui::SliderFloat2(
+                        "Offset", reinterpret_cast<float*>(&heightMapTexOffset), -10.0f, 10.0f);
+                    ImGui::PopID();
 
-                    ImGui::Separator();
                     ImGui::Text("Local Intersection Type");
 
                     shared::LocalIntersectionType oldIsectType = localIntersectionType;
@@ -2361,7 +2525,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
 #if !SHOW_BASE_MESH
         // JP: Minmax mipmapを計算する。
         // EN: Compute the minmax mipmap.
-        if (localIntersectionTypeChanged) {
+        if (localIntersectionTypeChanged || textureChanged) {
 #if USE_DISPLACED_SURFACES
             optixu::HitProgramGroup gBufferHitProgramGroup;
             optixu::HitProgramGroup ptClosestHitProgramGroup;
@@ -2477,7 +2641,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
         // JP: ディスプレイスメントを適用した各プリミティブのAABBを計算する。
         // EN: Compute the AABB of each displacement-enabled primitive.
-        if (localIntersectionTypeChanged || heightParamChanged || geomChanged) {
+        if (localIntersectionTypeChanged || textureChanged || heightParamChanged || geomChanged) {
             const GeometryInstance* geomInst = tfdmMeshGeomInst;
             const Material* mat = tfdmMeshMaterial;
 
@@ -2488,14 +2652,19 @@ int32_t main(int32_t argc, const char* argv[]) try {
             const shared::MaterialData* const matData =
                 scene.materialDataBuffer.getDevicePointerAt(mat->materialSlot);
 
+            shared::DisplacementParameters dispParams = {};
+            Matrix3x3 texXfm =
+                translate2D_3x3(heightMapTexOffset)
+                * rotate2D_3x3(heightMapTexRotation * pi_v<float> / 180)
+                * scale2D_3x3(heightMapTexScale);
+            dispParams.textureTransform = texXfm;
+            dispParams.hOffset = heightOffset;
+            dispParams.hScale = heightScale;
+            dispParams.hBias = heightBias;
+            dispParams.targetMipLevel = targetMipLevel;
+            dispParams.localIntersectionType = static_cast<uint32_t>(localIntersectionType);
             CUDADRV_CHECK(cuMemcpyHtoDAsync(
-                reinterpret_cast<CUdeviceptr>(&tfdmData->hOffset), &heightOffset, sizeof(heightOffset),
-                curCuStream));
-            CUDADRV_CHECK(cuMemcpyHtoDAsync(
-                reinterpret_cast<CUdeviceptr>(&tfdmData->hScale), &heightScale, sizeof(heightScale),
-                curCuStream));
-            CUDADRV_CHECK(cuMemcpyHtoDAsync(
-                reinterpret_cast<CUdeviceptr>(&tfdmData->hBias), &heightBias, sizeof(heightBias),
+                reinterpret_cast<CUdeviceptr>(&tfdmData->params), &dispParams, sizeof(dispParams),
                 curCuStream));
 
             gpuEnv.kernelComputeAABBs.launchWithThreadDim(
@@ -2513,7 +2682,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         // EN: Rebuild the ASes.
         curGPUTimer.update.start(curCuStream);
         if (animate || frameIndex == 0 ||
-            localIntersectionTypeChanged || heightParamChanged || geomChanged) {
+            localIntersectionTypeChanged || heightParamChanged || geomChanged || textureChanged) {
             perFramePlp.travHandle = scene.updateASs(curCuStream);
 
             if (!gpuEnv.gBuffer.hitGroupSbt.isInitialized() ||
@@ -2577,8 +2746,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
         perFramePlp.enableEnvLight = enableEnvLight;
         perFramePlp.enableBumpMapping = enableBumpMapping;
         perFramePlp.enableAlbedo = enableAlbedo;
-        perFramePlp.localIntersectionType = static_cast<uint32_t>(localIntersectionType);
-        perFramePlp.targetMipLevel = targetMipLevel;
         perFramePlp.enableDebugPrint = g_keyDebugPrint.getState();
         for (int i = 0; i < lengthof(debugSwitches); ++i)
             perFramePlp.setDebugSwitch(i, debugSwitches[i]);

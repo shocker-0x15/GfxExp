@@ -843,13 +843,20 @@ namespace shared {
     };
 
     // for TFDM
-    struct GeometryInstanceDataForTFDM {
-        ROBuffer<DisplacedTriangleAuxInfo> dispTriAuxInfoBuffer;
-        ROBuffer<AABB> aabbBuffer;
+    struct DisplacementParameters {
+        Matrix3x3 textureTransform;
         float hOffset;
         float hScale;
         float hBias;
-        Matrix3x3 textureTransform;
+        int32_t targetMipLevel;
+        uint32_t localIntersectionType : 2;
+    };
+
+    // for TFDM
+    struct GeometryInstanceDataForTFDM {
+        ROBuffer<DisplacedTriangleAuxInfo> dispTriAuxInfoBuffer;
+        ROBuffer<AABB> aabbBuffer;
+        DisplacementParameters params;
     };
 
     struct InstanceData {

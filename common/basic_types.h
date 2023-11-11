@@ -141,6 +141,15 @@ CUDA_COMMON_FUNCTION CUDA_INLINE T alignUp(T value, uint32_t alignment) {
     return (value + alignment - 1) / alignment * alignment;
 }
 
+CUDA_COMMON_FUNCTION CUDA_INLINE int32_t floorDiv(int32_t value, uint32_t modulus) {
+    return (value < 0 ? (value - static_cast<int32_t>(modulus - 1)) : value) / static_cast<int32_t>(modulus);
+}
+
+CUDA_COMMON_FUNCTION CUDA_INLINE uint32_t floorMod(int32_t value, uint32_t modulus) {
+    int32_t r = value % static_cast<int32_t>(modulus);
+    return r < 0 ? r + modulus : r;
+}
+
 CUDA_COMMON_FUNCTION CUDA_INLINE uint32_t tzcnt(uint32_t x) {
 #if defined(__CUDA_ARCH__)
     return __clz(__brev(x));
@@ -2704,6 +2713,11 @@ CUDA_COMMON_FUNCTION CUDA_INLINE Matrix3x3_T<F> translate2D_3x3(
 }
 template <std::floating_point F>
 CUDA_COMMON_FUNCTION CUDA_INLINE Matrix3x3_T<F> translate2D_3x3(
+    const Point2D_T<F> &t) {
+    return translate2D_3x3(static_cast<Vector2D_T<F>>(t));
+}
+template <std::floating_point F>
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix3x3_T<F> translate2D_3x3(
     F tx, F ty) {
     return translate2D_3x3(Vector2D_T<F>(tx, ty));
 }
@@ -3120,6 +3134,11 @@ CUDA_COMMON_FUNCTION CUDA_INLINE Matrix4x4_T<F> translate3D_4x4(
         Vector4D_T<F>(0, 1, 0, 0),
         Vector4D_T<F>(0, 0, 1, 0),
         Vector4D_T<F>(t, 1.0f));
+}
+template <std::floating_point F>
+CUDA_COMMON_FUNCTION CUDA_INLINE Matrix3x3_T<F> translate3D_4x4(
+    const Point3D_T<F> &t) {
+    return translate3D_4x4(static_cast<Vector3D_T<F, false>>(t));
 }
 template <std::floating_point F>
 CUDA_COMMON_FUNCTION CUDA_INLINE Matrix4x4_T<F> translate3D_4x4(

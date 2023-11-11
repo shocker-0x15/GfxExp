@@ -149,21 +149,28 @@ CUDA_DEVICE_KERNEL void computeAABBs(
     if (primIndex >= geomInst->triangleBuffer.getNumElements())
         return;
 
+#define DEBUG_TRAVERAL 0
+
     const Triangle &tri = geomInst->triangleBuffer[primIndex];
     const Vertex (&vs)[] = {
         geomInst->vertexBuffer[tri.index0],
         geomInst->vertexBuffer[tri.index1],
         geomInst->vertexBuffer[tri.index2]
     };
-    //printf(
-    //    "prim %u: "
-    //    "p (" V3FMT "), n (" V3FMT "), tc (" V2FMT "), "
-    //    "p (" V3FMT "), n (" V3FMT "), tc (" V2FMT "), "
-    //    "p (" V3FMT "), n (" V3FMT "), tc (" V2FMT ")\n",
-    //    primIndex,
-    //    v3print(vs[0].position), v3print(vs[0].normal), v2print(vs[0].texCoord),
-    //    v3print(vs[1].position), v3print(vs[1].normal), v2print(vs[1].texCoord),
-    //    v3print(vs[2].position), v3print(vs[2].normal), v2print(vs[2].texCoord));
+#if DEBUG_TRAVERAL
+    constexpr uint32_t debugPrimIndex = 0;
+    if (primIndex == debugPrimIndex) {
+        printf(
+            "prim %u: "
+            "p (" V3FMT "), n (" V3FMT "), tc (" V2FMT "), "
+            "p (" V3FMT "), n (" V3FMT "), tc (" V2FMT "), "
+            "p (" V3FMT "), n (" V3FMT "), tc (" V2FMT ")\n",
+            primIndex,
+            v3print(vs[0].position), v3print(vs[0].normal), v2print(vs[0].texCoord),
+            v3print(vs[1].position), v3print(vs[1].normal), v2print(vs[1].texCoord),
+            v3print(vs[2].position), v3print(vs[2].normal), v2print(vs[2].texCoord));
+    }
+#endif
 
     // JP: 三角形を含むテクセルのmin/maxを読み取る。
     // EN: Compute the min/max of texels overlapping with the triangle.
@@ -176,9 +183,13 @@ CUDA_DEVICE_KERNEL void computeAABBs(
             vs[2].texCoord,
         };
         const bool tcFlipped = cross(tcs[1] - tcs[0], tcs[2] - tcs[0]) < 0;
-        //printf("prim %u: (" V2FMT "), (" V2FMT "), (" V2FMT ")\n",
-        //       primIndex,
-        //       vector2Arg(tcs[0]), vector2Arg(tcs[1]), vector2Arg(tcs[2]));
+#if DEBUG_TRAVERAL
+        if (primIndex == debugPrimIndex) {
+            printf("prim %u: (" V2FMT "), (" V2FMT "), (" V2FMT ")\n",
+                   primIndex,
+                   v2print(tcs[0]), v2print(tcs[1]), v2print(tcs[2]));
+        }
+#endif
 
         const Vector2D texTriEdgeNormals[] = {
             Vector2D(tcs[1].y - tcs[0].y, tcs[0].x - tcs[1].x),
@@ -187,14 +198,24 @@ CUDA_DEVICE_KERNEL void computeAABBs(
         };
         const Point2D texTriAabbMinP = min(tcs[0], min(tcs[1], tcs[2]));
         const Point2D texTriAabbMaxP = max(tcs[0], max(tcs[1], tcs[2]));
-        //printf("prim %u: (" V2FMT "), (" V2FMT ")\n",
-        //       primIndex,
-        //       vector2Arg(texTriAabbMinP), vector2Arg(texTriAabbMaxP));
+#if DEBUG_TRAVERAL
+        if (primIndex == debugPrimIndex) {
+            printf("prim %u: (" V2FMT "), (" V2FMT ")\n",
+                   primIndex,
+                   v2print(texTriAabbMinP), v2print(texTriAabbMaxP));
+        }
+#endif
 
-        const uint32_t maxDepth = prevPowOf2Exponent(material->heightMapSize.x);
+        const int32_t maxDepth = prevPowOf2Exponent(material->heightMapSize.x);
+        //const int32_t targetMipLevel = 0;
+#if USE_WORKAROUND_FOR_CUDA_BC_TEX
+        const int32_t targetMipLevel = min(tfdmGeomInst->params.targetMipLevel, maxDepth - 2);
+#else
+        const int32_t targetMipLevel = tfdmGeomInst->params.targetMipLevel;
+#endif
         Texel roots[useMultipleRootOptimization ? 4 : 1];
         uint32_t numRoots;
-        findRoots(texTriAabbMinP, texTriAabbMaxP, maxDepth, 0, roots, &numRoots);
+        findRoots(texTriAabbMinP, texTriAabbMaxP, maxDepth, targetMipLevel, roots, &numRoots);
         for (int rootIdx = 0; rootIdx < lengthof(roots); ++rootIdx) {
             if (rootIdx >= numRoots)
                 break;
@@ -208,14 +229,21 @@ CUDA_DEVICE_KERNEL void computeAABBs(
                         tcs, tcFlipped, texTriEdgeNormals, texTriAabbMinP, texTriAabbMaxP,
                         Point2D((curTexel.x + 0.5f) * texelScale, (curTexel.y + 0.5f) * texelScale),
                         0.5f * texelScale);
-                //if (primIndex == 0)
-                //    printf("step: texel %u, %u, %u: (%u)\n", curTexel.x, curTexel.y, curTexel.lod, isectResult);
+#if DEBUG_TRAVERAL
+                if (primIndex == debugPrimIndex) {
+                    printf("step: texel %u, %u, %u: (%u)\n", curTexel.x, curTexel.y, curTexel.lod, isectResult);
+                }
+#endif
                 if (isectResult == TriangleSquareIntersection2DResult::SquareOutsideTriangle) {
                     next(curTexel);
                 }
                 else if (isectResult == TriangleSquareIntersection2DResult::SquareInsideTriangle ||
-                         curTexel.lod == 0) {
-                    const float2 minmax = material->minMaxMipMap[curTexel.lod].read(int2(curTexel.x, curTexel.y));
+                         curTexel.lod <= targetMipLevel) {
+                    const int2 imgSize = make_int2(1 << (maxDepth - curTexel.lod));
+                    const int2 wrapIndex = make_int2(floorDiv(curTexel.x, imgSize.x), floorDiv(curTexel.y, imgSize.y));
+                    const uint2 wrappedTexel =
+                        make_uint2(curTexel.x - wrapIndex.x * imgSize.x, curTexel.y - wrapIndex.y * imgSize.y);
+                    const float2 minmax = material->minMaxMipMap[curTexel.lod].read(wrappedTexel);
                     minHeight = std::fmin(minHeight, minmax.x);
                     maxHeight = std::fmax(maxHeight, minmax.y);
                     next(curTexel);
@@ -226,7 +254,11 @@ CUDA_DEVICE_KERNEL void computeAABBs(
             }
         }
     }
-    //printf("prim %u: height min/max: %g/%g\n", primIndex, minHeight, maxHeight);
+#if DEBUG_TRAVERAL
+    if (primIndex == debugPrimIndex) {
+        printf("prim %u: height min/max: %g/%g\n", primIndex, minHeight, maxHeight);
+    }
+#endif
 
     const Point3D tcs3D[] = {
         Point3D(vs[0].texCoord, 1.0f),
@@ -240,8 +272,8 @@ CUDA_DEVICE_KERNEL void computeAABBs(
 
     RWBuffer aabbBuffer(tfdmGeomInst->aabbBuffer);
 
-    const float amplitude = tfdmGeomInst->hScale * (maxHeight - minHeight);
-    minHeight = tfdmGeomInst->hOffset + tfdmGeomInst->hScale * (minHeight - tfdmGeomInst->hBias);
+    const float amplitude = tfdmGeomInst->params.hScale * (maxHeight - minHeight);
+    minHeight = tfdmGeomInst->params.hOffset + tfdmGeomInst->params.hScale * (minHeight - tfdmGeomInst->params.hBias);
     const AAFloatOn2D hBound(minHeight + 0.5f * amplitude, 0, 0, 0.5f * amplitude);
 
     /*
@@ -280,6 +312,15 @@ CUDA_DEVICE_KERNEL void computeAABBs(
             Point3D(iaSx.lo(), iaSy.lo(), iaSz.lo()),
             Point3D(iaSx.hi(), iaSy.hi(), iaSz.hi())));
     }
+#if DEBUG_TRAVERAL
+    if (primIndex == debugPrimIndex) {
+        printf(
+            "prim %u: triAabb: (%g, %g, %g) - (%g, %g, %g)\n",
+            primIndex,
+            v3print(triAabb.minP), v3print(triAabb.maxP));
+    }
+#endif
 
+    //triAabb.dilate(10);
     aabbBuffer[primIndex] = triAabb;
 }

@@ -32,6 +32,7 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(setupGBuffers)() {
     hitPointParams.normalInWorld = Normal3D(NAN);
     hitPointParams.texCoord = Point2D(NAN);
     hitPointParams.materialSlot = 0xFFFFFFFF;
+    hitPointParams.geomInstSlot = 0xFFFFFFFF;
 #if DEBUG_TRAVERSAL_STATS
     hitPointParams.numTravIterations = 0;
 #endif
@@ -65,6 +66,7 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(setupGBuffers)() {
     GBuffer2 gBuffer2;
     gBuffer2.motionVector = motionVector;
     gBuffer2.materialSlot = hitPointParams.materialSlot;
+    gBuffer2.geomInstSlot = hitPointParams.geomInstSlot;
 
     uint32_t bufIdx = plp.f->bufferIndex;
     plp.s->GBuffer0[bufIdx].write(launchIndex, gBuffer0);
@@ -119,6 +121,7 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
 #else
     Point2D texCoord;
 #endif
+    float targetMipLevel = 0;
 #if DEBUG_TRAVERSAL_STATS
     uint32_t numTravIterations = 0;
 #endif
@@ -153,6 +156,9 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
             numTravIterations = hitAttrs.numIterations;
 #endif
             texCoord0DirInWorld += -dot(shadingNormalInWorld, texCoord0DirInWorld) * shadingNormalInWorld;
+
+            const GeometryInstanceDataForTFDM &tfdmGeomInst = plp.s->geomInstTfdmDataBuffer[sbtr.geomInstSlot];
+            targetMipLevel = tfdmGeomInst.params.targetMipLevel;
         }
         prevPositionInWorld = inst.curToPrevTransform * positionInWorld;
         //geometricNormalInWorld = Normal3D(cross(v1.position - v0.position, v2.position - v0.position));
@@ -182,11 +188,11 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
     }
 
     BSDF bsdf;
-    bsdf.setup(mat, texCoord, plp.f->targetMipLevel);
+    bsdf.setup(mat, texCoord, targetMipLevel);
     ReferenceFrame shadingFrame(shadingNormalInWorld, texCoord0DirInWorld);
     if (plp.f->enableBumpMapping) {
         Normal3D modLocalNormal = mat.readModifiedNormal(
-            mat.normal, mat.normalDimInfo, texCoord, plp.f->targetMipLevel);
+            mat.normal, mat.normalDimInfo, texCoord, targetMipLevel);
         applyBumpMapping(modLocalNormal, &shadingFrame);
     }
     Vector3D vOut(-Vector3D(optixGetWorldRayDirection()));
@@ -198,6 +204,7 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
     hitPointParams->normalInWorld = shadingFrame.normal;
     hitPointParams->texCoord = texCoord;
     hitPointParams->materialSlot = geomInst.materialSlot;
+    hitPointParams->geomInstSlot = geomInst.geomInstSlot;
 #if DEBUG_TRAVERSAL_STATS
     hitPointParams->numTravIterations = numTravIterations;
 #endif

@@ -37,7 +37,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void down(Texel &texel, bool signX, bool signY)
   texel.y += signY;
 }
 
-CUDA_DEVICE_FUNCTION CUDA_INLINE void next(Texel &texel, bool signX, bool signY, uint32_t maxDepth) {
+CUDA_DEVICE_FUNCTION CUDA_INLINE void next(Texel &texel, bool signX, bool signY, int32_t maxDepth) {
   while (texel.lod <= maxDepth) {
     switch (2 * ((texel.x + signX) % 2) + (texel.y + signY) % 2) {
     case 1:
@@ -56,6 +56,9 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void next(Texel &texel, bool signX, bool signY,
 
 template <LocalIntersectionType intersectionType>
 CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
+    bool isDebugPixel = optixGetLaunchIndex().x == 1125 && optixGetLaunchIndex().y == 654;
+    //bool isDebugPixel = isCursorPixel();
+
     const auto sbtr = HitGroupSBTRecordData::get();
     const GeometryInstanceData &geomInst = plp.s->geometryInstanceDataBuffer[sbtr.geomInstSlot];
     const MaterialData &mat = plp.s->materialDataBuffer[geomInst.materialSlot];
@@ -85,6 +88,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
     const Point2D texTriAabbMaxP = max(tcs[0], max(tcs[1], tcs[2]));
 
     const GeometryInstanceDataForTFDM &tfdm = plp.s->geomInstTfdmDataBuffer[sbtr.geomInstSlot];
+    const DisplacementParameters &dispParams = tfdm.params;
     const DisplacedTriangleAuxInfo &dispTriAuxInfo = tfdm.dispTriAuxInfoBuffer[optixGetPrimitiveIndex()];
     const Matrix3x3 matTcToPInObj =
         Matrix3x3(vs[0].position, vs[1].position, vs[2].position) * dispTriAuxInfo.matTcToBc;
@@ -111,12 +115,12 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
         (void)d2;
     }
 
-    const uint32_t maxDepth =
+    const int32_t maxDepth =
         prevPowOf2Exponent(max(mat.heightMapSize.x, mat.heightMapSize.y));
 #if USE_WORKAROUND_FOR_CUDA_BC_TEX
-    const uint32_t targetMipLevel = min(plp.f->targetMipLevel, maxDepth - 2);
+    const int32_t targetMipLevel = min(dispParams.targetMipLevel, maxDepth - 2);
 #else
-    const uint32_t targetMipLevel = plp.f->targetMipLevel;
+    const int32_t targetMipLevel = dispParams.targetMipLevel;
 #endif
 
 #if DEBUG_TRAVERSAL_STATS
@@ -136,6 +140,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
 #if DEBUG_TRAVERSAL_STATS
             ++numIterations;
 #endif
+            const int2 imgSize = make_int2(1 << (maxDepth - curTexel.lod));
             const float texelScale = 1.0f / (1 << (maxDepth - curTexel.lod));
             const Point2D texelCenter = Point2D(curTexel.x + 0.5f, curTexel.y + 0.5f) * texelScale;
             const TriangleSquareIntersection2DResult isectResult =
@@ -153,18 +158,25 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
             // JP: テクスチャー空間でテクセルがつくるAABBをアフィン演算を用いて計算。
             // EN: Compute the AABB of texel in the texture space using affine arithmetic.
             AABB texelAabb;
+            const int2 wrapIndex = make_int2(floorDiv(curTexel.x, imgSize.x), floorDiv(curTexel.y, imgSize.y));
             {
-                const float2 minmax = mat.minMaxMipMap[curTexel.lod].read(int2(curTexel.x, curTexel.y));
-                const float amplitude = tfdm.hScale * (minmax.y - minmax.x);
-                const float minHeight = tfdm.hOffset + tfdm.hScale * (minmax.x - tfdm.hBias);
+                const uint2 wrappedTexel =
+                    make_uint2(curTexel.x - wrapIndex.x * imgSize.x, curTexel.y - wrapIndex.y * imgSize.y);
+                const float2 minmax = mat.minMaxMipMap[curTexel.lod].read(wrappedTexel);
+                const float amplitude = dispParams.hScale * (minmax.y - minmax.x);
+                const float minHeight = dispParams.hOffset + dispParams.hScale * (minmax.x - dispParams.hBias);
                 const AAFloatOn2D hBound(minHeight + 0.5f * amplitude, 0, 0, 0.5f * amplitude);
 
+                const Point2D clippedTcMinP = max(texelCenter - Vector2D(0.5f) * texelScale, texTriAabbMinP);
+                const Point2D clippedTcMaxP = min(texelCenter + Vector2D(0.5f) * texelScale, texTriAabbMaxP);
+                const Vector2D clippedTcDim = clippedTcMaxP - clippedTcMinP;
+
                 const AAFloatOn2D_Vector3D edge0(
-                    Vector3D(0.0f), Vector3D(0.5f * texelScale, 0, 0), Vector3D(0.0f), Vector3D(0.0f));
+                    Vector3D(0.0f), Vector3D(0.5f * clippedTcDim.x, 0, 0), Vector3D(0.0f), Vector3D(0.0f));
                 const AAFloatOn2D_Vector3D edge1(
-                    Vector3D(0.0f), Vector3D(0.0f), Vector3D(0, 0.5f * texelScale, 0), Vector3D(0.0f));
+                    Vector3D(0.0f), Vector3D(0.0f), Vector3D(0, 0.5f * clippedTcDim.y, 0), Vector3D(0.0f));
                 const AAFloatOn2D_Point3D texCoord =
-                    Point3D(texelCenter.x, texelCenter.y, 1.0f) + (edge0 + edge1);
+                    Point3D(clippedTcMinP + 0.5f * clippedTcDim, 1.0f) + (edge0 + edge1);
 
                 const AAFloatOn2D_Point3D pBoundInTc(texCoord.x, texCoord.y, AAFloatOn2D(0.0f));
                 AAFloatOn2D_Vector3D nBoundInObj =
@@ -195,7 +207,6 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
                 continue;
             }
 
-            const int2 imgSize = make_int2(1 << (maxDepth - curTexel.lod));
             const auto sample = [&](float px, float py) {
                 return tex2DLod<float>(mat.heightMap, px / imgSize.x, py / imgSize.y, curTexel.lod);
             };
@@ -223,13 +234,17 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
             }
             if constexpr (intersectionType == LocalIntersectionType::TwoTriangle) {
                 const float cornerHeightUL =
-                    tfdm.hOffset + tfdm.hScale * (sample(curTexel.x - 0.0f, curTexel.y - 0.0f) - tfdm.hBias);
+                    dispParams.hOffset + dispParams.hScale
+                    * (sample(curTexel.x - 0.0f, curTexel.y - 0.0f) - dispParams.hBias);
                 const float cornerHeightUR =
-                    tfdm.hOffset + tfdm.hScale * (sample(curTexel.x + 1.0f, curTexel.y - 0.0f) - tfdm.hBias);
+                    dispParams.hOffset + dispParams.hScale
+                    * (sample(curTexel.x + 1.0f, curTexel.y - 0.0f) - dispParams.hBias);
                 const float cornerHeightBL =
-                    tfdm.hOffset + tfdm.hScale * (sample(curTexel.x - 0.0f, curTexel.y + 1.0f) - tfdm.hBias);
+                    dispParams.hOffset + dispParams.hScale
+                    * (sample(curTexel.x - 0.0f, curTexel.y + 1.0f) - dispParams.hBias);
                 const float cornerHeightBR =
-                    tfdm.hOffset + tfdm.hScale * (sample(curTexel.x + 1.0f, curTexel.y + 1.0f) - tfdm.hBias);
+                    dispParams.hOffset + dispParams.hScale
+                    * (sample(curTexel.x + 1.0f, curTexel.y + 1.0f) - dispParams.hBias);
 
                 const Point2D tcUL(texelCenter + texelScale * Vector2D(-0.5f, -0.5f));
                 const Point2D tcUR(texelCenter + texelScale * Vector2D(0.5f, -0.5f));
@@ -313,20 +328,21 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
             }
             if constexpr (intersectionType == LocalIntersectionType::Bilinear) {
                 const float cornerHeightUL =
-                    tfdm.hOffset + tfdm.hScale * (sample(curTexel.x - 0.0f, curTexel.y - 0.0f) - tfdm.hBias);
+                    dispParams.hOffset + dispParams.hScale
+                    * (sample(curTexel.x - 0.0f, curTexel.y - 0.0f) - dispParams.hBias);
                 const float cornerHeightUR =
-                    tfdm.hOffset + tfdm.hScale * (sample(curTexel.x + 1.0f, curTexel.y - 0.0f) - tfdm.hBias);
+                    dispParams.hOffset + dispParams.hScale
+                    * (sample(curTexel.x + 1.0f, curTexel.y - 0.0f) - dispParams.hBias);
                 const float cornerHeightBL =
-                    tfdm.hOffset + tfdm.hScale * (sample(curTexel.x - 0.0f, curTexel.y + 1.0f) - tfdm.hBias);
+                    dispParams.hOffset + dispParams.hScale
+                    * (sample(curTexel.x - 0.0f, curTexel.y + 1.0f) - dispParams.hBias);
                 const float cornerHeightBR =
-                    tfdm.hOffset + tfdm.hScale * (sample(curTexel.x + 1.0f, curTexel.y + 1.0f) - tfdm.hBias);
+                    dispParams.hOffset + dispParams.hScale
+                    * (sample(curTexel.x + 1.0f, curTexel.y + 1.0f) - dispParams.hBias);
 
 #define DEBUG_BILINEAR 0
 
 #if DEBUG_BILINEAR
-                bool isDebugPixel = optixGetLaunchIndex().x == 784 && optixGetLaunchIndex().y == 168;
-                //bool isDebugPixel = isCursorPixel();
-
                 if (isDebugPixel && getDebugPrintEnabled()) {
                     printf(
                         "%u-%u: %u-%u-%u\n",
@@ -413,6 +429,12 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
                             + (h / nLength) * (jacobN - Matrix3x2(dot(jacobN[0], n) * n, dot(jacobN[1], n) * n));
 
                         if (errDist2 < pow2(1e-5f)) {
+                            Point3D bc(1 - *b1 - *b2, *b1, *b2);
+                            if (bc[0] < 0.0f || bc[1] < 0.0f || bc[2] < 0.0f
+                                || bc[0] > 1.0f || bc[1] > 1.0f || bc[2] > 1.0f) {
+                                *hitDist = INFINITY;
+                                return false;
+                            }
                             *hitDist = std::sqrt(hitDist2/* / rayDir.sqLength()*/);
                             *hitNormal = static_cast<Normal3D>(normalize(cross(jacobS[1], jacobS[0])));
 #if DEBUG_BILINEAR

@@ -83,6 +83,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_rayGen_generic() {
     Normal3D shadingNormalInWorld = gBuffer1.normalInWorld;
     Point2D texCoord(gBuffer0.texCoord_x, gBuffer1.texCoord_y);
     uint32_t materialSlot = gBuffer2.materialSlot;
+    uint32_t geomInstSlot = gBuffer2.geomInstSlot;
 
     const PerspectiveCamera &camera = plp.f->camera;
 
@@ -118,8 +119,10 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_rayGen_generic() {
                 contribution += alpha * emittance / Pi;
             }
 
+            const GeometryInstanceDataForTFDM &tfdmGeomInst = plp.s->geomInstTfdmDataBuffer[geomInstSlot];
+
             BSDF bsdf;
-            bsdf.setup(mat, texCoord, plp.f->targetMipLevel);
+            bsdf.setup(mat, texCoord, tfdmGeomInst.params.targetMipLevel);
 
             if (!plp.f->enableAlbedo) {
                 float4 albedo = plp.s->albedoAccumBuffer.read(launchIndex);
@@ -227,6 +230,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_closestHit_generic() {
     Normal3D geometricNormalInWorld;
     Point2D texCoord;
     float hypAreaPDensity;
+    float targetMipLevel = 0;
 
     const uint32_t hitKind = optixGetHitKind();
     const bool isTriangleHit =
@@ -241,6 +245,11 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_closestHit_generic() {
             rayOrigin,
             &positionInWorld, &shadingNormalInWorld, &texCoord0DirInWorld,
             &geometricNormalInWorld, &texCoord, &hypAreaPDensity);
+
+        if (isDisplacedTriangleHit) {
+            const GeometryInstanceDataForTFDM &tfdmGeomInst = plp.s->geomInstTfdmDataBuffer[sbtr.geomInstSlot];
+            targetMipLevel = tfdmGeomInst.params.targetMipLevel;
+        }
     }
     else { // for AABB debugging
         const GeometryInstanceDataForTFDM &tfdm = plp.s->geomInstTfdmDataBuffer[sbtr.geomInstSlot];
@@ -268,7 +277,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_closestHit_generic() {
     ReferenceFrame shadingFrame(shadingNormalInWorld, texCoord0DirInWorld);
     if (plp.f->enableBumpMapping) {
         Normal3D modLocalNormal = mat.readModifiedNormal(
-            mat.normal, mat.normalDimInfo, texCoord, plp.f->targetMipLevel);
+            mat.normal, mat.normalDimInfo, texCoord, targetMipLevel);
         applyBumpMapping(modLocalNormal, &shadingFrame);
     }
     positionInWorld = offsetRayOrigin(positionInWorld, frontHit * geometricNormalInWorld);
@@ -297,7 +306,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_closestHit_generic() {
     }
 
     BSDF bsdf;
-    bsdf.setup(mat, texCoord, plp.f->targetMipLevel);
+    bsdf.setup(mat, texCoord, targetMipLevel);
 
     // Next Event Estimation (Explicit Light Sampling)
     rwPayload->contribution += rwPayload->alpha * performNextEventEstimation(

@@ -97,6 +97,7 @@ namespace shared {
         Normal3D normalInWorld;
         Point2D texCoord;
         uint32_t materialSlot;
+        uint32_t geomInstSlot;
 #if DEBUG_TRAVERSAL_STATS
         uint32_t numTravIterations;
 #endif
@@ -140,7 +141,7 @@ namespace shared {
     struct GBuffer2 {
         Vector2D motionVector;
         uint32_t materialSlot;
-        uint32_t dummy;
+        uint32_t geomInstSlot;
     };
 
 
@@ -210,8 +211,6 @@ namespace shared {
         unsigned int enableEnvLight : 1;
         unsigned int enableBumpMapping : 1;
         unsigned int enableAlbedo : 1;
-        unsigned int localIntersectionType : 2;
-        unsigned int targetMipLevel : 4;
         unsigned int enableDebugPrint : 1;
 
         uint32_t debugSwitches;
@@ -675,9 +674,9 @@ struct HitGroupSBTRecordData {
 
 
 struct Texel {
-    uint32_t x : 14;
-    uint32_t y : 14;
-    uint32_t lod : 4;
+    int16_t x;
+    int16_t y;
+    int16_t lod;
 
     CUDA_DEVICE_FUNCTION bool operator==(const Texel &r) const {
         return x == r.x && y == r.y && lod == r.lod;
@@ -772,20 +771,20 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE TriangleSquareIntersection2DResult testTriangle
 }
 
 CUDA_DEVICE_FUNCTION CUDA_INLINE void findRoots(
-    const Point2D &triAabbMinP, const Point2D &triAabbMaxP, const uint32_t maxDepth, uint32_t targetMipLevel,
+    const Point2D &triAabbMinP, const Point2D &triAabbMaxP, const int32_t maxDepth, uint32_t targetMipLevel,
     Texel* const roots, uint32_t* const numRoots) {
     using namespace shared;
     static_assert(useMultipleRootOptimization, "Naive method is not implemented.");
     const Vector2D d = triAabbMaxP - triAabbMinP;
-    const float shiftX = std::floor(triAabbMinP.x);
-    const float shiftY = std::floor(triAabbMinP.y);
+    const int16_t shiftX = static_cast<int16_t>(std::floor(triAabbMinP.x));
+    const int16_t shiftY = static_cast<int16_t>(std::floor(triAabbMinP.y));
     const Point2D shiftedMinP(
         triAabbMinP.x - shiftX,
         triAabbMinP.y - shiftY);
     const Point2D shiftedMaxP = shiftedMinP + d;
     const uint32_t largerDim = d.y > d.x;
     if (d[largerDim] >= 1.0f) {
-        roots[0] = Texel{ 0, 0, maxDepth };
+        roots[0] = Texel{ shiftX, shiftY, static_cast<int16_t>(maxDepth) };
         *numRoots = 1;
         return;
     }
@@ -802,8 +801,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void findRoots(
             startMipLevel >= targetMipLevel) {
             if (startMipLevel == maxDepth) {
                 Texel &root = roots[0];
-                root.x = 0;
-                root.y = 0;
+                root.x = shiftX;
+                root.y = shiftY;
                 root.lod = maxDepth;
                 *numRoots = 1;
                 return;
@@ -812,8 +811,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void findRoots(
             for (int y = minTexelY; y <= maxTexelY; ++y) {
                 for (int x = minTexelX; x <= maxTexelX; ++x) {
                     Texel &root = roots[(*numRoots)++];
-                    root.x = x % res;
-                    root.y = y % res;
+                    root.x = x + shiftX * res;
+                    root.y = y + shiftY * res;
                     root.lod = startMipLevel;
                 }
             }

@@ -72,6 +72,32 @@ inline void drawAabb(const AABB &aabb) {
     drawLine(Point3D(aabb.maxP.x, aabb.maxP.y, aabb.minP.z), Point3D(aabb.maxP.x, aabb.maxP.y, aabb.maxP.z));
 }
 
+inline void drawAabbWithXfm(const AABB &aabb, const Matrix4x4 &mat) {
+    const Point3D pLLL = mat * Point3D(aabb.minP.x, aabb.minP.y, aabb.minP.z);
+    const Point3D pULL = mat * Point3D(aabb.maxP.x, aabb.minP.y, aabb.minP.z);
+    const Point3D pLUL = mat * Point3D(aabb.minP.x, aabb.maxP.y, aabb.minP.z);
+    const Point3D pUUL = mat * Point3D(aabb.maxP.x, aabb.maxP.y, aabb.minP.z);
+    const Point3D pLLU = mat * Point3D(aabb.minP.x, aabb.minP.y, aabb.maxP.z);
+    const Point3D pULU = mat * Point3D(aabb.maxP.x, aabb.minP.y, aabb.maxP.z);
+    const Point3D pLUU = mat * Point3D(aabb.minP.x, aabb.maxP.y, aabb.maxP.z);
+    const Point3D pUUU = mat * Point3D(aabb.maxP.x, aabb.maxP.y, aabb.maxP.z);
+
+    drawLine(pLLL, pULL);
+    drawLine(pLUL, pUUL);
+    drawLine(pLLU, pULU);
+    drawLine(pLUU, pUUU);
+
+    drawLine(pLLL, pLUL);
+    drawLine(pULL, pUUL);
+    drawLine(pLLU, pLUU);
+    drawLine(pULU, pUUU);
+
+    drawLine(pLLL, pLLU);
+    drawLine(pULL, pULU);
+    drawLine(pLUL, pLUU);
+    drawLine(pUUL, pUUU);
+}
+
 #endif
 
 template <std::floating_point T>
