@@ -1342,7 +1342,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         bool needsDegamma;
         hpprintf("Reading: %s ... ", heightMapPath.string().c_str());
         if (loadTexture<float, true>(
-            heightMapPath, 0.0f, gpuEnv.cuContext, &tfdmMeshMaterial->heightMap, &needsDegamma))
+            heightMapPath, 0.0f, gpuEnv.cuContext, &tfdmMeshMaterial->texHeight.cudaArray, &needsDegamma))
             hpprintf("done.\n");
         else
             hpprintf("failed.\n");
@@ -1353,10 +1353,11 @@ int32_t main(int32_t argc, const char* argv[]) try {
         sampler.setWrapMode(1, cudau::TextureWrapMode::Repeat);
         sampler.setMipMapFilterMode(cudau::TextureFilterMode::Point);
         sampler.setReadMode(cudau::TextureReadMode::NormalizedFloat);
-        tfdmMeshMaterial->heightMapTex = sampler.createTextureObject(*tfdmMeshMaterial->heightMap);
+        tfdmMeshMaterial->texHeight.texObj = sampler.createTextureObject(*tfdmMeshMaterial->texHeight.cudaArray);
         matDataOnHost.heightMapSize = int2(
-            tfdmMeshMaterial->heightMap->getWidth(), tfdmMeshMaterial->heightMap->getHeight());
-        matDataOnHost.heightMap = tfdmMeshMaterial->heightMapTex;
+            tfdmMeshMaterial->texHeight.cudaArray->getWidth(),
+            tfdmMeshMaterial->texHeight.cudaArray->getHeight());
+        matDataOnHost.heightMap = tfdmMeshMaterial->texHeight.texObj;
 
         if (matDataOnHost.heightMapSize.x != matDataOnHost.heightMapSize.y)
             throw std::runtime_error("Non-square height map is not supported.");
@@ -2427,7 +2428,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
                 Assert_ShouldNotBeCalled();
             }
 
-            int2 dstImageSize(mat->heightMap->getWidth(), mat->heightMap->getHeight());
+            int2 dstImageSize(mat->texHeight.cudaArray->getWidth(), mat->texHeight.cudaArray->getHeight());
             generateFirstMinMaxMipMap.launchWithThreadDim(
                 curCuStream, cudau::dim3(dstImageSize.x, dstImageSize.y),
                 matData, localIntersectionType);
@@ -2438,7 +2439,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
             //    printf("");
             //}
             dstImageSize /= 2;
-            const uint32_t numMinMaxMipMapLevels = nextPowOf2Exponent(mat->heightMap->getWidth()) + 1;
+            const uint32_t numMinMaxMipMapLevels = nextPowOf2Exponent(mat->texHeight.cudaArray->getWidth()) + 1;
             for (int srcLevel = 0; srcLevel < numMinMaxMipMapLevels - 1; ++srcLevel) {
                 generateMinMaxMipMap.launchWithThreadDim(
                     curCuStream, cudau::dim3(dstImageSize.x, dstImageSize.y),

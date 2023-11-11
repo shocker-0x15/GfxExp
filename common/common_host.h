@@ -538,60 +538,52 @@ enum class BumpMapTextureType {
     HeightMap_BC,
 };
 
+struct Texture {
+    std::shared_ptr<cudau::Array> cudaArray;
+    CUtexObject texObj;
+    std::shared_ptr<glu::Texture2D> glTexture;
+    std::shared_ptr<glu::Sampler> glSampler;
+
+    Texture() : cudaArray(nullptr), texObj(0), glTexture(nullptr) {
+    }
+    ~Texture() {
+        if (texObj)
+            cuTexObjectDestroy(texObj);
+    }
+};
+
 struct Material {
     struct Lambert {
-        const cudau::Array* reflectance;
-        CUtexObject texReflectance;
-        Lambert() :
-            reflectance(nullptr), texReflectance(0) {}
+        Texture texReflectance;
+        Lambert() {}
     };
     struct DiffuseAndSpecular {
-        const cudau::Array* diffuse;
-        CUtexObject texDiffuse;
-        const cudau::Array* specular;
-        CUtexObject texSpecular;
-        const cudau::Array* smoothness;
-        CUtexObject texSmoothness;
-        DiffuseAndSpecular() :
-            diffuse(nullptr), texDiffuse(0),
-            specular(nullptr), texSpecular(0),
-            smoothness(nullptr), texSmoothness(0) {}
+        Texture texDiffuse;
+        Texture texSpecular;
+        Texture texSmoothness;
+        DiffuseAndSpecular() {}
     };
     struct SimplePBR {
-        const cudau::Array* baseColor_opacity;
-        CUtexObject texBaseColor_opacity;
-        const cudau::Array* occlusion_roughness_metallic;
-        CUtexObject texOcclusion_roughness_metallic;
-
-        SimplePBR() :
-            baseColor_opacity(nullptr), texBaseColor_opacity(0),
-            occlusion_roughness_metallic(nullptr), texOcclusion_roughness_metallic(0) {}
+        Texture texBaseColor_opacity;
+        Texture texOcclusion_roughness_metallic;
+        SimplePBR() {}
     };
     std::variant<
         Lambert,
         DiffuseAndSpecular,
         SimplePBR> body;
-    const cudau::Array* normal;
-    CUtexObject texNormal;
-    const glu::Texture2D* gfxNormal;
-    glu::Sampler gfxSampler;
+    Texture texNormal;
     BumpMapTextureType bumpMapType;
-    const cudau::Array* emittance;
-    CUtexObject texEmittance;
+    Texture texEmittance;
 
     // for TFDM
-    const cudau::Array* heightMap;
-    CUtexObject heightMapTex;
+    Texture texHeight;
     cudau::Array minMaxMipMap;
     cudau::TypedBuffer<optixu::NativeBlockBuffer2D<float2>> minMaxMipMapSurfs;
 
     uint32_t materialSlot;
 
-    Material() :
-        normal(nullptr), texNormal(0),
-        emittance(nullptr), texEmittance(0),
-        heightMap(nullptr), heightMapTex(0),
-        materialSlot(0) {}
+    Material() : materialSlot(0) {}
 };
 
 struct GeometryInstance {
@@ -613,8 +605,8 @@ struct GeometryInstance {
 
     void draw() const {
         glUniform1ui(9, mat->materialSlot);
-        glBindTextureUnit(0, mat->gfxNormal->getHandle());
-        glBindSampler(0, mat->gfxSampler.getHandle());
+        glBindTextureUnit(0, mat->texNormal.glTexture->getHandle());
+        glBindSampler(0, mat->texNormal.glSampler->getHandle());
         uint32_t flags = 0;
         if (mat->bumpMapType == BumpMapTextureType::NormalMap ||
             mat->bumpMapType == BumpMapTextureType::NormalMap_BC)
@@ -1258,22 +1250,22 @@ void createImmTexture(
     CUcontext cuContext,
     const T &immValue,
     bool isNormalized,
-    const cudau::Array** texture,
-    const glu::Texture2D** gfxTexture = nullptr);
+    std::shared_ptr<cudau::Array>* texture,
+    std::shared_ptr<glu::Texture2D>* gfxTexture = nullptr);
 
 template <typename T, bool useSurface = false>
 bool loadTexture(
     const std::filesystem::path &filePath, const T &fallbackValue,
     CUcontext cuContext,
-    const cudau::Array** texture,
+    std::shared_ptr<cudau::Array>* texture,
     bool* needsDegamma,
     bool* isHDR = nullptr);
 
 bool loadNormalTexture(
     const std::filesystem::path &filePath,
     CUcontext cuContext,
-    const cudau::Array** texture,
-    const glu::Texture2D** gfxTexture,
+    std::shared_ptr<cudau::Array>* texture,
+    std::shared_ptr<glu::Texture2D>* gfxTexture,
     BumpMapTextureType* bumpMapType);
 
 void createNormalTexture(
@@ -1286,6 +1278,8 @@ void createEmittanceTexture(
     const std::filesystem::path &emittancePath, const RGB &immEmittance,
     Material* mat,
     bool* needsDegamma, bool* isHDR);
+
+shared::TexDimInfo calcDimInfo(const cudau::Array &cuArray, bool isLeftHanded = true);
 
 void createLambertMaterial(
     CUcontext cuContext, Scene* scene,

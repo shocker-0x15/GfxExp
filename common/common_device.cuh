@@ -2,16 +2,6 @@
 
 #include "common_shared.h"
 
-#define V2FMT "%g, %g"
-#define V3FMT "%g, %g, %g"
-#define V4FMT "%g, %g, %g"
-#define v2print(v) (v).x, (v).y
-#define v3print(v) (v).x, (v).y, (v).z
-#define v4print(v) (v).x, (v).y, (v).z, (v).w
-#define rgbprint(v) (v).r, (v).g, (v).b
-
-
-
 static constexpr float Pi = 3.14159265358979323846f;
 static constexpr float RayEpsilon = 1e-4;
 

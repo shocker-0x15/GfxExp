@@ -88,12 +88,14 @@ TFDMではハイトマップの各テクセルの最小値・最大値を階層�
 
 In TFDM, a minmax mipmap is used to store the minimum and maximum values of each texel hierarchically as (a part of) an implicit BVH, which is decoupled from the base mesh shape. This allows for ray tracing against detailed geometry without pre-tessellation, resulting in a low memory footprint. Intersection shader is invoked during traversal for each base triangle. Using the position, normal, texture coordinates of the triangle vertices and the values from the minmax mipmap, AABB computation on the fly by affine arithmetic and ray intersection test is performed hierarchically, finally ray intersection test against the final shape.
 
-- [x] Basic Implementation (Minmax mipmap traversal, box/two-triangle local intersection)
+- [x] Basic Implementation (Minmax mipmap traversal, box/two-triangle local intersection, non-wrapping texture)
 - [ ] Advanced Items
   - [x] Better root choice
   - [x] Flexible traversal order
   - [x] Bilinear local intersection
   - [ ] B-spline local intersection
+  - [ ] Texture wrapping
+  - [ ] Texture transform
   - [ ] Watertightness consideration
   - [ ] Continous LoD
 

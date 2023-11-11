@@ -977,8 +977,8 @@ struct ImmTextureCacheKey {
 };
 
 struct TextureCacheValue {
-    glu::Texture2D gfxTexture;
-    cudau::Array texture;
+    std::shared_ptr<glu::Texture2D> gfxTexture;
+    std::shared_ptr<cudau::Array> texture;
     bool needsDegamma;
     bool isHDR;
     BumpMapTextureType bumpMapType;
@@ -991,22 +991,10 @@ static std::map<ImmTextureCacheKey<float3>, TextureCacheValue> s_Fx3ImmTextureCa
 static std::map<ImmTextureCacheKey<float4>, TextureCacheValue> s_Fx4ImmTextureCache;
 
 void finalizeTextureCaches() {
-    for (auto &it : s_textureCache) {
-        it.second.texture.finalize();
-        it.second.gfxTexture.finalize();
-    }
-    for (auto &it : s_Fx1ImmTextureCache) {
-        it.second.texture.finalize();
-        it.second.gfxTexture.finalize();
-    }
-    for (auto &it : s_Fx3ImmTextureCache) {
-        it.second.texture.finalize();
-        it.second.gfxTexture.finalize();
-    }
-    for (auto &it : s_Fx4ImmTextureCache) {
-        it.second.texture.finalize();
-        it.second.gfxTexture.finalize();
-    }
+    s_textureCache.clear();
+    s_Fx1ImmTextureCache.clear();
+    s_Fx3ImmTextureCache.clear();
+    s_Fx4ImmTextureCache.clear();
 }
 
 template <typename T>
@@ -1014,8 +1002,8 @@ void createImmTexture(
     CUcontext cuContext,
     const T &immValue,
     bool isNormalized,
-    const cudau::Array** texture,
-    const glu::Texture2D** gfxTexture) {
+    std::shared_ptr<cudau::Array>* texture,
+    std::shared_ptr<glu::Texture2D>* gfxTexture) {
     std::map<ImmTextureCacheKey<T>, TextureCacheValue>* textureCache;
     uint32_t numComps = 0;
     if constexpr (std::is_same_v<T, float>) {
@@ -1040,9 +1028,9 @@ void createImmTexture(
     cacheKey.cuContext = cuContext;
     if (textureCache->count(cacheKey)) {
         const TextureCacheValue &value = textureCache->at(cacheKey);
-        *texture = &value.texture;
+        *texture = value.texture;
         if (gfxTexture)
-            *gfxTexture = &value.gfxTexture;
+            *gfxTexture = value.gfxTexture;
         return;
     }
 
@@ -1080,15 +1068,17 @@ void createImmTexture(
 
         if constexpr (useGLTexture) {
             if (gfxTexture) {
-                cacheValue.gfxTexture.initialize(glBufferFormat, 1, 1, 1);
-                cacheValue.gfxTexture.transferImage(GL_RGBA, GL_UNSIGNED_INT_8_8_8_8_REV, &data, 0);
+                cacheValue.gfxTexture = std::make_shared<glu::Texture2D>();
+                cacheValue.gfxTexture->initialize(glBufferFormat, 1, 1, 1);
+                cacheValue.gfxTexture->transferImage(GL_RGBA, GL_UNSIGNED_INT_8_8_8_8_REV, &data, 0);
             }
         }
-        cacheValue.texture.initialize2D(
+        cacheValue.texture = std::make_shared<cudau::Array>();
+        cacheValue.texture->initialize2D(
             cuContext, cudau::ArrayElementType::UInt8, numComps,
             cudau::ArraySurface::Disable, cudau::ArrayTextureGather::Disable,
             1, 1, 1);
-        cacheValue.texture.write(reinterpret_cast<uint8_t*>(&data), numComps);
+        cacheValue.texture->write(reinterpret_cast<uint8_t*>(&data), numComps);
     }
     else {
         float data[4] = { 0, 0, 0, 0 };
@@ -1119,54 +1109,56 @@ void createImmTexture(
 
         if constexpr (useGLTexture) {
             if (gfxTexture) {
-                cacheValue.gfxTexture.initialize(glBufferFormat, 1, 1, 1);
-                cacheValue.gfxTexture.transferImage(GL_RGBA, GL_FLOAT, &data, 0);
+                cacheValue.gfxTexture = std::make_shared<glu::Texture2D>();
+                cacheValue.gfxTexture->initialize(glBufferFormat, 1, 1, 1);
+                cacheValue.gfxTexture->transferImage(GL_RGBA, GL_FLOAT, &data, 0);
             }
         }
-        cacheValue.texture.initialize2D(
+        cacheValue.texture = std::make_shared<cudau::Array>();
+        cacheValue.texture->initialize2D(
             cuContext, cudau::ArrayElementType::Float32, numComps,
             cudau::ArraySurface::Disable, cudau::ArrayTextureGather::Disable,
             1, 1, 1);
-        cacheValue.texture.write(data, numComps);
+        cacheValue.texture->write(data, numComps);
     }
 
-    (*textureCache)[cacheKey] = std::move(cacheValue);
+    (*textureCache)[cacheKey] = cacheValue;
 
-    *texture = &textureCache->at(cacheKey).texture;
+    *texture = textureCache->at(cacheKey).texture;
     if (gfxTexture)
-        *gfxTexture = &textureCache->at(cacheKey).gfxTexture;
+        *gfxTexture = textureCache->at(cacheKey).gfxTexture;
 }
 
 template void createImmTexture(
     CUcontext cuContext,
     const float &immValue,
     bool isNormalized,
-    const cudau::Array** texture,
-    const glu::Texture2D** gfxTexture);
+    std::shared_ptr<cudau::Array>* texture,
+    std::shared_ptr<glu::Texture2D>* gfxTexture);
 template void createImmTexture(
     CUcontext cuContext,
     const float2 &immValue,
     bool isNormalized,
-    const cudau::Array** texture,
-    const glu::Texture2D** gfxTexture);
+    std::shared_ptr<cudau::Array>* texture,
+    std::shared_ptr<glu::Texture2D>* gfxTexture);
 template void createImmTexture(
     CUcontext cuContext,
     const float3 &immValue,
     bool isNormalized,
-    const cudau::Array** texture,
-    const glu::Texture2D** gfxTexture);
+    std::shared_ptr<cudau::Array>* texture,
+    std::shared_ptr<glu::Texture2D>* gfxTexture);
 template void createImmTexture(
     CUcontext cuContext,
     const float4 &immValue,
     bool isNormalized,
-    const cudau::Array** texture,
-    const glu::Texture2D** gfxTexture);
+    std::shared_ptr<cudau::Array>* texture,
+    std::shared_ptr<glu::Texture2D>* gfxTexture);
 
 template <typename T, bool useSurface>
 bool loadTexture(
     const std::filesystem::path &filePath, const T &fallbackValue,
     CUcontext cuContext,
-    const cudau::Array** texture,
+    std::shared_ptr<cudau::Array>* texture,
     bool* needsDegamma,
     bool* isHDR) {
     TextureCacheKey cacheKey;
@@ -1174,7 +1166,7 @@ bool loadTexture(
     cacheKey.cuContext = cuContext;
     if (s_textureCache.count(cacheKey)) {
         const TextureCacheValue &value = s_textureCache.at(cacheKey);
-        *texture = &value.texture;
+        *texture = value.texture;
         *needsDegamma = value.needsDegamma;
         if (isHDR)
             *isHDR = value.isHDR;
@@ -1194,13 +1186,14 @@ bool loadTexture(
         if (imageData) {
             cudau::ArrayElementType elemType;
             translate(ddsFormat, &elemType, &cacheValue.needsDegamma, &cacheValue.isHDR);
-            cacheValue.texture.initialize2D(
+            cacheValue.texture = std::make_shared<cudau::Array>();
+            cacheValue.texture->initialize2D(
                 cuContext, elemType, 1,
                 useSurface ? cudau::ArraySurface::Enable : cudau::ArraySurface::Disable,
                 cudau::ArrayTextureGather::Disable,
                 width, height, mipCount);
             for (int32_t mipLevel = 0; mipLevel < mipCount; ++mipLevel)
-                cacheValue.texture.write<uint8_t>(
+                cacheValue.texture->write<uint8_t>(
                     imageData[mipLevel], static_cast<uint32_t>(sizes[mipLevel]), mipLevel);
             dds::free(imageData, mipCount, sizes);
         }
@@ -1213,12 +1206,13 @@ bool loadTexture(
         uint8_t* linearImageData = stbi_load(filePath.string().c_str(),
                                              &width, &height, &n, 4);
         if (linearImageData) {
-            cacheValue.texture.initialize2D(
+            cacheValue.texture = std::make_shared<cudau::Array>();
+            cacheValue.texture->initialize2D(
                 cuContext, cudau::ArrayElementType::UInt8, 4,
                 useSurface ? cudau::ArraySurface::Enable : cudau::ArraySurface::Disable,
                 cudau::ArrayTextureGather::Disable,
                 width, height, 1);
-            cacheValue.texture.write<uint8_t>(linearImageData, width * height * 4);
+            cacheValue.texture->write<uint8_t>(linearImageData, width * height * 4);
             stbi_image_free(linearImageData);
             cacheValue.needsDegamma = true;
             cacheValue.isHDR = false;
@@ -1229,9 +1223,9 @@ bool loadTexture(
     }
 
     if (success) {
-        s_textureCache[cacheKey] = std::move(cacheValue);
+        s_textureCache[cacheKey] = cacheValue;
 
-        *texture = &s_textureCache.at(cacheKey).texture;
+        *texture = s_textureCache.at(cacheKey).texture;
         *needsDegamma = s_textureCache.at(cacheKey).needsDegamma;
         if (isHDR)
             *isHDR = s_textureCache.at(cacheKey).isHDR;
@@ -1248,47 +1242,47 @@ bool loadTexture(
 template bool loadTexture<float, false>(
     const std::filesystem::path &filePath, const float &fallbackValue,
     CUcontext cuContext,
-    const cudau::Array** texture,
+    std::shared_ptr<cudau::Array>* texture,
     bool* needsDegamma,
     bool* isHDR);
 template bool loadTexture<float, true>(
     const std::filesystem::path &filePath, const float &fallbackValue,
     CUcontext cuContext,
-    const cudau::Array** texture,
+    std::shared_ptr<cudau::Array>* texture,
     bool* needsDegamma,
     bool* isHDR);
 template bool loadTexture<float2, false>(
     const std::filesystem::path &filePath, const float2 &fallbackValue,
     CUcontext cuContext,
-    const cudau::Array** texture,
+    std::shared_ptr<cudau::Array>* texture,
     bool* needsDegamma,
     bool* isHDR);
 template bool loadTexture<float3, false>(
     const std::filesystem::path &filePath, const float3 &fallbackValue,
     CUcontext cuContext,
-    const cudau::Array** texture,
+    std::shared_ptr<cudau::Array>* texture,
     bool* needsDegamma,
     bool* isHDR);
 template bool loadTexture<float4, false>(
     const std::filesystem::path &filePath, const float4 &fallbackValue,
     CUcontext cuContext,
-    const cudau::Array** texture,
+    std::shared_ptr<cudau::Array>* texture,
     bool* needsDegamma,
     bool* isHDR);
 
 bool loadNormalTexture(
     const std::filesystem::path &filePath,
     CUcontext cuContext,
-    const cudau::Array** texture,
-    const glu::Texture2D** gfxTexture,
+    std::shared_ptr<cudau::Array>* texture,
+    std::shared_ptr<glu::Texture2D>* gfxTexture,
     BumpMapTextureType* bumpMapType) {
     TextureCacheKey cacheKey;
     cacheKey.filePath = filePath;
     cacheKey.cuContext = cuContext;
     if (s_textureCache.count(cacheKey)) {
         const TextureCacheValue &value = s_textureCache.at(cacheKey);
-        *texture = &value.texture;
-        *gfxTexture = &value.gfxTexture;
+        *texture = value.texture;
+        *gfxTexture = value.gfxTexture;
         *bumpMapType = value.bumpMapType;
         return true;
     }
@@ -1312,12 +1306,13 @@ bool loadNormalTexture(
                 auto textureGather = cacheValue.bumpMapType == BumpMapTextureType::HeightMap_BC ?
                     cudau::ArrayTextureGather::Enable :
                     cudau::ArrayTextureGather::Disable;
-                cacheValue.gfxTexture.initialize(glFormat, width, height, mipCount);
+                cacheValue.gfxTexture = std::make_shared<glu::Texture2D>();
+                cacheValue.gfxTexture->initialize(glFormat, width, height, mipCount);
                 for (int mipLevel = 0; mipLevel < mipCount; ++mipLevel)
-                    cacheValue.gfxTexture.transferCompressedImage(
+                    cacheValue.gfxTexture->transferCompressedImage(
                         imageData[mipLevel], static_cast<GLsizei>(sizes[mipLevel]), mipLevel);
-                //cacheValue.texture.initializeFromGLTexture2D(
-                //    cuContext, cacheValue.gfxTexture.getHandle(),
+                //cacheValue.texture->initializeFromGLTexture2D(
+                //    cuContext, cacheValue.gfxTexture->getHandle(),
                 //    cudau::ArraySurface::Disable, textureGather);
             }
             cudau::ArrayElementType elemType;
@@ -1326,13 +1321,14 @@ bool loadNormalTexture(
             auto textureGather = cacheValue.bumpMapType == BumpMapTextureType::HeightMap_BC ?
                 cudau::ArrayTextureGather::Enable :
                 cudau::ArrayTextureGather::Disable;
-            cacheValue.texture.initialize2D(
+            cacheValue.texture = std::make_shared<cudau::Array>();
+            cacheValue.texture->initialize2D(
                 cuContext, elemType, 1,
                 cudau::ArraySurface::Disable,
                 textureGather,
                 width, height, mipCount);
             for (int32_t mipLevel = 0; mipLevel < mipCount; ++mipLevel)
-                cacheValue.texture.write<uint8_t>(
+                cacheValue.texture->write<uint8_t>(
                     imageData[mipLevel], static_cast<uint32_t>(sizes[mipLevel]), mipLevel);
             dds::free(imageData, mipCount, sizes);
         }
@@ -1355,17 +1351,19 @@ bool loadNormalTexture(
                 cudau::ArrayTextureGather::Enable :
                 cudau::ArrayTextureGather::Disable;
             if constexpr (useGLTexture) {
-                cacheValue.gfxTexture.initialize(GL_RGBA8, width, height, 1);
-                cacheValue.gfxTexture.transferImage(GL_RGBA, GL_UNSIGNED_INT_8_8_8_8_REV, linearImageData, 0);
-                //cacheValue.texture.initializeFromGLTexture2D(
-                //    cuContext, cacheValue.gfxTexture.getHandle(),
+                cacheValue.gfxTexture = std::make_shared<glu::Texture2D>();
+                cacheValue.gfxTexture->initialize(GL_RGBA8, width, height, 1);
+                cacheValue.gfxTexture->transferImage(GL_RGBA, GL_UNSIGNED_INT_8_8_8_8_REV, linearImageData, 0);
+                //cacheValue.texture->initializeFromGLTexture2D(
+                //    cuContext, cacheValue.gfxTexture->getHandle(),
                 //    cudau::ArraySurface::Disable, cudau::ArrayTextureGather::Disable);
             }
-            cacheValue.texture.initialize2D(
+            cacheValue.texture = std::make_shared<cudau::Array>();
+            cacheValue.texture->initialize2D(
                 cuContext, cudau::ArrayElementType::UInt8, 4,
                 cudau::ArraySurface::Disable, textureGather,
                 width, height, 1);
-            cacheValue.texture.write<uint8_t>(linearImageData, width * height * 4);
+            cacheValue.texture->write<uint8_t>(linearImageData, width * height * 4);
             stbi_image_free(linearImageData);
         }
         else {
@@ -1374,9 +1372,9 @@ bool loadNormalTexture(
     }
 
     if (success) {
-        s_textureCache[cacheKey] = std::move(cacheValue);
-        *texture = &s_textureCache.at(cacheKey).texture;
-        *gfxTexture = &s_textureCache.at(cacheKey).gfxTexture;
+        s_textureCache[cacheKey] = cacheValue;
+        *texture = s_textureCache.at(cacheKey).texture;
+        *gfxTexture = s_textureCache.at(cacheKey).gfxTexture;
         *bumpMapType = s_textureCache.at(cacheKey).bumpMapType;
     }
     else {
@@ -1392,12 +1390,16 @@ void createNormalTexture(
     const std::filesystem::path &normalPath,
     Material* mat) {
     if (normalPath.empty()) {
-        createImmTexture(cuContext, float3(0.5f, 0.5f, 1.0f), true, &mat->normal, &mat->gfxNormal);
+        createImmTexture(
+            cuContext, float3(0.5f, 0.5f, 1.0f), true,
+            &mat->texNormal.cudaArray, &mat->texNormal.glTexture);
         mat->bumpMapType = BumpMapTextureType::NormalMap;
     }
     else {
         hpprintf("  Reading: %s ... ", normalPath.string().c_str());
-        if (loadNormalTexture(normalPath, cuContext, &mat->normal, &mat->gfxNormal, &mat->bumpMapType))
+        if (loadNormalTexture(
+            normalPath, cuContext,
+            &mat->texNormal.cudaArray, &mat->texNormal.glTexture, &mat->bumpMapType))
             hpprintf("done.\n");
         else
             hpprintf("failed.\n");
@@ -1412,22 +1414,22 @@ void createEmittanceTexture(
     *needsDegamma = false;
     *isHDR = false;
     if (emittancePath.empty()) {
-        mat->texEmittance = 0;
+        mat->texEmittance.texObj = 0;
         if (any(immEmittance != RGB(0.0f, 0.0f, 0.0f)))
-            createImmTexture(cuContext, immEmittance.toNative(), false, &mat->emittance, nullptr);
+            createImmTexture(cuContext, immEmittance.toNative(), false, &mat->texEmittance.cudaArray, nullptr);
     }
     else {
         hpprintf("  Reading: %s ... ", emittancePath.string().c_str());
         if (loadTexture(
             emittancePath, float4(immEmittance.toNative(), 1.0f), cuContext,
-            &mat->emittance, needsDegamma, isHDR))
+            &mat->texEmittance.cudaArray, needsDegamma, isHDR))
             hpprintf("done.\n");
         else
             hpprintf("failed.\n");
     }
 }
 
-static shared::TexDimInfo calcDimInfo(const cudau::Array &cuArray, bool isLeftHanded = true) {
+shared::TexDimInfo calcDimInfo(const cudau::Array &cuArray, bool isLeftHanded) {
     shared::TexDimInfo dimInfo = {};
     uint32_t w = static_cast<uint32_t>(cuArray.getWidth());
     uint32_t h = static_cast<uint32_t>(cuArray.getHeight());
@@ -1478,27 +1480,28 @@ void createLambertMaterial(
         hpprintf("  Reading: %s ... ", reflectancePath.string().c_str());
         if (loadTexture(
             reflectancePath, float4(immReflectance.toNative(), 1.0f), cuContext,
-            &body.reflectance, &needsDegamma))
+            &body.texReflectance.cudaArray, &needsDegamma))
             hpprintf("done.\n");
         else
             hpprintf("failed.\n");
     }
-    if (!body.reflectance) {
-        createImmTexture(cuContext, immReflectance.toNative(), true, &body.reflectance, nullptr);
+    if (!body.texReflectance.cudaArray) {
+        createImmTexture(cuContext, immReflectance.toNative(), true, &body.texReflectance.cudaArray, nullptr);
         needsDegamma = true;
     }
     if (needsDegamma)
-        body.texReflectance = sampler_sRGB.createTextureObject(*body.reflectance);
+        body.texReflectance.texObj = sampler_sRGB.createTextureObject(*body.texReflectance.cudaArray);
     else
-        body.texReflectance = sampler_normFloat.createTextureObject(*body.reflectance);
+        body.texReflectance.texObj = sampler_normFloat.createTextureObject(*body.texReflectance.cudaArray);
 
     createNormalTexture(cuContext, normalPath, mat);
-    mat->texNormal = sampler_normFloat.createTextureObject(*mat->normal);
-    mat->gfxSampler.initialize(
+    mat->texNormal.glSampler = std::make_shared<glu::Sampler>();
+    mat->texNormal.glSampler->initialize(
         glu::Sampler::MinFilter::LinearMipMapLinear,
         glu::Sampler::MagFilter::Linear,
         glu::Sampler::WrapMode::Repeat,
         glu::Sampler::WrapMode::Repeat);
+    mat->texNormal.texObj = sampler_normFloat.createTextureObject(*mat->texNormal.cudaArray);
     CallableProgram dcReadModifiedNormal;
     if (mat->bumpMapType == BumpMapTextureType::NormalMap ||
         mat->bumpMapType == BumpMapTextureType::NormalMap_BC)
@@ -1511,24 +1514,24 @@ void createLambertMaterial(
     bool isHDR;
     createEmittanceTexture(cuContext, emittancePath, immEmittance,
                            mat, &needsDegamma, &isHDR);
-    if (mat->emittance) {
+    if (mat->texEmittance.cudaArray) {
         if (needsDegamma)
-            mat->texEmittance = sampler_sRGB.createTextureObject(*mat->emittance);
+            mat->texEmittance.texObj = sampler_sRGB.createTextureObject(*mat->texEmittance.cudaArray);
         else if (isHDR)
-            mat->texEmittance = sampler_float.createTextureObject(*mat->emittance);
+            mat->texEmittance.texObj = sampler_float.createTextureObject(*mat->texEmittance.cudaArray);
         else
-            mat->texEmittance = sampler_normFloat.createTextureObject(*mat->emittance);
+            mat->texEmittance.texObj = sampler_normFloat.createTextureObject(*mat->texEmittance.cudaArray);
     }
 
     mat->materialSlot = scene->materialSlotFinder.getFirstAvailableSlot();
     scene->materialSlotFinder.setInUse(mat->materialSlot);
 
     shared::MaterialData matData = {};
-    matData.asLambert.reflectance = body.texReflectance;
-    matData.asLambert.reflectanceDimInfo = calcDimInfo(*body.reflectance);
-    matData.normal = mat->texNormal;
-    matData.emittance = mat->texEmittance;
-    matData.normalDimInfo = calcDimInfo(*mat->normal);
+    matData.asLambert.reflectance = body.texReflectance.texObj;
+    matData.asLambert.reflectanceDimInfo = calcDimInfo(*body.texReflectance.cudaArray);
+    matData.normal = mat->texNormal.texObj;
+    matData.emittance = mat->texEmittance.texObj;
+    matData.normalDimInfo = calcDimInfo(*mat->texNormal.cudaArray);
     matData.readModifiedNormal = shared::ReadModifiedNormal(dcReadModifiedNormal);
     matData.setupBSDFBody = shared::SetupBSDFBody(CallableProgram_setupLambertBRDF);
     matData.bsdfGetSurfaceParameters = shared::BSDFGetSurfaceParameters(CallableProgram_LambertBRDF_getSurfaceParameters);
@@ -1581,48 +1584,49 @@ void createDiffuseAndSpecularMaterial(
         hpprintf("  Reading: %s ... ", diffuseColorPath.string().c_str());
         if (loadTexture(
             diffuseColorPath, float4(immDiffuseColor.toNative(), 1.0f), cuContext,
-            &body.diffuse, &needsDegamma))
+            &body.texDiffuse.cudaArray, &needsDegamma))
             hpprintf("done.\n");
         else
             hpprintf("failed.\n");
     }
-    if (!body.diffuse) {
-        createImmTexture(cuContext, immDiffuseColor.toNative(), true, &body.diffuse, nullptr);
+    if (!body.texDiffuse.cudaArray) {
+        createImmTexture(cuContext, immDiffuseColor.toNative(), true, &body.texDiffuse.cudaArray, nullptr);
         needsDegamma = true;
     }
     if (needsDegamma)
-        body.texDiffuse = sampler_sRGB.createTextureObject(*body.diffuse);
+        body.texDiffuse.texObj = sampler_sRGB.createTextureObject(*body.texDiffuse.cudaArray);
     else
-        body.texDiffuse = sampler_normFloat.createTextureObject(*body.diffuse);
+        body.texDiffuse.texObj = sampler_normFloat.createTextureObject(*body.texDiffuse.cudaArray);
 
     if (!specularColorPath.empty()) {
         hpprintf("  Reading: %s ... ", specularColorPath.string().c_str());
         if (loadTexture(
             specularColorPath, float4(immSpecularColor.toNative(), 1.0f), cuContext,
-            &body.specular, &needsDegamma))
+            &body.texSpecular.cudaArray, &needsDegamma))
             hpprintf("done.\n");
         else
             hpprintf("failed.\n");
     }
-    if (!body.specular) {
-        createImmTexture(cuContext, immSpecularColor.toNative(), true, &body.specular, nullptr);
+    if (!body.texSpecular.cudaArray) {
+        createImmTexture(cuContext, immSpecularColor.toNative(), true, &body.texSpecular.cudaArray, nullptr);
         needsDegamma = true;
     }
     if (needsDegamma)
-        body.texSpecular = sampler_sRGB.createTextureObject(*body.specular);
+        body.texSpecular.texObj = sampler_sRGB.createTextureObject(*body.texSpecular.cudaArray);
     else
-        body.texSpecular = sampler_normFloat.createTextureObject(*body.specular);
+        body.texSpecular.texObj = sampler_normFloat.createTextureObject(*body.texSpecular.cudaArray);
 
-    createImmTexture(cuContext, immSmoothness, true, &body.smoothness);
-    body.texSmoothness = sampler_normFloat.createTextureObject(*body.smoothness);
+    createImmTexture(cuContext, immSmoothness, true, &body.texSmoothness.cudaArray);
+    body.texSmoothness.texObj = sampler_normFloat.createTextureObject(*body.texSmoothness.cudaArray);
 
     createNormalTexture(cuContext, normalPath, mat);
-    mat->texNormal = sampler_normFloat.createTextureObject(*mat->normal);
-    mat->gfxSampler.initialize(
+    mat->texNormal.glSampler = std::make_shared<glu::Sampler>();
+    mat->texNormal.glSampler->initialize(
         glu::Sampler::MinFilter::LinearMipMapLinear,
         glu::Sampler::MagFilter::Linear,
         glu::Sampler::WrapMode::Repeat,
         glu::Sampler::WrapMode::Repeat);
+    mat->texNormal.texObj = sampler_normFloat.createTextureObject(*mat->texNormal.cudaArray);
     CallableProgram dcReadModifiedNormal;
     if (mat->bumpMapType == BumpMapTextureType::NormalMap ||
         mat->bumpMapType == BumpMapTextureType::NormalMap_BC)
@@ -1635,28 +1639,28 @@ void createDiffuseAndSpecularMaterial(
     bool isHDR;
     createEmittanceTexture(cuContext, emittancePath, immEmittance,
                            mat, &needsDegamma, &isHDR);
-    if (mat->emittance) {
+    if (mat->texEmittance.cudaArray) {
         if (needsDegamma)
-            mat->texEmittance = sampler_sRGB.createTextureObject(*mat->emittance);
+            mat->texEmittance.texObj = sampler_sRGB.createTextureObject(*mat->texEmittance.cudaArray);
         else if (isHDR)
-            mat->texEmittance = sampler_float.createTextureObject(*mat->emittance);
+            mat->texEmittance.texObj = sampler_float.createTextureObject(*mat->texEmittance.cudaArray);
         else
-            mat->texEmittance = sampler_normFloat.createTextureObject(*mat->emittance);
+            mat->texEmittance.texObj = sampler_normFloat.createTextureObject(*mat->texEmittance.cudaArray);
     }
 
     mat->materialSlot = scene->materialSlotFinder.getFirstAvailableSlot();
     scene->materialSlotFinder.setInUse(mat->materialSlot);
 
     shared::MaterialData matData = {};
-    matData.asDiffuseAndSpecular.diffuse = body.texDiffuse;
-    matData.asDiffuseAndSpecular.specular = body.texSpecular;
-    matData.asDiffuseAndSpecular.smoothness = body.texSmoothness;
-    matData.asDiffuseAndSpecular.diffuseDimInfo = calcDimInfo(*body.diffuse);
-    matData.asDiffuseAndSpecular.specularDimInfo = calcDimInfo(*body.specular);
-    matData.asDiffuseAndSpecular.smoothnessDimInfo = calcDimInfo(*body.smoothness);
-    matData.normal = mat->texNormal;
-    matData.emittance = mat->texEmittance;
-    matData.normalDimInfo = calcDimInfo(*mat->normal);
+    matData.asDiffuseAndSpecular.diffuse = body.texDiffuse.texObj;
+    matData.asDiffuseAndSpecular.specular = body.texSpecular.texObj;
+    matData.asDiffuseAndSpecular.smoothness = body.texSmoothness.texObj;
+    matData.asDiffuseAndSpecular.diffuseDimInfo = calcDimInfo(*body.texDiffuse.cudaArray);
+    matData.asDiffuseAndSpecular.specularDimInfo = calcDimInfo(*body.texSpecular.cudaArray);
+    matData.asDiffuseAndSpecular.smoothnessDimInfo = calcDimInfo(*body.texSmoothness.cudaArray);
+    matData.normal = mat->texNormal.texObj;
+    matData.emittance = mat->texEmittance.texObj;
+    matData.normalDimInfo = calcDimInfo(*mat->texNormal.cudaArray);
     matData.readModifiedNormal = shared::ReadModifiedNormal(dcReadModifiedNormal);
     matData.setupBSDFBody = shared::SetupBSDFBody(CallableProgram_setupDiffuseAndSpecularBRDF);
     matData.bsdfGetSurfaceParameters =
@@ -1711,44 +1715,46 @@ void createSimplePBRMaterial(
     if (!baseColor_opacityPath.empty()) {
         hpprintf("  Reading: %s ... ", baseColor_opacityPath.string().c_str());
         if (loadTexture(baseColor_opacityPath, immBaseColor_opacity, cuContext,
-                        &body.baseColor_opacity, &needsDegamma))
+                        &body.texBaseColor_opacity.cudaArray, &needsDegamma))
             hpprintf("done.\n");
         else
             hpprintf("failed.\n");
     }
-    if (!body.baseColor_opacity) {
+    if (!body.texBaseColor_opacity.cudaArray) {
         createImmTexture(cuContext, immBaseColor_opacity, true,
-                         &body.baseColor_opacity);
+                         &body.texBaseColor_opacity.cudaArray);
         needsDegamma = true;
     }
     if (needsDegamma)
-        body.texBaseColor_opacity = sampler_sRGB.createTextureObject(*body.baseColor_opacity);
+        body.texBaseColor_opacity.texObj = sampler_sRGB.createTextureObject(*body.texBaseColor_opacity.cudaArray);
     else
-        body.texBaseColor_opacity = sampler_normFloat.createTextureObject(*body.baseColor_opacity);
+        body.texBaseColor_opacity.texObj = sampler_normFloat.createTextureObject(*body.texBaseColor_opacity.cudaArray);
 
     if (!occlusion_roughness_metallicPath.empty()) {
         hpprintf("  Reading: %s ... ", occlusion_roughness_metallicPath.string().c_str());
-        if (loadTexture(occlusion_roughness_metallicPath, float4(immOcclusion_roughness_metallic, 0.0f),
-                        cuContext,
-                        &body.occlusion_roughness_metallic, &needsDegamma))
+        if (loadTexture(
+            occlusion_roughness_metallicPath, float4(immOcclusion_roughness_metallic, 0.0f),
+            cuContext,
+            &body.texOcclusion_roughness_metallic.cudaArray, &needsDegamma))
             hpprintf("done.\n");
         else
             hpprintf("failed.\n");
     }
-    if (!body.occlusion_roughness_metallic) {
+    if (!body.texOcclusion_roughness_metallic.cudaArray) {
         createImmTexture(cuContext, immOcclusion_roughness_metallic, true,
-                         &body.occlusion_roughness_metallic, nullptr);
+                         &body.texOcclusion_roughness_metallic.cudaArray, nullptr);
     }
-    body.texOcclusion_roughness_metallic =
-        sampler_normFloat.createTextureObject(*body.occlusion_roughness_metallic);
+    body.texOcclusion_roughness_metallic.texObj =
+        sampler_normFloat.createTextureObject(*body.texOcclusion_roughness_metallic.cudaArray);
 
     createNormalTexture(cuContext, normalPath, mat);
-    mat->texNormal = sampler_normFloat.createTextureObject(*mat->normal);
-    mat->gfxSampler.initialize(
+    mat->texNormal.glSampler = std::make_shared<glu::Sampler>();
+    mat->texNormal.glSampler->initialize(
         glu::Sampler::MinFilter::LinearMipMapLinear,
         glu::Sampler::MagFilter::Linear,
         glu::Sampler::WrapMode::Repeat,
         glu::Sampler::WrapMode::Repeat);
+    mat->texNormal.texObj = sampler_normFloat.createTextureObject(*mat->texNormal.cudaArray);
     CallableProgram dcReadModifiedNormal;
     if (mat->bumpMapType == BumpMapTextureType::NormalMap ||
         mat->bumpMapType == BumpMapTextureType::NormalMap_BC)
@@ -1761,26 +1767,27 @@ void createSimplePBRMaterial(
     bool isHDR;
     createEmittanceTexture(cuContext, emittancePath, immEmittance,
                            mat, &needsDegamma, &isHDR);
-    if (mat->emittance) {
+    if (mat->texEmittance.cudaArray) {
         if (needsDegamma)
-            mat->texEmittance = sampler_sRGB.createTextureObject(*mat->emittance);
+            mat->texEmittance.texObj = sampler_sRGB.createTextureObject(*mat->texEmittance.cudaArray);
         else if (isHDR)
-            mat->texEmittance = sampler_float.createTextureObject(*mat->emittance);
+            mat->texEmittance.texObj = sampler_float.createTextureObject(*mat->texEmittance.cudaArray);
         else
-            mat->texEmittance = sampler_normFloat.createTextureObject(*mat->emittance);
+            mat->texEmittance.texObj = sampler_normFloat.createTextureObject(*mat->texEmittance.cudaArray);
     }
 
     mat->materialSlot = scene->materialSlotFinder.getFirstAvailableSlot();
     scene->materialSlotFinder.setInUse(mat->materialSlot);
 
     shared::MaterialData matData = {};
-    matData.asSimplePBR.baseColor_opacity = body.texBaseColor_opacity;
-    matData.asSimplePBR.occlusion_roughness_metallic = body.texOcclusion_roughness_metallic;
-    matData.asSimplePBR.baseColor_opacity_dimInfo = calcDimInfo(*body.baseColor_opacity);
-    matData.asSimplePBR.occlusion_roughness_metallic_dimInfo = calcDimInfo(*body.occlusion_roughness_metallic);
-    matData.normal = mat->texNormal;
-    matData.emittance = mat->texEmittance;
-    matData.normalDimInfo = calcDimInfo(*mat->normal);
+    matData.asSimplePBR.baseColor_opacity = body.texBaseColor_opacity.texObj;
+    matData.asSimplePBR.occlusion_roughness_metallic = body.texOcclusion_roughness_metallic.texObj;
+    matData.asSimplePBR.baseColor_opacity_dimInfo = calcDimInfo(*body.texBaseColor_opacity.cudaArray);
+    matData.asSimplePBR.occlusion_roughness_metallic_dimInfo =
+        calcDimInfo(*body.texOcclusion_roughness_metallic.cudaArray);
+    matData.normal = mat->texNormal.texObj;
+    matData.emittance = mat->texEmittance.texObj;
+    matData.normalDimInfo = calcDimInfo(*mat->texNormal.cudaArray);
     matData.readModifiedNormal = shared::ReadModifiedNormal(dcReadModifiedNormal);
     matData.setupBSDFBody = shared::SetupBSDFBody(CallableProgram_setupSimplePBR_BRDF);
     matData.bsdfGetSurfaceParameters =
@@ -1854,7 +1861,7 @@ GeometryInstance* createGeometryInstance(
     }
     geomInst->vertexBuffer.initialize(cuContext, Scene::bufferType, vertices);
     geomInst->triangleBuffer.initialize(cuContext, Scene::bufferType, triangles);
-    if (mat->emittance) {
+    if (mat->texEmittance.cudaArray) {
 #if USE_PROBABILITY_TEXTURE
         geomInst->emitterPrimDist.initialize(
             cuContext, static_cast<uint32_t>(triangles.size()));
@@ -1941,7 +1948,7 @@ GeometryGroup* createGeometryGroup(
     for (auto it = geomInsts.cbegin(); it != geomInsts.cend(); ++it) {
         const GeometryInstance* geomInst = *it;
         geomGroup->optixGas.addChild(geomInst->optixGeomInst);
-        if (geomInst->mat->emittance)
+        if (geomInst->mat->texEmittance.cudaArray)
             geomGroup->numEmitterPrimitives += static_cast<uint32_t>(geomInst->triangleBuffer.numElements());
         geomGroup->aabb.unify(geomInst->aabb);
     }
@@ -2377,7 +2384,7 @@ Instance* createInstance(
     for (auto it = geomGroup->geomInsts.cbegin(); it != geomGroup->geomInsts.cend(); ++it) {
         const GeometryInstance* geomInst = *it;
         geomInstSlots.push_back(geomInst->geomInstSlot);
-        if (geomInst->mat->emittance)
+        if (geomInst->mat->texEmittance.cudaArray)
             hasEmitterGeomInsts = true;
     }
 
