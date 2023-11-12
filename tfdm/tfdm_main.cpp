@@ -1384,8 +1384,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
     {
         std::vector<shared::Vertex> vertices;
         std::vector<shared::Triangle> triangles;
-        //createQuad(&vertices, &triangles);
-        createSphere(&vertices, &triangles);
+        createQuad(&vertices, &triangles);
+        //createSphere(&vertices, &triangles);
 
 #if SHOW_BASE_MESH
         tfdmMeshGeomInst = createGeometryInstance(

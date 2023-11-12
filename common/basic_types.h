@@ -2536,6 +2536,21 @@ struct Matrix3x3_T {
         return Matrix3x3_T(-c0, -c1, -c2);
     }
 
+    CUDA_COMMON_FUNCTION Vector2D_T<F> operator*(const Vector2D_T<F> &v) const {
+        const Vector3D_T<F, false> r[] = { row(0), row(1) };
+        Vector3D_T<F, false> v3(v, 0.0f);
+        return Vector2D_T<F>(
+            dot(r[0], v3),
+            dot(r[1], v3));
+    }
+    CUDA_COMMON_FUNCTION Point2D_T<F> operator*(const Point2D_T<F> &p) const {
+        const Vector3D_T<F, false> r[] = { row(0), row(1) };
+        Vector3D_T<F, false> v3(p, 1.0f);
+        return Point2D_T<F>(
+            dot(r[0], v3),
+            dot(r[1], v3));
+    }
+
     CUDA_COMMON_FUNCTION Matrix3x3_T &operator*=(F r) {
         c0 *= r;
         c1 *= r;
@@ -2873,7 +2888,7 @@ struct Matrix4x4_T {
             Vector4D_T<F>(dot(r[0], mat.c3), dot(r[1], mat.c3), dot(r[2], mat.c3), dot(r[3], mat.c3)));
     }
     CUDA_COMMON_FUNCTION Vector3D_T<F, false> operator*(const Vector3D_T<F, false> &v) const {
-        const Vector4D_T<F> r[] = { row(0), row(1), row(2), row(3) };
+        const Vector4D_T<F> r[] = { row(0), row(1), row(2) };
         Vector4D_T<F> v4(v, 0.0f);
         return Vector3D_T<F, false>(
             dot(r[0], v4),
@@ -2881,7 +2896,7 @@ struct Matrix4x4_T {
             dot(r[2], v4));
     }
     CUDA_COMMON_FUNCTION Point3D_T<F> operator*(const Point3D_T<F> &p) const {
-        const Vector4D_T<F> r[] = { row(0), row(1), row(2), row(3) };
+        const Vector4D_T<F> r[] = { row(0), row(1), row(2) };
         Vector4D_T<F> v4(p, 1.0f);
         return Point3D_T<F>(
             dot(r[0], v4),

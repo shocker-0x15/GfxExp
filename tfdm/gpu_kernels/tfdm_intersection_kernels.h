@@ -382,8 +382,9 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
                     const Point2D hitGuessMin = texelCenter - Vector2D(0.5f, 0.5f) * texelScale;
                     const Point2D hitGuessMax = texelCenter + Vector2D(0.5f, 0.5f) * texelScale;
                     float prevErrDist2 = INFINITY;
-                    uint32_t errDistStreak = 0;
-                    uint32_t invalidRegionStreak = 0;
+                    uint8_t errDistStreak = 0;
+                    uint8_t invalidRegionStreak = 0;
+                    uint8_t behindStreak = 0;
                     uint32_t itr = 0;
                     constexpr uint32_t numIterations = 10;
                     for (; itr < numIterations; ++itr) {
@@ -403,11 +404,10 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
                         const Vector3D delta = S - rayOrg;
                         const Vector2D F(dot(delta, d1), dot(delta, d2));
                         const float errDist2 = F.sqLength();
-                        if (errDist2 > prevErrDist2)
-                            ++errDistStreak;
-                        else
-                            errDistStreak = 0;
-                        if (errDistStreak >= 2) {
+                        const float dotDirDelta = dot(rayDir, delta);
+                        errDistStreak = errDist2 > prevErrDist2 ? (errDistStreak + 1) : 0;
+                        behindStreak = dotDirDelta < 0 ? (behindStreak + 1) : 0;
+                        if (errDistStreak >= 2 || behindStreak >= 2) {
                             *hitDist = INFINITY;
                             return false;
                         }
@@ -428,7 +428,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
                         if (errDist2 < pow2(1e-5f)) {
                             Point3D bc(1 - *b1 - *b2, *b1, *b2);
                             if (bc[0] < 0.0f || bc[1] < 0.0f || bc[2] < 0.0f
-                                || bc[0] > 1.0f || bc[1] > 1.0f || bc[2] > 1.0f) {
+                                || bc[0] > 1.0f || bc[1] > 1.0f || bc[2] > 1.0f
+                                || dotDirDelta < 0) {
                                 *hitDist = INFINITY;
                                 return false;
                             }
