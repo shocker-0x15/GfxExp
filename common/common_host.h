@@ -48,6 +48,18 @@ inline void drawVector(const Point3D &p, const Vector3D_T<float, isNormal> &v, f
     vdb_line(p.x, p.y, p.z, b.x, b.y, b.z);
 }
 
+inline void drawCross(const Point3D &p, float scale) {
+    drawLine(p - scale * Vector3D(1, 0, 0), p + scale * Vector3D(1, 0, 0));
+    drawLine(p - scale * Vector3D(0, 1, 0), p + scale * Vector3D(0, 1, 0));
+    drawLine(p - scale * Vector3D(0, 0, 1), p + scale * Vector3D(0, 0, 1));
+};
+
+inline void drawWiredTriangle(const Point3D &a, const Point3D &b, const Point3D &c) {
+    drawLine(a, b);
+    drawLine(b, c);
+    drawLine(c, a);
+}
+
 inline void drawTriangle(const Point3D &a, const Point3D &b, const Point3D &c) {
     vdb_triangle(
         a.x, a.y, a.z,

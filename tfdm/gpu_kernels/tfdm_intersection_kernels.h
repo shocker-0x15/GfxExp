@@ -265,14 +265,11 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
                 // JP: テクセルコーナーにおける高さと法線を使って四隅の座標をテクスチャー空間で求める。
                 // EN: Compute the coordinates of four corners in the texture space using
                 //     the height values at the corners and the normals.
-                const Point3D pUL = Point3D(tcUL, 0.0f)
-                    + cornerHeightUL * dispTriAuxInfo.matObjToTc.getUpperLeftMatrix() * nULInObj;
-                const Point3D pUR = Point3D(tcUR, 0.0f)
-                    + cornerHeightUR * dispTriAuxInfo.matObjToTc.getUpperLeftMatrix() * nURInObj;
-                const Point3D pBL = Point3D(tcBL, 0.0f)
-                    + cornerHeightBL * dispTriAuxInfo.matObjToTc.getUpperLeftMatrix() * nBLInObj;
-                const Point3D pBR = Point3D(tcBR, 0.0f)
-                    + cornerHeightBR * dispTriAuxInfo.matObjToTc.getUpperLeftMatrix() * nBRInObj;
+                const Matrix3x3 matObjToTc = dispTriAuxInfo.matObjToTc.getUpperLeftMatrix();
+                const Point3D pUL = Point3D(tcUL, 0.0f) + cornerHeightUL * matObjToTc * nULInObj;
+                const Point3D pUR = Point3D(tcUR, 0.0f) + cornerHeightUR * matObjToTc * nURInObj;
+                const Point3D pBL = Point3D(tcBL, 0.0f) + cornerHeightBL * matObjToTc * nBLInObj;
+                const Point3D pBR = Point3D(tcBR, 0.0f) + cornerHeightBR * matObjToTc * nBRInObj;
 
                 const auto testRayVsTriangleIntersection = []
                 (const Point3D &org, const Vector3D &dir, float distMin, float distMax,
@@ -294,9 +291,9 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
                         & (*beta >= 0.0f) & (*gamma >= 0.0f) & (*beta + *gamma <= 1));
                 };
 
-                Vector3D n;
-                float t;
+                float t = INFINITY;
                 float mb1, mb2;
+                Vector3D n;
                 if (testRayVsTriangleIntersection(
                     rayOrgInTc, rayDirInTc, tMin, tMax, pUL, pUR, pBR, &n, &t, &mb1, &mb2)) {
                     if (t < tMax) {
@@ -511,7 +508,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
     DisplacedSurfaceAttributes attr = {};
     if constexpr (intersectionType == LocalIntersectionType::Box ||
                   intersectionType == LocalIntersectionType::TwoTriangle)
-        attr.normalInObj = normalize(dispTriAuxInfo.matTcToObj * hitNormal);
+        attr.normalInObj = normalize(transpose(dispTriAuxInfo.matObjToTc.getUpperLeftMatrix()) * hitNormal);
     else
         attr.normalInObj = hitNormal;
 #if DEBUG_TRAVERSAL_STATS

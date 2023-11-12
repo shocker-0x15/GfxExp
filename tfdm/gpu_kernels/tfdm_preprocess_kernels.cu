@@ -207,7 +207,7 @@ CUDA_DEVICE_KERNEL void computeAABBs(
 #endif
 
         const int32_t maxDepth = prevPowOf2Exponent(material->heightMapSize.x);
-        //const int32_t targetMipLevel = 0;
+        //constexpr int32_t targetMipLevel = 0;
 #if USE_WORKAROUND_FOR_CUDA_BC_TEX
         const int32_t targetMipLevel = min(tfdmGeomInst->params.targetMipLevel, maxDepth - 2);
 #else
