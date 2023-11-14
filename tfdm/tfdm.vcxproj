@@ -26,6 +26,7 @@
     <ClCompile Include="..\utils\cuda_util.cpp" />
     <ClCompile Include="..\utils\gl_util.cpp" />
     <ClCompile Include="..\utils\optix_util.cpp" />
+    <ClCompile Include="sandbox.cpp" />
     <ClCompile Include="tfdm_main.cpp" />
   </ItemGroup>
   <ItemGroup>

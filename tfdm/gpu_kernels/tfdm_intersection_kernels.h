@@ -29,34 +29,9 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(aabb)() {
 
 
 
-CUDA_DEVICE_FUNCTION CUDA_INLINE void down(Texel &texel, bool signX, bool signY) {
-  --texel.lod;
-  texel.x *= 2;
-  texel.x += signX;
-  texel.y *= 2;
-  texel.y += signY;
-}
-
-CUDA_DEVICE_FUNCTION CUDA_INLINE void next(Texel &texel, bool signX, bool signY, int32_t maxDepth) {
-  while (texel.lod <= maxDepth) {
-    switch (2 * ((texel.x + signX) % 2) + (texel.y + signY) % 2) {
-    case 1:
-      texel.y += signY ? 1 : -1;
-      texel.x += signX ? -1 : 1;
-      return;
-    case 3:
-      up(texel);
-      break;
-    default:
-      texel.y += signY ? -1 : 1;
-      return;
-    }
-  }
-}
-
 template <LocalIntersectionType intersectionType>
 CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
-    bool isDebugPixel = optixGetLaunchIndex().x == 1125 && optixGetLaunchIndex().y == 654;
+    bool isDebugPixel = optixGetLaunchIndex().x == 1262 && optixGetLaunchIndex().y == 878;
     //bool isDebugPixel = isCursorPixel();
 
     const auto sbtr = HitGroupSBTRecordData::get();
@@ -70,10 +45,14 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
         geomInst.vertexBuffer[tri.index2]
     };
 
+    const GeometryInstanceDataForTFDM &tfdm = plp.s->geomInstTfdmDataBuffer[sbtr.geomInstSlot];
+    const DisplacementParameters &dispParams = tfdm.params;
+
+    const Matrix3x3 &texXfm = dispParams.textureTransform;
     const Point2D tcs[] = {
-        vs[0].texCoord,
-        vs[1].texCoord,
-        vs[2].texCoord,
+        texXfm * vs[0].texCoord,
+        texXfm * vs[1].texCoord,
+        texXfm * vs[2].texCoord,
     };
     const float triAreaInTc = cross(tcs[1] - tcs[0], tcs[2] - tcs[0])/* * 0.5f*/;
     const bool tcFlipped = triAreaInTc < 0;
@@ -87,11 +66,15 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
     const Point2D texTriAabbMinP = min(tcs[0], min(tcs[1], tcs[2]));
     const Point2D texTriAabbMaxP = max(tcs[0], max(tcs[1], tcs[2]));
 
-    const GeometryInstanceDataForTFDM &tfdm = plp.s->geomInstTfdmDataBuffer[sbtr.geomInstSlot];
-    const DisplacementParameters &dispParams = tfdm.params;
     const DisplacedTriangleAuxInfo &dispTriAuxInfo = tfdm.dispTriAuxInfoBuffer[optixGetPrimitiveIndex()];
+    const Matrix3x3 invTexXfm = invert(texXfm);
+    const Matrix3x3 matTcToBc = dispTriAuxInfo.matTcToBc * invTexXfm;
+    const Matrix4x4 matObjToTc =
+        Matrix4x4(Matrix3x3(texXfm[0], texXfm[1], Vector3D(0, 0, 1)), Vector3D(texXfm[2].xy()))
+        * dispTriAuxInfo.matObjToTc;
     const Matrix3x3 matTcToPInObj =
-        Matrix3x3(vs[0].position, vs[1].position, vs[2].position) * dispTriAuxInfo.matTcToBc;
+        Matrix3x3(vs[0].position, vs[1].position, vs[2].position) * matTcToBc;
+    const Matrix3x3 matTcToNInObj = dispTriAuxInfo.matTcToNInObj * invTexXfm;
 
     Normal3D hitNormal;
     float hitBc1, hitBc2;
@@ -100,9 +83,10 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
 
     // JP: レイと変位させたサーフェスの交叉判定はテクスチャー空間で考える。
     // EN: Test ray vs displace surface intersection in the texture space.
+    // TODO?: Can we test bilinear patch in texture space as well?
     const Vector3D rayDirInObj = Vector3D(optixGetObjectRayDirection());
-    const Point3D rayOrgInTc = dispTriAuxInfo.matObjToTc * Point3D(optixGetObjectRayOrigin());
-    const Vector3D rayDirInTc = dispTriAuxInfo.matObjToTc * rayDirInObj;
+    const Point3D rayOrgInTc = matObjToTc * Point3D(optixGetObjectRayOrigin());
+    const Vector3D rayDirInTc = matObjToTc * rayDirInObj;
     const bool signX = rayDirInTc.x < 0;
     const bool signY = rayDirInTc.y < 0;
     Vector3D d1, d2;
@@ -140,8 +124,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
 #if DEBUG_TRAVERSAL_STATS
             ++numIterations;
 #endif
-            const int2 imgSize = make_int2(1 << (maxDepth - curTexel.lod));
-            const float texelScale = 1.0f / (1 << (maxDepth - curTexel.lod));
+            const int2 imgSize = make_int2(1 << max(maxDepth - curTexel.lod, 0));
+            const float texelScale = std::pow(2.0f, static_cast<float>(curTexel.lod - maxDepth));
             const Point2D texelCenter = Point2D(curTexel.x + 0.5f, curTexel.y + 0.5f) * texelScale;
             const TriangleSquareIntersection2DResult isectResult =
                 testTriangleSquareIntersection2D(
@@ -158,11 +142,12 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
             // JP: テクスチャー空間でテクセルがつくるAABBをアフィン演算を用いて計算。
             // EN: Compute the AABB of texel in the texture space using affine arithmetic.
             AABB texelAabb;
-            const int2 wrapIndex = make_int2(floorDiv(curTexel.x, imgSize.x), floorDiv(curTexel.y, imgSize.y));
             {
-                const uint2 wrappedTexel =
-                    make_uint2(curTexel.x - wrapIndex.x * imgSize.x, curTexel.y - wrapIndex.y * imgSize.y);
-                const float2 minmax = mat.minMaxMipMap[curTexel.lod].read(wrappedTexel);
+                const int2 wrapIndex = make_int2(floorDiv(curTexel.x, imgSize.x), floorDiv(curTexel.y, imgSize.y));
+                const uint2 wrappedTexel = curTexel.lod <= maxDepth ?
+                    make_uint2(curTexel.x - wrapIndex.x * imgSize.x, curTexel.y - wrapIndex.y * imgSize.y) :
+                    make_uint2(0, 0);
+                const float2 minmax = mat.minMaxMipMap[min(curTexel.lod, maxDepth)].read(wrappedTexel);
                 const float amplitude = dispParams.hScale * (minmax.y - minmax.x);
                 const float minHeight = dispParams.hOffset + dispParams.hScale * (minmax.x - dispParams.hBias);
                 const AAFloatOn2D hBound(minHeight + 0.5f * amplitude, 0, 0, 0.5f * amplitude);
@@ -179,10 +164,9 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
                     Point3D(clippedTcMinP + 0.5f * clippedTcDim, 1.0f) + (edge0 + edge1);
 
                 const AAFloatOn2D_Point3D pBoundInTc(texCoord.x, texCoord.y, AAFloatOn2D(0.0f));
-                AAFloatOn2D_Vector3D nBoundInObj =
-                    static_cast<AAFloatOn2D_Vector3D>(dispTriAuxInfo.matTcToNInObj * texCoord);
+                AAFloatOn2D_Vector3D nBoundInObj = static_cast<AAFloatOn2D_Vector3D>(matTcToNInObj * texCoord);
                 nBoundInObj.normalize();
-                const AAFloatOn2D_Vector3D nBoundInTc = dispTriAuxInfo.matObjToTc.getUpperLeftMatrix() * nBoundInObj;
+                const AAFloatOn2D_Vector3D nBoundInTc = matObjToTc.getUpperLeftMatrix() * nBoundInObj;
                 const AAFloatOn2D_Point3D boundsInTc = pBoundInTc + hBound * nBoundInTc;
 
                 const auto iaSx = boundsInTc.x.toIAFloat();
@@ -208,6 +192,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
             }
 
             const auto sample = [&](float px, float py) {
+                // No need to explicitly consider texture wrapping since the sampler is responsible for it.
                 return tex2DLod<float>(mat.heightMap, px / imgSize.x, py / imgSize.y, curTexel.lod);
             };
 
@@ -253,23 +238,19 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
 
                 // JP: 法線はオブジェクト空間で正規化する。
                 // EN: Normalize normal vectors in the object space.
-                const Vector3D nULInObj = normalize(static_cast<Vector3D>(
-                    dispTriAuxInfo.matTcToNInObj * Point3D(tcUL, 1.0f)));
-                const Vector3D nURInObj = normalize(static_cast<Vector3D>(
-                    dispTriAuxInfo.matTcToNInObj * Point3D(tcUR, 1.0f)));
-                const Vector3D nBLInObj = normalize(static_cast<Vector3D>(
-                    dispTriAuxInfo.matTcToNInObj * Point3D(tcBL, 1.0f)));
-                const Vector3D nBRInObj = normalize(static_cast<Vector3D>(
-                    dispTriAuxInfo.matTcToNInObj * Point3D(tcBR, 1.0f)));
+                const Vector3D nULInObj = normalize(matTcToNInObj * Vector3D(tcUL, 1.0f));
+                const Vector3D nURInObj = normalize(matTcToNInObj * Vector3D(tcUR, 1.0f));
+                const Vector3D nBLInObj = normalize(matTcToNInObj * Vector3D(tcBL, 1.0f));
+                const Vector3D nBRInObj = normalize(matTcToNInObj * Vector3D(tcBR, 1.0f));
 
                 // JP: テクセルコーナーにおける高さと法線を使って四隅の座標をテクスチャー空間で求める。
                 // EN: Compute the coordinates of four corners in the texture space using
                 //     the height values at the corners and the normals.
-                const Matrix3x3 matObjToTc = dispTriAuxInfo.matObjToTc.getUpperLeftMatrix();
-                const Point3D pUL = Point3D(tcUL, 0.0f) + cornerHeightUL * matObjToTc * nULInObj;
-                const Point3D pUR = Point3D(tcUR, 0.0f) + cornerHeightUR * matObjToTc * nURInObj;
-                const Point3D pBL = Point3D(tcBL, 0.0f) + cornerHeightBL * matObjToTc * nBLInObj;
-                const Point3D pBR = Point3D(tcBR, 0.0f) + cornerHeightBR * matObjToTc * nBRInObj;
+                const Matrix3x3 matObjToTc3x3 = matObjToTc.getUpperLeftMatrix();
+                const Point3D pUL = Point3D(tcUL, 0.0f) + cornerHeightUL * matObjToTc3x3 * nULInObj;
+                const Point3D pUR = Point3D(tcUR, 0.0f) + cornerHeightUR * matObjToTc3x3 * nURInObj;
+                const Point3D pBL = Point3D(tcBL, 0.0f) + cornerHeightBL * matObjToTc3x3 * nBLInObj;
+                const Point3D pBR = Point3D(tcBR, 0.0f) + cornerHeightBR * matObjToTc3x3 * nBRInObj;
 
                 const auto testRayVsTriangleIntersection = []
                 (const Point3D &org, const Vector3D &dir, float distMin, float distMax,
@@ -478,13 +459,12 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
                     return false;
                 };
 
-                // TODO?: Can we test in texture space?
                 Normal3D n;
                 float t;
                 float b1, b2;
                 if (testRayVsBilinearPatchIntersection(
                     texelCenter,
-                    matTcToPInObj, dispTriAuxInfo.matTcToNInObj, dispTriAuxInfo.matTcToBc,
+                    matTcToPInObj, matTcToNInObj, matTcToBc,
                     Point3D(optixGetObjectRayOrigin()), rayDirInObj,
                     &t, &b1, &b2, &n)) {
                     if (t < tMax) {
@@ -509,7 +489,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
     DisplacedSurfaceAttributes attr = {};
     if constexpr (intersectionType == LocalIntersectionType::Box ||
                   intersectionType == LocalIntersectionType::TwoTriangle)
-        attr.normalInObj = normalize(transpose(dispTriAuxInfo.matObjToTc.getUpperLeftMatrix()) * hitNormal);
+        attr.normalInObj = normalize(transpose(matObjToTc.getUpperLeftMatrix()) * hitNormal);
     else
         attr.normalInObj = hitNormal;
 #if DEBUG_TRAVERSAL_STATS

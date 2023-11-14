@@ -85,6 +85,7 @@
     <ClCompile Include="..\ext\stb_image_compile.cpp">
       <Filter>non-essentials\ext</Filter>
     </ClCompile>
+    <ClCompile Include="sandbox.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="tfdm_shared.h" />

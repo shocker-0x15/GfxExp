@@ -513,7 +513,7 @@ static constexpr float initHeightScale = /*0.2f*/0.5f;
 static constexpr float initHeightBias = 0.0f;
 static constexpr int32_t initTargetMipLevel = /*0*/8;
 static constexpr shared::LocalIntersectionType initLocalIntersectionType =
-    /*shared::LocalIntersectionType::TwoTriangle*/shared::LocalIntersectionType::Bilinear;
+shared::LocalIntersectionType::TwoTriangle;
 
 static bool g_takeScreenShot = false;
 
@@ -2350,7 +2350,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
                     heightParamChanged |= ImGui::SliderFloat("Scale", &heightScale, -1.0f, 1.0f);
                     heightParamChanged |= ImGui::SliderFloat("Offset", &heightOffset, -1.0f, 1.0f);
                     heightParamChanged |= ImGui::SliderInt("Target Mip Level", &targetMipLevel, 0, 15);
-                    resetAccumulation |= heightParamChanged;
 
                     ImGui::Text("Texture Transform");
                     ImGui::PushID("Texture");
@@ -2358,9 +2357,13 @@ int32_t main(int32_t argc, const char* argv[]) try {
                         "Scale", reinterpret_cast<float*>(&heightMapTexScale), 0.1f, 10.0f);
                     heightParamChanged |= ImGui::SliderFloat(
                         "Rotation", &heightMapTexRotation, 0.0f, 360.0f);
-                    heightParamChanged |= ImGui::SliderFloat2(
-                        "Offset", reinterpret_cast<float*>(&heightMapTexOffset), -10.0f, 10.0f);
+                    heightParamChanged |= ImGui::SliderFloat(
+                        "Offset U", &heightMapTexOffset.x, -1, 1);
+                    heightParamChanged |= ImGui::SliderFloat(
+                        "Offset V", &heightMapTexOffset.y, -1, 1);
                     ImGui::PopID();
+
+                    resetAccumulation |= heightParamChanged;
 
                     ImGui::Text("Local Intersection Type");
 

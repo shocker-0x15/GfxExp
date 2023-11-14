@@ -686,21 +686,32 @@ struct Texel {
     }
 };
 
+CUDA_DEVICE_FUNCTION CUDA_INLINE void up(Texel &texel) {
+    ++texel.lod;
+    texel.x = floorDiv(texel.x, 2);
+    texel.y = floorDiv(texel.y, 2);
+    //texel.x /= 2;
+    //texel.y /= 2;
+}
+
 CUDA_DEVICE_FUNCTION CUDA_INLINE void down(Texel &texel) {
     --texel.lod;
     texel.x *= 2;
     texel.y *= 2;
 }
 
-CUDA_DEVICE_FUNCTION CUDA_INLINE void up(Texel &texel) {
-    ++texel.lod;
-    texel.x /= 2;
-    texel.y /= 2;
+CUDA_DEVICE_FUNCTION CUDA_INLINE void down(Texel &texel, bool signX, bool signY) {
+    --texel.lod;
+    texel.x = 2 * texel.x + signX;
+    texel.y = 2 * texel.y + signY;
+    //texel.x = 2 * texel.x + signX;
+    //texel.y = 2 * texel.y + signY;
 }
 
-CUDA_DEVICE_FUNCTION CUDA_INLINE void next(Texel &texel) {
-    while (true) {
-        switch (2 * (texel.x % 2) + texel.y % 2) {
+CUDA_DEVICE_FUNCTION CUDA_INLINE void next(Texel &texel, int32_t maxDepth) {
+    while (texel.lod <= maxDepth) {
+        switch (2 * floorMod(texel.x, 2) + floorMod(texel.y, 2)) {
+        //switch (2 * (texel.x % 2) + texel.y % 2) {
         case 1:
             --texel.y;
             ++texel.x;
@@ -710,6 +721,24 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void next(Texel &texel) {
             break;
         default:
             ++texel.y;
+            return;
+        }
+    }
+}
+
+CUDA_DEVICE_FUNCTION CUDA_INLINE void next(Texel &texel, bool signX, bool signY, int32_t maxDepth) {
+    while (texel.lod <= maxDepth) {
+        switch (2 * floorMod(texel.x + signX, 2) + floorMod(texel.y + signY, 2)) {
+        //switch (2 * ((texel.x + signX) % 2) + (texel.y + signY) % 2) {
+        case 1:
+            texel.y += signY ? 1 : -1;
+            texel.x += signX ? -1 : 1;
+            return;
+        case 3:
+            up(texel);
+            break;
+        default:
+            texel.y += signY ? -1 : 1;
             return;
         }
     }
@@ -776,43 +805,23 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void findRoots(
     using namespace shared;
     static_assert(useMultipleRootOptimization, "Naive method is not implemented.");
     const Vector2D d = triAabbMaxP - triAabbMinP;
-    const int16_t shiftX = static_cast<int16_t>(std::floor(triAabbMinP.x));
-    const int16_t shiftY = static_cast<int16_t>(std::floor(triAabbMinP.y));
-    const Point2D shiftedMinP(
-        triAabbMinP.x - shiftX,
-        triAabbMinP.y - shiftY);
-    const Point2D shiftedMaxP = shiftedMinP + d;
     const uint32_t largerDim = d.y > d.x;
-    if (d[largerDim] >= 1.0f) {
-        roots[0] = Texel{ shiftX, shiftY, static_cast<int16_t>(maxDepth) };
-        *numRoots = 1;
-        return;
-    }
     int32_t startMipLevel = maxDepth - prevPowOf2Exponent(static_cast<uint32_t>(1.0f / d[largerDim])) - 1;
     startMipLevel = /*std::*/max(startMipLevel, 0);
     while (true) {
-        const uint32_t res = 1 << (maxDepth - startMipLevel);
-        const uint32_t minTexelX = static_cast<uint32_t>(res * shiftedMinP.x);
-        const uint32_t minTexelY = static_cast<uint32_t>(res * shiftedMinP.y);
-        const uint32_t maxTexelX = static_cast<uint32_t>(res * shiftedMaxP.x);
-        const uint32_t maxTexelY = static_cast<uint32_t>(res * shiftedMaxP.y);
-        if ((startMipLevel == maxDepth
-             || ((maxTexelX - minTexelX) < 2 && (maxTexelY - minTexelY) < 2)) &&
+        const float res = std::pow(2.0f, static_cast<float>(maxDepth - startMipLevel));
+        const int32_t minTexelX = static_cast<int32_t>(std::floor(res * triAabbMinP.x));
+        const int32_t minTexelY = static_cast<int32_t>(std::floor(res * triAabbMinP.y));
+        const int32_t maxTexelX = static_cast<int32_t>(std::floor(res * triAabbMaxP.x));
+        const int32_t maxTexelY = static_cast<int32_t>(std::floor(res * triAabbMaxP.y));
+        if ((maxTexelX - minTexelX) < 2 && (maxTexelY - minTexelY) < 2 &&
             startMipLevel >= targetMipLevel) {
-            if (startMipLevel == maxDepth) {
-                Texel &root = roots[0];
-                root.x = shiftX;
-                root.y = shiftY;
-                root.lod = maxDepth;
-                *numRoots = 1;
-                return;
-            }
             *numRoots = 0;
             for (int y = minTexelY; y <= maxTexelY; ++y) {
                 for (int x = minTexelX; x <= maxTexelX; ++x) {
                     Texel &root = roots[(*numRoots)++];
-                    root.x = x + shiftX * res;
-                    root.y = y + shiftY * res;
+                    root.x = x;
+                    root.y = y;
                     root.lod = startMipLevel;
                 }
             }

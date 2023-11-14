@@ -2503,7 +2503,19 @@ struct Matrix3x3_T {
         c1(static_cast<Vector3D_T<F, false>>(cc1)),
         c2(static_cast<Vector3D_T<F, false>>(cc2)) {}
     CUDA_COMMON_FUNCTION Matrix3x3_T(
-        const Matrix2x2_T<F> &mat2x2, const Point2D_T<F> &position = Point2D_T<F>(0.0f)) :
+        const Matrix2x2_T<F> &mat2x2) :
+        c0(Vector3D_T<F, false>(mat2x2.c0)),
+        c1(Vector3D_T<F, false>(mat2x2.c1)),
+        c2(0.0f, 0.0f, 1.0f)
+    {}
+    CUDA_COMMON_FUNCTION Matrix3x3_T(
+        const Matrix2x2_T<F> &mat2x2, const Vector2D_T<F> &position) :
+        c0(Vector3D_T<F, false>(mat2x2.c0)),
+        c1(Vector3D_T<F, false>(mat2x2.c1)),
+        c2(Vector3D_T<F, false>(position, 1.0f))
+    {}
+    CUDA_COMMON_FUNCTION Matrix3x3_T(
+        const Matrix2x2_T<F> &mat2x2, const Point2D_T<F> &position) :
         c0(Vector3D_T<F, false>(mat2x2.c0)),
         c1(Vector3D_T<F, false>(mat2x2.c1)),
         c2(Vector3D_T<F, false>(position))
@@ -2838,7 +2850,21 @@ struct Matrix4x4_T {
         c0(col0), c1(col1), c2(col2), c3(col3)
     { }
     CUDA_COMMON_FUNCTION Matrix4x4_T(
-        const Matrix3x3_T<F> &mat3x3, const Point3D_T<F> &position = Point3D_T<F>(0.0f)) :
+        const Matrix3x3_T<F> &mat3x3) :
+        c0(Vector4D_T<F>(mat3x3.c0)),
+        c1(Vector4D_T<F>(mat3x3.c1)),
+        c2(Vector4D_T<F>(mat3x3.c2)),
+        c3(0.0f, 0.0f, 0.0f, 1.0f)
+    { }
+    CUDA_COMMON_FUNCTION Matrix4x4_T(
+        const Matrix3x3_T<F> &mat3x3, const Vector3D_T<F, false> &position) :
+        c0(Vector4D_T<F>(mat3x3.c0)),
+        c1(Vector4D_T<F>(mat3x3.c1)),
+        c2(Vector4D_T<F>(mat3x3.c2)),
+        c3(Vector4D_T<F>(position, 1.0f))
+    { }
+    CUDA_COMMON_FUNCTION Matrix4x4_T(
+        const Matrix3x3_T<F> &mat3x3, const Point3D_T<F> &position) :
         c0(Vector4D_T<F>(mat3x3.c0)),
         c1(Vector4D_T<F>(mat3x3.c1)),
         c2(Vector4D_T<F>(mat3x3.c2)),
@@ -2857,12 +2883,12 @@ struct Matrix4x4_T {
 
     template <std::integral I>
     CUDA_COMMON_FUNCTION Vector4D_T<F> &operator[](I idx) {
-        Assert(static_cast<uint32_t>(idx) < 3, "idx is out of bound.");
+        Assert(static_cast<uint32_t>(idx) < 4, "idx is out of bound.");
         return *(&c0 + idx);
     }
     template <std::integral I>
     CUDA_COMMON_FUNCTION Vector4D_T<F> operator[](I idx) const {
-        Assert(static_cast<uint32_t>(idx) < 3, "idx is out of bound.");
+        Assert(static_cast<uint32_t>(idx) < 4, "idx is out of bound.");
         return *(&c0 + idx);
     }
 

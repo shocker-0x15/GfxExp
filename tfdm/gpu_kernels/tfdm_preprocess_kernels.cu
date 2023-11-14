@@ -177,10 +177,11 @@ CUDA_DEVICE_KERNEL void computeAABBs(
     float minHeight = INFINITY;
     float maxHeight = -INFINITY;
     {
+        const Matrix3x3 &texXfm = tfdmGeomInst->params.textureTransform;
         const Point2D tcs[] = {
-            vs[0].texCoord,
-            vs[1].texCoord,
-            vs[2].texCoord,
+            texXfm * vs[0].texCoord,
+            texXfm * vs[1].texCoord,
+            texXfm * vs[2].texCoord,
         };
         const bool tcFlipped = cross(tcs[1] - tcs[0], tcs[2] - tcs[0]) < 0;
 #if DEBUG_TRAVERAL
@@ -220,8 +221,14 @@ CUDA_DEVICE_KERNEL void computeAABBs(
             if (rootIdx >= numRoots)
                 break;
             Texel curTexel = roots[rootIdx];
+            if (curTexel.lod >= maxDepth) {
+                const float2 minmax = material->minMaxMipMap[maxDepth].read(make_int2(0, 0));
+                minHeight = minmax.x;
+                maxHeight = minmax.y;
+                break;
+            }
             Texel endTexel = curTexel;
-            next(endTexel);
+            next(endTexel, maxDepth);
             while (curTexel != endTexel) {
                 const float texelScale = 1.0f / (1 << (maxDepth - curTexel.lod));
                 const TriangleSquareIntersection2DResult isectResult =
@@ -235,7 +242,7 @@ CUDA_DEVICE_KERNEL void computeAABBs(
                 }
 #endif
                 if (isectResult == TriangleSquareIntersection2DResult::SquareOutsideTriangle) {
-                    next(curTexel);
+                    next(curTexel, maxDepth);
                 }
                 else if (isectResult == TriangleSquareIntersection2DResult::SquareInsideTriangle ||
                          curTexel.lod <= targetMipLevel) {
@@ -246,7 +253,7 @@ CUDA_DEVICE_KERNEL void computeAABBs(
                     const float2 minmax = material->minMaxMipMap[curTexel.lod].read(wrappedTexel);
                     minHeight = std::fmin(minHeight, minmax.x);
                     maxHeight = std::fmax(maxHeight, minmax.y);
-                    next(curTexel);
+                    next(curTexel, maxDepth);
                 }
                 else {
                     down(curTexel);
