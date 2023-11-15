@@ -31,8 +31,12 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(aabb)() {
 
 template <LocalIntersectionType intersectionType>
 CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
-    bool isDebugPixel = optixGetLaunchIndex().x == 1262 && optixGetLaunchIndex().y == 878;
+#define DEBUG_TRAVERSAL 0
+
+#if DEBUG_TRAVERSAL
+    bool isDebugPixel = optixGetLaunchIndex().x == 960 && optixGetLaunchIndex().y == 540;
     //bool isDebugPixel = isCursorPixel();
+#endif
 
     const auto sbtr = HitGroupSBTRecordData::get();
     const GeometryInstanceData &geomInst = plp.s->geometryInstanceDataBuffer[sbtr.geomInstSlot];
@@ -114,12 +118,31 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
     Texel roots[useMultipleRootOptimization ? 4 : 1];
     uint32_t numRoots;
     findRoots(texTriAabbMinP, texTriAabbMaxP, maxDepth, targetMipLevel, roots, &numRoots);
+#if DEBUG_TRAVERSAL
+    if (isDebugPixel && getDebugPrintEnabled()) {
+        printf(
+            "%u-%u: TriAABB: (%g, %g) - (%g, %g), %u roots, signs: %c, %c\n",
+            plp.f->frameIndex, optixGetPrimitiveIndex(),
+            v2print(texTriAabbMinP), v2print(texTriAabbMaxP),
+            numRoots, signX ? '-' : '+', signY ? '-' : '+');
+    }
+#endif
     for (int rootIdx = 0; rootIdx < lengthof(roots); ++rootIdx) {
         if (rootIdx >= numRoots)
             break;
         Texel curTexel = roots[rootIdx];
         Texel endTexel = curTexel;
-        next(endTexel, signX, signY, maxDepth);
+        const int16_t initialLod = curTexel.lod;
+        next(endTexel, signX, signY, initialLod);
+#if DEBUG_TRAVERSAL
+        if (isDebugPixel && getDebugPrintEnabled()) {
+            printf(
+                "%u-%u, Root %u: [%d - %d, %d] - [%d - %d, %d]\n",
+                plp.f->frameIndex, optixGetPrimitiveIndex(), rootIdx,
+                curTexel.lod, curTexel.x, curTexel.y,
+                endTexel.lod, endTexel.x, endTexel.y);
+        }
+#endif
         while (curTexel != endTexel) {
 #if OUTPUT_TRAVERSAL_STATS
             ++numIterations;
@@ -135,7 +158,15 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
             // JP: テクセルがベース三角形の外にある場合はテクセルをスキップ。
             // EN: Skip the texel if it is outside of the base triangle.
             if (isectResult == TriangleSquareIntersection2DResult::SquareOutsideTriangle) {
-                next(curTexel, signX, signY, maxDepth);
+#if DEBUG_TRAVERSAL
+                if (isDebugPixel && getDebugPrintEnabled()) {
+                    printf(
+                        "%u-%u, Root %u: [%d - %d, %d] OutTri\n",
+                        plp.f->frameIndex, optixGetPrimitiveIndex(), rootIdx,
+                        curTexel.lod, curTexel.x, curTexel.y);
+                }
+#endif
+                next(curTexel, signX, signY, initialLod);
                 continue;
             }
 
@@ -180,16 +211,41 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
             // EN: Don't descend more when the ray does not hit the AABB since
             //     the ray will never hit the surface inside the texel
             if (!texelAabb.intersect(rayOrgInTc, rayDirInTc, tMin, tMax)) {
-                next(curTexel, signX, signY, maxDepth);
+#if DEBUG_TRAVERSAL
+                if (isDebugPixel && getDebugPrintEnabled()) {
+                    printf(
+                        "%u-%u, Root %u: [%d - %d, %d] Miss AABB\n",
+                        plp.f->frameIndex, optixGetPrimitiveIndex(), rootIdx,
+                        curTexel.lod, curTexel.x, curTexel.y);
+                }
+#endif
+                next(curTexel, signX, signY, initialLod);
                 continue;
             }
 
             // JP: レイがAABBにヒットしているがターゲットのMIPレベルに到達していないときは下位MIPに下る。
             // EN: Descend to the lower mip when the ray hit the AABB but does not reach the target mip level.
             if (curTexel.lod > targetMipLevel) {
+#if DEBUG_TRAVERSAL
+                if (isDebugPixel && getDebugPrintEnabled()) {
+                    printf(
+                        "%u-%u, Root %u: [%d - %d, %d] Hit AABB, down\n",
+                        plp.f->frameIndex, optixGetPrimitiveIndex(), rootIdx,
+                        curTexel.lod, curTexel.x, curTexel.y);
+                }
+#endif
                 down(curTexel, signX, signY);
                 continue;
             }
+
+#if DEBUG_TRAVERSAL
+            if (isDebugPixel && getDebugPrintEnabled()) {
+                printf(
+                    "%u-%u, Root %u: [%d - %d, %d] Hit, AABB, intersect\n",
+                    plp.f->frameIndex, optixGetPrimitiveIndex(), rootIdx,
+                    curTexel.lod, curTexel.x, curTexel.y);
+            }
+#endif
 
             const auto sample = [&](float px, float py) {
                 // No need to explicitly consider texture wrapping since the sampler is responsible for it.
@@ -318,9 +374,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
                     dispParams.hOffset + dispParams.hScale
                     * (sample(curTexel.x + 1.0f, curTexel.y + 1.0f) - dispParams.hBias);
 
-#define DEBUG_BILINEAR 0
-
-#if DEBUG_BILINEAR
+#if DEBUG_TRAVERSAL
                 if (isDebugPixel && getDebugPrintEnabled()) {
                     printf(
                         "%u-%u: %u-%u-%u\n",
@@ -416,7 +470,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
                             }
                             *hitDist = std::sqrt(hitDist2/* / rayDir.sqLength()*/);
                             *hitNormal = static_cast<Normal3D>(normalize(cross(jacobS[1], jacobS[0])));
-#if DEBUG_BILINEAR
+#if DEBUG_TRAVERSAL
                             if (isDebugPixel && getDebugPrintEnabled()) {
                                 printf(
                                     "%u-%u-%u: guess: (%g, %g), dist: %g, S: (%g, %g, %g), n: (%g, %g, %g)\n",
@@ -479,7 +533,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
                 Assert_NotImplemented();
             }
 
-            next(curTexel, signX, signY, maxDepth);
+            next(curTexel, signX, signY, initialLod);
         }
     }
 

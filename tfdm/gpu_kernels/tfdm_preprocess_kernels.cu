@@ -240,7 +240,8 @@ CUDA_DEVICE_KERNEL void computeAABBs(
                 break;
             }
             Texel endTexel = curTexel;
-            next(endTexel, maxDepth);
+            const int16_t initialLod = curTexel.lod;
+            next(endTexel, initialLod);
             while (curTexel != endTexel) {
                 const float texelScale = 1.0f / (1 << (maxDepth - curTexel.lod));
                 const TriangleSquareIntersection2DResult isectResult =
@@ -248,13 +249,13 @@ CUDA_DEVICE_KERNEL void computeAABBs(
                         tcs, tcFlipped, texTriEdgeNormals, texTriAabbMinP, texTriAabbMaxP,
                         Point2D((curTexel.x + 0.5f) * texelScale, (curTexel.y + 0.5f) * texelScale),
                         0.5f * texelScale);
-#if DEBUG_TRAVERAL
+#if DEBUG_TRAVERSAL
                 if (primIndex == debugPrimIndex) {
                     printf("step: texel %u, %u, %u: (%u)\n", curTexel.x, curTexel.y, curTexel.lod, isectResult);
                 }
 #endif
                 if (isectResult == TriangleSquareIntersection2DResult::SquareOutsideTriangle) {
-                    next(curTexel, maxDepth);
+                    next(curTexel, initialLod);
                 }
                 else if (isectResult == TriangleSquareIntersection2DResult::SquareInsideTriangle ||
                          curTexel.lod <= targetMipLevel) {
@@ -265,7 +266,7 @@ CUDA_DEVICE_KERNEL void computeAABBs(
                     const float2 minmax = material->minMaxMipMap[curTexel.lod].read(wrappedTexel);
                     minHeight = std::fmin(minHeight, minmax.x);
                     maxHeight = std::fmax(maxHeight, minmax.y);
-                    next(curTexel, maxDepth);
+                    next(curTexel, initialLod);
                 }
                 else {
                     down(curTexel);

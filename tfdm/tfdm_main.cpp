@@ -509,9 +509,9 @@ static Point3D g_cameraPosition;
 static std::filesystem::path g_envLightTexturePath;
 
 static constexpr float initHeightOffset = 0.0f;
-static constexpr float initHeightScale = /*0.2f*/0.5f;
+static constexpr float initHeightScale = 0.2f;
 static constexpr float initHeightBias = 0.0f;
-static constexpr int32_t initTargetMipLevel = /*0*/8;
+static constexpr int32_t initTargetMipLevel = 0;
 static constexpr shared::LocalIntersectionType initLocalIntersectionType =
 shared::LocalIntersectionType::TwoTriangle;
 
@@ -2061,7 +2061,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         static bool enableJittering = false;
         static bool enableBumpMapping = false;
         bool lastFrameWasAnimated = false;
-        static shared::BufferToDisplay bufferTypeToDisplay = shared::BufferToDisplay::/*NoisyBeauty*/Normal;
+        static shared::BufferToDisplay bufferTypeToDisplay = shared::BufferToDisplay::NoisyBeauty;
         static int32_t maxPathLength = 5;
         static bool enableAlbedo = true;
         static int32_t baseSurfaceIndex = 0;
@@ -2354,7 +2354,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
                     ImGui::Text("Texture Transform");
                     ImGui::PushID("Texture");
                     heightParamChanged |= ImGui::SliderFloat2(
-                        "Scale", reinterpret_cast<float*>(&heightMapTexScale), 0.1f, 10.0f);
+                        "Scale", reinterpret_cast<float*>(&heightMapTexScale), 0.1f, 3.0f);
                     heightParamChanged |= ImGui::SliderFloat(
                         "Rotation", &heightMapTexRotation, 0.0f, 360.0f);
                     heightParamChanged |= ImGui::SliderFloat(
