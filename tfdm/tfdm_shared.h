@@ -6,7 +6,7 @@
 #define USE_DISPLACED_SURFACES 1
 #define USE_WORKAROUND_FOR_CUDA_BC_TEX 1
 #define STORE_BARYCENTRICS 0
-#define DEBUG_TRAVERSAL_STATS 1
+#define OUTPUT_TRAVERSAL_STATS 1
 
 namespace shared {
     static constexpr bool useMultipleRootOptimization = 1;
@@ -33,7 +33,7 @@ namespace shared {
 
     struct DisplacedSurfaceAttributes {
         Normal3D normalInObj;
-#if DEBUG_TRAVERSAL_STATS
+#if OUTPUT_TRAVERSAL_STATS
         uint32_t numIterations;
 #endif
     };
@@ -98,7 +98,7 @@ namespace shared {
         Point2D texCoord;
         uint32_t materialSlot;
         uint32_t geomInstSlot;
-#if DEBUG_TRAVERSAL_STATS
+#if OUTPUT_TRAVERSAL_STATS
         uint32_t numTravIterations;
 #endif
     };
@@ -172,7 +172,7 @@ namespace shared {
         optixu::NativeBlockBuffer2D<GBuffer1> GBuffer1[2];
         optixu::NativeBlockBuffer2D<GBuffer2> GBuffer2[2];
 
-#if DEBUG_TRAVERSAL_STATS
+#if OUTPUT_TRAVERSAL_STATS
         optixu::NativeBlockBuffer2D<uint32_t> numTravItrsBuffer;
 #endif
 

@@ -149,7 +149,7 @@ CUDA_DEVICE_KERNEL void computeAABBs(
     if (primIndex >= geomInst->triangleBuffer.getNumElements())
         return;
 
-#define DEBUG_TRAVERAL 0
+#define DEBUG_TRAVERSAL 0
 
     const Triangle &tri = geomInst->triangleBuffer[primIndex];
     const Vertex (&vs)[] = {
@@ -157,7 +157,7 @@ CUDA_DEVICE_KERNEL void computeAABBs(
         geomInst->vertexBuffer[tri.index1],
         geomInst->vertexBuffer[tri.index2]
     };
-#if DEBUG_TRAVERAL
+#if DEBUG_TRAVERSAL
     constexpr uint32_t debugPrimIndex = 0;
     if (primIndex == debugPrimIndex) {
         printf(
@@ -184,7 +184,7 @@ CUDA_DEVICE_KERNEL void computeAABBs(
             texXfm * vs[2].texCoord,
         };
         const bool tcFlipped = cross(tcs[1] - tcs[0], tcs[2] - tcs[0]) < 0;
-#if DEBUG_TRAVERAL
+#if DEBUG_TRAVERSAL
         if (primIndex == debugPrimIndex) {
             printf("prim %u: (" V2FMT "), (" V2FMT "), (" V2FMT ")\n",
                    primIndex,
@@ -199,7 +199,7 @@ CUDA_DEVICE_KERNEL void computeAABBs(
         };
         const Point2D texTriAabbMinP = min(tcs[0], min(tcs[1], tcs[2]));
         const Point2D texTriAabbMaxP = max(tcs[0], max(tcs[1], tcs[2]));
-#if DEBUG_TRAVERAL
+#if DEBUG_TRAVERSAL
         if (primIndex == debugPrimIndex) {
             printf("prim %u: (" V2FMT "), (" V2FMT ")\n",
                    primIndex,
@@ -217,10 +217,22 @@ CUDA_DEVICE_KERNEL void computeAABBs(
         Texel roots[useMultipleRootOptimization ? 4 : 1];
         uint32_t numRoots;
         findRoots(texTriAabbMinP, texTriAabbMaxP, maxDepth, targetMipLevel, roots, &numRoots);
+#if DEBUG_TRAVERSAL
+        if (primIndex == debugPrimIndex) {
+            printf("prim %u: %u roots\n",
+                   primIndex, numRoots);
+        }
+#endif
         for (int rootIdx = 0; rootIdx < lengthof(roots); ++rootIdx) {
             if (rootIdx >= numRoots)
                 break;
             Texel curTexel = roots[rootIdx];
+#if DEBUG_TRAVERSAL
+            if (primIndex == debugPrimIndex) {
+                printf("prim %u, root %d: %d - %d, %d\n",
+                       primIndex, rootIdx, curTexel.lod, curTexel.x, curTexel.y);
+            }
+#endif
             if (curTexel.lod >= maxDepth) {
                 const float2 minmax = material->minMaxMipMap[maxDepth].read(make_int2(0, 0));
                 minHeight = minmax.x;
@@ -261,7 +273,7 @@ CUDA_DEVICE_KERNEL void computeAABBs(
             }
         }
     }
-#if DEBUG_TRAVERAL
+#if DEBUG_TRAVERSAL
     if (primIndex == debugPrimIndex) {
         printf("prim %u: height min/max: %g/%g\n", primIndex, minHeight, maxHeight);
     }
@@ -319,7 +331,7 @@ CUDA_DEVICE_KERNEL void computeAABBs(
             Point3D(iaSx.lo(), iaSy.lo(), iaSz.lo()),
             Point3D(iaSx.hi(), iaSy.hi(), iaSz.hi())));
     }
-#if DEBUG_TRAVERAL
+#if DEBUG_TRAVERSAL
     if (primIndex == debugPrimIndex) {
         printf(
             "prim %u: triAabb: (%g, %g, %g) - (%g, %g, %g)\n",

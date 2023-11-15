@@ -201,10 +201,12 @@ void testFindRoots() {
         //const Point2D maxP(0.4f, 0.2f);
         //const Point2D minP(-1.2f, -1.3f);
         //const Point2D maxP(-0.6f, -0.8f);
-        const Point2D minP(-0.2f, -0.3f);
-        const Point2D maxP(1.4f, 1.2f);
+        //const Point2D minP(-0.2f, -0.3f);
+        //const Point2D maxP(1.4f, 1.2f);
+        const Point2D minP(-1.00002, -1.75675e-05);
+        const Point2D maxP(0, 0.999982);
 
-        setColor(RGB(1.0f, 1.0f, 1.0f));
+        setColor(RGB(0.0f, 1.0f, 1.0f));
         drawRect(minP, maxP, 0.005f);
 
         uint32_t numRoots;

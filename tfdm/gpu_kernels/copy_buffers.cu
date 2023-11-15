@@ -34,7 +34,7 @@ CUDA_DEVICE_KERNEL void copyToLinearBuffers(
 CUDA_DEVICE_KERNEL void visualizeToOutputBuffer(
     optixu::NativeBlockBuffer2D<shared::GBuffer0> gBuffer0,
     optixu::NativeBlockBuffer2D<shared::GBuffer1> gBuffer1,
-#if DEBUG_TRAVERSAL_STATS
+#if OUTPUT_TRAVERSAL_STATS
     optixu::NativeBlockBuffer2D<uint32_t> numTravItrsBuffer,
 #endif
     void* linearBuffer,
@@ -96,7 +96,7 @@ CUDA_DEVICE_KERNEL void visualizeToOutputBuffer(
             motionVectorOffset, 1.0f);
         break;
     }
-#if DEBUG_TRAVERSAL_STATS
+#if OUTPUT_TRAVERSAL_STATS
     case shared::BufferToDisplay::TraversalIterations: {
         uint32_t numIterations = numTravItrsBuffer.read(launchIndex);
         float t = static_cast<float>(numIterations) / 150;

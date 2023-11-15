@@ -33,7 +33,7 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(setupGBuffers)() {
     hitPointParams.texCoord = Point2D(NAN);
     hitPointParams.materialSlot = 0xFFFFFFFF;
     hitPointParams.geomInstSlot = 0xFFFFFFFF;
-#if DEBUG_TRAVERSAL_STATS
+#if OUTPUT_TRAVERSAL_STATS
     hitPointParams.numTravIterations = 0;
 #endif
 
@@ -73,7 +73,7 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(setupGBuffers)() {
     plp.s->GBuffer1[bufIdx].write(launchIndex, gBuffer1);
     plp.s->GBuffer2[bufIdx].write(launchIndex, gBuffer2);
 
-#if DEBUG_TRAVERSAL_STATS
+#if OUTPUT_TRAVERSAL_STATS
     plp.s->numTravItrsBuffer.write(launchIndex, hitPointParams.numTravIterations);
 #endif
 
@@ -122,7 +122,7 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
     Point2D texCoord;
 #endif
     float targetMipLevel = 0;
-#if DEBUG_TRAVERSAL_STATS
+#if OUTPUT_TRAVERSAL_STATS
     uint32_t numTravIterations = 0;
 #endif
     const uint32_t hitKind = optixGetHitKind();
@@ -152,7 +152,7 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
             DisplacedSurfaceAttributes hitAttrs;
             DisplacedSurfaceAttributeSignature::get(nullptr, nullptr, &hitAttrs);
             shadingNormalInWorld = hitAttrs.normalInObj;
-#if DEBUG_TRAVERSAL_STATS
+#if OUTPUT_TRAVERSAL_STATS
             numTravIterations = hitAttrs.numIterations;
 #endif
             texCoord0DirInWorld += -dot(shadingNormalInWorld, texCoord0DirInWorld) * shadingNormalInWorld;
@@ -205,7 +205,7 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
     hitPointParams->texCoord = texCoord;
     hitPointParams->materialSlot = geomInst.materialSlot;
     hitPointParams->geomInstSlot = geomInst.geomInstSlot;
-#if DEBUG_TRAVERSAL_STATS
+#if OUTPUT_TRAVERSAL_STATS
     hitPointParams->numTravIterations = numTravIterations;
 #endif
 

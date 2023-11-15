@@ -107,7 +107,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
     const int32_t targetMipLevel = dispParams.targetMipLevel;
 #endif
 
-#if DEBUG_TRAVERSAL_STATS
+#if OUTPUT_TRAVERSAL_STATS
     uint32_t numIterations = 0;
 #endif
 
@@ -121,7 +121,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
         Texel endTexel = curTexel;
         next(endTexel, signX, signY, maxDepth);
         while (curTexel != endTexel) {
-#if DEBUG_TRAVERSAL_STATS
+#if OUTPUT_TRAVERSAL_STATS
             ++numIterations;
 #endif
             const int2 imgSize = make_int2(1 << max(maxDepth - curTexel.lod, 0));
@@ -492,7 +492,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
         attr.normalInObj = normalize(transpose(matObjToTc.getUpperLeftMatrix()) * hitNormal);
     else
         attr.normalInObj = hitNormal;
-#if DEBUG_TRAVERSAL_STATS
+#if OUTPUT_TRAVERSAL_STATS
     attr.numIterations = numIterations;
 #endif
     const uint8_t hitKind = dot(rayDirInTc, hitNormal) <= 0 ?

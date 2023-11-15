@@ -1486,7 +1486,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
     cudau::Array gBuffer0[2];
     cudau::Array gBuffer1[2];
     cudau::Array gBuffer2[2];
-#if DEBUG_TRAVERSAL_STATS
+#if OUTPUT_TRAVERSAL_STATS
     cudau::Array numTravItrsBuffer;
 #endif
     
@@ -1518,7 +1518,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
                 renderTargetSizeX, renderTargetSizeY, 1);
         }
 
-#if DEBUG_TRAVERSAL_STATS
+#if OUTPUT_TRAVERSAL_STATS
         numTravItrsBuffer.initialize2D(
             gpuEnv.cuContext, cudau::ArrayElementType::UInt32, 1,
             cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable,
@@ -1576,7 +1576,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         albedoAccumBuffer.finalize();
         beautyAccumBuffer.finalize();
 
-#if DEBUG_TRAVERSAL_STATS
+#if OUTPUT_TRAVERSAL_STATS
         numTravItrsBuffer.finalize();
 #endif
 
@@ -1594,7 +1594,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
             gBuffer2[i].resize(width, height);
         }
 
-#if DEBUG_TRAVERSAL_STATS
+#if OUTPUT_TRAVERSAL_STATS
         numTravItrsBuffer.resize(width, height);
 #endif
 
@@ -1728,7 +1728,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         staticPlp.GBuffer2[0] = gBuffer2[0].getSurfaceObject(0);
         staticPlp.GBuffer2[1] = gBuffer2[1].getSurfaceObject(0);
 
-#if DEBUG_TRAVERSAL_STATS
+#if OUTPUT_TRAVERSAL_STATS
         staticPlp.numTravItrsBuffer = numTravItrsBuffer.getSurfaceObject(0);
 #endif
 
@@ -1884,7 +1884,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
             staticPlp.GBuffer1[1] = gBuffer1[1].getSurfaceObject(0);
             staticPlp.GBuffer2[0] = gBuffer2[0].getSurfaceObject(0);
             staticPlp.GBuffer2[1] = gBuffer2[1].getSurfaceObject(0);
-#if DEBUG_TRAVERSAL_STATS
+#if OUTPUT_TRAVERSAL_STATS
             staticPlp.numTravItrsBuffer = numTravItrsBuffer.getSurfaceObject(0);
 #endif
             staticPlp.beautyAccumBuffer = beautyAccumBuffer.getSurfaceObject(0);
@@ -2404,7 +2404,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
                     ImGui::RadioButtonE("Normal", &bufferTypeToDisplay, shared::BufferToDisplay::Normal);
                     ImGui::RadioButtonE("TexCoord", &bufferTypeToDisplay, shared::BufferToDisplay::TexCoord);
                     ImGui::RadioButtonE("Motion Vector", &bufferTypeToDisplay, shared::BufferToDisplay::Flow);
-#if DEBUG_TRAVERSAL_STATS
+#if OUTPUT_TRAVERSAL_STATS
                     ImGui::RadioButtonE(
                         "Traversal Iterations", &bufferTypeToDisplay,
                         shared::BufferToDisplay::TraversalIterations);
@@ -2849,7 +2849,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
             curCuStream, kernelVisualizeToOutputBuffer.calcGridDim(renderTargetSizeX, renderTargetSizeY),
             staticPlp.GBuffer0[bufferIndex],
             staticPlp.GBuffer1[bufferIndex],
-#if DEBUG_TRAVERSAL_STATS
+#if OUTPUT_TRAVERSAL_STATS
             staticPlp.numTravItrsBuffer,
 #endif
             bufferToDisplay,
