@@ -404,8 +404,6 @@ static Quaternion g_tempCameraOrientation;
 static Point3D g_cameraPosition;
 static std::filesystem::path g_envLightTexturePath;
 
-static bool g_takeScreenShot = false;
-
 struct MeshGeometryInfo {
     std::filesystem::path path;
     float preScale;
@@ -486,10 +484,7 @@ static void parseCommandline(int32_t argc, const char* argv[]) {
         if (strncmp(arg, "-", 1) != 0)
             continue;
 
-        if (strncmp(arg, "-screenshot", 12) == 0) {
-            g_takeScreenShot = true;
-        }
-        else if (strncmp(arg, "-cam-pos", 9) == 0) {
+        if (strncmp(arg, "-cam-pos", 9) == 0) {
             if (i + 3 >= argc) {
                 hpprintf("Invalid option.\n");
                 exit(EXIT_FAILURE);
@@ -1027,8 +1022,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
     scene.unmap();
 
-    scene.setupASs(gpuEnv.cuContext);
-
     uint32_t totalNumEmitterPrimitives = 0;
     for (int i = 0; i < scene.insts.size(); ++i) {
         const Instance* inst = scene.insts[i];
@@ -1380,20 +1373,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
     shared::PipelineLaunchParameters plp;
     plp.s = reinterpret_cast<shared::StaticPipelineLaunchParameters*>(staticPlpOnDevice);
     plp.f = reinterpret_cast<shared::PerFramePipelineLaunchParameters*>(perFramePlpOnDevice);
-
-    gpuEnv.pathTracing.hitGroupSbt.initialize(
-        gpuEnv.cuContext, Scene::bufferType, scene.hitGroupSbtSize, 1);
-    gpuEnv.pathTracing.hitGroupSbt.setMappedMemoryPersistent(true);
-    gpuEnv.pathTracing.optixPipeline.setScene(scene.optixScene);
-    gpuEnv.pathTracing.optixPipeline.setHitGroupShaderBindingTable(
-        gpuEnv.pathTracing.hitGroupSbt, gpuEnv.pathTracing.hitGroupSbt.getMappedPointer());
-
-    gpuEnv.pick.hitGroupSbt.initialize(
-        gpuEnv.cuContext, Scene::bufferType, scene.hitGroupSbtSize, 1);
-    gpuEnv.pick.hitGroupSbt.setMappedMemoryPersistent(true);
-    gpuEnv.pick.optixPipeline.setScene(scene.optixScene);
-    gpuEnv.pick.optixPipeline.setHitGroupShaderBindingTable(
-        gpuEnv.pick.hitGroupSbt, gpuEnv.pick.hitGroupSbt.getMappedPointer());
 
     shared::PickInfo initPickInfo = {};
     initPickInfo.hit = false;
@@ -1934,8 +1913,31 @@ int32_t main(int32_t argc, const char* argv[]) try {
         // JP: IASのリビルドを行う。
         // EN: Rebuild the IAS.
         curGPUTimer.update.start(curCuStream);
-        if (animate || frameIndex == 0)
-            perFramePlp.travHandle = scene.updateASs(curCuStream);
+        if (animate || frameIndex == 0) {
+            perFramePlp.travHandle = scene.updateASs(gpuEnv.cuContext, curCuStream);
+
+            if (!gpuEnv.pathTracing.hitGroupSbt.isInitialized() ||
+                gpuEnv.pathTracing.hitGroupSbt.sizeInBytes() < scene.hitGroupSbtSize) {
+                gpuEnv.pathTracing.hitGroupSbt.finalize();
+                gpuEnv.pathTracing.hitGroupSbt.initialize(
+                    gpuEnv.cuContext, Scene::bufferType, scene.hitGroupSbtSize, 1);
+                gpuEnv.pathTracing.hitGroupSbt.setMappedMemoryPersistent(true);
+                gpuEnv.pathTracing.optixPipeline.setScene(scene.optixScene);
+                gpuEnv.pathTracing.optixPipeline.setHitGroupShaderBindingTable(
+                    gpuEnv.pathTracing.hitGroupSbt, gpuEnv.pathTracing.hitGroupSbt.getMappedPointer());
+            }
+
+            if (!gpuEnv.pick.hitGroupSbt.isInitialized() ||
+                gpuEnv.pick.hitGroupSbt.sizeInBytes() < scene.hitGroupSbtSize) {
+                gpuEnv.pick.hitGroupSbt.finalize();
+                gpuEnv.pick.hitGroupSbt.initialize(
+                    gpuEnv.cuContext, Scene::bufferType, scene.hitGroupSbtSize, 1);
+                gpuEnv.pick.hitGroupSbt.setMappedMemoryPersistent(true);
+                gpuEnv.pick.optixPipeline.setScene(scene.optixScene);
+                gpuEnv.pick.optixPipeline.setHitGroupShaderBindingTable(
+                    gpuEnv.pick.hitGroupSbt, gpuEnv.pick.hitGroupSbt.getMappedPointer());
+            }
+        }
         curGPUTimer.update.stop(curCuStream);
 
         // JP: 光源となるインスタンスのProbability Textureを計算する。
