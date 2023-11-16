@@ -815,6 +815,7 @@ struct Scene {
     optixu::InstanceAccelerationStructure ias;
     cudau::Buffer iasMem;
     cudau::TypedBuffer<OptixInstance> iasInstanceBuffer;
+    bool iasNeedsReallocation : 1;
 
     cudau::Buffer asScratchMem;
     cudau::Buffer scanScratchMem; // TODO: unify
@@ -861,6 +862,7 @@ struct Scene {
         instDataBuffer[1].initialize(cuContext, bufferType, maxNumInstances);
 
         ias = optixScene.createInstanceAccelerationStructure();
+        iasNeedsReallocation = true;
 
 #if USE_PROBABILITY_TEXTURE
         lightInstDist.initialize(cuContext, maxNumInstances);
@@ -944,71 +946,68 @@ struct Scene {
         materialDataBuffer.unmap();
     }
 
-    void setupASs(CUcontext cuContext) {
-        for (int i = 0; i < insts.size(); ++i) {
-            const Instance* inst = insts[i];
-            ias.addChild(inst->optixInst);
-        }
-
+    OptixTraversableHandle updateASs(CUcontext cuContext, CUstream stream) {
         OptixAccelBufferSizes asSizes;
-        size_t asScratchSize = 0;
-        for (int i = 0; i < geomGroups.size(); ++i) {
-            GeometryGroup* geomGroup = geomGroups[i];
-            geomGroup->optixGas.setConfiguration(
-                optixu::ASTradeoff::PreferFastTrace,
-                optixu::AllowUpdate::No, optixu::AllowCompaction::No, optixu::AllowRandomVertexAccess::No);
-            geomGroup->optixGas.prepareForBuild(&asSizes);
-            geomGroup->optixGasMem.initialize(
-                cuContext, bufferType, asSizes.outputSizeInBytes, 1);
-            asScratchSize = std::max(asSizes.tempSizeInBytes, asScratchSize);
-        }
-
-        ias.setConfiguration(
-            optixu::ASTradeoff::PreferFastTrace,
-            optixu::AllowUpdate::No, optixu::AllowCompaction::No, optixu::AllowRandomInstanceAccess::No);
-        ias.prepareForBuild(&asSizes);
-        iasMem.initialize(
-            cuContext, bufferType, asSizes.outputSizeInBytes, 1);
-        asScratchSize = std::max(asSizes.tempSizeInBytes, asScratchSize);
-        iasInstanceBuffer.initialize(cuContext, bufferType, ias.getNumChildren());
-
-        asScratchMem.initialize(cuContext, bufferType, asScratchSize, 1);
-
-        optixScene.generateShaderBindingTableLayout(&hitGroupSbtSize);
-
-        for (int bufIdx = 0; bufIdx < 2; ++bufIdx) {
-            cudau::TypedBuffer<shared::InstanceData> &curInstDataBuffer = instDataBuffer[bufIdx];
-            shared::InstanceData* instDataBufferOnHost = curInstDataBuffer.map();
-            for (int i = 0; i < instControllers.size(); ++i) {
-                InstanceController* controller = instControllers[i];
-                Instance* inst = controller->inst;
-                shared::InstanceData &instData = instDataBufferOnHost[inst->instSlot];
-                controller->update(instDataBufferOnHost, 0.0f);
-                // TODO: まとめて送る。
-                CUDADRV_CHECK(cuMemcpyHtoDAsync(
-                    curInstDataBuffer.getCUdeviceptrAt(inst->instSlot),
-                    &instData, sizeof(instData), 0));
-            }
-            curInstDataBuffer.unmap();
-        }
-    }
-
-    OptixTraversableHandle updateASs(CUstream stream) {
-        size_t asScratchSize = asScratchMem.sizeInBytes();
+        size_t asScratchSize = asScratchMem.isInitialized() ? asScratchMem.sizeInBytes() : 0;
         bool gasReallocated = false;
         for (int i = 0; i < geomGroups.size(); ++i) {
             GeometryGroup* geomGroup = geomGroups[i];
             if (!geomGroup->needsReallocation)
                 continue;
-            OptixAccelBufferSizes asSizes;
+            geomGroup->optixGas.setConfiguration(
+                optixu::ASTradeoff::PreferFastTrace,
+                optixu::AllowUpdate::No, optixu::AllowCompaction::No, optixu::AllowRandomVertexAccess::No);
             geomGroup->optixGas.prepareForBuild(&asSizes);
-            geomGroup->optixGasMem.resize(asSizes.outputSizeInBytes, 1);
+            if (geomGroup->optixGasMem.isInitialized())
+                geomGroup->optixGasMem.resize(asSizes.outputSizeInBytes, 1);
+            else
+                geomGroup->optixGasMem.initialize(cuContext, bufferType, asSizes.outputSizeInBytes, 1);
             asScratchSize = std::max(asSizes.tempSizeInBytes, asScratchSize);
             geomGroup->needsReallocation = false;
             gasReallocated = true;
         }
-        if (asScratchSize > asScratchMem.sizeInBytes())
+
+        if (iasNeedsReallocation) {
+            for (int i = 0; i < insts.size(); ++i) {
+                const Instance* inst = insts[i];
+                ias.addChild(inst->optixInst);
+            }
+
+            ias.setConfiguration(
+                optixu::ASTradeoff::PreferFastTrace,
+                optixu::AllowUpdate::No, optixu::AllowCompaction::No, optixu::AllowRandomInstanceAccess::No);
+            ias.prepareForBuild(&asSizes);
+            if (iasMem.isInitialized())
+                iasMem.resize(asSizes.outputSizeInBytes, 1);
+            else
+                iasMem.initialize(cuContext, bufferType, asSizes.outputSizeInBytes, 1);
+            asScratchSize = std::max(asSizes.tempSizeInBytes, asScratchSize);
+            iasInstanceBuffer.initialize(cuContext, bufferType, ias.getNumChildren());
+
+            for (int bufIdx = 0; bufIdx < 2; ++bufIdx) {
+                cudau::TypedBuffer<shared::InstanceData> &curInstDataBuffer = instDataBuffer[bufIdx];
+                shared::InstanceData* instDataBufferOnHost = curInstDataBuffer.map();
+                for (int i = 0; i < instControllers.size(); ++i) {
+                    InstanceController* controller = instControllers[i];
+                    Instance* inst = controller->inst;
+                    shared::InstanceData &instData = instDataBufferOnHost[inst->instSlot];
+                    controller->update(instDataBufferOnHost, 0.0f);
+                    // TODO: まとめて送る。
+                    CUDADRV_CHECK(cuMemcpyHtoDAsync(
+                        curInstDataBuffer.getCUdeviceptrAt(inst->instSlot),
+                        &instData, sizeof(instData), 0));
+                }
+                curInstDataBuffer.unmap();
+            }
+
+            iasNeedsReallocation = false;
+        }
+
+        if (!asScratchMem.isInitialized())
+            asScratchMem.initialize(cuContext, bufferType, asScratchSize, 1);
+        else if (asScratchSize > asScratchMem.sizeInBytes())
             asScratchMem.resize(asScratchSize, 1);
+
         if (gasReallocated)
             optixScene.generateShaderBindingTableLayout(&hitGroupSbtSize);
 

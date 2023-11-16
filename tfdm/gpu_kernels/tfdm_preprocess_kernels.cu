@@ -233,6 +233,10 @@ CUDA_DEVICE_KERNEL void computeAABBs(
                        primIndex, rootIdx, curTexel.lod, curTexel.x, curTexel.y);
             }
 #endif
+            // JP: 三角形のテクスチャー座標の範囲がかなり大きい場合は
+            //     最大ミップレベルからmin/maxを読み取って処理を終了する。
+            // EN: Imediately finish with reading the min/max from the maximum mip level
+            //     when the texture coordinate range of the triangle is fairly large.
             if (curTexel.lod >= maxDepth) {
                 const float2 minmax = material->minMaxMipMap[maxDepth].read(make_int2(0, 0));
                 minHeight = minmax.x;
@@ -255,6 +259,8 @@ CUDA_DEVICE_KERNEL void computeAABBs(
                 }
 #endif
                 if (isectResult == TriangleSquareIntersection2DResult::SquareOutsideTriangle) {
+                    // JP: テクセルがベース三角形の外にある場合はテクセルをスキップ。
+                    // EN: Skip the texel if it is outside of the base triangle.
                     next(curTexel, initialLod);
                 }
                 else if (isectResult == TriangleSquareIntersection2DResult::SquareInsideTriangle ||
@@ -341,6 +347,5 @@ CUDA_DEVICE_KERNEL void computeAABBs(
     }
 #endif
 
-    //triAabb.dilate(10);
     aabbBuffer[primIndex] = triAabb;
 }

@@ -508,43 +508,13 @@ static Quaternion g_tempCameraOrientation;
 static Point3D g_cameraPosition;
 static std::filesystem::path g_envLightTexturePath;
 
+static constexpr float initInstPitch = 45.0f;
 static constexpr float initHeightOffset = 0.0f;
 static constexpr float initHeightScale = 0.2f;
 static constexpr float initHeightBias = 0.0f;
 static constexpr int32_t initTargetMipLevel = 0;
 static constexpr shared::LocalIntersectionType initLocalIntersectionType =
 shared::LocalIntersectionType::TwoTriangle;
-
-static bool g_takeScreenShot = false;
-
-struct MeshGeometryInfo {
-    std::filesystem::path path;
-    float preScale;
-    MaterialConvention matConv;
-};
-
-struct RectangleGeometryInfo {
-    float dimX;
-    float dimZ;
-    RGB emittance;
-    std::filesystem::path emitterTexPath;
-};
-
-struct MeshInstanceInfo {
-    std::string name;
-    Point3D beginPosition;
-    Point3D endPosition;
-    float beginScale;
-    float endScale;
-    Quaternion beginOrientation;
-    Quaternion endOrientation;
-    float frequency;
-    float initTime;
-};
-
-using MeshInfo = std::variant<MeshGeometryInfo, RectangleGeometryInfo>;
-static std::map<std::string, MeshInfo> g_meshInfos;
-static std::vector<MeshInstanceInfo> g_meshInstInfos;
 
 static void parseCommandline(int32_t argc, const char* argv[]) {
     std::string name;
@@ -597,10 +567,7 @@ static void parseCommandline(int32_t argc, const char* argv[]) {
         if (strncmp(arg, "-", 1) != 0)
             continue;
 
-        if (strncmp(arg, "-screenshot", 12) == 0) {
-            g_takeScreenShot = true;
-        }
-        else if (strncmp(arg, "-cam-pos", 9) == 0) {
+        if (strncmp(arg, "-cam-pos", 9) == 0) {
             if (i + 3 >= argc) {
                 hpprintf("Invalid option.\n");
                 exit(EXIT_FAILURE);
@@ -635,182 +602,6 @@ static void parseCommandline(int32_t argc, const char* argv[]) {
                 exit(EXIT_FAILURE);
             }
             name = argv[i + 1];
-            i += 1;
-        }
-        else if (0 == strncmp(arg, "-emittance", 11)) {
-            if (i + 3 >= argc) {
-                printf("Invalid option.\n");
-                exit(EXIT_FAILURE);
-            }
-            emittance = RGB(atof(argv[i + 1]), atof(argv[i + 2]), atof(argv[i + 3]));
-            if (!emittance.allFinite()) {
-                printf("Invalid value.\n");
-                exit(EXIT_FAILURE);
-            }
-            i += 3;
-        }
-        else if (0 == strncmp(arg, "-rect-emitter-tex", 18)) {
-            if (i + 1 >= argc) {
-                printf("Invalid option.\n");
-                exit(EXIT_FAILURE);
-            }
-            rectEmitterTexPath = argv[i + 1];
-            i += 1;
-        }
-        else if (0 == strncmp(arg, "-obj", 5)) {
-            if (i + 3 >= argc) {
-                printf("Invalid option.\n");
-                exit(EXIT_FAILURE);
-            }
-
-            MeshInfo info = MeshGeometryInfo();
-            auto &mesh = std::get<MeshGeometryInfo>(info);
-            mesh.path = std::filesystem::path(argv[i + 1]);
-            mesh.preScale = atof(argv[i + 2]);
-            std::string matConv = argv[i + 3];
-            if (matConv == "trad") {
-                mesh.matConv = MaterialConvention::Traditional;
-            }
-            else if (matConv == "simple_pbr") {
-                mesh.matConv = MaterialConvention::SimplePBR;
-            }
-            else {
-                printf("Invalid material convention.\n");
-                exit(EXIT_FAILURE);
-            }
-
-            g_meshInfos[name] = info;
-
-            i += 3;
-        }
-        else if (0 == strncmp(arg, "-rectangle", 11)) {
-            if (i + 2 >= argc) {
-                printf("Invalid option.\n");
-                exit(EXIT_FAILURE);
-            }
-
-            MeshInfo info = RectangleGeometryInfo();
-            auto &rect = std::get<RectangleGeometryInfo>(info);
-            rect.dimX = atof(argv[i + 1]);
-            rect.dimZ = atof(argv[i + 2]);
-            rect.emittance = emittance;
-            rect.emitterTexPath = rectEmitterTexPath;
-            g_meshInfos[name] = info;
-
-            emittance = RGB(0.0f, 0.0f, 0.0f);
-            rectEmitterTexPath = "";
-
-            i += 2;
-        }
-        else if (0 == strncmp(arg, "-begin-pos", 11)) {
-            if (i + 3 >= argc) {
-                printf("Invalid option.\n");
-                exit(EXIT_FAILURE);
-            }
-            beginPosition = Point3D(atof(argv[i + 1]), atof(argv[i + 2]), atof(argv[i + 3]));
-            if (!beginPosition.allFinite()) {
-                printf("Invalid value.\n");
-                exit(EXIT_FAILURE);
-            }
-            i += 3;
-        }
-        else if (strncmp(arg, "-begin-roll", 10) == 0 ||
-                 strncmp(arg, "-begin-pitch", 11) == 0 ||
-                 strncmp(arg, "-begin-yaw", 9) == 0) {
-            computeOrientation(arg + 6, &beginOrientation);
-        }
-        else if (0 == strncmp(arg, "-begin-scale", 13)) {
-            if (i + 1 >= argc) {
-                printf("Invalid option.\n");
-                exit(EXIT_FAILURE);
-            }
-            beginScale = atof(argv[i + 1]);
-            if (!isfinite(beginScale)) {
-                printf("Invalid value.\n");
-                exit(EXIT_FAILURE);
-            }
-            i += 1;
-        }
-        else if (0 == strncmp(arg, "-end-pos", 9)) {
-            if (i + 3 >= argc) {
-                printf("Invalid option.\n");
-                exit(EXIT_FAILURE);
-            }
-            endPosition = Point3D(atof(argv[i + 1]), atof(argv[i + 2]), atof(argv[i + 3]));
-            if (!endPosition.allFinite()) {
-                printf("Invalid value.\n");
-                exit(EXIT_FAILURE);
-            }
-            i += 3;
-        }
-        else if (strncmp(arg, "-end-roll", 10) == 0 ||
-                 strncmp(arg, "-end-pitch", 11) == 0 ||
-                 strncmp(arg, "-end-yaw", 9) == 0) {
-            computeOrientation(arg + 4, &endOrientation);
-        }
-        else if (0 == strncmp(arg, "-end-scale", 11)) {
-            if (i + 1 >= argc) {
-                printf("Invalid option.\n");
-                exit(EXIT_FAILURE);
-            }
-            endScale = atof(argv[i + 1]);
-            if (!isfinite(endScale)) {
-                printf("Invalid value.\n");
-                exit(EXIT_FAILURE);
-            }
-            i += 1;
-        }
-        else if (0 == strncmp(arg, "-freq", 6)) {
-            if (i + 1 >= argc) {
-                printf("Invalid option.\n");
-                exit(EXIT_FAILURE);
-            }
-            frequency = atof(argv[i + 1]);
-            if (!isfinite(frequency)) {
-                printf("Invalid value.\n");
-                exit(EXIT_FAILURE);
-            }
-            i += 1;
-        }
-        else if (0 == strncmp(arg, "-time", 6)) {
-            if (i + 1 >= argc) {
-                printf("Invalid option.\n");
-                exit(EXIT_FAILURE);
-            }
-            initTime = atof(argv[i + 1]);
-            if (!isfinite(initTime)) {
-                printf("Invalid value.\n");
-                exit(EXIT_FAILURE);
-            }
-            i += 1;
-        }
-        else if (0 == strncmp(arg, "-inst", 6)) {
-            if (i + 1 >= argc) {
-                printf("Invalid option.\n");
-                exit(EXIT_FAILURE);
-            }
-
-            MeshInstanceInfo info;
-            info.name = argv[i + 1];
-            info.beginPosition = beginPosition;
-            info.beginOrientation = beginOrientation;
-            info.beginScale = beginScale;
-            info.endPosition = endPosition.allFinite() ? endPosition : beginPosition;
-            info.endOrientation = endOrientation.allFinite() ? endOrientation : beginOrientation;
-            info.endScale = std::isfinite(endScale) ? endScale : beginScale;
-            info.frequency = frequency;
-            info.initTime = initTime;
-            g_meshInstInfos.push_back(info);
-
-            beginPosition = Point3D(0.0f, 0.0f, 0.0f);
-            endPosition = Point3D(NAN, NAN, NAN);
-            beginOrientation = Quaternion();
-            endOrientation = Quaternion(NAN, NAN, NAN, NAN);
-            beginScale = 1.0f;
-            endScale = NAN;
-            frequency = 5.0f;
-            initTime = 0.0f;
-
             i += 1;
         }
         else {
@@ -1220,59 +1011,50 @@ int32_t main(int32_t argc, const char* argv[]) try {
     scene.map();
     geomInstTfdmDataBuffer.map();
 
-    for (auto it = g_meshInfos.cbegin(); it != g_meshInfos.cend(); ++it) {
-        const MeshInfo &info = it->second;
+    // Area Light
+    if (g_envLightTexturePath.empty()) {
+        createLambertMaterial(gpuEnv.cuContext, &scene, "", RGB(0.01f), "", "", RGB(100.0f));
+        Material* material = scene.materials.back();
 
-        if (std::holds_alternative<MeshGeometryInfo>(info)) {
-            const auto &meshInfo = std::get<MeshGeometryInfo>(info);
+        std::vector<shared::Vertex> vertices = {
+            shared::Vertex{Point3D(-0.25f, 0.0f, -0.25f), Normal3D(0, -1, 0), Vector3D(1, 0, 0), Point2D(0.0f, 1.0f)},
+            shared::Vertex{Point3D(0.25f, 0.0f, -0.25f), Normal3D(0, -1, 0), Vector3D(1, 0, 0), Point2D(1.0f, 1.0f)},
+            shared::Vertex{Point3D(0.25f, 0.0f, 0.25f), Normal3D(0, -1, 0), Vector3D(1, 0, 0), Point2D(1.0f, 0.0f)},
+            shared::Vertex{Point3D(-0.25f, 0.0f, 0.25f), Normal3D(0, -1, 0), Vector3D(1, 0, 0), Point2D(0.0f, 0.0f)},
+        };
+        std::vector<shared::Triangle> triangles = {
+            shared::Triangle{0, 1, 2},
+            shared::Triangle{0, 2, 3},
+        };
+        GeometryInstance* geomInst = createGeometryInstance(
+            gpuEnv.cuContext, &scene, vertices, triangles, material, gpuEnv.optixDefaultMaterial, false);
+        scene.geomInsts.push_back(geomInst);
 
-            createTriangleMeshes(
-                it->first,
-                meshInfo.path, meshInfo.matConv,
-                scale3D_4x4(meshInfo.preScale),
-                gpuEnv.cuContext, &scene, gpuEnv.optixDefaultMaterial);
+        std::set<const GeometryInstance*> srcGeomInsts = { geomInst };
+        GeometryGroup* geomGroup = createGeometryGroup(&scene, srcGeomInsts);
+        scene.geomGroups.push_back(geomGroup);
+
+        auto mesh = new Mesh();
+        {
+            Mesh::GeometryGroupInstance groupInst = {};
+            groupInst.geomGroup = geomGroup;
+            groupInst.transform = Matrix4x4();
+            mesh->groupInsts.clear();
+            mesh->groupInsts.push_back(groupInst);
+            scene.meshes["area light"] = mesh;
         }
-        else if (std::holds_alternative<RectangleGeometryInfo>(info)) {
-            const auto &rectInfo = std::get<RectangleGeometryInfo>(info);
 
-            createRectangleLight(
-                it->first,
-                rectInfo.dimX, rectInfo.dimZ,
-                RGB(0.01f),
-                rectInfo.emitterTexPath, rectInfo.emittance, Matrix4x4(),
-                gpuEnv.cuContext, &scene, gpuEnv.optixDefaultMaterial);
-        }
+        Matrix4x4 instXfm = translate3D_4x4(0.0f, 1.0f, 0.0f);
+        Instance* inst = createInstance(gpuEnv.cuContext, &scene, mesh->groupInsts[0], instXfm);
+        scene.insts.push_back(inst);
+
+        scene.initialSceneAabb.unify(
+            instXfm * mesh->groupInsts[0].transform * mesh->groupInsts[0].geomGroup->aabb);
     }
 
-    for (int i = 0; i < g_meshInstInfos.size(); ++i) {
-        const MeshInstanceInfo &info = g_meshInstInfos[i];
-        const Mesh* mesh = scene.meshes.at(info.name);
-        for (int j = 0; j < mesh->groupInsts.size(); ++j) {
-            const Mesh::GeometryGroupInstance &groupInst = mesh->groupInsts[j];
-
-            Matrix4x4 instXfm =
-                Matrix4x4(info.beginScale * info.beginOrientation.toMatrix3x3(), info.beginPosition);
-            Instance* inst = createInstance(gpuEnv.cuContext, &scene, groupInst, instXfm);
-            scene.insts.push_back(inst);
-
-            scene.initialSceneAabb.unify(instXfm * groupInst.transform * groupInst.geomGroup->aabb);
-
-            if (any(info.beginPosition != info.endPosition) ||
-                info.beginOrientation != info.endOrientation ||
-                info.beginScale != info.endScale) {
-                auto controller = new InstanceController(
-                    inst,
-                    info.beginScale, info.beginOrientation, info.beginPosition,
-                    info.endScale, info.endOrientation, info.endPosition,
-                    info.frequency, info.initTime);
-                scene.instControllers.push_back(controller);
-            }
-        }
-    }
-
+    // Floor
     {
-        createLambertMaterial(
-            gpuEnv.cuContext, &scene, "", RGB(0.8f, 0.8f, 0.8f), "", "", RGB(0.0f));
+        createLambertMaterial(gpuEnv.cuContext, &scene, "", RGB(0.8f, 0.8f, 0.8f), "", "", RGB(0.0f));
         Material* material = scene.materials.back();
 
         std::vector<shared::Vertex> vertices = {
@@ -1313,116 +1095,32 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
 #define SHOW_BASE_MESH 0
 
+    // JP: 具体的なセットアップはレンダーループ内の最初のフレームで行う。
+    // EN: Specific setting up will be done in the first frame of the render loop.
     Material* tfdmMeshMaterial;
+    GeometryInstance* tfdmMeshGeomInst;
+    GeometryGroup* tfdmGeomGroup;
+    Instance* tfdmInst;
     {
-        //const std::filesystem::path albedoPath = R"(..\data\TCom_Ground_PebblesRiver2_2.5x2.5_1K_albedo.dds)";
-        //const std::filesystem::path heightMapPath = R"(..\data\TCom_Ground_PebblesRiver2_2.5x2.5_1K_height.dds)";
-        //const std::filesystem::path albedoPath = R"(..\data\TCom_Pavement_CobblestoneMedieval15_3x3_1K_albedo.dds)";
-        //const std::filesystem::path heightMapPath = R"(..\data\TCom_Pavement_CobblestoneMedieval15_3x3_1K_height.dds)";
-        const std::filesystem::path albedoPath = R"(..\data\TCom_Rock_Cliff3_2x2_1K_albedo.dds)";
-        const std::filesystem::path heightMapPath = R"(..\data\TCom_Rock_Cliff3_2x2_1K_height.dds)";
-        //const std::filesystem::path albedoPath = R"(..\data\TCom_Rock_CliffLayered_1.5x1.5_1K_albedo.dds)";
-        //const std::filesystem::path heightMapPath = R"(..\data\TCom_Rock_CliffLayered_1.5x1.5_1K_height.dds)";
-        //const std::filesystem::path albedoPath = R"(..\data\TCom_Wall_Stone4_2x2_1K_albedo.dds)";
-        //const std::filesystem::path heightMapPath = R"(..\data\TCom_Wall_Stone4_2x2_1K_height.dds)";
-
         createLambertMaterial(
             gpuEnv.cuContext, &scene,
-            albedoPath, RGB(0.8f, 0.8f, 0.8f),
+            "", RGB(0.8f, 0.8f, 0.8f),
             "",
             "", RGB(0.0f));
-
         tfdmMeshMaterial = scene.materials.back();
 
-#if !SHOW_BASE_MESH
-        shared::MaterialData &matDataOnHost =
-            scene.materialDataBuffer.getMappedPointer()[tfdmMeshMaterial->materialSlot];
-
-        bool needsDegamma;
-        hpprintf("Reading: %s ... ", heightMapPath.string().c_str());
-        if (loadTexture<float, true>(
-            heightMapPath, 0.0f, gpuEnv.cuContext, &tfdmMeshMaterial->texHeight.cudaArray, &needsDegamma))
-            hpprintf("done.\n");
-        else
-            hpprintf("failed.\n");
-
-        cudau::TextureSampler sampler = {};
-        sampler.setXyFilterMode(cudau::TextureFilterMode::Linear);
-        sampler.setWrapMode(0, cudau::TextureWrapMode::Repeat);
-        sampler.setWrapMode(1, cudau::TextureWrapMode::Repeat);
-        sampler.setMipMapFilterMode(cudau::TextureFilterMode::Point);
-        sampler.setReadMode(cudau::TextureReadMode::NormalizedFloat);
-        tfdmMeshMaterial->texHeight.texObj = sampler.createTextureObject(*tfdmMeshMaterial->texHeight.cudaArray);
-        matDataOnHost.heightMapSize = int2(
-            tfdmMeshMaterial->texHeight.cudaArray->getWidth(),
-            tfdmMeshMaterial->texHeight.cudaArray->getHeight());
-        matDataOnHost.heightMap = tfdmMeshMaterial->texHeight.texObj;
-
-        if (matDataOnHost.heightMapSize.x != matDataOnHost.heightMapSize.y)
-            throw std::runtime_error("Non-square height map is not supported.");
-        if (popcnt(matDataOnHost.heightMapSize.x) != 1)
-            throw std::runtime_error("Non-power-of-two height map is not supported.");
-
-        const uint32_t numMinMaxMipMapLevels = nextPowOf2Exponent(matDataOnHost.heightMapSize.x) + 1;
-        tfdmMeshMaterial->minMaxMipMap.initialize2D(
-            gpuEnv.cuContext,
-            cudau::ArrayElementType::Float32, 2,
-            cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable,
-            matDataOnHost.heightMapSize.x, matDataOnHost.heightMapSize.y,
-            numMinMaxMipMapLevels);
-
-        std::vector<optixu::NativeBlockBuffer2D<float2>> surfObjs(numMinMaxMipMapLevels);
-        for (int mipLevel = 0; mipLevel < numMinMaxMipMapLevels; ++mipLevel)
-            surfObjs[mipLevel] = tfdmMeshMaterial->minMaxMipMap.getSurfaceObject(mipLevel);
-
-        tfdmMeshMaterial->minMaxMipMapSurfs.initialize(gpuEnv.cuContext, cudau::BufferType::Device, surfObjs);
-        matDataOnHost.minMaxMipMap = tfdmMeshMaterial->minMaxMipMapSurfs.getDevicePointer();
-#endif
-    }
-
-    GeometryInstance* tfdmMeshGeomInst;
-    {
         std::vector<shared::Vertex> vertices;
         std::vector<shared::Triangle> triangles;
         createQuad(&vertices, &triangles);
-        //createSphere(&vertices, &triangles);
-
 #if SHOW_BASE_MESH
         tfdmMeshGeomInst = createGeometryInstance(
             gpuEnv.cuContext, &scene, vertices, triangles, tfdmMeshMaterial, gpuEnv.optixDefaultMaterial, false);
 #else
         tfdmMeshGeomInst = createTFDMGeometryInstance(
             gpuEnv.cuContext, &scene, vertices, triangles, tfdmMeshMaterial, gpuEnv.optixTFDMMaterial);
-
-        std::vector<shared::DisplacedTriangleAuxInfo> dispTriAuxInfos;
-        computeDisplacedTriangleAuxiliaryInfos(vertices, triangles, &dispTriAuxInfos);
-
-        tfdmMeshGeomInst->dispTriAuxInfoBuffer.initialize(
-            gpuEnv.cuContext, cudau::BufferType::Device, dispTriAuxInfos);
-        tfdmMeshGeomInst->aabbBuffer.initialize(
-            gpuEnv.cuContext, cudau::BufferType::Device, triangles.size());
-
-        shared::GeometryInstanceDataForTFDM &tfdmData =
-            geomInstTfdmDataBuffer.getMappedPointer()[tfdmMeshGeomInst->geomInstSlot];
-        tfdmData.dispTriAuxInfoBuffer =
-            tfdmMeshGeomInst->dispTriAuxInfoBuffer.getROBuffer<shared::enableBufferOobCheck>();
-        tfdmData.aabbBuffer =
-            tfdmMeshGeomInst->aabbBuffer.getROBuffer<shared::enableBufferOobCheck>();
-        tfdmData.params.textureTransform = Matrix3x3();
-        tfdmData.params.hOffset = initHeightOffset;
-        tfdmData.params.hScale = initHeightScale;
-        tfdmData.params.hBias = initHeightBias;
-        tfdmData.params.targetMipLevel = initTargetMipLevel;
-        tfdmData.params.localIntersectionType = static_cast<uint32_t>(initLocalIntersectionType);
-
-        tfdmMeshGeomInst->optixGeomInst.setCustomPrimitiveAABBBuffer(tfdmMeshGeomInst->aabbBuffer);
 #endif
-
         scene.geomInsts.push_back(tfdmMeshGeomInst);
-    }
 
-    GeometryGroup* tfdmGeomGroup;
-    {
         std::set<const GeometryInstance*> srcGeomInsts = { tfdmMeshGeomInst };
         tfdmGeomGroup = createGeometryGroup(&scene, srcGeomInsts);
         scene.geomGroups.push_back(tfdmGeomGroup);
@@ -1437,10 +1135,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
             scene.meshes["obj"] = mesh;
         }
 
-        Matrix4x4 instXfm = /*translate3D_4x4(0, -0.5f, 0) * */rotate3DX_4x4(0.25f * pi_v<float>);
-        //Matrix4x4 instXfm = rotate3DY_4x4(pi_v<float>);
-        Instance* inst = createInstance(gpuEnv.cuContext, &scene, mesh->groupInsts[0], instXfm);
-        scene.insts.push_back(inst);
+        Matrix4x4 instXfm;
+        tfdmInst = createInstance(gpuEnv.cuContext, &scene, mesh->groupInsts[0], instXfm);
+        scene.insts.push_back(tfdmInst);
 
         scene.initialSceneAabb.unify(
             instXfm * mesh->groupInsts[0].transform * mesh->groupInsts[0].geomGroup->aabb);
@@ -1453,8 +1150,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
     geomInstTfdmDataBuffer.unmap();
     scene.unmap();
-
-    scene.setupASs(gpuEnv.cuContext);
 
     uint32_t totalNumEmitterPrimitives = 0;
     for (int i = 0; i < scene.insts.size(); ++i) {
@@ -1469,8 +1164,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
     CUtexObject envLightTexture = 0;
     RegularConstantContinuousDistribution2D envLightImportanceMap;
     if (!g_envLightTexturePath.empty())
-        loadEnvironmentalTexture(g_envLightTexturePath, gpuEnv.cuContext,
-                                 &envLightArray, &envLightTexture, &envLightImportanceMap);
+        loadEnvironmentalTexture(
+            g_envLightTexturePath, gpuEnv.cuContext,
+            &envLightArray, &envLightTexture, &envLightImportanceMap);
 
     scene.setupLightGeomDistributions();
 
@@ -2005,9 +1701,10 @@ int32_t main(int32_t argc, const char* argv[]) try {
             rollPitchYaw[1] *= 180 / pi_v<float>;
             rollPitchYaw[2] *= 180 / pi_v<float>;
             if (ImGui::InputFloat3("Roll/Pitch/Yaw", rollPitchYaw))
-                g_cameraOrientation = qFromEulerAngles(rollPitchYaw[0] * pi_v<float> / 180,
-                                                       rollPitchYaw[1] * pi_v<float> / 180,
-                                                       rollPitchYaw[2] * pi_v<float> / 180);
+                g_cameraOrientation = qFromEulerAngles(
+                    rollPitchYaw[0] * pi_v<float> / 180,
+                    rollPitchYaw[1] * pi_v<float> / 180,
+                    rollPitchYaw[2] * pi_v<float> / 180);
             ImGui::Text("Pos. Speed (T/G): %g", g_cameraPositionalMovingSpeed);
             ImGui::SliderFloat("Brightness", &brightness, -5.0f, 5.0f);
 
@@ -2033,12 +1730,12 @@ int32_t main(int32_t argc, const char* argv[]) try {
                     config.brightnessScale = std::pow(10.0f, brightness);
                     config.applyToneMap = applyToneMapAndGammaCorrection;
                     config.apply_sRGB_gammaCorrection = applyToneMapAndGammaCorrection;
-                    saveImage("output.png", renderTargetSizeX, renderTargetSizeY, rawImage,
-                              config);
+                    saveImage("output.png", renderTargetSizeX, renderTargetSizeY, rawImage, config);
                 }
                 if (saveSS_HDR)
-                    saveImageHDR("output.exr", renderTargetSizeX, renderTargetSizeY,
-                                 std::pow(10.0f, brightness), rawImage);
+                    saveImageHDR(
+                        "output.exr", renderTargetSizeX, renderTargetSizeY,
+                        std::pow(10.0f, brightness), rawImage);
                 delete[] rawImage;
             }
 
@@ -2055,7 +1752,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
         static bool useTemporalDenosier = true;
         static float motionVectorScale = -1.0f;
-        static bool animate = /*true*/false;
+        bool animate = false;
         static bool enableAccumulation = /*true*/false;
         static int32_t log2MaxNumAccums = 16;
         static bool enableJittering = false;
@@ -2063,11 +1760,15 @@ int32_t main(int32_t argc, const char* argv[]) try {
         bool lastFrameWasAnimated = false;
         static shared::BufferToDisplay bufferTypeToDisplay = shared::BufferToDisplay::NoisyBeauty;
         static int32_t maxPathLength = 5;
-        static bool enableAlbedo = true;
+
         static int32_t baseSurfaceIndex = 0;
         bool geomChanged = false;
         static int32_t textureIndex = 0;
         bool textureChanged = false;
+        static float instPitch = initInstPitch;
+        static float instYaw = 0.0f;
+        static float instRoll = 0.0f;
+        static float instScale = 1.0f;
         static Vector2D heightMapTexScale(1, 1);
         static Point2D heightMapTexOffset(0, 0);
         static float heightMapTexRotation = 0.0f;
@@ -2084,11 +1785,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
         {
             ImGui::Begin("Debug", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
 
-            if (ImGui::Button(animate ? "Stop" : "Play")) {
-                if (animate)
-                    lastFrameWasAnimated = true;
-                animate = !animate;
-            }
             ImGui::SameLine();
             if (ImGui::Button("Reset Accum"))
                 resetAccumulation = true;
@@ -2106,29 +1802,32 @@ int32_t main(int32_t argc, const char* argv[]) try {
             ImGui::Text("Geometry Instance: %u", pickInfoOnHost.geomInstSlot);
             ImGui::Text("Primitive Index: %u", pickInfoOnHost.primIndex);
             ImGui::Text("Material: %u", pickInfoOnHost.matSlot);
-            ImGui::Text("Position: %.3f, %.3f, %.3f",
-                        pickInfoOnHost.positionInWorld.x,
-                        pickInfoOnHost.positionInWorld.y,
-                        pickInfoOnHost.positionInWorld.z);
-            ImGui::Text("Normal: %.3f, %.3f, %.3f",
-                        pickInfoOnHost.normalInWorld.x,
-                        pickInfoOnHost.normalInWorld.y,
-                        pickInfoOnHost.normalInWorld.z);
-            ImGui::Text("Albedo: %.3f, %.3f, %.3f",
-                        pickInfoOnHost.albedo.r,
-                        pickInfoOnHost.albedo.g,
-                        pickInfoOnHost.albedo.b);
-            ImGui::Text("Emittance: %.3f, %.3f, %.3f",
-                        pickInfoOnHost.emittance.r,
-                        pickInfoOnHost.emittance.g,
-                        pickInfoOnHost.emittance.b);
+            ImGui::Text(
+                "Position: %.3f, %.3f, %.3f",
+                pickInfoOnHost.positionInWorld.x,
+                pickInfoOnHost.positionInWorld.y,
+                pickInfoOnHost.positionInWorld.z);
+            ImGui::Text(
+                "Normal: %.3f, %.3f, %.3f",
+                pickInfoOnHost.normalInWorld.x,
+                pickInfoOnHost.normalInWorld.y,
+                pickInfoOnHost.normalInWorld.z);
+            ImGui::Text(
+                "Albedo: %.3f, %.3f, %.3f",
+                pickInfoOnHost.albedo.r,
+                pickInfoOnHost.albedo.g,
+                pickInfoOnHost.albedo.b);
+            ImGui::Text(
+                "Emittance: %.3f, %.3f, %.3f",
+                pickInfoOnHost.emittance.r,
+                pickInfoOnHost.emittance.g,
+                pickInfoOnHost.emittance.b);
 
             ImGui::Separator();
 
             if (ImGui::BeginTabBar("MyTabBar")) {
                 if (ImGui::BeginTabItem("Renderer")) {
                     resetAccumulation |= ImGui::SliderInt("Max Path Length", &maxPathLength, 2, 15);
-                    resetAccumulation |= ImGui::Checkbox("Albedo", &enableAlbedo);
 
                     ImGui::Separator();
                     ImGui::Text("Assets");
@@ -2136,7 +1835,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
                         "Quad",
                         "Sphere",
                     };
-                    if (ImGui::Combo("Shape", &baseSurfaceIndex, baseSurfaceNames, lengthof(baseSurfaceNames))) {
+                    if (ImGui::Combo("Shape", &baseSurfaceIndex, baseSurfaceNames, lengthof(baseSurfaceNames))
+                        || frameIndex == 0) {
                         glFinish();
                         streamChain.waitAllWorkDone();
 
@@ -2203,38 +1903,45 @@ int32_t main(int32_t argc, const char* argv[]) try {
                         const char* name;
                         std::filesystem::path albedo;
                         std::filesystem::path height;
+                        float defaultHeightScale;
                     };
                     std::filesystem::path dataDir = R"(C:\Users\shocker_0x15\repos\GfxExp\data)";
                     const TextureAsset textureAssets[] = {
                         {
                             "River Pebbles",
                             R"(TCom_Ground_PebblesRiver2_2.5x2.5_1K_albedo.dds)",
-                            R"(TCom_Ground_PebblesRiver2_2.5x2.5_1K_height.dds)"
+                            R"(TCom_Ground_PebblesRiver2_2.5x2.5_1K_height.dds)",
+                            0.1f,
                         },
                         {
                             "Cobble Stones",
                             R"(TCom_Pavement_CobblestoneMedieval15_3x3_1K_albedo.dds)",
-                            R"(TCom_Pavement_CobblestoneMedieval15_3x3_1K_height.dds)"
+                            R"(TCom_Pavement_CobblestoneMedieval15_3x3_1K_height.dds)",
+                            0.1f,
                         },
                         {
                             "Cliff",
                             R"(TCom_Rock_Cliff3_2x2_1K_albedo.dds)",
-                            R"(TCom_Rock_Cliff3_2x2_1K_height.dds)"
+                            R"(TCom_Rock_Cliff3_2x2_1K_height.dds)",
+                            0.2f,
                         },
                         {
                             "Cliff Layered",
                             R"(TCom_Rock_CliffLayered_1.5x1.5_1K_albedo.dds)",
-                            R"(TCom_Rock_CliffLayered_1.5x1.5_1K_height.dds)"
+                            R"(TCom_Rock_CliffLayered_1.5x1.5_1K_height.dds)",
+                            0.3f,
                         },
                         {
                             "Wall Stones",
                             R"(TCom_Wall_Stone4_2x2_1K_albedo.dds)",
-                            R"(TCom_Wall_Stone4_2x2_1K_height.dds)"
+                            R"(TCom_Wall_Stone4_2x2_1K_height.dds)",
+                            0.2f,
                         },
                         {
                             "Earth",
                             R"()",
-                            R"(earth_heightmap_4k.dds)"
+                            R"(earth_heightmap_4k.dds)",
+                            0.02f,
                         },
                     };
                     if (ImGui::Combo(
@@ -2244,11 +1951,14 @@ int32_t main(int32_t argc, const char* argv[]) try {
                                 *outStr = asset.name;
                                 return true;
                             },
-                            const_cast<TextureAsset*>(textureAssets), lengthof(textureAssets))) {
+                            const_cast<TextureAsset*>(textureAssets), lengthof(textureAssets))
+                        || frameIndex == 0) {
                         glFinish();
                         streamChain.waitAllWorkDone();
 
                         const TextureAsset &asset = textureAssets[textureIndex];
+                        heightScale = asset.defaultHeightScale;
+                        heightParamChanged = true;
 
                         //auto &body = std::get<Material::Lambert>(tfdmMeshMaterial->body);
                         //if (body.texReflectance.texObj)
@@ -2332,7 +2042,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
                         for (int mipLevel = 0; mipLevel < numMinMaxMipMapLevels; ++mipLevel)
                             surfObjs[mipLevel] = tfdmMeshMaterial->minMaxMipMap.getSurfaceObject(mipLevel);
 
-                        tfdmMeshMaterial->minMaxMipMapSurfs.initialize(gpuEnv.cuContext, cudau::BufferType::Device, surfObjs);
+                        tfdmMeshMaterial->minMaxMipMapSurfs.initialize(
+                            gpuEnv.cuContext, cudau::BufferType::Device, surfObjs);
                         matData.minMaxMipMap = tfdmMeshMaterial->minMaxMipMapSurfs.getDevicePointer();
                         CUDADRV_CHECK(cuMemcpyHtoD(matAddrOnDevice, &matData, sizeof(matData)));
 
@@ -2343,13 +2054,23 @@ int32_t main(int32_t argc, const char* argv[]) try {
                         tfdmGeomGroup->optixGas.markDirty();
                     }
 
+                    ImGui::PushID("Instance Transform");
+                    animate |= ImGui::SliderFloat("Pitch", &instPitch, 0.0f, 360.0f);
+                    animate |= ImGui::SliderFloat("Yaw", &instYaw, 0.0f, 360.0f);
+                    animate |= ImGui::SliderFloat("Roll", &instRoll, 0.0f, 360.0f);
+                    animate |= ImGui::SliderFloat("Scale", &instScale, 0.1f, 10.0f);
+                    ImGui::PopID();
+                    resetAccumulation |= animate;
+
                     ImGui::Separator();
                     ImGui::Text("Displacement Parameters");
 
+                    ImGui::PushID("Height Parameters");
                     heightParamChanged |= ImGui::SliderFloat("Bias", &heightBias, 0.0f, 1.0f);
                     heightParamChanged |= ImGui::SliderFloat("Scale", &heightScale, -1.0f, 1.0f);
                     heightParamChanged |= ImGui::SliderFloat("Offset", &heightOffset, -1.0f, 1.0f);
                     heightParamChanged |= ImGui::SliderInt("Target Mip Level", &targetMipLevel, 0, 15);
+                    ImGui::PopID();
 
                     ImGui::Text("Texture Transform");
                     ImGui::PushID("Texture");
@@ -2506,7 +2227,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
         // JP: 各インスタンスのトランスフォームを更新する。
         // EN: Update the transform of each instance.
-        if (animate || lastFrameWasAnimated) {
+        if (animate || lastFrameWasAnimated || frameIndex == 0) {
             cudau::TypedBuffer<shared::InstanceData> &curInstDataBuffer = scene.instDataBuffer[bufferIndex];
             shared::InstanceData* instDataBufferOnHost = curInstDataBuffer.map();
             for (int i = 0; i < scene.instControllers.size(); ++i) {
@@ -2515,10 +2236,34 @@ int32_t main(int32_t argc, const char* argv[]) try {
                 shared::InstanceData &instData = instDataBufferOnHost[inst->instSlot];
                 controller->update(instDataBufferOnHost, animate ? 1.0f / 60.0f : 0.0f);
                 // TODO: まとめて送る。
-                CUDADRV_CHECK(cuMemcpyHtoDAsync(curInstDataBuffer.getCUdeviceptrAt(inst->instSlot),
-                                                &instData, sizeof(instData), curCuStream));
+                CUDADRV_CHECK(cuMemcpyHtoDAsync(
+                    curInstDataBuffer.getCUdeviceptrAt(inst->instSlot),
+                    &instData, sizeof(instData), curCuStream));
+            }
+            {
+                Matrix4x4 prevMatM2W = tfdmInst->matM2W;
+                Matrix3x3 matRot =
+                    rotate3DZ_3x3(instRoll * pi_v<float> / 180)
+                    * rotate3DY_3x3(instYaw * pi_v<float> / 180)
+                    * rotate3DX_3x3(instPitch * pi_v<float> / 180);
+                tfdmInst->matM2W = Matrix4x4(matRot * instScale);
+                tfdmInst->nMatM2W = matRot / instScale;
+                Matrix4x4 tMatM2W = transpose(tfdmInst->matM2W);
+                tfdmInst->optixInst.setTransform(reinterpret_cast<const float*>(&tMatM2W));
+
+                shared::InstanceData instData = instDataBufferOnHost[tfdmInst->instSlot];
+                instData.curToPrevTransform = prevMatM2W * invert(tfdmInst->matM2W);
+                instData.transform = tfdmInst->matM2W;
+                instData.normalMatrix = tfdmInst->nMatM2W;
+                instData.uniformScale = instScale;
+                CUDADRV_CHECK(cuMemcpyHtoDAsync(
+                    curInstDataBuffer.getCUdeviceptrAt(tfdmInst->instSlot),
+                    &instData, sizeof(instData), curCuStream));
             }
             curInstDataBuffer.unmap();
+
+            if (animate)
+                lastFrameWasAnimated = true;
         }
 
 #if !SHOW_BASE_MESH
@@ -2682,7 +2427,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         curGPUTimer.update.start(curCuStream);
         if (animate || frameIndex == 0 ||
             localIntersectionTypeChanged || heightParamChanged || geomChanged || textureChanged) {
-            perFramePlp.travHandle = scene.updateASs(curCuStream);
+            perFramePlp.travHandle = scene.updateASs(gpuEnv.cuContext, curCuStream);
 
             if (!gpuEnv.gBuffer.hitGroupSbt.isInitialized() ||
                 gpuEnv.gBuffer.hitGroupSbt.sizeInBytes() < scene.hitGroupSbtSize) {
@@ -2744,7 +2489,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
         perFramePlp.enableJittering = enableJittering;
         perFramePlp.enableEnvLight = enableEnvLight;
         perFramePlp.enableBumpMapping = enableBumpMapping;
-        perFramePlp.enableAlbedo = enableAlbedo;
         perFramePlp.enableDebugPrint = g_keyDebugPrint.getState();
         for (int i = 0; i < lengthof(debugSwitches); ++i)
             perFramePlp.setDebugSwitch(i, debugSwitches[i]);

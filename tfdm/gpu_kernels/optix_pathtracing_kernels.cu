@@ -124,11 +124,6 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_rayGen_generic() {
             BSDF bsdf;
             bsdf.setup(mat, texCoord, tfdmGeomInst.params.targetMipLevel);
 
-            if (!plp.f->enableAlbedo) {
-                float4 albedo = plp.s->albedoAccumBuffer.read(launchIndex);
-                alpha = safeDivide(alpha, RGB(albedo.x, albedo.y, albedo.z));
-            }
-
             // Next event estimation (explicit light sampling) on the first hit.
             contribution += alpha * performNextEventEstimation(
                 positionInWorld, vOutLocal, shadingFrame, bsdf, rng);

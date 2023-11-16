@@ -70,15 +70,22 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
     const Point2D texTriAabbMinP = min(tcs[0], min(tcs[1], tcs[2]));
     const Point2D texTriAabbMaxP = max(tcs[0], max(tcs[1], tcs[2]));
 
+    // JP: 位置や法線などをテクスチャー座標の関数として表すための行列を用意する。
+    //     ここでのテクスチャー座標とはテクスチャートランスフォーム前のオリジナルのテクスチャー座標。
+    // EN: Prepare matrices to express a position and a normal and so on as functions of the texture coordinate.
+    //     Texure coordinate here is the original one before applying the texture transform.
     const DisplacedTriangleAuxInfo &dispTriAuxInfo = tfdm.dispTriAuxInfoBuffer[optixGetPrimitiveIndex()];
     const Matrix3x3 invTexXfm = invert(texXfm);
     const Matrix3x3 matTcToBc = dispTriAuxInfo.matTcToBc * invTexXfm;
-    const Matrix4x4 matObjToTc =
-        Matrix4x4(Matrix3x3(texXfm[0], texXfm[1], Vector3D(0, 0, 1)), Vector3D(texXfm[2].xy()))
-        * dispTriAuxInfo.matObjToTc;
     const Matrix3x3 matTcToPInObj =
         Matrix3x3(vs[0].position, vs[1].position, vs[2].position) * matTcToBc;
     const Matrix3x3 matTcToNInObj = dispTriAuxInfo.matTcToNInObj * invTexXfm;
+
+    // JP: オブジェクト空間から(トランスフォーム後の)テクスチャー空間へ変換する行列。
+    // EN: Matrix to convert from the object space to the (post-transform) texture space.
+    const Matrix4x4 matObjToTc =
+        Matrix4x4(Matrix3x3(texXfm[0], texXfm[1], Vector3D(0, 0, 1)), Vector3D(texXfm[2].xy()))
+        * dispTriAuxInfo.matObjToTc;
 
     Normal3D hitNormal;
     float hitBc1, hitBc2;
@@ -404,6 +411,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
                 }
 #endif
 
+                // JP: ニュートン法を使ってレイとバイリニアパッチとの交叉判定を行う。
+                // EN: Test ray vs bilinear patch intersection using the Newton method.
                 const auto testRayVsBilinearPatchIntersection = [&]
                 (const Point2D &avgTc,
                  const Matrix3x3 &matTcToP, const Matrix3x3 &matTcToN, const Matrix3x3 &matTcToBc,
@@ -542,10 +551,22 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
 
     DisplacedSurfaceAttributes attr = {};
     if constexpr (intersectionType == LocalIntersectionType::Box ||
-                  intersectionType == LocalIntersectionType::TwoTriangle)
+                  intersectionType == LocalIntersectionType::TwoTriangle) {
+        /*
+        JP: テクスチャー空間で求めた法線を面との直交性を保ちつつオブジェクト空間に変換する。
+            必要となる行列は、位置や法線以外のベクトルをテクスチャー空間からオブジェクト空間へと変換する行列
+            (の左上3x3)の逆行列の転置である。逆行列はすでに持っているので転置のみで済む。
+        EN: Transform the normal computed in the texture space into the object space while preserving
+            orthogonality to the surface.
+            The required matrix is the transpose of the inverse of (the upper left 3x3 of) a matrix
+            to transform positions and vectors other than the normal.
+            We already have the inverse matrix, so just transpose it.
+        */
         attr.normalInObj = normalize(transpose(matObjToTc.getUpperLeftMatrix()) * hitNormal);
-    else
+    }
+    else {
         attr.normalInObj = hitNormal;
+    }
 #if OUTPUT_TRAVERSAL_STATS
     attr.numIterations = numIterations;
 #endif

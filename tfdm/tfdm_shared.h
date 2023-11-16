@@ -210,7 +210,6 @@ namespace shared {
         unsigned int enableJittering : 1;
         unsigned int enableEnvLight : 1;
         unsigned int enableBumpMapping : 1;
-        unsigned int enableAlbedo : 1;
         unsigned int enableDebugPrint : 1;
 
         uint32_t debugSwitches;
