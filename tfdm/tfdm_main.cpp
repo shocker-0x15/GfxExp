@@ -1910,7 +1910,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
                         std::filesystem::path height;
                         float defaultHeightScale;
                     };
-                    std::filesystem::path dataDir = R"(C:\Users\shocker_0x15\repos\GfxExp\data)";
+                    std::filesystem::path dataDir = R"(..\data)";
                     const TextureAsset textureAssets[] = {
                         {
                             "River Pebbles",
@@ -1941,6 +1941,12 @@ int32_t main(int32_t argc, const char* argv[]) try {
                             R"(TCom_Wall_Stone4_2x2_1K_albedo.dds)",
                             R"(TCom_Wall_Stone4_2x2_1K_height.dds)",
                             0.2f,
+                        },
+                        {
+                            "Earth",
+                            R"()",
+                            R"(gebco_08_rev_elev_4096_4096.dds)",
+                            0.02f,
                         },
                     };
                     if (ImGui::Combo(
