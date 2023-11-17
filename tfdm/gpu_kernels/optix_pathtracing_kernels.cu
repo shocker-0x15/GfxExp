@@ -84,6 +84,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_rayGen_generic() {
     Point2D texCoord(gBuffer0.texCoord_x, gBuffer1.texCoord_y);
     uint32_t materialSlot = gBuffer2.materialSlot;
     uint32_t geomInstSlot = gBuffer2.geomInstSlot;
+    uint32_t primIndex = gBuffer2.primIndex;
+    bool isTfdmMesh = gBuffer2.isTfdmMesh;
 
     const PerspectiveCamera &camera = plp.f->camera;
 
@@ -119,10 +121,20 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_rayGen_generic() {
                 contribution += alpha * emittance / Pi;
             }
 
-            const GeometryInstanceDataForTFDM &tfdmGeomInst = plp.s->geomInstTfdmDataBuffer[geomInstSlot];
+            float targetMipLevel = 0.0f;
+            if (isTfdmMesh) {
+                const GeometryInstanceDataForTFDM &tfdmGeomInst = plp.s->geomInstTfdmDataBuffer[geomInstSlot];
+                const DisplacedTriangleAuxInfo &dispTriAuxInfo = tfdmGeomInst.dispTriAuxInfoBuffer[primIndex];
+                targetMipLevel = tfdmGeomInst.params.targetMipLevel;
+                Point3D bc = dispTriAuxInfo.matTcToBc * Point3D(texCoord, 1.0f);
+                if (plp.f->showBaseEdges) {
+                    if (bc[0] < 0.01f || bc[1] < 0.01f || bc[2] < 0.01f)
+                        alpha *= RGB(1.0f, 0.25f, 0.0f);
+                }
+            }
 
             BSDF bsdf;
-            bsdf.setup(mat, texCoord, tfdmGeomInst.params.targetMipLevel);
+            bsdf.setup(mat, texCoord, targetMipLevel);
 
             // Next event estimation (explicit light sampling) on the first hit.
             contribution += alpha * performNextEventEstimation(

@@ -1769,6 +1769,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         static float instYaw = 0.0f;
         static float instRoll = 0.0f;
         static float instScale = 1.0f;
+        static bool showBaseEdges = false;
         static Vector2D heightMapTexScale(1, 1);
         static Point2D heightMapTexOffset(0, 0);
         static float heightMapTexRotation = 0.0f;
@@ -2064,6 +2065,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
                     ImGui::Separator();
                     ImGui::Text("Displacement Parameters");
+
+                    resetAccumulation |= ImGui::Checkbox("Show Base Edges", &showBaseEdges);
 
                     ImGui::PushID("Height Parameters");
                     heightParamChanged |= ImGui::SliderFloat("Bias", &heightBias, 0.0f, 1.0f);
@@ -2490,6 +2493,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         perFramePlp.enableEnvLight = enableEnvLight;
         perFramePlp.enableBumpMapping = enableBumpMapping;
         perFramePlp.enableDebugPrint = g_keyDebugPrint.getState();
+        perFramePlp.showBaseEdges = showBaseEdges;
         for (int i = 0; i < lengthof(debugSwitches); ++i)
             perFramePlp.setDebugSwitch(i, debugSwitches[i]);
 

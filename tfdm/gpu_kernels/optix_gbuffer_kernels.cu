@@ -32,7 +32,9 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(setupGBuffers)() {
     hitPointParams.normalInWorld = Normal3D(NAN);
     hitPointParams.texCoord = Point2D(NAN);
     hitPointParams.materialSlot = 0xFFFFFFFF;
-    hitPointParams.geomInstSlot = 0xFFFFFFFF;
+    hitPointParams.geomInstSlot = 0x7FFFFFFF;
+    hitPointParams.isTfdmMesh = false;
+    hitPointParams.primIndex = 0xFFFFFFFF;
 #if OUTPUT_TRAVERSAL_STATS
     hitPointParams.numTravIterations = 0;
 #endif
@@ -64,9 +66,11 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(setupGBuffers)() {
     gBuffer1.normalInWorld = hitPointParams.normalInWorld;
     gBuffer1.texCoord_y = hitPointParams.texCoord.y;
     GBuffer2 gBuffer2;
-    gBuffer2.motionVector = motionVector;
+    gBuffer2.motionVector = __float22half2_rn(make_float2(motionVector.x, motionVector.y));
     gBuffer2.materialSlot = hitPointParams.materialSlot;
     gBuffer2.geomInstSlot = hitPointParams.geomInstSlot;
+    gBuffer2.isTfdmMesh = hitPointParams.isTfdmMesh;
+    gBuffer2.primIndex = hitPointParams.primIndex;
 
     uint32_t bufIdx = plp.f->bufferIndex;
     plp.s->GBuffer0[bufIdx].write(launchIndex, gBuffer0);
@@ -159,6 +163,8 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
 
             const GeometryInstanceDataForTFDM &tfdmGeomInst = plp.s->geomInstTfdmDataBuffer[sbtr.geomInstSlot];
             targetMipLevel = tfdmGeomInst.params.targetMipLevel;
+
+            hitPointParams->isTfdmMesh = true;
         }
         prevPositionInWorld = inst.curToPrevTransform * positionInWorld;
         //geometricNormalInWorld = Normal3D(cross(v1.position - v0.position, v2.position - v0.position));
@@ -205,6 +211,7 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
     hitPointParams->texCoord = texCoord;
     hitPointParams->materialSlot = geomInst.materialSlot;
     hitPointParams->geomInstSlot = geomInst.geomInstSlot;
+    hitPointParams->primIndex = hp.primIndex;
 #if OUTPUT_TRAVERSAL_STATS
     hitPointParams->numTravIterations = numTravIterations;
 #endif

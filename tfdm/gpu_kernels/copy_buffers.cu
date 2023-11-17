@@ -5,7 +5,7 @@ CUDA_DEVICE_KERNEL void copyToLinearBuffers(
     optixu::NativeBlockBuffer2D<float4> colorAccumBuffer,
     optixu::NativeBlockBuffer2D<float4> albedoAccumBuffer,
     optixu::NativeBlockBuffer2D<float4> normalAccumBuffer,
-    optixu::NativeBlockBuffer2D<float4> motionVectorBuffer,
+    optixu::NativeBlockBuffer2D<shared::GBuffer2> motionVectorBuffer,
     float4* linearColorBuffer,
     float4* linearAlbedoBuffer,
     float4* linearNormalBuffer,
@@ -25,8 +25,8 @@ CUDA_DEVICE_KERNEL void copyToLinearBuffers(
     if (normal.x != 0 || normal.y != 0 || normal.z != 0)
         normal.normalize();
     linearNormalBuffer[linearIndex] = make_float4(normal.toNative(), 1.0f);
-    float4 motionVector = motionVectorBuffer.read(launchIndex);
-    linearMotionVectorBuffer[linearIndex] = make_float2(motionVector.x, motionVector.y);
+    shared::GBuffer2 gb2Elem = motionVectorBuffer.read(launchIndex);
+    linearMotionVectorBuffer[linearIndex] = __half22float2(gb2Elem.motionVector);
 }
 
 

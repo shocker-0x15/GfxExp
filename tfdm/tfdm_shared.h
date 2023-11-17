@@ -2,6 +2,9 @@
 
 #include "../common/common_shared.h"
 #include "affine_arithmetic.h"
+#if defined(__CUDA_ARCH__)
+#include <cuda_fp16.h>
+#endif
 
 #define USE_DISPLACED_SURFACES 1
 #define USE_WORKAROUND_FOR_CUDA_BC_TEX 1
@@ -97,7 +100,9 @@ namespace shared {
         Normal3D normalInWorld;
         Point2D texCoord;
         uint32_t materialSlot;
-        uint32_t geomInstSlot;
+        uint32_t geomInstSlot : 31;
+        uint32_t isTfdmMesh : 1;
+        uint32_t primIndex;
 #if OUTPUT_TRAVERSAL_STATS
         uint32_t numTravIterations;
 #endif
@@ -139,9 +144,18 @@ namespace shared {
     };
 
     struct GBuffer2 {
-        Vector2D motionVector;
+#if defined(__CUDA_ARCH__)
+        __half2 motionVector;
+#else
+        struct {
+            uint16_t motionVectorX;
+            uint16_t motionVectorY;
+        };
+#endif
         uint32_t materialSlot;
-        uint32_t geomInstSlot;
+        uint32_t geomInstSlot : 31;
+        uint32_t isTfdmMesh : 1;
+        uint32_t primIndex;
     };
 
 
@@ -211,6 +225,7 @@ namespace shared {
         unsigned int enableEnvLight : 1;
         unsigned int enableBumpMapping : 1;
         unsigned int enableDebugPrint : 1;
+        unsigned int showBaseEdges : 1;
 
         uint32_t debugSwitches;
         void setDebugSwitch(int32_t idx, bool b) {
