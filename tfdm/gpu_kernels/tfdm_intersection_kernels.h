@@ -559,7 +559,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
         EN: Transform the normal computed in the texture space into the object space while preserving
             orthogonality to the surface.
             The required matrix is the transpose of the inverse of (the upper left 3x3 of) a matrix
-            to transform positions and vectors other than the normal.
+            to transform positions and vectors other than the normal from the texture space into the object space.
             We already have the inverse matrix, so just transpose it.
         */
         attr.normalInObj = normalize(transpose(matObjToTc.getUpperLeftMatrix()) * hitNormal);
