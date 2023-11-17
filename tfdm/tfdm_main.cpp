@@ -1942,12 +1942,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
                             R"(TCom_Wall_Stone4_2x2_1K_height.dds)",
                             0.2f,
                         },
-                        {
-                            "Earth",
-                            R"()",
-                            R"(earth_heightmap_4k.dds)",
-                            0.02f,
-                        },
                     };
                     if (ImGui::Combo(
                             "Texture", &textureIndex,
