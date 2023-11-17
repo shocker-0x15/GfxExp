@@ -1,13 +1,12 @@
 ﻿/*
 * 
 * コマンドラインオプション例 / Command line option example:
-You can load a 3D model for example by downloading from the internet.
-(e.g. https://casual-effects.com/data/)
+You can use an HDR environment map by downloading from the internet.
+(e.g. https://hdri-haven.com/)
 
 (1) -cam-pos 0 3 0 -cam-yaw 90
-    -name sponza -obj crytek_sponza/sponza.obj 0.01 trad
-    -begin-pos 0 0 0.36125 -inst sponza
-    -name rectlight -emittance 600 600 600 -rectangle 2 2 -begin-pos 0 15 0 -inst rectlight
+
+(2) -cam-pos 0 3 0 -cam-yaw 90 -env-texture envlight.exr
 
 JP: このプログラムはTFDM (Tessellation-Free Displacement Mapping) [1]の実装例です。
     ディスプレイスメントマッピングによって3Dのサーフェスに詳細なジオメトリを付加することができますが、
