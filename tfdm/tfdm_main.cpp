@@ -503,9 +503,9 @@ static float g_initBrightness = 0.0f;
 static float g_cameraPositionalMovingSpeed;
 static float g_cameraDirectionalMovingSpeed;
 static float g_cameraTiltSpeed;
-static Quaternion g_cameraOrientation;
+static Quaternion g_cameraOrientation = qRotateY(pi_v<float>);
 static Quaternion g_tempCameraOrientation;
-static Point3D g_cameraPosition;
+static Point3D g_cameraPosition(0, 0, 1.5f);
 static std::filesystem::path g_envLightTexturePath;
 
 static constexpr float initInstPitch = 45.0f;
@@ -532,6 +532,7 @@ static void parseCommandline(int32_t argc, const char* argv[]) {
     RGB emittance(0.0f, 0.0f, 0.0f);
     std::filesystem::path rectEmitterTexPath;
 
+    bool camParamSpecified = false;
     for (int i = 0; i < argc; ++i) {
         const char* arg = argv[i];
 
@@ -574,11 +575,13 @@ static void parseCommandline(int32_t argc, const char* argv[]) {
             }
             g_cameraPosition = Point3D(atof(argv[i + 1]), atof(argv[i + 2]), atof(argv[i + 3]));
             i += 3;
+            camParamSpecified = true;
         }
         else if (strncmp(arg, "-cam-roll", 10) == 0 ||
                  strncmp(arg, "-cam-pitch", 11) == 0 ||
                  strncmp(arg, "-cam-yaw", 9) == 0) {
             computeOrientation(arg + 4, &camOrientation);
+            camParamSpecified = true;
         }
         else if (strncmp(arg, "-brightness", 12) == 0) {
             if (i + 1 >= argc) {
@@ -610,7 +613,8 @@ static void parseCommandline(int32_t argc, const char* argv[]) {
         }
     }
 
-    g_cameraOrientation = camOrientation;
+    if (camParamSpecified)
+        g_cameraOrientation = camOrientation;
 }
 
 
