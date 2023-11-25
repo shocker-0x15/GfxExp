@@ -624,23 +624,60 @@ static void createQuad(
     constexpr uint32_t numEdges = 1;
     vertices->resize(pow2(numEdges + 1));
     triangles->resize(2 * pow2(numEdges));
-    for (int iy = 0; iy < numEdges + 1; ++iy) {
-        float py = static_cast<float>(iy) / numEdges;
-        float y = -0.5f + 1.0f * py;
+    for (int iz = 0; iz < numEdges + 1; ++iz) {
+        float pz = static_cast<float>(iz) / numEdges;
+        float z = -0.5f + 1.0f * pz;
         for (int ix = 0; ix < numEdges + 1; ++ix) {
             float px = static_cast<float>(ix) / numEdges;
             float x = -0.5f + 1.0f * px;
-            (*vertices)[iy * (numEdges + 1) + ix] = shared::Vertex{
-                Point3D(x, 0, y),
-                normalize(Normal3D(/*-0.5f + px*/0, 1, /*-0.5f + py*/0)),
-                Vector3D(1, 0, 0), Point2D(px, py)
+            (*vertices)[iz * (numEdges + 1) + ix] = shared::Vertex{
+                Point3D(x, 0, z),
+                normalize(Normal3D(/*-0.5f + px*/0, 1, /*-0.5f + pz*/0)),
+                Vector3D(1, 0, 0), Point2D(/*0.5f + 2 * */px, /*0.5f + 2 * */pz)
+                //Vector3D(1, 0, 0), Point2D(0.25f + 0.5f * px, 0.25f + 0.5f * pz)
             };
-            if (iy < numEdges && ix < numEdges) {
-                uint32_t baseIdx = iy * (numEdges + 1) + ix;
-                (*triangles)[2 * (iy * numEdges + ix) + 0] = shared::Triangle{
+            if (iz < numEdges && ix < numEdges) {
+                uint32_t baseIdx = iz * (numEdges + 1) + ix;
+                (*triangles)[2 * (iz * numEdges + ix) + 0] = shared::Triangle{
                     baseIdx, baseIdx + (numEdges + 1), baseIdx + (numEdges + 1) + 1
                 };
-                (*triangles)[2 * (iy * numEdges + ix) + 1] = shared::Triangle{
+                (*triangles)[2 * (iz * numEdges + ix) + 1] = shared::Triangle{
+                    baseIdx, baseIdx + (numEdges + 1) + 1, baseIdx + 1
+                };
+            }
+        }
+    }
+}
+
+static void createCurvedSurface(
+    std::vector<shared::Vertex>* vertices,
+    std::vector<shared::Triangle>* triangles) {
+    constexpr uint32_t numEdges = 7;
+    constexpr float fcx = 2 * pi_v<float>;
+    constexpr float fcz = 2 * pi_v<float>;
+    constexpr float heightScale = 0.1f;
+    vertices->resize(pow2(numEdges + 1));
+    triangles->resize(2 * pow2(numEdges));
+    for (int iz = 0; iz <= numEdges; ++iz) {
+        float pz = static_cast<float>(iz) / numEdges;
+        float z = -0.5f + 1.0f * pz;
+        for (int ix = 0; ix <= numEdges; ++ix) {
+            float px = static_cast<float>(ix) / numEdges;
+            float x = -0.5f + 1.0f * px;
+            float y = heightScale * ((std::sin(fcx * px) - 0.5f) + (std::cos(fcz * pz) - 0.5f));
+            float dydx = heightScale * fcx * std::cos(fcx * px);
+            float dydz = -heightScale * fcz * std::sin(fcz * pz);
+            (*vertices)[iz * (numEdges + 1) + ix] = shared::Vertex{
+                Point3D(x, y, z),
+                static_cast<Normal3D>(normalize(cross(Vector3D(0, dydz, 1), Vector3D(1, dydx, 0)))),
+                normalize(Vector3D(1, dydz, 0)), Point2D(px, pz)
+            };
+            if (iz < numEdges && ix < numEdges) {
+                uint32_t baseIdx = iz * (numEdges + 1) + ix;
+                (*triangles)[2 * (iz * numEdges + ix) + 0] = shared::Triangle{
+                    baseIdx, baseIdx + (numEdges + 1), baseIdx + (numEdges + 1) + 1
+                };
+                (*triangles)[2 * (iz * numEdges + ix) + 1] = shared::Triangle{
                     baseIdx, baseIdx + (numEdges + 1) + 1, baseIdx + 1
                 };
             }
@@ -1486,6 +1523,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
     struct GPUTimer {
         cudau::Timer frame;
         cudau::Timer update;
+#if !SHOW_BASE_MESH
+        cudau::Timer prepareTfdm;
+#endif
         cudau::Timer computePDFTexture;
         cudau::Timer setupGBuffers;
         cudau::Timer pathTrace;
@@ -1494,6 +1534,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
         void initialize(CUcontext context) {
             frame.initialize(context);
             update.initialize(context);
+#if !SHOW_BASE_MESH
+            prepareTfdm.initialize(context);
+#endif
             computePDFTexture.initialize(context);
             setupGBuffers.initialize(context);
             pathTrace.initialize(context);
@@ -1504,6 +1547,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
             pathTrace.finalize();
             setupGBuffers.finalize();
             computePDFTexture.finalize();
+#if !SHOW_BASE_MESH
+            prepareTfdm.finalize();
+#endif
             update.finalize();
             frame.finalize();
         }
@@ -1759,7 +1805,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
         static bool enableAccumulation = /*true*/false;
         static int32_t log2MaxNumAccums = 16;
         static bool enableJittering = false;
-        static bool enableBumpMapping = false;
         bool lastFrameWasAnimated = false;
         static shared::BufferToDisplay bufferTypeToDisplay = shared::BufferToDisplay::NoisyBeauty;
         static int32_t maxPathLength = 5;
@@ -1795,7 +1840,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
             ImGui::Checkbox("Enable Accumulation", &enableAccumulation);
             ImGui::InputLog2Int("#MaxNumAccum", &log2MaxNumAccums, 16, 5);
             resetAccumulation |= ImGui::Checkbox("Enable Jittering", &enableJittering);
-            resetAccumulation |= ImGui::Checkbox("Enable Bump Mapping", &enableBumpMapping);
 
             ImGui::Separator();
             ImGui::Text("Cursor Info: %.1lf, %.1lf", g_mouseX, g_mouseY);
@@ -1837,6 +1881,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
                     ImGui::Text("Assets");
                     const char* baseSurfaceNames[] = {
                         "Quad",
+                        "Curved Surface",
                         "Sphere",
                     };
                     if (ImGui::Combo("Shape", &baseSurfaceIndex, baseSurfaceNames, lengthof(baseSurfaceNames))
@@ -1849,6 +1894,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
                         if (baseSurfaceIndex == 0)
                             createQuad(&vertices, &triangles);
                         else if (baseSurfaceIndex == 1)
+                            createCurvedSurface(&vertices, &triangles);
+                        else if (baseSurfaceIndex == 2)
                             createSphere(&vertices, &triangles);
 
                         tfdmMeshGeomInst->vertexBuffer.finalize();
@@ -2197,6 +2244,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
             static MovingAverageTime cudaFrameTime;
             static MovingAverageTime updateTime;
+#if !SHOW_BASE_MESH
+            static MovingAverageTime prepareTfdmTime;
+#endif
             static MovingAverageTime computePDFTextureTime;
             static MovingAverageTime setupGBuffersTime;
             static MovingAverageTime pathTraceTime;
@@ -2204,6 +2254,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
             cudaFrameTime.append(curGPUTimer.frame.report());
             updateTime.append(curGPUTimer.update.report());
+#if !SHOW_BASE_MESH
+            prepareTfdmTime.append(curGPUTimer.prepareTfdm.report());
+#endif
             computePDFTextureTime.append(curGPUTimer.computePDFTexture.report());
             setupGBuffersTime.append(curGPUTimer.setupGBuffers.report());
             pathTraceTime.append(curGPUTimer.pathTrace.report());
@@ -2212,6 +2265,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
             //ImGui::SetNextItemWidth(100.0f);
             ImGui::Text("CUDA/OptiX GPU %.3f [ms]:", cudaFrameTime.getAverage());
             ImGui::Text("  Update: %.3f [ms]", updateTime.getAverage());
+#if !SHOW_BASE_MESH
+            ImGui::Text("  Prepare TFDM: %.3f [ms]", prepareTfdmTime.getAverage());
+#endif
             ImGui::Text("  Compute PDF Texture: %.3f [ms]", computePDFTextureTime.getAverage());
             ImGui::Text("  Setup G-Buffers: %.3f [ms]", setupGBuffersTime.getAverage());
             ImGui::Text("  Path Trace: %.3f [ms]", pathTraceTime.getAverage());
@@ -2272,9 +2328,12 @@ int32_t main(int32_t argc, const char* argv[]) try {
                 lastFrameWasAnimated = true;
         }
 
+        curGPUTimer.update.start(curCuStream);
+
 #if !SHOW_BASE_MESH
         // JP: Minmax mipmapを計算する。
         // EN: Compute the minmax mipmap.
+        curGPUTimer.prepareTfdm.start(curCuStream);
         if (localIntersectionTypeChanged || textureChanged) {
 #if USE_DISPLACED_SURFACES
             optixu::HitProgramGroup gBufferHitProgramGroup;
@@ -2426,11 +2485,11 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
             tfdmGeomGroup->needsRebuild = true;
         }
+        curGPUTimer.prepareTfdm.stop(curCuStream);
 #endif
 
         // JP: ASesのリビルドを行う。
         // EN: Rebuild the ASes.
-        curGPUTimer.update.start(curCuStream);
         if (animate || frameIndex == 0 ||
             localIntersectionTypeChanged || heightParamChanged || geomChanged || textureChanged) {
             perFramePlp.travHandle = scene.updateASs(gpuEnv.cuContext, curCuStream);
@@ -2457,6 +2516,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
                     gpuEnv.pathTracing.hitGroupSbt, gpuEnv.pathTracing.hitGroupSbt.getMappedPointer());
             }
         }
+
         curGPUTimer.update.stop(curCuStream);
 
         // JP: 光源となるインスタンスのProbability Textureを計算する。
@@ -2494,7 +2554,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
         perFramePlp.resetFlowBuffer = newSequence;
         perFramePlp.enableJittering = enableJittering;
         perFramePlp.enableEnvLight = enableEnvLight;
-        perFramePlp.enableBumpMapping = enableBumpMapping;
         perFramePlp.enableDebugPrint = g_keyDebugPrint.getState();
         perFramePlp.showBaseEdges = showBaseEdges;
         for (int i = 0; i < lengthof(debugSwitches); ++i)

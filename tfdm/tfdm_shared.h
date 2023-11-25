@@ -223,7 +223,6 @@ namespace shared {
         unsigned int resetFlowBuffer : 1;
         unsigned int enableJittering : 1;
         unsigned int enableEnvLight : 1;
-        unsigned int enableBumpMapping : 1;
         unsigned int enableDebugPrint : 1;
         unsigned int showBaseEdges : 1;
 

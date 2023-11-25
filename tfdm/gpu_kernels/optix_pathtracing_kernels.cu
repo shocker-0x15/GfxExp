@@ -282,11 +282,6 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_closestHit_generic() {
     float frontHit = dot(vOut, geometricNormalInWorld) >= 0.0f ? 1.0f : -1.0f;
 
     ReferenceFrame shadingFrame(shadingNormalInWorld, texCoord0DirInWorld);
-    if (plp.f->enableBumpMapping) {
-        Normal3D modLocalNormal = mat.readModifiedNormal(
-            mat.normal, mat.normalDimInfo, texCoord, targetMipLevel);
-        applyBumpMapping(modLocalNormal, &shadingFrame);
-    }
     positionInWorld = offsetRayOrigin(positionInWorld, frontHit * geometricNormalInWorld);
     Vector3D vOutLocal = shadingFrame.toLocal(vOut);
 

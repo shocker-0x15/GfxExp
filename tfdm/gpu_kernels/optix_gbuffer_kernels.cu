@@ -196,11 +196,6 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
     BSDF bsdf;
     bsdf.setup(mat, texCoord, targetMipLevel);
     ReferenceFrame shadingFrame(shadingNormalInWorld, texCoord0DirInWorld);
-    if (plp.f->enableBumpMapping) {
-        Normal3D modLocalNormal = mat.readModifiedNormal(
-            mat.normal, mat.normalDimInfo, texCoord, targetMipLevel);
-        applyBumpMapping(modLocalNormal, &shadingFrame);
-    }
     Vector3D vOut(-Vector3D(optixGetWorldRayDirection()));
     Vector3D vOutLocal = shadingFrame.toLocal(normalize(vOut));
 
