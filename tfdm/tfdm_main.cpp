@@ -508,12 +508,12 @@ static Point3D g_cameraPosition(0, 0, 1.5f);
 static std::filesystem::path g_envLightTexturePath;
 
 static constexpr float initInstPitch = 45.0f;
+static const Point3D initInstPos(0, 0, 0);
 static constexpr float initHeightOffset = 0.0f;
 static constexpr float initHeightScale = 0.2f;
 static constexpr float initHeightBias = 0.0f;
 static constexpr int32_t initTargetMipLevel = 0;
-static constexpr shared::LocalIntersectionType initLocalIntersectionType =
-shared::LocalIntersectionType::TwoTriangle;
+static constexpr shared::LocalIntersectionType initLocalIntersectionType = shared::LocalIntersectionType::TwoTriangle;
 
 static void parseCommandline(int32_t argc, const char* argv[]) {
     std::string name;
@@ -1817,6 +1817,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         static float instYaw = 0.0f;
         static float instRoll = 0.0f;
         static float instScale = 1.0f;
+        static Point3D instPosition = initInstPos;
         static bool showBaseEdges = false;
         static Vector2D heightMapTexScale(1, 1);
         static Point2D heightMapTexOffset(0, 0);
@@ -2110,6 +2111,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
                     animate |= ImGui::SliderFloat("Yaw", &instYaw, 0.0f, 360.0f);
                     animate |= ImGui::SliderFloat("Roll", &instRoll, 0.0f, 360.0f);
                     animate |= ImGui::SliderFloat("Scale", &instScale, 0.1f, 10.0f);
+                    animate |= ImGui::InputFloat3("Position", reinterpret_cast<float*>(&instPosition));
                     ImGui::PopID();
                     resetAccumulation |= animate;
 
@@ -2127,8 +2129,10 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
                     ImGui::Text("Texture Transform");
                     ImGui::PushID("Texture");
-                    heightParamChanged |= ImGui::SliderFloat2(
-                        "Scale", reinterpret_cast<float*>(&heightMapTexScale), 0.1f, 3.0f);
+                    heightParamChanged |= ImGui::SliderFloat(
+                        "Scale U", &heightMapTexScale.x, 0.1f, 3.0f);
+                    heightParamChanged |= ImGui::SliderFloat(
+                        "Scale V", &heightMapTexScale.y, 0.1f, 3.0f);
                     heightParamChanged |= ImGui::SliderFloat(
                         "Rotation", &heightMapTexRotation, 0.0f, 360.0f);
                     heightParamChanged |= ImGui::SliderFloat(
@@ -2308,7 +2312,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
                     rotate3DZ_3x3(instRoll * pi_v<float> / 180)
                     * rotate3DY_3x3(instYaw * pi_v<float> / 180)
                     * rotate3DX_3x3(instPitch * pi_v<float> / 180);
-                tfdmInst->matM2W = Matrix4x4(matRot * instScale);
+                tfdmInst->matM2W = Matrix4x4(matRot * instScale, instPosition);
                 tfdmInst->nMatM2W = matRot / instScale;
                 Matrix4x4 tMatM2W = transpose(tfdmInst->matM2W);
                 tfdmInst->optixInst.setTransform(reinterpret_cast<const float*>(&tMatM2W));
