@@ -1003,7 +1003,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
             scene.initialSceneAabb.unify(instXfm * groupInst.transform * groupInst.geomGroup->aabb);
 
             if (any(info.beginPosition != info.endPosition) ||
-                info.beginOrientation != info.endOrientation ||
+                any(info.beginOrientation != info.endOrientation) ||
                 info.beginScale != info.endScale) {
                 auto controller = new InstanceController(
                     inst,
