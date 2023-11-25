@@ -136,9 +136,9 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr T lerp(const T &v0, const T &v1, F t)
 
 
 
-template <typename T>
-CUDA_COMMON_FUNCTION CUDA_INLINE constexpr T alignUp(T value, uint32_t alignment) {
-    return (value + alignment - 1) / alignment * alignment;
+template <std::integral IntType>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr IntType alignUp(IntType value, uint32_t alignment) {
+    return static_cast<IntType>((value + alignment - 1) / alignment * alignment);
 }
 
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr int32_t floorDiv(int32_t value, uint32_t modulus) {
