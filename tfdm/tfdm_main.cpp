@@ -508,7 +508,7 @@ static Point3D g_cameraPosition(0, 0, 1.5f);
 static std::filesystem::path g_envLightTexturePath;
 
 static constexpr float initInstPitch = 45.0f;
-static const Point3D initInstPos(0, 0, 0);
+static constexpr Point3D initInstPos(0, 0, 0);
 static constexpr float initHeightOffset = 0.0f;
 static constexpr float initHeightScale = 0.2f;
 static constexpr float initHeightBias = 0.0f;
