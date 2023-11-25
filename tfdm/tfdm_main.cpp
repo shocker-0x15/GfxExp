@@ -777,7 +777,9 @@ static void computeDisplacedTriangleAuxiliaryInfos(
         };
 
         Matrix4x4d matObjToTc(invert(Matrix3x3d(tc0Dir, tc1Dir, geomNormal)));
-        matObjToTc = translate3D_4x4(Point3Dd(vs[0].texCoord, 0.0f) - matObjToTc * vs[0].position) * matObjToTc;
+        matObjToTc =
+            translate3D_4x4(Point3Dd(vs[0].texCoord, 0.0f) - matObjToTc * static_cast<Point3Dd>(vs[0].position))
+            * matObjToTc;
 
         const Matrix3x3d matTcToBc = invert(Matrix3x3d(tcs3D[0], tcs3D[1], tcs3D[2]));
         const Matrix3x3d matBcToNInObj(vs[0].normal, vs[1].normal, vs[2].normal);
