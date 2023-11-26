@@ -1243,15 +1243,15 @@ int32_t main(int32_t argc, const char* argv[]) try {
     const auto initializeScreenRelatedBuffers = [&]() {
         for (int i = 0; i < 2; ++i) {
             gBuffer0[i].initialize2D(
-                gpuEnv.cuContext, cudau::ArrayElementType::UInt32, (sizeof(shared::GBuffer0) + 3) / 4,
+                gpuEnv.cuContext, cudau::ArrayElementType::UInt32, (sizeof(shared::GBuffer0Elements) + 3) / 4,
                 cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable,
                 renderTargetSizeX, renderTargetSizeY, 1);
             gBuffer1[i].initialize2D(
-                gpuEnv.cuContext, cudau::ArrayElementType::UInt32, (sizeof(shared::GBuffer1) + 3) / 4,
+                gpuEnv.cuContext, cudau::ArrayElementType::UInt32, (sizeof(shared::GBuffer1Elements) + 3) / 4,
                 cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable,
                 renderTargetSizeX, renderTargetSizeY, 1);
             gBuffer2[i].initialize2D(
-                gpuEnv.cuContext, cudau::ArrayElementType::UInt32, (sizeof(shared::GBuffer2) + 3) / 4,
+                gpuEnv.cuContext, cudau::ArrayElementType::UInt32, (sizeof(shared::GBuffer2Elements) + 3) / 4,
                 cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable,
                 renderTargetSizeX, renderTargetSizeY, 1);
         }
@@ -1263,26 +1263,29 @@ int32_t main(int32_t argc, const char* argv[]) try {
             renderTargetSizeX, renderTargetSizeY, 1);
 #endif
 
-        beautyAccumBuffer.initialize2D(gpuEnv.cuContext, cudau::ArrayElementType::Float32, 4,
-                                       cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable,
-                                       renderTargetSizeX, renderTargetSizeY, 1);
-        albedoAccumBuffer.initialize2D(gpuEnv.cuContext, cudau::ArrayElementType::Float32, 4,
-                                       cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable,
-                                       renderTargetSizeX, renderTargetSizeY, 1);
-        normalAccumBuffer.initialize2D(gpuEnv.cuContext, cudau::ArrayElementType::Float32, 4,
-                                       cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable,
-                                       renderTargetSizeX, renderTargetSizeY, 1);
+        beautyAccumBuffer.initialize2D(
+            gpuEnv.cuContext, cudau::ArrayElementType::Float32, 4,
+            cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable,
+            renderTargetSizeX, renderTargetSizeY, 1);
+        albedoAccumBuffer.initialize2D(
+            gpuEnv.cuContext, cudau::ArrayElementType::Float32, 4,
+            cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable,
+            renderTargetSizeX, renderTargetSizeY, 1);
+        normalAccumBuffer.initialize2D(
+            gpuEnv.cuContext, cudau::ArrayElementType::Float32, 4,
+            cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable,
+            renderTargetSizeX, renderTargetSizeY, 1);
 
-        linearBeautyBuffer.initialize(gpuEnv.cuContext, Scene::bufferType,
-                                      renderTargetSizeX * renderTargetSizeY);
-        linearAlbedoBuffer.initialize(gpuEnv.cuContext, Scene::bufferType,
-                                      renderTargetSizeX * renderTargetSizeY);
-        linearNormalBuffer.initialize(gpuEnv.cuContext, Scene::bufferType,
-                                      renderTargetSizeX * renderTargetSizeY);
-        linearFlowBuffer.initialize(gpuEnv.cuContext, Scene::bufferType,
-                                    renderTargetSizeX * renderTargetSizeY);
-        linearDenoisedBeautyBuffer.initialize(gpuEnv.cuContext, Scene::bufferType,
-                                              renderTargetSizeX * renderTargetSizeY);
+        linearBeautyBuffer.initialize(
+            gpuEnv.cuContext, Scene::bufferType, renderTargetSizeX * renderTargetSizeY);
+        linearAlbedoBuffer.initialize(
+            gpuEnv.cuContext, Scene::bufferType, renderTargetSizeX * renderTargetSizeY);
+        linearNormalBuffer.initialize(
+            gpuEnv.cuContext, Scene::bufferType, renderTargetSizeX * renderTargetSizeY);
+        linearFlowBuffer.initialize(
+            gpuEnv.cuContext, Scene::bufferType, renderTargetSizeX * renderTargetSizeY);
+        linearDenoisedBeautyBuffer.initialize(
+            gpuEnv.cuContext, Scene::bufferType, renderTargetSizeX * renderTargetSizeY);
 
         rngBuffer.initialize2D(
             gpuEnv.cuContext, cudau::ArrayElementType::UInt32, (sizeof(shared::PCG32RNG) + 3) / 4,
@@ -1430,13 +1433,15 @@ int32_t main(int32_t argc, const char* argv[]) try {
     cudau::Array outputArray;
     cudau::InteropSurfaceObjectHolder<2> outputBufferSurfaceHolder;
     outputTexture.initialize(GL_RGBA32F, renderTargetSizeX, renderTargetSizeY, 1);
-    outputArray.initializeFromGLTexture2D(gpuEnv.cuContext, outputTexture.getHandle(),
-                                          cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable);
+    outputArray.initializeFromGLTexture2D(
+        gpuEnv.cuContext, outputTexture.getHandle(),
+        cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable);
     outputBufferSurfaceHolder.initialize({ &outputArray });
 
     glu::Sampler outputSampler;
-    outputSampler.initialize(glu::Sampler::MinFilter::Nearest, glu::Sampler::MagFilter::Nearest,
-                             glu::Sampler::WrapMode::Repeat, glu::Sampler::WrapMode::Repeat);
+    outputSampler.initialize(
+        glu::Sampler::MinFilter::Nearest, glu::Sampler::MagFilter::Nearest,
+        glu::Sampler::WrapMode::Repeat, glu::Sampler::WrapMode::Repeat);
 
 
 
@@ -1453,6 +1458,20 @@ int32_t main(int32_t argc, const char* argv[]) try {
         readTxtFile(exeDir / "tfdm/shaders/drawOptiXResult.frag"));
 
 
+
+    shared::PickInfo initPickInfo = {};
+    initPickInfo.hit = false;
+    initPickInfo.instSlot = 0xFFFFFFFF;
+    initPickInfo.geomInstSlot = 0xFFFFFFFF;
+    initPickInfo.matSlot = 0xFFFFFFFF;
+    initPickInfo.primIndex = 0xFFFFFFFF;
+    initPickInfo.positionInWorld = Point3D(0.0f);
+    initPickInfo.albedo = RGB(0.0f);
+    initPickInfo.emittance = RGB(0.0f);
+    initPickInfo.normalInWorld = Normal3D(0.0f);
+    cudau::TypedBuffer<shared::PickInfo> pickInfos[2];
+    pickInfos[0].initialize(gpuEnv.cuContext, Scene::bufferType, 1, initPickInfo);
+    pickInfos[1].initialize(gpuEnv.cuContext, Scene::bufferType, 1, initPickInfo);
 
     shared::StaticPipelineLaunchParameters staticPlp = {};
     {
@@ -1472,6 +1491,10 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
         staticPlp.materialDataBuffer =
             scene.materialDataBuffer.getROBuffer<shared::enableBufferOobCheck>();
+        staticPlp.instanceDataBufferArray[0] =
+            scene.instDataBuffer[0].getROBuffer<shared::enableBufferOobCheck>();
+        staticPlp.instanceDataBufferArray[1] =
+            scene.instDataBuffer[1].getROBuffer<shared::enableBufferOobCheck>();
         staticPlp.geometryInstanceDataBuffer =
             scene.geomInstDataBuffer.getROBuffer<shared::enableBufferOobCheck>();
         staticPlp.geomInstTfdmDataBuffer = geomInstTfdmDataBuffer.getROBuffer<shared::enableBufferOobCheck>();
@@ -1481,6 +1504,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
         staticPlp.beautyAccumBuffer = beautyAccumBuffer.getSurfaceObject(0);
         staticPlp.albedoAccumBuffer = albedoAccumBuffer.getSurfaceObject(0);
         staticPlp.normalAccumBuffer = normalAccumBuffer.getSurfaceObject(0);
+
+        staticPlp.pickInfos[0] = pickInfos[0].getDevicePointer();
+        staticPlp.pickInfos[1] = pickInfos[1].getDevicePointer();
     }
     CUdeviceptr staticPlpOnDevice;
     CUDADRV_CHECK(cuMemAlloc(&staticPlpOnDevice, sizeof(staticPlp)));
@@ -1502,20 +1528,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
     shared::PipelineLaunchParameters plp;
     plp.s = reinterpret_cast<shared::StaticPipelineLaunchParameters*>(staticPlpOnDevice);
     plp.f = reinterpret_cast<shared::PerFramePipelineLaunchParameters*>(perFramePlpOnDevice);
-
-    shared::PickInfo initPickInfo = {};
-    initPickInfo.hit = false;
-    initPickInfo.instSlot = 0xFFFFFFFF;
-    initPickInfo.geomInstSlot = 0xFFFFFFFF;
-    initPickInfo.matSlot = 0xFFFFFFFF;
-    initPickInfo.primIndex = 0xFFFFFFFF;
-    initPickInfo.positionInWorld = Point3D(0.0f);
-    initPickInfo.albedo = RGB(0.0f);
-    initPickInfo.emittance = RGB(0.0f);
-    initPickInfo.normalInWorld = Normal3D(0.0f);
-    cudau::TypedBuffer<shared::PickInfo> pickInfos[2];
-    pickInfos[0].initialize(gpuEnv.cuContext, Scene::bufferType, 1, initPickInfo);
-    pickInfos[1].initialize(gpuEnv.cuContext, Scene::bufferType, 1, initPickInfo);
 
     CUdeviceptr plpOnDevice;
     CUDADRV_CHECK(cuMemAlloc(&plpOnDevice, sizeof(plp)));
@@ -2547,13 +2559,10 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
         perFramePlp.numAccumFrames = numAccumFrames;
         perFramePlp.frameIndex = frameIndex;
-        perFramePlp.instanceDataBuffer =
-            scene.instDataBuffer[bufferIndex].getROBuffer<shared::enableBufferOobCheck>();
         perFramePlp.envLightPowerCoeff = std::pow(10.0f, log10EnvLightPowerCoeff);
         perFramePlp.envLightRotation = envLightRotation;
         perFramePlp.mousePosition = int2(static_cast<int32_t>(g_mouseX),
                                          static_cast<int32_t>(g_mouseY));
-        perFramePlp.pickInfo = pickInfos[bufferIndex].getDevicePointer();
 
         perFramePlp.maxPathLength = maxPathLength;
         perFramePlp.bufferIndex = bufferIndex;
@@ -2591,10 +2600,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
         // EN: Copy the results to the linear buffers (and normalize normals).
         kernelCopyToLinearBuffers.launchWithThreadDim(
             curCuStream, cudau::dim3(renderTargetSizeX, renderTargetSizeY),
-            beautyAccumBuffer.getSurfaceObject(0),
-            albedoAccumBuffer.getSurfaceObject(0),
-            normalAccumBuffer.getSurfaceObject(0),
-            gBuffer2[bufferIndex].getSurfaceObject(0),
             linearBeautyBuffer,
             linearAlbedoBuffer,
             linearNormalBuffer,
@@ -2663,11 +2668,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
         }
         kernelVisualizeToOutputBuffer(
             curCuStream, kernelVisualizeToOutputBuffer.calcGridDim(renderTargetSizeX, renderTargetSizeY),
-            staticPlp.GBuffer0[bufferIndex],
-            staticPlp.GBuffer1[bufferIndex],
-#if OUTPUT_TRAVERSAL_STATS
-            staticPlp.numTravItrsBuffer,
-#endif
             bufferToDisplay,
             bufferTypeToDisplay,
             0.5f, std::pow(10.0f, motionVectorScale),
@@ -2732,11 +2732,11 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
     CUDADRV_CHECK(cuMemFree(plpOnDevice));
 
-    pickInfos[1].finalize();
-    pickInfos[0].finalize();
-
     CUDADRV_CHECK(cuMemFree(perFramePlpOnDevice));
     CUDADRV_CHECK(cuMemFree(staticPlpOnDevice));
+
+    pickInfos[1].finalize();
+    pickInfos[0].finalize();
 
     drawOptiXResultShader.finalize();
     vertexArrayForFullScreen.finalize();

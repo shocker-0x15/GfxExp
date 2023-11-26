@@ -1,95 +1,98 @@
 #define PURE_CUDA
 #include "../tfdm_shared.h"
 
+using namespace shared;
+
 CUDA_DEVICE_KERNEL void copyToLinearBuffers(
-    optixu::NativeBlockBuffer2D<float4> colorAccumBuffer,
-    optixu::NativeBlockBuffer2D<float4> albedoAccumBuffer,
-    optixu::NativeBlockBuffer2D<float4> normalAccumBuffer,
-    optixu::NativeBlockBuffer2D<shared::GBuffer2> motionVectorBuffer,
     float4* linearColorBuffer,
     float4* linearAlbedoBuffer,
     float4* linearNormalBuffer,
     float2* linearMotionVectorBuffer,
     uint2 imageSize) {
-    uint2 launchIndex = make_uint2(
+    const uint2 launchIndex = make_uint2(
         blockDim.x * blockIdx.x + threadIdx.x,
         blockDim.y * blockIdx.y + threadIdx.y);
     if (launchIndex.x >= imageSize.x ||
         launchIndex.y >= imageSize.y)
         return;
 
-    uint32_t linearIndex = launchIndex.y * imageSize.x + launchIndex.x;
-    linearColorBuffer[linearIndex] = colorAccumBuffer.read(launchIndex);
-    linearAlbedoBuffer[linearIndex] = albedoAccumBuffer.read(launchIndex);
-    Normal3D normal(getXYZ(normalAccumBuffer.read(launchIndex)));
+    const uint32_t linearIndex = launchIndex.y * imageSize.x + launchIndex.x;
+    linearColorBuffer[linearIndex] = plp.s->beautyAccumBuffer.read(launchIndex);
+    linearAlbedoBuffer[linearIndex] = plp.s->albedoAccumBuffer.read(launchIndex);
+    Normal3D normal(getXYZ(plp.s->normalAccumBuffer.read(launchIndex)));
     if (normal.x != 0 || normal.y != 0 || normal.z != 0)
         normal.normalize();
     linearNormalBuffer[linearIndex] = make_float4(normal.toNative(), 1.0f);
-    shared::GBuffer2 gb2Elem = motionVectorBuffer.read(launchIndex);
-    linearMotionVectorBuffer[linearIndex] = __half22float2(gb2Elem.motionVector);
+    const GBuffer1Elements gb2Elems = plp.s->GBuffer1[plp.f->bufferIndex].read(launchIndex);
+    linearMotionVectorBuffer[linearIndex] = gb2Elems.motionVector.toNative();
 }
 
 
 
 CUDA_DEVICE_KERNEL void visualizeToOutputBuffer(
-    optixu::NativeBlockBuffer2D<shared::GBuffer0> gBuffer0,
-    optixu::NativeBlockBuffer2D<shared::GBuffer1> gBuffer1,
-#if OUTPUT_TRAVERSAL_STATS
-    optixu::NativeBlockBuffer2D<uint32_t> numTravItrsBuffer,
-#endif
     void* linearBuffer,
-    shared::BufferToDisplay bufferTypeToDisplay,
+    BufferToDisplay bufferTypeToDisplay,
     float motionVectorOffset, float motionVectorScale,
     optixu::NativeBlockBuffer2D<float4> outputBuffer,
     uint2 imageSize) {
-    uint2 launchIndex = make_uint2(
+    const uint32_t bufIdx = plp.f->bufferIndex;
+    const uint2 launchIndex = make_uint2(
         blockDim.x * blockIdx.x + threadIdx.x,
         blockDim.y * blockIdx.y + threadIdx.y);
     if (launchIndex.x >= imageSize.x ||
         launchIndex.y >= imageSize.y)
         return;
 
-    uint32_t linearIndex = launchIndex.y * imageSize.x + launchIndex.x;
+    const uint32_t linearIndex = launchIndex.y * imageSize.x + launchIndex.x;
     float4 value = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
     switch (bufferTypeToDisplay) {
-    case shared::BufferToDisplay::NoisyBeauty:
-    case shared::BufferToDisplay::DenoisedBeauty: {
-        auto typedLinearBuffer = reinterpret_cast<const float4*>(linearBuffer);
+    case BufferToDisplay::NoisyBeauty:
+    case BufferToDisplay::DenoisedBeauty: {
+        const auto typedLinearBuffer = reinterpret_cast<const float4*>(linearBuffer);
         value = typedLinearBuffer[linearIndex];
         break;
     }
-    case shared::BufferToDisplay::Albedo: {
-        auto typedLinearBuffer = reinterpret_cast<const float4*>(linearBuffer);
+    case BufferToDisplay::Albedo: {
+        const auto typedLinearBuffer = reinterpret_cast<const float4*>(linearBuffer);
         value = typedLinearBuffer[linearIndex];
         break;
     }
-    case shared::BufferToDisplay::Normal: {
-        auto typedLinearBuffer = reinterpret_cast<const float4*>(linearBuffer);
+    case BufferToDisplay::Normal: {
+        const auto typedLinearBuffer = reinterpret_cast<const float4*>(linearBuffer);
         value = typedLinearBuffer[linearIndex];
         value.x = 0.5f + 0.5f * value.x;
         value.y = 0.5f + 0.5f * value.y;
         value.z = 0.5f + 0.5f * value.z;
         break;
     }
-    case shared::BufferToDisplay::TexCoord: {
+    case BufferToDisplay::TexCoord: {
+        const GBuffer0Elements gb0Elems = plp.s->GBuffer0[bufIdx].read(launchIndex);
         Point2D texCoord;
-        texCoord.x = gBuffer0.read(launchIndex).texCoord_x;
-        texCoord.y = gBuffer1.read(launchIndex).texCoord_y;
-#if STORE_BARYCENTRICS
-        value.x = 1 - texCoord.x - texCoord.y;
-        value.y = texCoord.x;
-        value.z = texCoord.y;
-#else
+        const float bcB = decodeBarycentric(gb0Elems.qbcB);
+        const float bcC = decodeBarycentric(gb0Elems.qbcC);
+        if (gb0Elems.instSlot != 0xFFFFFFFF) {
+            const InstanceData &inst = plp.s->instanceDataBufferArray[bufIdx][gb0Elems.instSlot];
+            const GeometryInstanceData &geomInst = plp.s->geometryInstanceDataBuffer[gb0Elems.geomInstSlot];
+            const Triangle &tri = geomInst.triangleBuffer[gb0Elems.primIndex];
+            const Vertex &vA = geomInst.vertexBuffer[tri.index0];
+            const Vertex &vB = geomInst.vertexBuffer[tri.index1];
+            const Vertex &vC = geomInst.vertexBuffer[tri.index2];
+            const float bcA = 1.0f - (bcB + bcC);
+            texCoord = bcA * vA.texCoord + bcB * vB.texCoord + bcC * vC.texCoord;
+        }
+        else {
+            texCoord.x = bcB;
+            texCoord.y = bcC;
+        }
         value.x = std::fmod(texCoord.x, 1.0f);
         value.y = std::fmod(texCoord.y, 1.0f);
         value.z = 0.5f * std::fmod((texCoord.x - value.x) / 10.0f, 1.0f)
             + 0.5f * std::fmod(texCoord.y - value.y, 2.0f);
-#endif
         break;
     }
-    case shared::BufferToDisplay::Flow: {
-        auto typedLinearBuffer = reinterpret_cast<const float2*>(linearBuffer);
-        float2 f2Value = typedLinearBuffer[linearIndex];
+    case BufferToDisplay::Flow: {
+        const auto typedLinearBuffer = reinterpret_cast<const float2*>(linearBuffer);
+        const float2 f2Value = typedLinearBuffer[linearIndex];
         value = make_float4(
             fminf(fmaxf(motionVectorScale * f2Value.x + motionVectorOffset, 0.0f), 1.0f),
             fminf(fmaxf(motionVectorScale * f2Value.y + motionVectorOffset, 0.0f), 1.0f),
@@ -97,13 +100,13 @@ CUDA_DEVICE_KERNEL void visualizeToOutputBuffer(
         break;
     }
 #if OUTPUT_TRAVERSAL_STATS
-    case shared::BufferToDisplay::TraversalIterations: {
-        uint32_t numIterations = numTravItrsBuffer.read(launchIndex);
-        float t = static_cast<float>(numIterations) / 150;
+    case BufferToDisplay::TraversalIterations: {
+        const uint32_t numIterations = plp.s->numTravItrsBuffer.read(launchIndex);
+        const float t = static_cast<float>(numIterations) / 150;
         const RGB Red(1, 0, 0);
         const RGB Green(0, 1, 0);
         const RGB Blue(0, 0, 1);
-        RGB rgb = t < 0.5f ? lerp(Blue, Green, 2.0f * t) : lerp(Green, Red, 2.0f * t - 1.0);
+        const RGB rgb = t < 0.5f ? lerp(Blue, Green, 2.0f * t) : lerp(Green, Red, 2.0f * t - 1.0);
         value = make_float4(static_cast<float3>(rgb), 1.0f);
         break;
     }

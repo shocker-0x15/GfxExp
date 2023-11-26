@@ -668,6 +668,14 @@ struct Vector2D_T {
     CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr Vector2D_T(const Vector2D_T<F2> &v) :
         x(static_cast<F>(v.x)), y(static_cast<F>(v.y)) {}
 
+    CUDA_COMMON_FUNCTION CUDA_INLINE explicit /*constexpr*/ operator float2() const {
+        return make_float2(x, y);
+    }
+
+    CUDA_COMMON_FUNCTION CUDA_INLINE /*constexpr*/ float2 toNative() const {
+        return make_float2(x, y);
+    }
+
     template <std::integral I>
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr F &operator[](I idx) {
         Assert(static_cast<uint32_t>(idx) < 2, "idx is out of bound.");
@@ -931,6 +939,13 @@ struct Point2D_T {
 
     CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr operator Vector2D_T<F>() const {
         return Vector2D_T<F>(x, y);
+    }
+    CUDA_COMMON_FUNCTION CUDA_INLINE explicit /*constexpr*/ operator float2() const {
+        return make_float2(x, y);
+    }
+
+    CUDA_COMMON_FUNCTION CUDA_INLINE /*constexpr*/ float2 toNative() const {
+        return make_float2(x, y);
     }
 
     template <std::integral I>

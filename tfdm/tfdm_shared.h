@@ -8,7 +8,6 @@
 
 #define USE_DISPLACED_SURFACES 1
 #define USE_WORKAROUND_FOR_CUDA_BC_TEX 1
-#define STORE_BARYCENTRICS 0
 #define OUTPUT_TRAVERSAL_STATS 1
 
 namespace shared {
@@ -97,12 +96,14 @@ namespace shared {
         RGB albedo;
         Point3D positionInWorld;
         Point3D prevPositionInWorld;
-        Normal3D normalInWorld;
-        Point2D texCoord;
-        uint32_t materialSlot;
+        Normal3D geometricNormalInWorld;
+        Normal3D shadingNormalInWorld;
+        uint32_t instSlot;
         uint32_t geomInstSlot : 31;
         uint32_t isTfdmMesh : 1;
         uint32_t primIndex;
+        uint16_t qbcB;
+        uint16_t qbcC;
 #if OUTPUT_TRAVERSAL_STATS
         uint32_t numTravIterations;
 #endif
@@ -133,29 +134,24 @@ namespace shared {
 
 
 
-    struct GBuffer0 {
-        Point3D positionInWorld;
-        float texCoord_x;
-    };
-
-    struct GBuffer1 {
-        Normal3D normalInWorld;
-        float texCoord_y;
-    };
-
-    struct GBuffer2 {
-#if defined(__CUDA_ARCH__)
-        __half2 motionVector;
-#else
-        struct {
-            uint16_t motionVectorX;
-            uint16_t motionVectorY;
-        };
-#endif
-        uint32_t materialSlot;
+    struct GBuffer0Elements {
+        uint32_t instSlot;
         uint32_t geomInstSlot : 31;
         uint32_t isTfdmMesh : 1;
         uint32_t primIndex;
+        uint16_t qbcB;
+        uint16_t qbcC;
+    };
+
+    struct GBuffer1Elements {
+        Vector2D motionVector;
+        uint32_t qGeometricNormal;
+        uint32_t qShadingNormal;
+    };
+
+    struct GBuffer2Elements {
+        Point3D positionInWorld;
+        uint32_t placeHolder;
     };
 
 
@@ -182,15 +178,16 @@ namespace shared {
         int2 imageSize;
         optixu::NativeBlockBuffer2D<PCG32RNG> rngBuffer;
 
-        optixu::NativeBlockBuffer2D<GBuffer0> GBuffer0[2];
-        optixu::NativeBlockBuffer2D<GBuffer1> GBuffer1[2];
-        optixu::NativeBlockBuffer2D<GBuffer2> GBuffer2[2];
+        optixu::NativeBlockBuffer2D<GBuffer0Elements> GBuffer0[2];
+        optixu::NativeBlockBuffer2D<GBuffer1Elements> GBuffer1[2];
+        optixu::NativeBlockBuffer2D<GBuffer2Elements> GBuffer2[2];
 
 #if OUTPUT_TRAVERSAL_STATS
         optixu::NativeBlockBuffer2D<uint32_t> numTravItrsBuffer;
 #endif
 
         ROBuffer<MaterialData> materialDataBuffer;
+        ROBuffer<InstanceData> instanceDataBufferArray[2];
         ROBuffer<GeometryInstanceData> geometryInstanceDataBuffer;
         ROBuffer<GeometryInstanceDataForTFDM> geomInstTfdmDataBuffer;
         LightDistribution lightInstDist;
@@ -200,14 +197,14 @@ namespace shared {
         optixu::NativeBlockBuffer2D<float4> beautyAccumBuffer;
         optixu::NativeBlockBuffer2D<float4> albedoAccumBuffer;
         optixu::NativeBlockBuffer2D<float4> normalAccumBuffer;
+
+        PickInfo* pickInfos[2];
     };
 
     struct PerFramePipelineLaunchParameters {
         OptixTraversableHandle travHandle;
         uint32_t numAccumFrames;
         uint32_t frameIndex;
-
-        ROBuffer<InstanceData> instanceDataBuffer;
 
         PerspectiveCamera camera;
         PerspectiveCamera prevCamera;
@@ -216,7 +213,6 @@ namespace shared {
         float envLightRotation;
 
         int2 mousePosition;
-        PickInfo* pickInfo;
 
         unsigned int maxPathLength : 4;
         unsigned int bufferIndex : 1;
@@ -291,14 +287,14 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void sampleLight(
         float u, v;
         float uvPDF;
         plp.s->envLightImportanceMap.sample(u0, u1, &u, &v, &uvPDF);
-        float phi = 2 * Pi * u;
-        float theta = Pi * v;
+        const float phi = 2 * Pi * u;
+        const float theta = Pi * v;
 
         float posPhi = phi - plp.f->envLightRotation;
         posPhi = posPhi - floorf(posPhi / (2 * Pi)) * 2 * Pi;
 
-        Vector3D direction = fromPolarYUp(posPhi, theta);
-        Point3D position(direction.x, direction.y, direction.z);
+        const Vector3D direction = fromPolarYUp(posPhi, theta);
+        const Point3D position(direction.x, direction.y, direction.z);
         lightSample->position = position;
         lightSample->atInfinity = true;
 
@@ -324,9 +320,9 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void sampleLight(
         // EN: First, sample an instance.
         float instProb;
         float uGeomInst;
-        uint32_t instIndex = plp.s->lightInstDist.sample(ul, &instProb, &uGeomInst);
+        const uint32_t instSlot = plp.s->lightInstDist.sample(ul, &instProb, &uGeomInst);
         lightProb *= instProb;
-        const InstanceData &inst = plp.f->instanceDataBuffer[instIndex];
+        const InstanceData &inst = plp.s->instanceDataBufferArray[plp.f->bufferIndex][instSlot];
         if (instProb == 0.0f) {
             *areaPDensity = 0.0f;
             return;
@@ -339,10 +335,10 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void sampleLight(
         // EN: Next, sample a geometry instance which belongs to the sampled instance.
         float geomInstProb;
         float uPrim;
-        uint32_t geomInstIndexInInst = inst.lightGeomInstDist.sample(uGeomInst, &geomInstProb, &uPrim);
-        uint32_t geomInstIndex = inst.geomInstSlots[geomInstIndexInInst];
+        const uint32_t geomInstIndexInInst = inst.lightGeomInstDist.sample(uGeomInst, &geomInstProb, &uPrim);
+        const uint32_t geomInstSlot = inst.geomInstSlots[geomInstIndexInInst];
         lightProb *= geomInstProb;
-        const GeometryInstanceData &geomInst = plp.s->geometryInstanceDataBuffer[geomInstIndex];
+        const GeometryInstanceData &geomInst = plp.s->geometryInstanceDataBuffer[geomInstSlot];
         if (geomInstProb == 0.0f) {
             *areaPDensity = 0.0f;
             return;
@@ -353,7 +349,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void sampleLight(
         // JP: 最後に、サンプルしたジオメトリインスタンスに属するプリミティブをサンプルする。
         // EN: Finally, sample a primitive which belongs to the sampled geometry instance.
         float primProb;
-        uint32_t primIndex = geomInst.emitterPrimDist.sample(uPrim, &primProb);
+        const uint32_t primIndex = geomInst.emitterPrimDist.sample(uPrim, &primProb);
         lightProb *= primProb;
 
         //printf("%u-%u-%u: %g\n", instIndex, geomInstIndex, primIndex, lightProb);
@@ -361,20 +357,16 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void sampleLight(
         const MaterialData &mat = plp.s->materialDataBuffer[geomInst.materialSlot];
 
         const shared::Triangle &tri = geomInst.triangleBuffer[primIndex];
-        const shared::Vertex (&v)[3] = {
-            geomInst.vertexBuffer[tri.index0],
-            geomInst.vertexBuffer[tri.index1],
-            geomInst.vertexBuffer[tri.index2]
-        };
-        const Point3D p[3] = {
-            inst.transform * v[0].position,
-            inst.transform * v[1].position,
-            inst.transform * v[2].position,
-        };
+        const shared::Vertex &vA = geomInst.vertexBuffer[tri.index0];
+        const shared::Vertex &vB = geomInst.vertexBuffer[tri.index1];
+        const shared::Vertex &vC = geomInst.vertexBuffer[tri.index2];
+        const Point3D pA = inst.transform * vA.position;
+        const Point3D pB = inst.transform * vB.position;
+        const Point3D pC = inst.transform * vC.position;
 
-        Normal3D geomNormal(cross(p[1] - p[0], p[2] - p[0]));
+        Normal3D geomNormal(cross(pB - pA, pC - pA));
 
-        float t0, t1, t2;
+        float bcA, bcB, bcC;
         if constexpr (useSolidAngleSampling) {
             // Uniform sampling in solid angle subtended by the triangle for the shading point.
             float dist;
@@ -386,55 +378,55 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void sampleLight(
                 };
 
                 // TODO: ? compute in the local coordinates.
-                Vector3D A = normalize(p[0] - shadingPoint);
-                Vector3D B = normalize(p[1] - shadingPoint);
-                Vector3D C = normalize(p[2] - shadingPoint);
-                Vector3D cAB = normalize(cross(A, B));
-                Vector3D cBC = normalize(cross(B, C));
-                Vector3D cCA = normalize(cross(C, A));
+                const Vector3D A = normalize(pA - shadingPoint);
+                const Vector3D B = normalize(pB - shadingPoint);
+                const Vector3D C = normalize(pC - shadingPoint);
+                const Vector3D cAB = normalize(cross(A, B));
+                const Vector3D cBC = normalize(cross(B, C));
+                const Vector3D cCA = normalize(cross(C, A));
                 //float cos_a = dot(B, C);
                 //float cos_b = dot(C, A);
-                float cos_c = dot(A, B);
-                float cosAlpha = -dot(cAB, cCA);
-                float cosBeta = -dot(cBC, cAB);
-                float cosGamma = -dot(cCA, cBC);
-                float alpha = std::acos(cosAlpha);
-                float sinAlpha = std::sqrt(1 - pow2(cosAlpha));
-                float sphArea = alpha + std::acos(cosBeta) + std::acos(cosGamma) - Pi;
+                const float cos_c = dot(A, B);
+                const float cosAlpha = -dot(cAB, cCA);
+                const float cosBeta = -dot(cBC, cAB);
+                const float cosGamma = -dot(cCA, cBC);
+                const float alpha = std::acos(cosAlpha);
+                const float sinAlpha = std::sqrt(1 - pow2(cosAlpha));
+                const float sphArea = alpha + std::acos(cosBeta) + std::acos(cosGamma) - Pi;
 
-                float sphAreaHat = sphArea * u0;
-                float s = std::sin(sphAreaHat - alpha);
-                float t = std::cos(sphAreaHat - alpha);
-                float uu = t - cosAlpha;
-                float vv = s + sinAlpha * cos_c;
-                float q = ((vv * t - uu * s) * cosAlpha - vv) / ((vv * s + uu * t) * sinAlpha);
+                const float sphAreaHat = sphArea * u0;
+                const float s = std::sin(sphAreaHat - alpha);
+                const float t = std::cos(sphAreaHat - alpha);
+                const float uu = t - cosAlpha;
+                const float vv = s + sinAlpha * cos_c;
+                const float q = ((vv * t - uu * s) * cosAlpha - vv) / ((vv * s + uu * t) * sinAlpha);
 
-                Vector3D cHat = q * A + std::sqrt(1 - pow2(q)) * project(C, A);
-                float z = 1 - u1 * (1 - dot(cHat, B));
-                Vector3D P = z * B + std::sqrt(1 - pow2(z)) * project(cHat, B);
+                const Vector3D cHat = q * A + std::sqrt(1 - pow2(q)) * project(C, A);
+                const float z = 1 - u1 * (1 - dot(cHat, B));
+                const Vector3D P = z * B + std::sqrt(1 - pow2(z)) * project(cHat, B);
 
                 const auto restoreBarycentrics = [&geomNormal]
                 (const Point3D &org, const Vector3D &dir,
                  const Point3D &pA, const Point3D &pB, const Point3D &pC,
-                 float* dist, float* b1, float* b2) {
-                     Vector3D eAB = pB - pA;
-                     Vector3D eAC = pC - pA;
-                     Vector3D pVec = cross(dir, eAC);
-                     float recDet = 1.0f / dot(eAB, pVec);
-                     Vector3D tVec = org - pA;
-                     *b1 = dot(tVec, pVec) * recDet;
-                     Vector3D qVec = cross(tVec, eAB);
-                     *b2 = dot(dir, qVec) * recDet;
-                     *dist = dot(eAC, qVec) * recDet;
+                 float* dist, float* bcB, float* bcC) {
+                    const Vector3D eAB = pB - pA;
+                    const Vector3D eAC = pC - pA;
+                    const Vector3D pVec = cross(dir, eAC);
+                    const float recDet = 1.0f / dot(eAB, pVec);
+                    const Vector3D tVec = org - pA;
+                    *bcB = dot(tVec, pVec) * recDet;
+                    const Vector3D qVec = cross(tVec, eAB);
+                    *bcC = dot(dir, qVec) * recDet;
+                    *dist = dot(eAC, qVec) * recDet;
                 };
                 dir = P;
-                restoreBarycentrics(shadingPoint, dir, p[0], p[1], p[2], &dist, &t1, &t2);
-                t0 = 1 - t1 - t2;
+                restoreBarycentrics(shadingPoint, dir, pA, pB, pC, &dist, &bcB, &bcC);
+                bcA = 1 - (bcB + bcC);
                 dirPDF = 1 / sphArea;
             }
 
             geomNormal = normalize(geomNormal);
-            float lpCos = -dot(dir, geomNormal);
+            const float lpCos = -dot(dir, geomNormal);
             if (lpCos > 0 && isfinite(dirPDF))
                 *areaPDensity = lightProb * (dirPDF * lpCos / pow2(dist));
             else
@@ -443,32 +435,32 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void sampleLight(
         else {
             // Uniform sampling on unit triangle
             // A Low-Distortion Map Between Triangle and Square
-            t0 = 0.5f * u0;
-            t1 = 0.5f * u1;
-            float offset = t1 - t0;
+            bcA = 0.5f * u0;
+            bcB = 0.5f * u1;
+            const float offset = bcB - bcA;
             if (offset > 0)
-                t1 += offset;
+                bcB += offset;
             else
-                t0 -= offset;
-            t2 = 1 - (t0 + t1);
+                bcA -= offset;
+            bcC = 1 - (bcA + bcB);
 
-            float recArea = 2.0f / length(geomNormal);
+            const float recArea = 2.0f / length(geomNormal);
             *areaPDensity = lightProb * recArea;
         }
-        lightSample->position = t0 * p[0] + t1 * p[1] + t2 * p[2];
+        lightSample->position = bcA * pA + bcB * pB + bcC * pC;
         lightSample->atInfinity = false;
-        lightSample->normal = t0 * v[0].normal + t1 * v[1].normal + t2 * v[2].normal;
+        lightSample->normal = bcA * vA.normal + bcB * vB.normal + bcC * vC.normal;
         lightSample->normal = normalize(inst.normalMatrix * lightSample->normal);
 
         if (mat.emittance) {
             texEmittance = mat.emittance;
             emittance = RGB(1.0f, 1.0f, 1.0f);
-            texCoord = t0 * v[0].texCoord + t1 * v[1].texCoord + t2 * v[2].texCoord;
+            texCoord = bcA * vA.texCoord + bcB * vB.texCoord + bcC * vC.texCoord;
         }
     }
 
     if (texEmittance) {
-        float4 texValue = tex2DLod<float4>(texEmittance, texCoord.x, texCoord.y, 0.0f);
+        const float4 texValue = tex2DLod<float4>(texEmittance, texCoord.x, texCoord.y, 0.0f);
         emittance *= RGB(texValue.x, texValue.y, texValue.z);
     }
     lightSample->emittance = emittance;
@@ -482,13 +474,13 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE RGB performDirectLighting(
     Vector3D shadowRayDir = lightSample.atInfinity ?
         Vector3D(lightSample.position) :
         (lightSample.position - shadingPoint);
-    float dist2 = shadowRayDir.sqLength();
+    const float dist2 = shadowRayDir.sqLength();
     float dist = std::sqrt(dist2);
     shadowRayDir /= dist;
-    Vector3D shadowRayDirLocal = shadingFrame.toLocal(shadowRayDir);
+    const Vector3D shadowRayDirLocal = shadingFrame.toLocal(shadowRayDir);
 
-    float lpCos = dot(-shadowRayDir, lightSample.normal);
-    float spCos = shadowRayDirLocal.z;
+    const float lpCos = dot(-shadowRayDir, lightSample.normal);
+    const float spCos = shadowRayDirLocal.z;
 
     float visibility = 1.0f;
     if constexpr (withVisibility) {
@@ -503,10 +495,10 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE RGB performDirectLighting(
     }
 
     if (visibility > 0 && lpCos > 0) {
-        RGB Le = lightSample.emittance / Pi; // assume diffuse emitter.
-        RGB fsValue = bsdf.evaluate(vOutLocal, shadowRayDirLocal);
-        float G = lpCos * std::fabs(spCos) / dist2;
-        RGB ret = fsValue * Le * G;
+        const RGB Le = lightSample.emittance / Pi; // assume diffuse emitter.
+        const RGB fsValue = bsdf.evaluate(vOutLocal, shadowRayDirLocal);
+        const float G = lpCos * std::fabs(spCos) / dist2;
+        const RGB ret = fsValue * Le * G;
         return ret;
     }
     else {
@@ -521,8 +513,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool evaluateVisibility(
     Vector3D shadowRayDir = lightSample.atInfinity ?
         Vector3D(lightSample.position) :
         (lightSample.position - shadingPoint);
-    float dist2 = shadowRayDir.sqLength();
-    float dist = std::sqrt(dist2);
+    const float dist2 = shadowRayDir.sqLength();
+    const float dist = std::sqrt(dist2);
     shadowRayDir /= dist;
     if (lightSample.atInfinity)
         dist = 1e+10f;
@@ -543,41 +535,38 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void computeSurfacePoint(
     const shared::InstanceData &inst,
     const shared::GeometryInstanceData &geomInst,
     bool isDisplacedTriangleHit,
-    uint32_t primIndex, float b1, float b2,
+    uint32_t primIndex, float bcB, float bcC,
     const Point3D &referencePoint,
     Point3D* positionInWorld, Normal3D* shadingNormalInWorld, Vector3D* texCoord0DirInWorld,
     Normal3D* geometricNormalInWorld, Point2D* texCoord,
     float* hypAreaPDensity) {
     using namespace shared;
     const Triangle &tri = geomInst.triangleBuffer[primIndex];
-    const Vertex &v0 = geomInst.vertexBuffer[tri.index0];
-    const Vertex &v1 = geomInst.vertexBuffer[tri.index1];
-    const Vertex &v2 = geomInst.vertexBuffer[tri.index2];
-    const Point3D p[3] = {
-        transformPointFromObjectToWorldSpace(v0.position),
-        transformPointFromObjectToWorldSpace(v1.position),
-        transformPointFromObjectToWorldSpace(v2.position),
-    };
-    float b0 = 1 - (b1 + b2);
+    const Vertex &vA = geomInst.vertexBuffer[tri.index0];
+    const Vertex &vB = geomInst.vertexBuffer[tri.index1];
+    const Vertex &vC = geomInst.vertexBuffer[tri.index2];
+    const Point3D pA = transformPointFromObjectToWorldSpace(vA.position);
+    const Point3D pB = transformPointFromObjectToWorldSpace(vB.position);
+    const Point3D pC = transformPointFromObjectToWorldSpace(vC.position);
+    const float bcA = 1 - (bcB + bcC);
 
     // JP: ヒットポイントのローカル座標中の各値を計算する。
     // EN: Compute hit point properties in the local coordinates.
-    Normal3D shadingNormal;
+    Normal3D shadingNormalInObj;
     Normal3D geometricNormal;
-    Vector3D texCoord0Dir = b0 * v0.texCoord0Dir + b1 * v1.texCoord0Dir + b2 * v2.texCoord0Dir;
+    const Vector3D texCoord0DirInObj = bcA * vA.texCoord0Dir + bcB * vB.texCoord0Dir + bcC * vC.texCoord0Dir;
     if (isDisplacedTriangleHit) {
         DisplacedSurfaceAttributes hitAttrs;
         DisplacedSurfaceAttributeSignature::get(nullptr, nullptr, &hitAttrs);
-        shadingNormal = hitAttrs.normalInObj;
-        geometricNormal = transformNormalFromObjectToWorldSpace(shadingNormal);
+        shadingNormalInObj = hitAttrs.normalInObj;
+        geometricNormal = transformNormalFromObjectToWorldSpace(shadingNormalInObj);
         *positionInWorld = Point3D(optixGetWorldRayOrigin())
             + optixGetRayTmax() * Vector3D(optixGetWorldRayDirection());
-        texCoord0Dir += -dot(shadingNormal, texCoord0Dir) * shadingNormal;
     }
     else {
-        shadingNormal = b0 * v0.normal + b1 * v1.normal + b2 * v2.normal;
-        geometricNormal = Normal3D(cross(p[1] - p[0], p[2] - p[0]));
-        *positionInWorld = b0 * p[0] + b1 * p[1] + b2 * p[2];
+        shadingNormalInObj = bcA * vA.normal + bcB * vB.normal + bcC * vC.normal;
+        geometricNormal = Normal3D(cross(pB - pA, pC - pA));
+        *positionInWorld = bcA * pA + bcB * pB + bcC * pC;
     }
 
     float area;
@@ -585,12 +574,14 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void computeSurfacePoint(
         area = 0.5f * length(geometricNormal);
     else
         (void)area;
-    *texCoord = b0 * v0.texCoord + b1 * v1.texCoord + b2 * v2.texCoord;
+    *texCoord = bcA * vA.texCoord + bcB * vB.texCoord + bcC * vC.texCoord;
 
     // JP: ローカル座標中の値をワールド座標中の値へと変換する。
     // EN: Convert the local properties to ones in world coordinates.
-    *shadingNormalInWorld = normalize(transformNormalFromObjectToWorldSpace(shadingNormal));
-    *texCoord0DirInWorld = normalize(transformVectorFromObjectToWorldSpace(texCoord0Dir));
+    *shadingNormalInWorld = normalize(transformNormalFromObjectToWorldSpace(shadingNormalInObj));
+    *texCoord0DirInWorld = transformVectorFromObjectToWorldSpace(texCoord0DirInObj);
+    *texCoord0DirInWorld = normalize(
+        *texCoord0DirInWorld - dot(*shadingNormalInWorld, *texCoord0DirInWorld) * *shadingNormalInWorld);
     *geometricNormalInWorld = normalize(geometricNormal);
     if (!shadingNormalInWorld->allFinite()) {
         *shadingNormalInWorld = Normal3D(0, 0, 1);
@@ -608,7 +599,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void computeSurfacePoint(
         float lightProb = 1.0f;
         if (plp.s->envLightTexture && plp.f->enableEnvLight)
             lightProb *= (1 - probToSampleEnvLight);
-        float instImportance = inst.lightGeomInstDist.integral();
+        const float instImportance = inst.lightGeomInstDist.integral();
         lightProb *= (pow2(inst.uniformScale) * instImportance) / plp.s->lightInstDist.integral();
         lightProb *= geomInst.emitterPrimDist.integral() / instImportance;
         if (!isfinite(lightProb)) {
@@ -618,21 +609,21 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void computeSurfacePoint(
         lightProb *= geomInst.emitterPrimDist.evaluatePMF(primIndex);
         if constexpr (useSolidAngleSampling) {
             // TODO: ? compute in the local coordinates.
-            Vector3D A = normalize(p[0] - referencePoint);
-            Vector3D B = normalize(p[1] - referencePoint);
-            Vector3D C = normalize(p[2] - referencePoint);
-            Vector3D cAB = normalize(cross(A, B));
-            Vector3D cBC = normalize(cross(B, C));
-            Vector3D cCA = normalize(cross(C, A));
-            float cosAlpha = -dot(cAB, cCA);
-            float cosBeta = -dot(cBC, cAB);
-            float cosGamma = -dot(cCA, cBC);
-            float sphArea = std::acos(cosAlpha) + std::acos(cosBeta) + std::acos(cosGamma) - Pi;
-            float dirPDF = 1.0f / sphArea;
+            const Vector3D A = normalize(pA - referencePoint);
+            const Vector3D B = normalize(pB - referencePoint);
+            const Vector3D C = normalize(pC - referencePoint);
+            const Vector3D cAB = normalize(cross(A, B));
+            const Vector3D cBC = normalize(cross(B, C));
+            const Vector3D cCA = normalize(cross(C, A));
+            const float cosAlpha = -dot(cAB, cCA);
+            const float cosBeta = -dot(cBC, cAB);
+            const float cosGamma = -dot(cCA, cBC);
+            const float sphArea = std::acos(cosAlpha) + std::acos(cosBeta) + std::acos(cosGamma) - Pi;
+            const float dirPDF = 1.0f / sphArea;
             Vector3D refDir = referencePoint - *positionInWorld;
-            float dist2ToRefPoint = sqLength(refDir);
+            const float dist2ToRefPoint = sqLength(refDir);
             refDir /= std::sqrt(dist2ToRefPoint);
-            float lpCos = dot(refDir, *geometricNormalInWorld);
+            const float lpCos = dot(refDir, *geometricNormalInWorld);
             if (lpCos > 0 && isfinite(dirPDF))
                 *hypAreaPDensity = lightProb * (dirPDF * lpCos / dist2ToRefPoint);
             else
@@ -648,27 +639,70 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void computeSurfacePoint(
     }
 }
 
+CUDA_DEVICE_FUNCTION CUDA_INLINE void computeSurfacePoint(
+    const shared::InstanceData &inst,
+    const shared::GeometryInstanceData &geomInst,
+    bool isDisplacedTriangleHit,
+    uint32_t primIndex, float bcB, float bcC,
+    Point3D* positionInWorld, Normal3D* shadingNormalInWorld, Vector3D* texCoord0DirInWorld,
+    Normal3D* geometricNormalInWorld, Point2D* texCoord) {
+    using namespace shared;
+    const Triangle &tri = geomInst.triangleBuffer[primIndex];
+    const Vertex &vA = geomInst.vertexBuffer[tri.index0];
+    const Vertex &vB = geomInst.vertexBuffer[tri.index1];
+    const Vertex &vC = geomInst.vertexBuffer[tri.index2];
+    const float bcA = 1 - (bcB + bcC);
+
+    // JP: ヒットポイントのローカル座標中の各値を計算する。
+    // EN: Compute hit point properties in the local coordinates.
+    if (!isDisplacedTriangleHit) {
+        const Point3D positionInObj = bcA * vA.position + bcB * vB.position + bcC * vC.position;
+        *positionInWorld = inst.transform * positionInObj;
+        *geometricNormalInWorld = normalize(inst.normalMatrix *
+            Normal3D(cross(vB.position - vA.position, vC.position - vA.position)));
+        const Normal3D shadingNormalInObj = bcA * vA.normal + bcB * vB.normal + bcC * vC.normal;
+        *shadingNormalInWorld = normalize(inst.normalMatrix * shadingNormalInObj);
+    }
+    const Vector3D texCoord0DirInObj = bcA * vA.texCoord0Dir + bcB * vB.texCoord0Dir + bcC * vC.texCoord0Dir;
+    *texCoord = bcA * vA.texCoord + bcB * vB.texCoord + bcC * vC.texCoord;
+
+    // JP: ローカル座標中の値をワールド座標中の値へと変換する。
+    // EN: Convert the local properties to ones in world coordinates.
+    *texCoord0DirInWorld = inst.transform * texCoord0DirInObj;
+    *texCoord0DirInWorld = normalize(
+        *texCoord0DirInWorld - dot(*shadingNormalInWorld, *texCoord0DirInWorld) * *shadingNormalInWorld);
+    if (!shadingNormalInWorld->allFinite()) {
+        *geometricNormalInWorld = Normal3D(0, 0, 1);
+        *shadingNormalInWorld = Normal3D(0, 0, 1);
+        *texCoord0DirInWorld = Vector3D(1, 0, 0);
+    }
+    if (!texCoord0DirInWorld->allFinite()) {
+        Vector3D bitangent;
+        makeCoordinateSystem(*shadingNormalInWorld, texCoord0DirInWorld, &bitangent);
+    }
+}
+
 
 
 struct HitPointParameter {
-    float b1, b2;
+    float bcB, bcC;
     int32_t primIndex;
 
     CUDA_DEVICE_FUNCTION CUDA_INLINE static HitPointParameter get() {
         using namespace shared;
 
         HitPointParameter ret;
-        OptixPrimitiveType primType = optixGetPrimitiveType();
+        const OptixPrimitiveType primType = optixGetPrimitiveType();
         if (primType == OPTIX_PRIMITIVE_TYPE_TRIANGLE) {
             float2 bc = optixGetTriangleBarycentrics();
-            ret.b1 = bc.x;
-            ret.b2 = bc.y;
+            ret.bcB = bc.x;
+            ret.bcC = bc.y;
         }
         else {
 #if USE_DISPLACED_SURFACES
-            DisplacedSurfaceAttributeSignature::get(&ret.b1, &ret.b2, nullptr);
+            DisplacedSurfaceAttributeSignature::get(&ret.bcB, &ret.bcC, nullptr);
 #else
-            AABBAttributeSignature::get(&ret.b1, &ret.b2);
+            AABBAttributeSignature::get(&ret.bcB, &ret.bcC);
 #endif
         }
         ret.primIndex = optixGetPrimitiveIndex();
