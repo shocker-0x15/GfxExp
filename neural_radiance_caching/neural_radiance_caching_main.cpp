@@ -336,8 +336,8 @@ struct GPUEnvironment {
         for (int i = 0; i < NumCallablePrograms; ++i) {
             CUdeviceptr symbolPtr;
             size_t symbolSize;
-            CUDADRV_CHECK(cuModuleGetGlobal(&symbolPtr, &symbolSize, cudaModule,
-                                            callableProgramPointerNames[i]));
+            CUDADRV_CHECK(cuModuleGetGlobal(
+                &symbolPtr, &symbolSize, cudaModule, callableProgramPointerNames[i]));
             void* funcPtrOnDevice;
             Assert(symbolSize == sizeof(funcPtrOnDevice), "Unexpected symbol size");
             CUDADRV_CHECK(cuMemcpyDtoH(&funcPtrOnDevice, symbolPtr, sizeof(funcPtrOnDevice)));
@@ -349,8 +349,8 @@ struct GPUEnvironment {
         CUDADRV_CHECK(cuModuleGetGlobal(
             &callableToPointerMapPtr, &callableToPointerMapSize, cudaModule,
             "c_callableToPointerMap"));
-        CUDADRV_CHECK(cuMemcpyHtoD(callableToPointerMapPtr, callablePointers.data(),
-                                   callableToPointerMapSize));
+        CUDADRV_CHECK(cuMemcpyHtoD(
+            callableToPointerMapPtr, callablePointers.data(), callableToPointerMapSize));
     }
 
     void finalize() {
@@ -437,6 +437,7 @@ static KeyState g_keyTiltLeft;
 static KeyState g_keyTiltRight;
 static KeyState g_keyFasterPosMovSpeed;
 static KeyState g_keySlowerPosMovSpeed;
+static KeyState g_keyDebugPrint;
 static KeyState g_buttonRotate;
 static double g_mouseX;
 static double g_mouseY;
@@ -573,19 +574,19 @@ static void parseCommandline(int32_t argc, const char* argv[]) {
         }
         else if (0 == strncmp(arg, "-emittance", 11)) {
             if (i + 3 >= argc) {
-                printf("Invalid option.\n");
+                hpprintf("Invalid option.\n");
                 exit(EXIT_FAILURE);
             }
             emittance = RGB(atof(argv[i + 1]), atof(argv[i + 2]), atof(argv[i + 3]));
             if (!emittance.allFinite()) {
-                printf("Invalid value.\n");
+                hpprintf("Invalid value.\n");
                 exit(EXIT_FAILURE);
             }
             i += 3;
         }
         else if (0 == strncmp(arg, "-rect-emitter-tex", 18)) {
             if (i + 1 >= argc) {
-                printf("Invalid option.\n");
+                hpprintf("Invalid option.\n");
                 exit(EXIT_FAILURE);
             }
             rectEmitterTexPath = argv[i + 1];
@@ -593,7 +594,7 @@ static void parseCommandline(int32_t argc, const char* argv[]) {
         }
         else if (0 == strncmp(arg, "-obj", 5)) {
             if (i + 3 >= argc) {
-                printf("Invalid option.\n");
+                hpprintf("Invalid option.\n");
                 exit(EXIT_FAILURE);
             }
 
@@ -609,7 +610,7 @@ static void parseCommandline(int32_t argc, const char* argv[]) {
                 mesh.matConv = MaterialConvention::SimplePBR;
             }
             else {
-                printf("Invalid material convention.\n");
+                hpprintf("Invalid material convention.\n");
                 exit(EXIT_FAILURE);
             }
 
@@ -619,7 +620,7 @@ static void parseCommandline(int32_t argc, const char* argv[]) {
         }
         else if (0 == strncmp(arg, "-rectangle", 11)) {
             if (i + 2 >= argc) {
-                printf("Invalid option.\n");
+                hpprintf("Invalid option.\n");
                 exit(EXIT_FAILURE);
             }
 
@@ -638,12 +639,12 @@ static void parseCommandline(int32_t argc, const char* argv[]) {
         }
         else if (0 == strncmp(arg, "-begin-pos", 11)) {
             if (i + 3 >= argc) {
-                printf("Invalid option.\n");
+                hpprintf("Invalid option.\n");
                 exit(EXIT_FAILURE);
             }
             beginPosition = Point3D(atof(argv[i + 1]), atof(argv[i + 2]), atof(argv[i + 3]));
             if (!beginPosition.allFinite()) {
-                printf("Invalid value.\n");
+                hpprintf("Invalid value.\n");
                 exit(EXIT_FAILURE);
             }
             i += 3;
@@ -655,24 +656,24 @@ static void parseCommandline(int32_t argc, const char* argv[]) {
         }
         else if (0 == strncmp(arg, "-begin-scale", 13)) {
             if (i + 1 >= argc) {
-                printf("Invalid option.\n");
+                hpprintf("Invalid option.\n");
                 exit(EXIT_FAILURE);
             }
             beginScale = atof(argv[i + 1]);
             if (!isfinite(beginScale)) {
-                printf("Invalid value.\n");
+                hpprintf("Invalid value.\n");
                 exit(EXIT_FAILURE);
             }
             i += 1;
         }
         else if (0 == strncmp(arg, "-end-pos", 9)) {
             if (i + 3 >= argc) {
-                printf("Invalid option.\n");
+                hpprintf("Invalid option.\n");
                 exit(EXIT_FAILURE);
             }
             endPosition = Point3D(atof(argv[i + 1]), atof(argv[i + 2]), atof(argv[i + 3]));
             if (!endPosition.allFinite()) {
-                printf("Invalid value.\n");
+                hpprintf("Invalid value.\n");
                 exit(EXIT_FAILURE);
             }
             i += 3;
@@ -684,43 +685,43 @@ static void parseCommandline(int32_t argc, const char* argv[]) {
         }
         else if (0 == strncmp(arg, "-end-scale", 11)) {
             if (i + 1 >= argc) {
-                printf("Invalid option.\n");
+                hpprintf("Invalid option.\n");
                 exit(EXIT_FAILURE);
             }
             endScale = atof(argv[i + 1]);
             if (!isfinite(endScale)) {
-                printf("Invalid value.\n");
+                hpprintf("Invalid value.\n");
                 exit(EXIT_FAILURE);
             }
             i += 1;
         }
         else if (0 == strncmp(arg, "-freq", 6)) {
             if (i + 1 >= argc) {
-                printf("Invalid option.\n");
+                hpprintf("Invalid option.\n");
                 exit(EXIT_FAILURE);
             }
             frequency = atof(argv[i + 1]);
             if (!isfinite(frequency)) {
-                printf("Invalid value.\n");
+                hpprintf("Invalid value.\n");
                 exit(EXIT_FAILURE);
             }
             i += 1;
         }
         else if (0 == strncmp(arg, "-time", 6)) {
             if (i + 1 >= argc) {
-                printf("Invalid option.\n");
+                hpprintf("Invalid option.\n");
                 exit(EXIT_FAILURE);
             }
             initTime = atof(argv[i + 1]);
             if (!isfinite(initTime)) {
-                printf("Invalid value.\n");
+                hpprintf("Invalid value.\n");
                 exit(EXIT_FAILURE);
             }
             i += 1;
         }
         else if (0 == strncmp(arg, "-inst", 6)) {
             if (i + 1 >= argc) {
-                printf("Invalid option.\n");
+                hpprintf("Invalid option.\n");
                 exit(EXIT_FAILURE);
             }
 
@@ -749,7 +750,7 @@ static void parseCommandline(int32_t argc, const char* argv[]) {
         }
         else if (strncmp(arg, "-position-encoding", 19) == 0) {
             if (i + 1 >= argc) {
-                printf("Invalid option.\n");
+                hpprintf("Invalid option.\n");
                 exit(EXIT_FAILURE);
             }
             const char* enc = argv[i + 1];
@@ -760,14 +761,14 @@ static void parseCommandline(int32_t argc, const char* argv[]) {
                 g_positionEncoding = PositionEncoding::HashGrid;
             }
             else {
-                printf("Invalid option.\n");
+                hpprintf("Invalid option.\n");
                 exit(EXIT_FAILURE);
             }
             i += 1;
         }
         else if (0 == strncmp(arg, "-num-hidden-layers", 19)) {
             if (i + 1 >= argc) {
-                printf("Invalid option.\n");
+                hpprintf("Invalid option.\n");
                 exit(EXIT_FAILURE);
             }
             g_numHiddenLayers = atoi(argv[i + 1]);
@@ -775,18 +776,18 @@ static void parseCommandline(int32_t argc, const char* argv[]) {
         }
         else if (0 == strncmp(arg, "-learning-rate", 15)) {
             if (i + 1 >= argc) {
-                printf("Invalid option.\n");
+                hpprintf("Invalid option.\n");
                 exit(EXIT_FAILURE);
             }
             g_learningRate = atof(argv[i + 1]);
             if (!isfinite(g_learningRate)) {
-                printf("Invalid value.\n");
+                hpprintf("Invalid value.\n");
                 exit(EXIT_FAILURE);
             }
             i += 1;
         }
         else {
-            printf("Unknown option.\n");
+            hpprintf("Unknown option.\n");
             exit(EXIT_FAILURE);
         }
     }
@@ -988,6 +989,10 @@ int32_t main(int32_t argc, const char* argv[]) try {
                 g_keySlowerPosMovSpeed.recordStateChange(action == GLFW_PRESS || action == GLFW_REPEAT, frameIndex);
                 break;
             }
+            case GLFW_KEY_P: {
+                g_keyDebugPrint.recordStateChange(action == GLFW_PRESS || action == GLFW_REPEAT, frameIndex);
+                break;
+            }
             default:
                 break;
             }
@@ -1119,8 +1124,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
     CUtexObject envLightTexture = 0;
     RegularConstantContinuousDistribution2D envLightImportanceMap;
     if (!g_envLightTexturePath.empty())
-        loadEnvironmentalTexture(g_envLightTexturePath, gpuEnv.cuContext,
-                                 &envLightArray, &envLightTexture, &envLightImportanceMap);
+        loadEnvironmentalTexture(
+            g_envLightTexturePath, gpuEnv.cuContext,
+            &envLightArray, &envLightTexture, &envLightImportanceMap);
 
     scene.setupLightGeomDistributions();
 
@@ -1198,7 +1204,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
     cudau::Array gBuffer0[2];
     cudau::Array gBuffer1[2];
-    cudau::Array gBuffer2[2];
     
     cudau::Array beautyAccumBuffer;
     cudau::Array albedoAccumBuffer;
@@ -1222,28 +1227,27 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
         for (int i = 0; i < 2; ++i) {
             gBuffer0[i].initialize2D(
-                gpuEnv.cuContext, cudau::ArrayElementType::UInt32, (sizeof(shared::GBuffer0) + 3) / 4,
+                gpuEnv.cuContext, cudau::ArrayElementType::UInt32, (sizeof(shared::GBuffer0Elements) + 3) / 4,
                 cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable,
                 renderTargetSizeX, renderTargetSizeY, 1);
             gBuffer1[i].initialize2D(
-                gpuEnv.cuContext, cudau::ArrayElementType::UInt32, (sizeof(shared::GBuffer1) + 3) / 4,
-                cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable,
-                renderTargetSizeX, renderTargetSizeY, 1);
-            gBuffer2[i].initialize2D(
-                gpuEnv.cuContext, cudau::ArrayElementType::UInt32, (sizeof(shared::GBuffer2) + 3) / 4,
+                gpuEnv.cuContext, cudau::ArrayElementType::UInt32, (sizeof(shared::GBuffer1Elements) + 3) / 4,
                 cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable,
                 renderTargetSizeX, renderTargetSizeY, 1);
         }
 
-        beautyAccumBuffer.initialize2D(gpuEnv.cuContext, cudau::ArrayElementType::Float32, 4,
-                                       cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable,
-                                       renderTargetSizeX, renderTargetSizeY, 1);
-        albedoAccumBuffer.initialize2D(gpuEnv.cuContext, cudau::ArrayElementType::Float32, 4,
-                                       cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable,
-                                       renderTargetSizeX, renderTargetSizeY, 1);
-        normalAccumBuffer.initialize2D(gpuEnv.cuContext, cudau::ArrayElementType::Float32, 4,
-                                       cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable,
-                                       renderTargetSizeX, renderTargetSizeY, 1);
+        beautyAccumBuffer.initialize2D(
+            gpuEnv.cuContext, cudau::ArrayElementType::Float32, 4,
+            cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable,
+            renderTargetSizeX, renderTargetSizeY, 1);
+        albedoAccumBuffer.initialize2D(
+            gpuEnv.cuContext, cudau::ArrayElementType::Float32, 4,
+            cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable,
+            renderTargetSizeX, renderTargetSizeY, 1);
+        normalAccumBuffer.initialize2D(
+            gpuEnv.cuContext, cudau::ArrayElementType::Float32, 4,
+            cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable,
+            renderTargetSizeX, renderTargetSizeY, 1);
 
         linearBeautyBuffer.initialize(gpuEnv.cuContext, Scene::bufferType, numPixels);
         linearAlbedoBuffer.initialize(gpuEnv.cuContext, Scene::bufferType, numPixels);
@@ -1298,7 +1302,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
         beautyAccumBuffer.finalize();
 
         for (int i = 1; i >= 0; --i) {
-            gBuffer2[i].finalize();
             gBuffer1[i].finalize();
             gBuffer0[i].finalize();
         }
@@ -1310,7 +1313,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
         for (int i = 0; i < 2; ++i) {
             gBuffer0[i].resize(width, height);
             gBuffer1[i].resize(width, height);
-            gBuffer2[i].resize(width, height);
         }
 
         beautyAccumBuffer.resize(width, height);
@@ -1420,13 +1422,15 @@ int32_t main(int32_t argc, const char* argv[]) try {
     cudau::Array outputArray;
     cudau::InteropSurfaceObjectHolder<2> outputBufferSurfaceHolder;
     outputTexture.initialize(GL_RGBA32F, renderTargetSizeX, renderTargetSizeY, 1);
-    outputArray.initializeFromGLTexture2D(gpuEnv.cuContext, outputTexture.getHandle(),
-                                          cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable);
+    outputArray.initializeFromGLTexture2D(
+        gpuEnv.cuContext, outputTexture.getHandle(),
+        cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable);
     outputBufferSurfaceHolder.initialize({ &outputArray });
 
     glu::Sampler outputSampler;
-    outputSampler.initialize(glu::Sampler::MinFilter::Nearest, glu::Sampler::MagFilter::Nearest,
-                             glu::Sampler::WrapMode::Repeat, glu::Sampler::WrapMode::Repeat);
+    outputSampler.initialize(
+        glu::Sampler::MinFilter::Nearest, glu::Sampler::MagFilter::Nearest,
+        glu::Sampler::WrapMode::Repeat, glu::Sampler::WrapMode::Repeat);
 
 
 
@@ -1444,6 +1448,20 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
 
 
+    shared::PickInfo initPickInfo = {};
+    initPickInfo.hit = false;
+    initPickInfo.instSlot = 0xFFFFFFFF;
+    initPickInfo.geomInstSlot = 0xFFFFFFFF;
+    initPickInfo.matSlot = 0xFFFFFFFF;
+    initPickInfo.primIndex = 0xFFFFFFFF;
+    initPickInfo.positionInWorld = Point3D(0.0f);
+    initPickInfo.albedo = RGB(0.0f);
+    initPickInfo.emittance = RGB(0.0f);
+    initPickInfo.normalInWorld = Normal3D(0.0f);
+    cudau::TypedBuffer<shared::PickInfo> pickInfos[2];
+    pickInfos[0].initialize(gpuEnv.cuContext, Scene::bufferType, 1, initPickInfo);
+    pickInfos[1].initialize(gpuEnv.cuContext, Scene::bufferType, 1, initPickInfo);
+
     shared::StaticPipelineLaunchParameters staticPlp = {};
     {
         staticPlp.imageSize = int2(renderTargetSizeX, renderTargetSizeY);
@@ -1453,11 +1471,15 @@ int32_t main(int32_t argc, const char* argv[]) try {
         staticPlp.GBuffer0[1] = gBuffer0[1].getSurfaceObject(0);
         staticPlp.GBuffer1[0] = gBuffer1[0].getSurfaceObject(0);
         staticPlp.GBuffer1[1] = gBuffer1[1].getSurfaceObject(0);
-        staticPlp.GBuffer2[0] = gBuffer2[0].getSurfaceObject(0);
-        staticPlp.GBuffer2[1] = gBuffer2[1].getSurfaceObject(0);
 
-        staticPlp.materialDataBuffer = scene.materialDataBuffer.getROBuffer<shared::enableBufferOobCheck>();
-        staticPlp.geometryInstanceDataBuffer = scene.geomInstDataBuffer.getROBuffer<shared::enableBufferOobCheck>();
+        staticPlp.materialDataBuffer =
+            scene.materialDataBuffer.getROBuffer<shared::enableBufferOobCheck>();
+        staticPlp.instanceDataBufferArray[0] =
+            scene.instDataBuffer[0].getROBuffer<shared::enableBufferOobCheck>();
+        staticPlp.instanceDataBufferArray[1] =
+            scene.instDataBuffer[1].getROBuffer<shared::enableBufferOobCheck>();
+        staticPlp.geometryInstanceDataBuffer =
+            scene.geomInstDataBuffer.getROBuffer<shared::enableBufferOobCheck>();
         envLightImportanceMap.getDeviceType(&staticPlp.envLightImportanceMap);
         staticPlp.envLightTexture = envLightTexture;
 
@@ -1496,6 +1518,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
         staticPlp.beautyAccumBuffer = beautyAccumBuffer.getSurfaceObject(0);
         staticPlp.albedoAccumBuffer = albedoAccumBuffer.getSurfaceObject(0);
         staticPlp.normalAccumBuffer = normalAccumBuffer.getSurfaceObject(0);
+
+        staticPlp.pickInfos[0] = pickInfos[0].getDevicePointer();
+        staticPlp.pickInfos[1] = pickInfos[1].getDevicePointer();
     }
     CUdeviceptr staticPlpOnDevice;
     CUDADRV_CHECK(cuMemAlloc(&staticPlpOnDevice, sizeof(staticPlp)));
@@ -1517,20 +1542,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
     shared::PipelineLaunchParameters plp;
     plp.s = reinterpret_cast<shared::StaticPipelineLaunchParameters*>(staticPlpOnDevice);
     plp.f = reinterpret_cast<shared::PerFramePipelineLaunchParameters*>(perFramePlpOnDevice);
-
-    shared::PickInfo initPickInfo = {};
-    initPickInfo.hit = false;
-    initPickInfo.instSlot = 0xFFFFFFFF;
-    initPickInfo.geomInstSlot = 0xFFFFFFFF;
-    initPickInfo.matSlot = 0xFFFFFFFF;
-    initPickInfo.primIndex = 0xFFFFFFFF;
-    initPickInfo.positionInWorld = Point3D(0.0f);
-    initPickInfo.albedo = RGB(0.0f);
-    initPickInfo.emittance = RGB(0.0f);
-    initPickInfo.normalInWorld = Normal3D(0.0f);
-    cudau::TypedBuffer<shared::PickInfo> pickInfos[2];
-    pickInfos[0].initialize(gpuEnv.cuContext, Scene::bufferType, 1, initPickInfo);
-    pickInfos[1].initialize(gpuEnv.cuContext, Scene::bufferType, 1, initPickInfo);
 
     CUdeviceptr plpOnDevice;
     CUDADRV_CHECK(cuMemAlloc(&plpOnDevice, sizeof(plp)));
@@ -1647,8 +1658,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
             outputTexture.finalize();
             outputArray.finalize();
             outputTexture.initialize(GL_RGBA32F, renderTargetSizeX, renderTargetSizeY, 1);
-            outputArray.initializeFromGLTexture2D(gpuEnv.cuContext, outputTexture.getHandle(),
-                                                  cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable);
+            outputArray.initializeFromGLTexture2D(
+                gpuEnv.cuContext, outputTexture.getHandle(),
+                cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable);
 
             // EN: update the pipeline parameters.
             staticPlp.imageSize = int2(renderTargetSizeX, renderTargetSizeY);
@@ -1657,8 +1669,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
             staticPlp.GBuffer0[1] = gBuffer0[1].getSurfaceObject(0);
             staticPlp.GBuffer1[0] = gBuffer1[0].getSurfaceObject(0);
             staticPlp.GBuffer1[1] = gBuffer1[1].getSurfaceObject(0);
-            staticPlp.GBuffer2[0] = gBuffer2[0].getSurfaceObject(0);
-            staticPlp.GBuffer2[1] = gBuffer2[1].getSurfaceObject(0);
             staticPlp.inferenceRadianceQueryBuffer =
                 inferenceRadianceQueryBuffer.getRWBuffer<shared::enableBufferOobCheck>();
             staticPlp.inferenceTerminalInfoBuffer =
@@ -1767,7 +1777,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
         bool resetAccumulation = false;
         
         // Camera Window
-        static shared::BufferToDisplay bufferTypeToDisplay = shared::BufferToDisplay::NoisyBeauty;
         static bool applyToneMapAndGammaCorrection = true;
         static float brightness = g_initBrightness;
         static bool enableEnvLight = true;
@@ -1786,9 +1795,10 @@ int32_t main(int32_t argc, const char* argv[]) try {
             rollPitchYaw[1] *= 180 / pi_v<float>;
             rollPitchYaw[2] *= 180 / pi_v<float>;
             if (ImGui::InputFloat3("Roll/Pitch/Yaw", rollPitchYaw))
-                g_cameraOrientation = qFromEulerAngles(rollPitchYaw[0] * pi_v<float> / 180,
-                                                       rollPitchYaw[1] * pi_v<float> / 180,
-                                                       rollPitchYaw[2] * pi_v<float> / 180);
+                g_cameraOrientation = qFromEulerAngles(
+                    rollPitchYaw[0] * pi_v<float> / 180,
+                    rollPitchYaw[1] * pi_v<float> / 180,
+                    rollPitchYaw[2] * pi_v<float> / 180);
             ImGui::Text("Pos. Speed (T/G): %g", g_cameraPositionalMovingSpeed);
             ImGui::SliderFloat("Brightness", &brightness, -5.0f, 5.0f);
 
@@ -1814,12 +1824,12 @@ int32_t main(int32_t argc, const char* argv[]) try {
                     config.brightnessScale = std::pow(10.0f, brightness);
                     config.applyToneMap = applyToneMapAndGammaCorrection;
                     config.apply_sRGB_gammaCorrection = applyToneMapAndGammaCorrection;
-                    saveImage("output.png", renderTargetSizeX, renderTargetSizeY, rawImage,
-                              config);
+                    saveImage("output.png", renderTargetSizeX, renderTargetSizeY, rawImage, config);
                 }
                 if (saveSS_HDR)
-                    saveImageHDR("output.exr", renderTargetSizeX, renderTargetSizeY,
-                                 std::pow(10.0f, brightness), rawImage);
+                    saveImageHDR(
+                        "output.exr", renderTargetSizeX, renderTargetSizeY,
+                        std::pow(10.0f, brightness), rawImage);
                 delete[] rawImage;
             }
 
@@ -1842,6 +1852,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         static bool enableJittering = false;
         static bool enableBumpMapping = false;
         bool lastFrameWasAnimated = false;
+        static shared::BufferToDisplay bufferTypeToDisplay = shared::BufferToDisplay::NoisyBeauty;
         static bool infBounces = false;
         static int32_t maxPathLength = 5;
         static bool useNRC = true;
@@ -1880,22 +1891,26 @@ int32_t main(int32_t argc, const char* argv[]) try {
             ImGui::Text("Geometry Instance: %u", pickInfoOnHost.geomInstSlot);
             ImGui::Text("Primitive Index: %u", pickInfoOnHost.primIndex);
             ImGui::Text("Material: %u", pickInfoOnHost.matSlot);
-            ImGui::Text("Position: %.3f, %.3f, %.3f",
-                        pickInfoOnHost.positionInWorld.x,
-                        pickInfoOnHost.positionInWorld.y,
-                        pickInfoOnHost.positionInWorld.z);
-            ImGui::Text("Normal: %.3f, %.3f, %.3f",
-                        pickInfoOnHost.normalInWorld.x,
-                        pickInfoOnHost.normalInWorld.y,
-                        pickInfoOnHost.normalInWorld.z);
-            ImGui::Text("Albedo: %.3f, %.3f, %.3f",
-                        pickInfoOnHost.albedo.r,
-                        pickInfoOnHost.albedo.g,
-                        pickInfoOnHost.albedo.b);
-            ImGui::Text("Emittance: %.3f, %.3f, %.3f",
-                        pickInfoOnHost.emittance.r,
-                        pickInfoOnHost.emittance.g,
-                        pickInfoOnHost.emittance.b);
+            ImGui::Text(
+                "Position: %.3f, %.3f, %.3f",
+                pickInfoOnHost.positionInWorld.x,
+                pickInfoOnHost.positionInWorld.y,
+                pickInfoOnHost.positionInWorld.z);
+            ImGui::Text(
+                "Normal: %.3f, %.3f, %.3f",
+                pickInfoOnHost.normalInWorld.x,
+                pickInfoOnHost.normalInWorld.y,
+                pickInfoOnHost.normalInWorld.z);
+            ImGui::Text(
+                "Albedo: %.3f, %.3f, %.3f",
+                pickInfoOnHost.albedo.r,
+                pickInfoOnHost.albedo.g,
+                pickInfoOnHost.albedo.b);
+            ImGui::Text(
+                "Emittance: %.3f, %.3f, %.3f",
+                pickInfoOnHost.emittance.r,
+                pickInfoOnHost.emittance.g,
+                pickInfoOnHost.emittance.b);
 
             ImGui::Separator();
 
@@ -2046,8 +2061,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
                             OPTIX_DENOISER_MODEL_KIND_TEMPORAL :
                             OPTIX_DENOISER_MODEL_KIND_HDR;
                         denoiser = gpuEnv.optixContext.createDenoiser(
-                            modelKind,
-                            optixu::GuideAlbedo::Yes, optixu::GuideNormal::Yes, OPTIX_DENOISER_ALPHA_MODE_COPY);
+                            modelKind, optixu::GuideAlbedo::Yes, optixu::GuideNormal::Yes,
+                            OPTIX_DENOISER_ALPHA_MODE_COPY);
 
                         optixu::DenoiserSizes denoiserSizes;
                         uint32_t numTasks;
@@ -2164,14 +2179,15 @@ int32_t main(int32_t argc, const char* argv[]) try {
                 shared::InstanceData &instData = instDataBufferOnHost[inst->instSlot];
                 controller->update(instDataBufferOnHost, animate ? 1.0f / 60.0f : 0.0f);
                 // TODO: まとめて送る。
-                CUDADRV_CHECK(cuMemcpyHtoDAsync(curInstDataBuffer.getCUdeviceptrAt(inst->instSlot),
-                                                &instData, sizeof(instData), curCuStream));
+                CUDADRV_CHECK(cuMemcpyHtoDAsync(
+                    curInstDataBuffer.getCUdeviceptrAt(inst->instSlot),
+                    &instData, sizeof(instData), curCuStream));
             }
             curInstDataBuffer.unmap();
         }
 
-        // JP: IASのリビルドを行う。
-        // EN: Rebuild the IAS.
+        // JP: ASesのリビルドを行う。
+        // EN: Rebuild the ASes.
         curGPUTimer.update.start(curCuStream);
         if (animate || frameIndex == 0) {
             perFramePlp.travHandle = scene.updateASs(gpuEnv.cuContext, curCuStream);
@@ -2222,14 +2238,11 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
         perFramePlp.numAccumFrames = numAccumFrames;
         perFramePlp.frameIndex = frameIndex;
-        perFramePlp.instanceDataBuffer =
-            scene.instDataBuffer[bufferIndex].getROBuffer<shared::enableBufferOobCheck>();
         perFramePlp.radianceScale = std::pow(10.0f, log10RadianceScale);
         perFramePlp.envLightPowerCoeff = std::pow(10.0f, log10EnvLightPowerCoeff);
         perFramePlp.envLightRotation = envLightRotation;
         perFramePlp.mousePosition = int2(static_cast<int32_t>(g_mouseX),
                                          static_cast<int32_t>(g_mouseY));
-        perFramePlp.pickInfo = pickInfos[bufferIndex].getDevicePointer();
 
         perFramePlp.maxPathLength = infBounces ? 0 : maxPathLength;
         perFramePlp.bufferIndex = bufferIndex;
@@ -2237,6 +2250,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         perFramePlp.enableJittering = enableJittering;
         perFramePlp.enableEnvLight = enableEnvLight;
         perFramePlp.enableBumpMapping = enableBumpMapping;
+        perFramePlp.enableDebugPrint = g_keyDebugPrint.getState();
         for (int i = 0; i < lengthof(debugSwitches); ++i)
             perFramePlp.setDebugSwitch(i, debugSwitches[i]);
 
@@ -2377,15 +2391,10 @@ int32_t main(int32_t argc, const char* argv[]) try {
         // EN: Copy the results to the linear buffers (and normalize normals).
         kernelCopyToLinearBuffers.launchWithThreadDim(
             curCuStream, cudau::dim3(renderTargetSizeX, renderTargetSizeY),
-            beautyAccumBuffer.getSurfaceObject(0),
-            albedoAccumBuffer.getSurfaceObject(0),
-            normalAccumBuffer.getSurfaceObject(0),
-            gBuffer2[bufferIndex].getSurfaceObject(0),
             linearBeautyBuffer,
             linearAlbedoBuffer,
             linearNormalBuffer,
-            linearFlowBuffer,
-            uint2(renderTargetSizeX, renderTargetSizeY));
+            linearFlowBuffer);
 
         curGPUTimer.denoise.start(curCuStream);
         if (bufferTypeToDisplay == shared::BufferToDisplay::DenoisedBeauty) {
@@ -2421,7 +2430,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         outputBufferSurfaceHolder.beginCUDAAccess(curCuStream);
 
         // JP: デノイズ結果や中間バッファーの可視化。
-        // EN: Visualize the denosed result or intermediate buffers.
+        // EN: Visualize the denoised result or intermediate buffers.
         void* bufferToDisplay = nullptr;
         switch (bufferTypeToDisplay) {
         case shared::BufferToDisplay::NoisyBeauty:
@@ -2449,7 +2458,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
         kernelVisualizeToOutputBuffer.launchWithThreadDim(
             curCuStream, cudau::dim3(renderTargetSizeX, renderTargetSizeY),
             visualizeTrainingPath,
-            bufferToDisplay, bufferTypeToDisplay,
+            bufferToDisplay,
+            bufferTypeToDisplay,
             0.5f, std::pow(10.0f, motionVectorScale),
             outputBufferSurfaceHolder.getNext());
 
@@ -2511,11 +2521,11 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
     CUDADRV_CHECK(cuMemFree(plpOnDevice));
 
-    pickInfos[1].finalize();
-    pickInfos[0].finalize();
-
     CUDADRV_CHECK(cuMemFree(perFramePlpOnDevice));
     CUDADRV_CHECK(cuMemFree(staticPlpOnDevice));
+
+    pickInfos[1].finalize();
+    pickInfos[0].finalize();
 
     drawOptiXResultShader.finalize();
     vertexArrayForFullScreen.finalize();

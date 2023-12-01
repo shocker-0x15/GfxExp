@@ -14,7 +14,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE RGB sampleIntensity(
 
     float dist2 = minSquaredDistance;
     float lpCos = 1;
-    bool isOutsideCell =
+    const bool isOutsideCell =
         lightSample->atInfinity ||
         lightSample->position.x < cellCenter.x - halfCellSize.x ||
         lightSample->position.x > cellCenter.x + halfCellSize.x ||
@@ -23,15 +23,15 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE RGB sampleIntensity(
         lightSample->position.z < cellCenter.z - halfCellSize.z ||
         lightSample->position.z > cellCenter.z + halfCellSize.z;
     if (isOutsideCell) {
-        Vector3D shadowRayDir = lightSample->atInfinity ?
+        const Vector3D shadowRayDir = lightSample->atInfinity ?
             Vector3D(lightSample->position) :
             (lightSample->position - cellCenter);
         // JP: 光源点を含む平面への垂直距離を求める。
         // EN: Calculate the perpendicular distance to a plane on which the light point is.
-        float perpDistance = dot(-shadowRayDir, lightSample->normal);
+        const float perpDistance = dot(-shadowRayDir, lightSample->normal);
 
         dist2 = shadowRayDir.sqLength();
-        float dist = std::sqrt(dist2);
+        const float dist = std::sqrt(dist2);
 
         /*
         JP: セルを囲むバウンディングスフィアが「光源点を含む平面が法線側につくる半空間」に完全に
@@ -47,8 +47,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE RGB sampleIntensity(
             contribute to the cell.
             Always evaluate the cosine term as 1 for the unknown case.
         */
-        bool cellIsInValidHalfSpace = lpCos > minSquaredDistance || lightSample->atInfinity;
-        bool cellIsInInvalidHalfSpace = lpCos < -minSquaredDistance;
+        const bool cellIsInValidHalfSpace = lpCos > minSquaredDistance || lightSample->atInfinity;
+        const bool cellIsInInvalidHalfSpace = lpCos < -minSquaredDistance;
         if (cellIsInValidHalfSpace)
             lpCos = perpDistance / dist;
         else if (cellIsInInvalidHalfSpace)
@@ -58,8 +58,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE RGB sampleIntensity(
     }
 
     if (lpCos > 0.0f) {
-        RGB Le = lightSample->emittance / Pi;
-        RGB ret = Le * (lpCos / dist2);
+        const RGB Le = lightSample->emittance / Pi;
+        const RGB ret = Le * (lpCos / dist2);
         return ret;
     }
     else {
@@ -69,27 +69,27 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE RGB sampleIntensity(
 
 template <bool useTemporalReuse>
 CUDA_DEVICE_FUNCTION CUDA_INLINE void buildCellReservoirsAndTemporalReuse(uint32_t frameIndex) {
-    uint32_t linearThreadIndex = blockDim.x * blockIdx.x + threadIdx.x;
-    uint32_t cellLinearIndex = linearThreadIndex / kNumLightSlotsPerCell;
-    uint32_t lastAccessFrameIndex = plp.s->lastAccessFrameIndices[cellLinearIndex];
+    const uint32_t bufferIndex = plp.f->bufferIndex;
+    const uint32_t linearThreadIndex = blockDim.x * blockIdx.x + threadIdx.x;
+    const uint32_t cellLinearIndex = linearThreadIndex / kNumLightSlotsPerCell;
+    const uint32_t lastAccessFrameIndex = plp.s->lastAccessFrameIndices[cellLinearIndex];
     if (linearThreadIndex == 0)
-        *plp.f->numActiveCells = 0;
+        *plp.s->numActiveCellsArray[bufferIndex] = 0;
     plp.s->perCellNumAccesses[cellLinearIndex] = 0;
     if (frameIndex - lastAccessFrameIndex > 8)
         return;
 
     //uint32_t lightSlotIndex = linearThreadIndex % kNumLightSlotsPerCell;
-    uint32_t iz = cellLinearIndex / (plp.s->gridDimension.x * plp.s->gridDimension.y);
-    uint32_t iy = (cellLinearIndex % (plp.s->gridDimension.x * plp.s->gridDimension.y)) / plp.s->gridDimension.x;
-    uint32_t ix = cellLinearIndex % plp.s->gridDimension.x;
-    Point3D cellCenter = plp.s->gridOrigin + Vector3D(
+    const uint32_t iz = cellLinearIndex / (plp.s->gridDimension.x * plp.s->gridDimension.y);
+    const uint32_t iy = (cellLinearIndex % (plp.s->gridDimension.x * plp.s->gridDimension.y)) / plp.s->gridDimension.x;
+    const uint32_t ix = cellLinearIndex % plp.s->gridDimension.x;
+    const Point3D cellCenter = plp.s->gridOrigin + Vector3D(
         (ix + 0.5f) * plp.s->gridCellSize.x,
         (iy + 0.5f) * plp.s->gridCellSize.y,
         (iz + 0.5f) * plp.s->gridCellSize.z);
     const Vector3D halfCellSize = 0.5f * plp.s->gridCellSize;
     const float minSquaredDistance = (0.5f * plp.s->gridCellSize).sqLength();
 
-    uint32_t bufferIndex = plp.f->bufferIndex;
     RWBuffer<Reservoir<LightSample>> curReservoirs = plp.s->reservoirs[bufferIndex];
     RWBuffer<ReservoirInfo> curReservoirInfos = plp.s->reservoirInfos[bufferIndex];
 
@@ -97,7 +97,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void buildCellReservoirsAndTemporalReuse(uint32
 
     float selectedTargetPDensity = 0.0f;
     Reservoir<LightSample> reservoir;
-    reservoir.initialize();
+    reservoir.initialize(LightSample());
 
     // JP: セルの代表点に到達する光度をターゲットPDFとしてStreaming RISを実行。
     // EN: Perform streaming RIS with luminous intensity reaching to a cell's representative point
@@ -143,17 +143,17 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void buildCellReservoirsAndTemporalReuse(uint32
         //     Target PDF doesn't require to be normalized.
         LightSample lightSample;
         float areaPDensity;
-        RGB cont = sampleIntensity(
+        const RGB cont = sampleIntensity(
             cellCenter, halfCellSize, minSquaredDistance,
             uLight, sampleEnvLight, rng.getFloat0cTo1o(), rng.getFloat0cTo1o(),
             &lightSample, &areaPDensity);
         areaPDensity *= probToSampleCurLightType;
-        float targetPDensity = convertToWeight(cont);
+        const float targetPDensity = convertToWeight(cont);
 
         // JP: 候補サンプル生成用のPDFとターゲットPDFは異なるためサンプルにはウェイトがかかる。
         // EN: The sample has a weight since the PDF to generate the candidate sample and the target PDF are
         //     different.
-        float weight = targetPDensity / areaPDensity;
+        const float weight = targetPDensity / areaPDensity;
         //if (ix == 7 && iz == 7 && iy == 0) {
         //    printf("%2u, %2u, %2u, %3u, %u: %g, %g\n", ix, iy, iz, lightSlotIndex, candIdx,
         //           areaPDensity, targetPDensity);
@@ -176,15 +176,15 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void buildCellReservoirsAndTemporalReuse(uint32
     //     frames, then combine them, but here it doesn't use normalization and combines two reservoirs, one from
     //     the current frame and the other is the accumulation of the previous frames.
     if constexpr (useTemporalReuse) {
-        uint32_t prevBufferIndex = (bufferIndex + 1) % 2;
-        RWBuffer<Reservoir<LightSample>> prevReservoirs = plp.s->reservoirs[prevBufferIndex];
-        RWBuffer<ReservoirInfo> prevReservoirInfos = plp.s->reservoirInfos[prevBufferIndex];
+        const uint32_t prevBufferIndex = (bufferIndex + 1) % 2;
+        const RWBuffer<Reservoir<LightSample>> prevReservoirs = plp.s->reservoirs[prevBufferIndex];
+        const RWBuffer<ReservoirInfo> prevReservoirInfos = plp.s->reservoirInfos[prevBufferIndex];
 
-        uint32_t selfStreamLength = reservoir.getStreamLength();
+        const uint32_t selfStreamLength = reservoir.getStreamLength();
         if (recPDFEstimate == 0.0f)
-            reservoir.initialize();
+            reservoir.initialize(LightSample());
         uint32_t combinedStreamLength = selfStreamLength;
-        uint32_t maxNumPrevSamples = 20 * selfStreamLength;
+        const uint32_t maxNumPrevSamples = 20 * selfStreamLength;
 
         // JP: 際限なく過去フレームで得たサンプルがウェイトを増やさないように、
         //     前フレームのストリーム長を、現在フレームのReservoirに対して20倍までに制限する。
@@ -194,11 +194,11 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void buildCellReservoirsAndTemporalReuse(uint32
         //       ウェイトを調整するべき？
         const Reservoir<LightSample> &prevReservoir = prevReservoirs[linearThreadIndex];
         const ReservoirInfo &prevResInfo = prevReservoirInfos[linearThreadIndex];
-        const LightSample &prevLightSample = prevReservoir.getSample();
-        float prevTargetDensity = prevResInfo.targetDensity;
-        uint32_t prevStreamLength = min(prevReservoir.getStreamLength(), maxNumPrevSamples);
-        float lengthCorrection = static_cast<float>(prevStreamLength) / prevReservoir.getStreamLength();
-        float weight = lengthCorrection * prevReservoir.getSumWeights(); // New target PDF and prev target PDF are the same here.
+        const LightSample prevLightSample = prevReservoir.getSample();
+        const float prevTargetDensity = prevResInfo.targetDensity;
+        const uint32_t prevStreamLength = min(prevReservoir.getStreamLength(), maxNumPrevSamples);
+        const float lengthCorrection = static_cast<float>(prevStreamLength) / prevReservoir.getStreamLength();
+        const float weight = lengthCorrection * prevReservoir.getSumWeights(); // New target PDF and prev target PDF are the same here.
         if (reservoir.update(prevLightSample, weight, rng.getFloat0cTo1o()))
             selectedTargetPDensity = prevTargetDensity;
         combinedStreamLength += prevStreamLength;
@@ -206,7 +206,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void buildCellReservoirsAndTemporalReuse(uint32
 
         // JP: 現在のサンプルが生き残る確率密度の逆数の推定値を計算する。
         // EN: Calculate the estimate of the reciprocal of the probability density that the current sample survives.
-        float weightForEstimate = 1.0f / reservoir.getStreamLength();
+        const float weightForEstimate = 1.0f / reservoir.getStreamLength();
         recPDFEstimate = weightForEstimate * reservoir.getSumWeights() / selectedTargetPDensity;
         if (!isfinite(recPDFEstimate)) {
             recPDFEstimate = 0.0f;
@@ -234,13 +234,14 @@ CUDA_DEVICE_KERNEL void buildCellReservoirsAndTemporalReuse(uint32_t frameIndex)
 CUDA_DEVICE_KERNEL void updateLastAccessFrameIndices(uint32_t frameIndex) {
     // JP: 現在のフレーム中でアクセスされたセルにフレーム番号を記録する。
     // EN: Record the frame number to cells that accessed in the current frame.
-    uint32_t linearThreadIndex = blockDim.x * blockIdx.x + threadIdx.x;
-    uint32_t cellLinearIndex = linearThreadIndex;
-    uint32_t perCellNumAccesses = plp.s->perCellNumAccesses[cellLinearIndex];
+    const uint32_t bufferIndex = plp.f->bufferIndex;
+    const uint32_t linearThreadIndex = blockDim.x * blockIdx.x + threadIdx.x;
+    const uint32_t cellLinearIndex = linearThreadIndex;
+    const uint32_t perCellNumAccesses = plp.s->perCellNumAccesses[cellLinearIndex];
     if (perCellNumAccesses > 0)
         plp.s->lastAccessFrameIndices[cellLinearIndex] = frameIndex;
 
-    uint32_t numActiveCellsInGroup = __popc(__ballot_sync(0xFFFFFFFF, perCellNumAccesses > 0));
+    const uint32_t numActiveCellsInGroup = __popc(__ballot_sync(0xFFFFFFFF, perCellNumAccesses > 0));
     if (threadIdx.x == 0 && numActiveCellsInGroup > 0)
-        atomicAdd(plp.f->numActiveCells, numActiveCellsInGroup);
+        atomicAdd(plp.s->numActiveCellsArray[bufferIndex], numActiveCellsInGroup);
 }

@@ -214,7 +214,7 @@ CUDA_DEVICE_KERNEL void computeAABBs(
 #else
         const int32_t targetMipLevel = tfdmGeomInst->params.targetMipLevel;
 #endif
-        Texel roots[useMultipleRootOptimization ? 4 : 1];
+        Texel roots[4];
         uint32_t numRoots;
         findRoots(texTriAabbMinP, texTriAabbMaxP, maxDepth, targetMipLevel, roots, &numRoots);
 #if DEBUG_TRAVERSAL

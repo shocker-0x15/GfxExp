@@ -11,9 +11,6 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(setupGBuffers)() {
     float jx = 0.5f;
     float jy = 0.5f;
     if (plp.f->enableJittering) {
-        // JP: ジッターをかけると現状の実装ではUnbiased要件を満たさないかもしれない。要検討。
-        // EN: Jittering may break the requirements for unbiasedness with the current implementation.
-        //     Need more consideration.
         PCG32RNG rng = plp.s->rngBuffer.read(launchIndex);
         jx = rng.getFloat0cTo1o();
         jy = rng.getFloat0cTo1o();
@@ -125,13 +122,6 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
     PrimaryRayPayloadSignature::get(&hitPointParams, &pickInfo);
 
     const auto hp = HitPointParameter::get();
-    Point3D positionInWorld;
-    Point3D prevPositionInWorld;
-    Normal3D geometricNormalInWorld;
-    Normal3D shadingNormalInWorld;
-    Vector3D texCoord0DirInWorld;
-    Point2D texCoord;
-    float targetMipLevel = 0;
     const uint32_t hitKind = optixGetHitKind();
     const bool isTriangleHit =
         hitKind == OPTIX_HIT_KIND_TRIANGLE_FRONT_FACE
@@ -146,6 +136,14 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
 #if OUTPUT_TRAVERSAL_STATS
     hitPointParams->numTravIterations = 0;
 #endif
+
+    Point3D positionInWorld;
+    Point3D prevPositionInWorld;
+    Normal3D geometricNormalInWorld;
+    Normal3D shadingNormalInWorld;
+    Vector3D texCoord0DirInWorld;
+    Point2D texCoord;
+    float targetMipLevel = 0;
     if (isTriangleHit || isDisplacedTriangleHit) {
         const Triangle &tri = geomInst.triangleBuffer[hp.primIndex];
         const Vertex &vA = geomInst.vertexBuffer[tri.index0];
@@ -179,8 +177,8 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
             const GeometryInstanceDataForTFDM &tfdmGeomInst = plp.s->geomInstTfdmDataBuffer[sbtr.geomInstSlot];
             targetMipLevel = tfdmGeomInst.params.targetMipLevel;
         }
-        prevPositionInWorld = inst.curToPrevTransform * positionInWorld;
         texCoord = bcA * vA.texCoord + bcB * vB.texCoord + bcC * vC.texCoord;
+        prevPositionInWorld = inst.curToPrevTransform * positionInWorld;
 
         geometricNormalInWorld = normalize(transformNormalFromObjectToWorldSpace(geometricNormalInObj));
         shadingNormalInWorld = normalize(transformNormalFromObjectToWorldSpace(shadingNormalInObj));
@@ -208,14 +206,18 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
     hitPointParams->positionInWorld = positionInWorld;
     hitPointParams->prevPositionInWorld = prevPositionInWorld;
     hitPointParams->geometricNormalInWorld = geometricNormalInWorld;
-    hitPointParams->shadingNormalInWorld = shadingNormalInWorld;
 
     BSDF bsdf;
     bsdf.setup(mat, texCoord, targetMipLevel);
     const ReferenceFrame shadingFrame(shadingNormalInWorld, texCoord0DirInWorld);
+    //if (plp.f->enableBumpMapping) {
+    //    const Normal3D modLocalNormal = mat.readModifiedNormal(mat.normal, mat.normalDimInfo, texCoord, 0.0f);
+    //    applyBumpMapping(modLocalNormal, &shadingFrame);
+    //}
     const Vector3D vOut(-Vector3D(optixGetWorldRayDirection()));
     const Vector3D vOutLocal = shadingFrame.toLocal(normalize(vOut));
 
+    hitPointParams->shadingNormalInWorld = shadingFrame.normal;
     hitPointParams->albedo = bsdf.evaluateDHReflectanceEstimate(vOutLocal);
 
     // JP: マウスが乗っているピクセルの情報を出力する。

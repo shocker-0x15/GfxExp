@@ -122,7 +122,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
     uint32_t numIterations = 0;
 #endif
 
-    Texel roots[useMultipleRootOptimization ? 4 : 1];
+    Texel roots[4];
     uint32_t numRoots;
     findRoots(texTriAabbMinP, texTriAabbMaxP, maxDepth, targetMipLevel, roots, &numRoots);
 #if DEBUG_TRAVERSAL

@@ -18,8 +18,7 @@ static_assert(useImplicitLightSampling || useExplicitLightSampling, "Invalid con
 
 CUDA_DEVICE_FUNCTION CUDA_INLINE RGB performNextEventEstimation(
     const Point3D &shadingPoint, const Vector3D &vOutLocal, const ReferenceFrame &shadingFrame,
-    const BSDF &bsdf,
-    PCG32RNG &rng) {
+    const BSDF &bsdf, PCG32RNG &rng) {
     RGB ret(0.0f);
     if constexpr (useExplicitLightSampling) {
         float uLight = rng.getFloat0cTo1o();
@@ -130,7 +129,11 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_rayGen_generic() {
             // Offsetting assumes BRDF.
             positionInWorld = offsetRayOrigin(positionInWorld, frontHit * geometricNormalInWorld);
 
-            const ReferenceFrame shadingFrame(shadingNormalInWorld, texCoord0DirInWorld);
+            ReferenceFrame shadingFrame(shadingNormalInWorld, texCoord0DirInWorld);
+            //if (plp.f->enableBumpMapping) {
+            //    const Normal3D modLocalNormal = mat.readModifiedNormal(mat.normal, mat.normalDimInfo, texCoord, 0.0f);
+            //    applyBumpMapping(modLocalNormal, &shadingFrame);
+            //}
             const Vector3D vOutLocal = shadingFrame.toLocal(vOut);
 
             // JP: 光源を直接見ている場合の寄与を蓄積。
@@ -138,7 +141,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_rayGen_generic() {
             contribution = RGB(0.0f);
             if (vOutLocal.z > 0 && mat.emittance) {
                 const float4 texValue = tex2DLod<float4>(mat.emittance, texCoord.x, texCoord.y, 0.0f);
-                const RGB emittance(texValue.x, texValue.y, texValue.z);
+                const RGB emittance(getXYZ(texValue));
                 contribution += alpha * emittance / Pi;
             }
 
@@ -226,7 +229,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_rayGen_generic() {
         // EN: Accumulate the contribution from the environmental light source directly seeing.
         if (useEnvLight) {
             const float4 texValue = tex2DLod<float4>(plp.s->envLightTexture, bcB, bcC, 0.0f);
-            const RGB luminance = plp.f->envLightPowerCoeff * RGB(texValue.x, texValue.y, texValue.z);
+            const RGB luminance = plp.f->envLightPowerCoeff * RGB(getXYZ(texValue));
             contribution = luminance;
         }
     }
@@ -312,7 +315,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_closestHit_generic() {
         // Implicit Light Sampling
         if (vOutLocal.z > 0 && mat.emittance) {
             const float4 texValue = tex2DLod<float4>(mat.emittance, texCoord.x, texCoord.y, 0.0f);
-            const RGB emittance(texValue.x, texValue.y, texValue.z);
+            const RGB emittance(getXYZ(texValue));
             float misWeight = 1.0f;
             if constexpr (useMultipleImportanceSampling) {
                 const float dist2 = sqDistance(rayOrigin, positionInWorld);
@@ -367,17 +370,17 @@ CUDA_DEVICE_KERNEL void RT_MS_NAME(pathTrace)() {
         PathTraceReadWritePayload* rwPayload;
         PathTraceRayPayloadSignature::get(nullptr, &rwPayload);
 
-        Vector3D rayDir = normalize(Vector3D(optixGetWorldRayDirection()));
+        const Vector3D rayDir = normalize(Vector3D(optixGetWorldRayDirection()));
         float posPhi, theta;
         toPolarYUp(rayDir, &posPhi, &theta);
 
         float phi = posPhi + plp.f->envLightRotation;
         phi = phi - floorf(phi / (2 * Pi)) * 2 * Pi;
-        Point2D texCoord(phi / (2 * Pi), theta / Pi);
+        const Point2D texCoord(phi / (2 * Pi), theta / Pi);
 
         // Implicit Light Sampling
-        float4 texValue = tex2DLod<float4>(plp.s->envLightTexture, texCoord.x, texCoord.y, 0.0f);
-        RGB luminance = plp.f->envLightPowerCoeff * RGB(texValue.x, texValue.y, texValue.z);
+        const float4 texValue = tex2DLod<float4>(plp.s->envLightTexture, texCoord.x, texCoord.y, 0.0f);
+        const RGB luminance = plp.f->envLightPowerCoeff * RGB(getXYZ(texValue));
         float misWeight = 1.0f;
         if constexpr (useMultipleImportanceSampling) {
             float uvPDF = plp.s->envLightImportanceMap.evaluatePDF(texCoord.x, texCoord.y);

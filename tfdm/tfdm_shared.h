@@ -11,8 +11,6 @@
 #define OUTPUT_TRAVERSAL_STATS 1
 
 namespace shared {
-    static constexpr bool useMultipleRootOptimization = 1;
-
     static constexpr float probToSampleEnvLight = 0.25f;
 
 
@@ -80,11 +78,11 @@ namespace shared {
         Matrix3x3 orientation;
 
         CUDA_COMMON_FUNCTION Point2D calcScreenPosition(const Point3D &posInWorld) const {
-            Matrix3x3 invOri = invert(orientation);
-            Point3D posInView(invOri * (posInWorld - position));
-            Point2D posAtZ1(posInView.x / posInView.z, posInView.y / posInView.z);
-            float h = 2 * std::tan(fovY / 2);
-            float w = aspect * h;
+            const Matrix3x3 invOri = invert(orientation);
+            const Point3D posInView(invOri * (posInWorld - position));
+            const Point2D posAtZ1(posInView.x / posInView.z, posInView.y / posInView.z);
+            const float h = 2 * std::tan(fovY / 2);
+            const float w = aspect * h;
             return Point2D(1 - (posAtZ1.x + 0.5f * w) / w,
                            1 - (posAtZ1.y + 0.5f * h) / h);
         }
@@ -115,7 +113,9 @@ namespace shared {
         RGB emittance;
         Point3D position;
         Normal3D normal;
-        unsigned int atInfinity : 1;
+        uint32_t atInfinity : 1;
+
+        CUDA_COMMON_FUNCTION LightSample() : atInfinity(false) {}
     };
 
 
@@ -129,7 +129,7 @@ namespace shared {
         Normal3D normalInWorld;
         RGB albedo;
         RGB emittance;
-        unsigned int hit : 1;
+        uint32_t hit : 1;
     };
 
 
@@ -167,9 +167,9 @@ namespace shared {
         RGB alpha;
         RGB contribution;
         float prevDirPDensity;
-        unsigned int maxLengthTerminate : 1;
-        unsigned int terminate : 1;
-        unsigned int pathLength : 6;
+        uint32_t maxLengthTerminate : 1;
+        uint32_t terminate : 1;
+        uint32_t pathLength : 6;
     };
 
     
@@ -214,13 +214,13 @@ namespace shared {
 
         int2 mousePosition;
 
-        unsigned int maxPathLength : 4;
-        unsigned int bufferIndex : 1;
-        unsigned int resetFlowBuffer : 1;
-        unsigned int enableJittering : 1;
-        unsigned int enableEnvLight : 1;
-        unsigned int enableDebugPrint : 1;
-        unsigned int showBaseEdges : 1;
+        uint32_t maxPathLength : 4;
+        uint32_t bufferIndex : 1;
+        uint32_t resetFlowBuffer : 1;
+        uint32_t enableJittering : 1;
+        uint32_t enableEnvLight : 1;
+        uint32_t showBaseEdges : 1;
+        uint32_t enableDebugPrint : 1;
 
         uint32_t debugSwitches;
         void setDebugSwitch(int32_t idx, bool b) {
@@ -461,7 +461,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void sampleLight(
 
     if (texEmittance) {
         const float4 texValue = tex2DLod<float4>(texEmittance, texCoord.x, texCoord.y, 0.0f);
-        emittance *= RGB(texValue.x, texValue.y, texValue.z);
+        emittance *= RGB(getXYZ(texValue));
     }
     lightSample->emittance = emittance;
 }
@@ -514,17 +514,17 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool evaluateVisibility(
         Vector3D(lightSample.position) :
         (lightSample.position - shadingPoint);
     const float dist2 = shadowRayDir.sqLength();
-    const float dist = std::sqrt(dist2);
+    float dist = std::sqrt(dist2);
     shadowRayDir /= dist;
     if (lightSample.atInfinity)
         dist = 1e+10f;
 
     float visibility = 1.0f;
-    shared::VisibilityRayPayloadSignature::trace(
+    VisibilityRayPayloadSignature::trace(
         plp.f->travHandle,
         shadingPoint.toNative(), shadowRayDir.toNative(), 0.0f, dist * 0.9999f, 0.0f,
         0xFF, OPTIX_RAY_FLAG_NONE,
-        RayType::Visibility, shared::maxNumRayTypes, RayType::Visibility,
+        RayType::Visibility, maxNumRayTypes, RayType::Visibility,
         visibility);
 
     return visibility > 0.0f;
@@ -658,8 +658,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void computeSurfacePoint(
     if (!isDisplacedTriangleHit) {
         const Point3D positionInObj = bcA * vA.position + bcB * vB.position + bcC * vC.position;
         *positionInWorld = inst.transform * positionInObj;
-        *geometricNormalInWorld = normalize(inst.normalMatrix *
-            Normal3D(cross(vB.position - vA.position, vC.position - vA.position)));
+        *geometricNormalInWorld = normalize(
+            inst.normalMatrix * Normal3D(cross(vB.position - vA.position, vC.position - vA.position)));
         const Normal3D shadingNormalInObj = bcA * vA.normal + bcB * vB.normal + bcC * vC.normal;
         *shadingNormalInWorld = normalize(inst.normalMatrix * shadingNormalInObj);
     }
@@ -694,7 +694,7 @@ struct HitPointParameter {
         HitPointParameter ret;
         const OptixPrimitiveType primType = optixGetPrimitiveType();
         if (primType == OPTIX_PRIMITIVE_TYPE_TRIANGLE) {
-            float2 bc = optixGetTriangleBarycentrics();
+            const float2 bc = optixGetTriangleBarycentrics();
             ret.bcB = bc.x;
             ret.bcC = bc.y;
         }
@@ -854,7 +854,6 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void findRoots(
     const Point2D &triAabbMinP, const Point2D &triAabbMaxP, const int32_t maxDepth, uint32_t targetMipLevel,
     Texel* const roots, uint32_t* const numRoots) {
     using namespace shared;
-    static_assert(useMultipleRootOptimization, "Naive method is not implemented.");
     const Vector2D d = triAabbMaxP - triAabbMinP;
     const uint32_t largerDim = d.y > d.x;
     int32_t startMipLevel = maxDepth - prevPowOf2Exponent(static_cast<uint32_t>(1.0f / d[largerDim])) - 1;
@@ -890,10 +889,10 @@ CUDA_DEVICE_FUNCTION bool isCursorPixel() {
     return plp.f->mousePosition == make_int2(optixGetLaunchIndex());
 }
 
+#endif
+
 CUDA_DEVICE_FUNCTION bool getDebugPrintEnabled() {
     return plp.f->enableDebugPrint;
 }
-
-#endif
 
 #endif // #if defined(__CUDA_ARCH__) || defined(OPTIXU_Platform_CodeCompletion)

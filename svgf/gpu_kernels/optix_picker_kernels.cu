@@ -3,20 +3,21 @@
 using namespace shared;
 
 CUDA_DEVICE_KERNEL void RT_RG_NAME(pick)() {
-    uint32_t curBufIdx = plp.f->bufferIndex;
+    const uint32_t curBufIdx = plp.f->bufferIndex;
     const PerFramePipelineLaunchParameters::TemporalSet &curPerFrameTemporalSet =
         plp.f->temporalSets[curBufIdx];
 
     const PerspectiveCamera &camera = curPerFrameTemporalSet.camera;
-    Point2D fPix(plp.f->mousePosition.x + camera.subPixelOffset.x,
-                 plp.f->mousePosition.y + 1 - camera.subPixelOffset.y);
-    float x = fPix.x / plp.s->imageSize.x;
-    float y = fPix.y / plp.s->imageSize.y;
-    float vh = 2 * std::tan(camera.fovY * 0.5f);
-    float vw = camera.aspect * vh;
+    const Point2D fPix(
+        plp.f->mousePosition.x + camera.subPixelOffset.x,
+        plp.f->mousePosition.y + 1 - camera.subPixelOffset.y);
+    const float x = fPix.x / plp.s->imageSize.x;
+    const float y = fPix.y / plp.s->imageSize.y;
+    const float vh = 2 * std::tan(camera.fovY * 0.5f);
+    const float vw = camera.aspect * vh;
 
-    Point3D origin = camera.position;
-    Vector3D direction = normalize(camera.orientation * Vector3D(vw * (0.5f - x), vh * (0.5f - y), 1));
+    const Point3D origin = camera.position;
+    const Vector3D direction = normalize(camera.orientation * Vector3D(vw * (0.5f - x), vh * (0.5f - y), 1));
 
     HitPointParams hitPointParams;
     hitPointParams.positionInWorld = Point3D(NAN);
@@ -34,20 +35,21 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(pick)() {
         PickRayType::Primary, maxNumRayTypes, PickRayType::Primary,
         pickInfoPtr);
 
-    *plp.f->pickInfo = pickInfo;
+    *plp.s->pickInfos[curBufIdx] = pickInfo;
 }
 
 CUDA_DEVICE_KERNEL void RT_CH_NAME(pick)() {
-    uint2 launchIndex = make_uint2(optixGetLaunchIndex().x, optixGetLaunchIndex().y);
+    const uint2 launchIndex = make_uint2(optixGetLaunchIndex().x, optixGetLaunchIndex().y);
+    const uint32_t bufIdx = plp.f->bufferIndex;
 
-    auto sbtr = HitGroupSBTRecordData::get();
-    const InstanceData &inst = plp.f->instanceDataBuffer[optixGetInstanceId()];
+    const auto sbtr = HitGroupSBTRecordData::get();
+    const InstanceData &inst = plp.s->instanceDataBufferArray[bufIdx][optixGetInstanceId()];
     const GeometryInstanceData &geomInst = plp.s->geometryInstanceDataBuffer[sbtr.geomInstSlot];
 
     PickInfo* pickInfo;
     PickRayPayloadSignature::get(&pickInfo);
 
-    auto hp = HitPointParameter::get();
+    const auto hp = HitPointParameter::get();
     Point3D positionInWorld;
     Normal3D shadingNormalInWorld;
     Vector3D texCoord0DirInWorld;
@@ -55,17 +57,17 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(pick)() {
     Point2D texCoord;
     {
         const Triangle &tri = geomInst.triangleBuffer[hp.primIndex];
-        const Vertex &v0 = geomInst.vertexBuffer[tri.index0];
-        const Vertex &v1 = geomInst.vertexBuffer[tri.index1];
-        const Vertex &v2 = geomInst.vertexBuffer[tri.index2];
-        float b1 = hp.b1;
-        float b2 = hp.b2;
-        float b0 = 1 - (b1 + b2);
-        Point3D localP = b0 * v0.position + b1 * v1.position + b2 * v2.position;
-        shadingNormalInWorld = b0 * v0.normal + b1 * v1.normal + b2 * v2.normal;
-        texCoord0DirInWorld = b0 * v0.texCoord0Dir + b1 * v1.texCoord0Dir + b2 * v2.texCoord0Dir;
-        //geometricNormalInWorld = cross(v1.position - v0.position, v2.position - v0.position);
-        texCoord = b0 * v0.texCoord + b1 * v1.texCoord + b2 * v2.texCoord;
+        const Vertex &vA = geomInst.vertexBuffer[tri.index0];
+        const Vertex &vB = geomInst.vertexBuffer[tri.index1];
+        const Vertex &vC = geomInst.vertexBuffer[tri.index2];
+        const float bcB = hp.bcB;
+        const float bcC = hp.bcC;
+        const float bcA = 1 - (bcB + bcC);
+        const Point3D localP = bcA * vA.position + bcB * vB.position + bcC * vC.position;
+        shadingNormalInWorld = bcA * vA.normal + bcB * vB.normal + bcC * vC.normal;
+        texCoord0DirInWorld = bcA * vA.texCoord0Dir + bcB * vB.texCoord0Dir + bcC * vC.texCoord0Dir;
+        //geometricNormalInWorld = cross(vB.position - vA.position, vC.position - vA.position);
+        texCoord = bcA * vA.texCoord + bcB * vB.texCoord + bcC * vC.texCoord;
 
         positionInWorld = transformPointFromObjectToWorldSpace(localP);
         shadingNormalInWorld = normalize(transformNormalFromObjectToWorldSpace(shadingNormalInWorld));
@@ -86,9 +88,9 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(pick)() {
         Normal3D modLocalNormal = mat.readModifiedNormal(mat.normal, mat.normalDimInfo, texCoord, 0.0f);
         applyBumpMapping(modLocalNormal, &shadingFrame);
     }
-    Vector3D vOut(-Vector3D(optixGetWorldRayDirection()));
-    Vector3D vOutLocal = shadingFrame.toLocal(normalize(vOut));
-    RGB dhReflectance = bsdf.evaluateDHReflectanceEstimate(vOutLocal);
+    const Vector3D vOut(-Vector3D(optixGetWorldRayDirection()));
+    const Vector3D vOutLocal = shadingFrame.toLocal(normalize(vOut));
+    const RGB dhReflectance = bsdf.evaluateDHReflectanceEstimate(vOutLocal);
 
     pickInfo->hit = true;
     pickInfo->instSlot = optixGetInstanceId();
@@ -100,17 +102,17 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(pick)() {
     pickInfo->albedo = dhReflectance;
     RGB emittance(0.0f, 0.0f, 0.0f);
     if (mat.emittance) {
-        float4 texValue = tex2DLod<float4>(mat.emittance, texCoord.x, texCoord.y, 0.0f);
+        const float4 texValue = tex2DLod<float4>(mat.emittance, texCoord.x, texCoord.y, 0.0f);
         emittance = RGB(getXYZ(texValue));
     }
     pickInfo->emittance = emittance;
 }
 
 CUDA_DEVICE_KERNEL void RT_MS_NAME(pick)() {
-    uint2 launchIndex = make_uint2(optixGetLaunchIndex().x, optixGetLaunchIndex().y);
+    const uint2 launchIndex = make_uint2(optixGetLaunchIndex().x, optixGetLaunchIndex().y);
 
-    Vector3D vOut(-Vector3D(optixGetWorldRayDirection()));
-    Point3D p(-vOut);
+    const Vector3D vOut(-Vector3D(optixGetWorldRayDirection()));
+    const Point3D p(-vOut);
 
     float posPhi, posTheta;
     toPolarYUp(Vector3D(p), &posPhi, &posTheta);
@@ -119,7 +121,7 @@ CUDA_DEVICE_KERNEL void RT_MS_NAME(pick)() {
 
     float u = phi / (2 * Pi);
     u -= floorf(u);
-    float v = posTheta / Pi;
+    const float v = posTheta / Pi;
 
     PickInfo* pickInfo;
     PickRayPayloadSignature::get(&pickInfo);
@@ -133,7 +135,7 @@ CUDA_DEVICE_KERNEL void RT_MS_NAME(pick)() {
     pickInfo->albedo = RGB(0.0f, 0.0f, 0.0f);
     RGB emittance(0.0f, 0.0f, 0.0f);
     if (plp.s->envLightTexture && plp.f->enableEnvLight) {
-        float4 texValue = tex2DLod<float4>(plp.s->envLightTexture, u, v, 0.0f);
+        const float4 texValue = tex2DLod<float4>(plp.s->envLightTexture, u, v, 0.0f);
         emittance = RGB(getXYZ(texValue));
         emittance *= Pi * plp.f->envLightPowerCoeff;
     }

@@ -181,7 +181,7 @@ struct GPUEnvironment {
 
             p.setNumMissRayTypes(shared::PathTracingRayType::NumTypes);
             p.setMissProgram(
-                shared::PathTracingRayType::Baseline, pipeline.programs.at(RT_MS_NAME_STR("pathTrace")));
+                shared::PathTracingRayType::Closest, pipeline.programs.at(RT_MS_NAME_STR("pathTrace")));
             p.setMissProgram(shared::PathTracingRayType::Visibility, pipeline.programs.at("emptyMiss"));
 
             p.setNumCallablePrograms(NumCallablePrograms);
@@ -218,7 +218,7 @@ struct GPUEnvironment {
             p.setStackSize(0, maxDcStackSize, maxCcStackSize, 2);
 
             optixDefaultMaterial.setHitGroup(
-                shared::PathTracingRayType::Baseline, pipeline.hitPrograms.at(RT_CH_NAME_STR("pathTrace")));
+                shared::PathTracingRayType::Closest, pipeline.hitPrograms.at(RT_CH_NAME_STR("pathTrace")));
             optixDefaultMaterial.setHitGroup(
                 shared::PathTracingRayType::Visibility, pipeline.hitPrograms.at(RT_AH_NAME_STR("visibility")));
 
@@ -391,6 +391,7 @@ static KeyState g_keyTiltLeft;
 static KeyState g_keyTiltRight;
 static KeyState g_keyFasterPosMovSpeed;
 static KeyState g_keySlowerPosMovSpeed;
+static KeyState g_keyDebugPrint;
 static KeyState g_buttonRotate;
 static double g_mouseX;
 static double g_mouseY;
@@ -523,19 +524,19 @@ static void parseCommandline(int32_t argc, const char* argv[]) {
         }
         else if (0 == strncmp(arg, "-emittance", 11)) {
             if (i + 3 >= argc) {
-                printf("Invalid option.\n");
+                hpprintf("Invalid option.\n");
                 exit(EXIT_FAILURE);
             }
             emittance = RGB(atof(argv[i + 1]), atof(argv[i + 2]), atof(argv[i + 3]));
             if (!emittance.allFinite()) {
-                printf("Invalid value.\n");
+                hpprintf("Invalid value.\n");
                 exit(EXIT_FAILURE);
             }
             i += 3;
         }
         else if (0 == strncmp(arg, "-rect-emitter-tex", 18)) {
             if (i + 1 >= argc) {
-                printf("Invalid option.\n");
+                hpprintf("Invalid option.\n");
                 exit(EXIT_FAILURE);
             }
             rectEmitterTexPath = argv[i + 1];
@@ -543,7 +544,7 @@ static void parseCommandline(int32_t argc, const char* argv[]) {
         }
         else if (0 == strncmp(arg, "-obj", 5)) {
             if (i + 3 >= argc) {
-                printf("Invalid option.\n");
+                hpprintf("Invalid option.\n");
                 exit(EXIT_FAILURE);
             }
 
@@ -559,7 +560,7 @@ static void parseCommandline(int32_t argc, const char* argv[]) {
                 mesh.matConv = MaterialConvention::SimplePBR;
             }
             else {
-                printf("Invalid material convention.\n");
+                hpprintf("Invalid material convention.\n");
                 exit(EXIT_FAILURE);
             }
 
@@ -569,7 +570,7 @@ static void parseCommandline(int32_t argc, const char* argv[]) {
         }
         else if (0 == strncmp(arg, "-rectangle", 11)) {
             if (i + 2 >= argc) {
-                printf("Invalid option.\n");
+                hpprintf("Invalid option.\n");
                 exit(EXIT_FAILURE);
             }
 
@@ -588,12 +589,12 @@ static void parseCommandline(int32_t argc, const char* argv[]) {
         }
         else if (0 == strncmp(arg, "-begin-pos", 11)) {
             if (i + 3 >= argc) {
-                printf("Invalid option.\n");
+                hpprintf("Invalid option.\n");
                 exit(EXIT_FAILURE);
             }
             beginPosition = Point3D(atof(argv[i + 1]), atof(argv[i + 2]), atof(argv[i + 3]));
             if (!beginPosition.allFinite()) {
-                printf("Invalid value.\n");
+                hpprintf("Invalid value.\n");
                 exit(EXIT_FAILURE);
             }
             i += 3;
@@ -605,24 +606,24 @@ static void parseCommandline(int32_t argc, const char* argv[]) {
         }
         else if (0 == strncmp(arg, "-begin-scale", 13)) {
             if (i + 1 >= argc) {
-                printf("Invalid option.\n");
+                hpprintf("Invalid option.\n");
                 exit(EXIT_FAILURE);
             }
             beginScale = atof(argv[i + 1]);
             if (!isfinite(beginScale)) {
-                printf("Invalid value.\n");
+                hpprintf("Invalid value.\n");
                 exit(EXIT_FAILURE);
             }
             i += 1;
         }
         else if (0 == strncmp(arg, "-end-pos", 9)) {
             if (i + 3 >= argc) {
-                printf("Invalid option.\n");
+                hpprintf("Invalid option.\n");
                 exit(EXIT_FAILURE);
             }
             endPosition = Point3D(atof(argv[i + 1]), atof(argv[i + 2]), atof(argv[i + 3]));
             if (!endPosition.allFinite()) {
-                printf("Invalid value.\n");
+                hpprintf("Invalid value.\n");
                 exit(EXIT_FAILURE);
             }
             i += 3;
@@ -634,43 +635,43 @@ static void parseCommandline(int32_t argc, const char* argv[]) {
         }
         else if (0 == strncmp(arg, "-end-scale", 11)) {
             if (i + 1 >= argc) {
-                printf("Invalid option.\n");
+                hpprintf("Invalid option.\n");
                 exit(EXIT_FAILURE);
             }
             endScale = atof(argv[i + 1]);
             if (!isfinite(endScale)) {
-                printf("Invalid value.\n");
+                hpprintf("Invalid value.\n");
                 exit(EXIT_FAILURE);
             }
             i += 1;
         }
         else if (0 == strncmp(arg, "-freq", 6)) {
             if (i + 1 >= argc) {
-                printf("Invalid option.\n");
+                hpprintf("Invalid option.\n");
                 exit(EXIT_FAILURE);
             }
             frequency = atof(argv[i + 1]);
             if (!isfinite(frequency)) {
-                printf("Invalid value.\n");
+                hpprintf("Invalid value.\n");
                 exit(EXIT_FAILURE);
             }
             i += 1;
         }
         else if (0 == strncmp(arg, "-time", 6)) {
             if (i + 1 >= argc) {
-                printf("Invalid option.\n");
+                hpprintf("Invalid option.\n");
                 exit(EXIT_FAILURE);
             }
             initTime = atof(argv[i + 1]);
             if (!isfinite(initTime)) {
-                printf("Invalid value.\n");
+                hpprintf("Invalid value.\n");
                 exit(EXIT_FAILURE);
             }
             i += 1;
         }
         else if (0 == strncmp(arg, "-inst", 6)) {
             if (i + 1 >= argc) {
-                printf("Invalid option.\n");
+                hpprintf("Invalid option.\n");
                 exit(EXIT_FAILURE);
             }
 
@@ -698,7 +699,7 @@ static void parseCommandline(int32_t argc, const char* argv[]) {
             i += 1;
         }
         else {
-            printf("Unknown option.\n");
+            hpprintf("Unknown option.\n");
             exit(EXIT_FAILURE);
         }
     }
@@ -900,6 +901,10 @@ int32_t main(int32_t argc, const char* argv[]) try {
                 g_keySlowerPosMovSpeed.recordStateChange(action == GLFW_PRESS || action == GLFW_REPEAT, frameIndex);
                 break;
             }
+            case GLFW_KEY_P: {
+                g_keyDebugPrint.recordStateChange(action == GLFW_PRESS || action == GLFW_REPEAT, frameIndex);
+                break;
+            }
             default:
                 break;
             }
@@ -1035,8 +1040,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
     CUtexObject envLightTexture = 0;
     RegularConstantContinuousDistribution2D envLightImportanceMap;
     if (!g_envLightTexturePath.empty())
-        loadEnvironmentalTexture(g_envLightTexturePath, gpuEnv.cuContext,
-                                 &envLightArray, &envLightTexture, &envLightImportanceMap);
+        loadEnvironmentalTexture(
+            g_envLightTexturePath, gpuEnv.cuContext,
+            &envLightArray, &envLightTexture, &envLightImportanceMap);
 
     scene.setupLightGeomDistributions();
 
@@ -1316,8 +1322,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
         exeDir / "svgf/shaders/draw_result.frag");
 
     glu::Sampler outputSampler;
-    outputSampler.initialize(glu::Sampler::MinFilter::Nearest, glu::Sampler::MagFilter::Nearest,
-                             glu::Sampler::WrapMode::Repeat, glu::Sampler::WrapMode::Repeat);
+    outputSampler.initialize(
+        glu::Sampler::MinFilter::Nearest, glu::Sampler::MagFilter::Nearest,
+        glu::Sampler::WrapMode::Repeat, glu::Sampler::WrapMode::Repeat);
 
     // JP: フルスクリーンクアッド(or 三角形)用の空のVAO。
     // EN: Empty VAO for full screen qud (or triangle).
@@ -1325,6 +1332,20 @@ int32_t main(int32_t argc, const char* argv[]) try {
     vertexArrayForFullScreen.initialize();
 
 
+
+    shared::PickInfo initPickInfo = {};
+    initPickInfo.hit = false;
+    initPickInfo.instSlot = 0xFFFFFFFF;
+    initPickInfo.geomInstSlot = 0xFFFFFFFF;
+    initPickInfo.matSlot = 0xFFFFFFFF;
+    initPickInfo.primIndex = 0xFFFFFFFF;
+    initPickInfo.positionInWorld = Point3D(0.0f);
+    initPickInfo.albedo = RGB(0.0f);
+    initPickInfo.emittance = RGB(0.0f);
+    initPickInfo.normalInWorld = Normal3D(0.0f);
+    cudau::TypedBuffer<shared::PickInfo> pickInfos[2];
+    pickInfos[0].initialize(gpuEnv.cuContext, Scene::bufferType, 1, initPickInfo);
+    pickInfos[1].initialize(gpuEnv.cuContext, Scene::bufferType, 1, initPickInfo);
 
     shared::StaticPipelineLaunchParameters staticPlp = {};
     {
@@ -1345,10 +1366,17 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
         staticPlp.materialDataBuffer =
             scene.materialDataBuffer.getROBuffer<shared::enableBufferOobCheck>();
+        staticPlp.instanceDataBufferArray[0] =
+            scene.instDataBuffer[0].getROBuffer<shared::enableBufferOobCheck>();
+        staticPlp.instanceDataBufferArray[1] =
+            scene.instDataBuffer[1].getROBuffer<shared::enableBufferOobCheck>();
         staticPlp.geometryInstanceDataBuffer =
             scene.geomInstDataBuffer.getROBuffer<shared::enableBufferOobCheck>();
         envLightImportanceMap.getDeviceType(&staticPlp.envLightImportanceMap);
         staticPlp.envLightTexture = envLightTexture;
+
+        staticPlp.pickInfos[0] = pickInfos[0].getDevicePointer();
+        staticPlp.pickInfos[1] = pickInfos[1].getDevicePointer();
     }
     CUdeviceptr staticPlpOnDevice;
     CUDADRV_CHECK(cuMemAlloc(&staticPlpOnDevice, sizeof(staticPlp)));
@@ -1373,20 +1401,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
     shared::PipelineLaunchParameters plp;
     plp.s = reinterpret_cast<shared::StaticPipelineLaunchParameters*>(staticPlpOnDevice);
     plp.f = reinterpret_cast<shared::PerFramePipelineLaunchParameters*>(perFramePlpOnDevice);
-
-    shared::PickInfo initPickInfo = {};
-    initPickInfo.hit = false;
-    initPickInfo.instSlot = 0xFFFFFFFF;
-    initPickInfo.geomInstSlot = 0xFFFFFFFF;
-    initPickInfo.matSlot = 0xFFFFFFFF;
-    initPickInfo.primIndex = 0xFFFFFFFF;
-    initPickInfo.positionInWorld = Point3D(0.0f);
-    initPickInfo.albedo = RGB(0.0f);
-    initPickInfo.emittance = RGB(0.0f);
-    initPickInfo.normalInWorld = Normal3D(0.0f);
-    cudau::TypedBuffer<shared::PickInfo> pickInfos[2];
-    pickInfos[0].initialize(gpuEnv.cuContext, Scene::bufferType, 1, initPickInfo);
-    pickInfos[1].initialize(gpuEnv.cuContext, Scene::bufferType, 1, initPickInfo);
 
     CUdeviceptr plpOnDevice;
     CUDADRV_CHECK(cuMemAlloc(&plpOnDevice, sizeof(plp)));
@@ -1654,9 +1668,10 @@ int32_t main(int32_t argc, const char* argv[]) try {
             rollPitchYaw[1] *= 180 / pi_v<float>;
             rollPitchYaw[2] *= 180 / pi_v<float>;
             if (ImGui::InputFloat3("Roll/Pitch/Yaw", rollPitchYaw))
-                g_cameraOrientation = qFromEulerAngles(rollPitchYaw[0] * pi_v<float> / 180,
-                                                       rollPitchYaw[1] * pi_v<float> / 180,
-                                                       rollPitchYaw[2] * pi_v<float> / 180);
+                g_cameraOrientation = qFromEulerAngles(
+                    rollPitchYaw[0] * pi_v<float> / 180,
+                    rollPitchYaw[1] * pi_v<float> / 180,
+                    rollPitchYaw[2] * pi_v<float> / 180);
             ImGui::Text("Pos. Speed (T/G): %g", g_cameraPositionalMovingSpeed);
             ImGui::SliderFloat("Brightness", &brightness, -5.0f, 5.0f);
 
@@ -1689,8 +1704,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
                     saveImage("output.png", renderTargetSizeX, renderTargetSizeY, rawImage, config);
                 }
                 if (saveSS_HDR)
-                    saveImageHDR("output.exr", renderTargetSizeX, renderTargetSizeY,
-                                 std::pow(10.0f, brightness), rawImage, true);
+                    saveImageHDR(
+                        "output.exr", renderTargetSizeX, renderTargetSizeY,
+                        std::pow(10.0f, brightness), rawImage, true);
                 delete[] rawImage;
             }
 
@@ -1744,22 +1760,26 @@ int32_t main(int32_t argc, const char* argv[]) try {
             ImGui::Text("Geometry Instance: %u", pickInfoOnHost.geomInstSlot);
             ImGui::Text("Primitive Index: %u", pickInfoOnHost.primIndex);
             ImGui::Text("Material: %u", pickInfoOnHost.matSlot);
-            ImGui::Text("Position: %.3f, %.3f, %.3f",
-                        pickInfoOnHost.positionInWorld.x,
-                        pickInfoOnHost.positionInWorld.y,
-                        pickInfoOnHost.positionInWorld.z);
-            ImGui::Text("Normal: %.3f, %.3f, %.3f",
-                        pickInfoOnHost.normalInWorld.x,
-                        pickInfoOnHost.normalInWorld.y,
-                        pickInfoOnHost.normalInWorld.z);
-            ImGui::Text("Albedo: %.3f, %.3f, %.3f",
-                        pickInfoOnHost.albedo.r,
-                        pickInfoOnHost.albedo.g,
-                        pickInfoOnHost.albedo.b);
-            ImGui::Text("Emittance: %.3f, %.3f, %.3f",
-                        pickInfoOnHost.emittance.r,
-                        pickInfoOnHost.emittance.g,
-                        pickInfoOnHost.emittance.b);
+            ImGui::Text(
+                "Position: %.3f, %.3f, %.3f",
+                pickInfoOnHost.positionInWorld.x,
+                pickInfoOnHost.positionInWorld.y,
+                pickInfoOnHost.positionInWorld.z);
+            ImGui::Text(
+                "Normal: %.3f, %.3f, %.3f",
+                pickInfoOnHost.normalInWorld.x,
+                pickInfoOnHost.normalInWorld.y,
+                pickInfoOnHost.normalInWorld.z);
+            ImGui::Text(
+                "Albedo: %.3f, %.3f, %.3f",
+                pickInfoOnHost.albedo.r,
+                pickInfoOnHost.albedo.g,
+                pickInfoOnHost.albedo.b);
+            ImGui::Text(
+                "Emittance: %.3f, %.3f, %.3f",
+                pickInfoOnHost.emittance.r,
+                pickInfoOnHost.emittance.g,
+                pickInfoOnHost.emittance.b);
 
             ImGui::Separator();
 
@@ -1910,8 +1930,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
             curInstDataBuffer.unmap();
         }
 
-        // JP: IASのリビルドを行う。
-        // EN: Rebuild the IAS.
+        // JP: ASesのリビルドを行う。
+        // EN: Rebuild the ASes.
         curGPUTimer.update.start(curCuStream);
         if (animate || frameIndex == 0) {
             perFramePlp.travHandle = scene.updateASs(gpuEnv.cuContext, curCuStream);
@@ -1962,13 +1982,10 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
         perFramePlp.numAccumFrames = numAccumFrames;
         perFramePlp.frameIndex = frameIndex;
-        perFramePlp.instanceDataBuffer =
-            curInstDataBuffer.getROBuffer<shared::enableBufferOobCheck>();
         perFramePlp.envLightPowerCoeff = std::pow(10.0f, log10EnvLightPowerCoeff);
         perFramePlp.envLightRotation = envLightRotation;
         perFramePlp.mousePosition = int2(static_cast<int32_t>(g_mouseX),
                                          static_cast<int32_t>(g_mouseY));
-        perFramePlp.pickInfo = curPickInfo.getDevicePointer();
 
         perFramePlp.taaHistoryLength = static_cast<uint32_t>(std::round(std::pow(2, log2TaaHistoryLength)));
         perFramePlp.maxPathLength = maxPathLength;
@@ -1982,6 +1999,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         perFramePlp.mollifySpecular = specularMollification;
         perFramePlp.enableTemporalAA = enableTemporalAA;
         perFramePlp.modulateAlbedo = modulateAlbedo;
+        perFramePlp.enableDebugPrint = g_keyDebugPrint.getState();
         for (int i = 0; i < lengthof(debugSwitches); ++i)
             perFramePlp.setDebugSwitch(i, debugSwitches[i]);
 
@@ -2248,11 +2266,11 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
     CUDADRV_CHECK(cuMemFree(plpOnDevice));
 
-    pickInfos[1].finalize();
-    pickInfos[0].finalize();
-
     CUDADRV_CHECK(cuMemFree(perFramePlpOnDevice));
     CUDADRV_CHECK(cuMemFree(staticPlpOnDevice));
+
+    pickInfos[1].finalize();
+    pickInfos[0].finalize();
 
     vertexArrayForFullScreen.finalize();
     outputSampler.finalize();

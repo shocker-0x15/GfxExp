@@ -7,12 +7,12 @@ CUDA_DEVICE_KERNEL void preprocessNRC(
     uint32_t offsetToSelectUnbiasedTile,
     uint32_t offsetToSelectTrainingPath,
     bool isNewSequence) {
-    uint32_t linearIndex = blockDim.x * blockIdx.x + threadIdx.x;
+    const uint32_t linearIndex = blockDim.x * blockIdx.x + threadIdx.x;
     if (linearIndex >= plp.s->maxNumTrainingSuffixes)
         return;
 
-    uint32_t prevBufIdx = (plp.f->bufferIndex + 1) % 2;
-    uint32_t bufIdx = plp.f->bufferIndex;
+    const uint32_t prevBufIdx = (plp.f->bufferIndex + 1) % 2;
+    const uint32_t bufIdx = plp.f->bufferIndex;
     if (linearIndex == 0) {
         // JP: 前フレームで生成された訓練データ数に基づいてタイルサイズを調整する。
         // EN: Adjust tile size based on the number of training data generated in the previous frame.
@@ -21,9 +21,9 @@ CUDA_DEVICE_KERNEL void preprocessNRC(
             newTileSize = make_uint2(8, 8);
         }
         else {
-            uint32_t prevNumTrainingData = *plp.s->numTrainingData[prevBufIdx];
-            float r = std::sqrt(static_cast<float>(prevNumTrainingData) / numTrainingDataPerFrame);
-            uint2 curTileSize = *plp.s->tileSize[prevBufIdx];
+            const uint32_t prevNumTrainingData = *plp.s->numTrainingData[prevBufIdx];
+            const float r = std::sqrt(static_cast<float>(prevNumTrainingData) / numTrainingDataPerFrame);
+            const uint2 curTileSize = *plp.s->tileSize[prevBufIdx];
             newTileSize = make_uint2(static_cast<uint32_t>(curTileSize.x * r),
                                      static_cast<uint32_t>(curTileSize.y * r));
             newTileSize = make_uint2(min(max(newTileSize.x, 4u), 128u),
@@ -47,8 +47,8 @@ CUDA_DEVICE_KERNEL void preprocessNRC(
 }
 
 CUDA_DEVICE_KERNEL void accumulateInferredRadianceValues() {
-    uint32_t linearIndex = blockDim.x * blockIdx.x + threadIdx.x;
-    uint32_t numPixels = plp.s->imageSize.x * plp.s->imageSize.y;
+    const uint32_t linearIndex = blockDim.x * blockIdx.x + threadIdx.x;
+    const uint32_t numPixels = plp.s->imageSize.x * plp.s->imageSize.y;
     if (linearIndex >= numPixels)
         return;
 
@@ -64,7 +64,7 @@ CUDA_DEVICE_KERNEL void accumulateInferredRadianceValues() {
     //     complete a pixel.
     //     Network prediction is not used in the case where the path ended with Russian roulette or traced
     //     to infinity.
-    RGB directCont = plp.s->perFrameContributionBuffer[linearIndex];
+    const RGB directCont = plp.s->perFrameContributionBuffer[linearIndex];
     RGB radiance(0.0f, 0.0f, 0.0f);
     if (terminalInfo.hasQuery) {
         radiance = max(plp.s->inferredRadianceBuffer[linearIndex], RGB(0.0f, 0.0f, 0.0f));
@@ -76,21 +76,21 @@ CUDA_DEVICE_KERNEL void accumulateInferredRadianceValues() {
             radiance *= (terminalQuery.diffuseReflectance + terminalQuery.specularReflectance);
         }
     }
-    RGB indirectCont = terminalInfo.alpha * radiance;
-    RGB contribution = directCont + indirectCont;
+    const RGB indirectCont = terminalInfo.alpha * radiance;
+    const RGB contribution = directCont + indirectCont;
 
-    uint2 pixelIndex = make_uint2(linearIndex % plp.s->imageSize.x,
+    const uint2 pixelIndex = make_uint2(linearIndex % plp.s->imageSize.x,
                                   linearIndex / plp.s->imageSize.x);
     RGB prevColorResult(0.0f, 0.0f, 0.0f);
     if (plp.f->numAccumFrames > 0)
         prevColorResult = RGB(getXYZ(plp.s->beautyAccumBuffer.read(pixelIndex)));
-    float curWeight = 1.0f / (1 + plp.f->numAccumFrames);
-    RGB colorResult = (1 - curWeight) * prevColorResult + curWeight * contribution;
+    const float curWeight = 1.0f / (1 + plp.f->numAccumFrames);
+    const RGB colorResult = (1 - curWeight) * prevColorResult + curWeight * contribution;
     plp.s->beautyAccumBuffer.write(pixelIndex, make_float4(colorResult.toNative(), 1.0f));
 }
 
 CUDA_DEVICE_KERNEL void propagateRadianceValues() {
-    uint32_t linearIndex = blockDim.x * blockIdx.x + threadIdx.x;
+    const uint32_t linearIndex = blockDim.x * blockIdx.x + threadIdx.x;
     if (linearIndex >= plp.s->maxNumTrainingSuffixes)
         return;
 
@@ -100,7 +100,7 @@ CUDA_DEVICE_KERNEL void propagateRadianceValues() {
 
     RGB contribution(0.0f, 0.0f, 0.0f);
     if (terminalInfo.hasQuery) {
-        uint32_t offset = plp.s->imageSize.x * plp.s->imageSize.y;
+        const uint32_t offset = plp.s->imageSize.x * plp.s->imageSize.y;
         contribution = max(plp.s->inferredRadianceBuffer[offset + linearIndex], RGB(0.0f, 0.0f, 0.0f));
         if (plp.f->radianceScale > 0)
             contribution /= plp.f->radianceScale;
@@ -119,12 +119,12 @@ CUDA_DEVICE_KERNEL void propagateRadianceValues() {
     while (lastTrainDataIndex != invalidVertexDataIndex) {
         const TrainingVertexInfo &vertexInfo = plp.s->trainVertexInfoBuffer[lastTrainDataIndex];
         RGB &targetValue = plp.s->trainTargetBuffer[0][lastTrainDataIndex];
-        RGB indirectCont = vertexInfo.localThroughput * contribution;
+        const RGB indirectCont = vertexInfo.localThroughput * contribution;
         contribution = targetValue + indirectCont;
 
         if constexpr (useReflectanceFactorization) {
             const RadianceQuery &query = plp.s->trainRadianceQueryBuffer[0][lastTrainDataIndex];
-            RGB refFactor = query.diffuseReflectance + query.specularReflectance;
+            const RGB refFactor = query.diffuseReflectance + query.specularReflectance;
             targetValue = safeDivide(contribution, refFactor);
         }
         else {
@@ -136,19 +136,19 @@ CUDA_DEVICE_KERNEL void propagateRadianceValues() {
 }
 
 CUDA_DEVICE_KERNEL void shuffleTrainingData() {
-    uint32_t linearIndex = blockDim.x * blockIdx.x + threadIdx.x;
-    uint32_t bufIdx = plp.f->bufferIndex;
+    const uint32_t linearIndex = blockDim.x * blockIdx.x + threadIdx.x;
+    const uint32_t bufIdx = plp.f->bufferIndex;
 
-    uint32_t numTrainingData = *plp.s->numTrainingData[bufIdx];
+    const uint32_t numTrainingData = *plp.s->numTrainingData[bufIdx];
     if (numTrainingData > 0) {
         LinearCongruentialGenerator &shuffler = plp.s->dataShufflerBuffer[linearIndex];
         static_assert((numTrainingDataPerFrame & (numTrainingDataPerFrame - 1)) == 0,
                       "The number of traing data is assumed to be the power of 2 here.");
-        uint32_t dstIdx = shuffler.next() % numTrainingDataPerFrame;
+        const uint32_t dstIdx = shuffler.next() % numTrainingDataPerFrame;
 
         // JP: パストレーサーが生成したサンプル数が足りないときはラップアラウンドする。
         // EN: Wrap around for the case where the path tracer generates too few samples.
-        uint32_t srcIdx = linearIndex % numTrainingData;
+        const uint32_t srcIdx = linearIndex % numTrainingData;
         RadianceQuery query = plp.s->trainRadianceQueryBuffer[0][srcIdx];
         RGB targetValue = plp.s->trainTargetBuffer[0][srcIdx];
 

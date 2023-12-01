@@ -222,7 +222,7 @@ void testFindRoots() {
             drawTexel(roots[i], 0.0075f);
         }
 
-        printf("");
+        hpprintf("");
     }
 
     constexpr uint32_t numTests = 1000;
@@ -257,7 +257,7 @@ void testFindRoots() {
         for (int i = 0; i < numRoots; ++i)
             drawTexel(roots[i], 0.01f);
 
-        printf("");
+        hpprintf("");
     }
 
     exit(0);
@@ -452,7 +452,7 @@ void testNewtonMethod() {
                 }
             }
 
-            printf("");
+            hpprintf("");
         }
 
         const auto testRayVsBilinearPatchIntersection = [&]
@@ -599,7 +599,7 @@ void testNewtonMethod() {
                 drawVector(hp, hitNormal, 0.5f);
             }
 
-            printf("");
+            hpprintf("");
         }
 
         //for (uint32_t ix = 0; ix <= 100; ++ix) {
@@ -640,7 +640,7 @@ void testNewtonMethod() {
         //    }
         //}
 
-        printf("");
+        hpprintf("");
     }
 
     std::mt19937 rng(14131631);
@@ -924,7 +924,7 @@ void testNewtonMethod() {
         }
 
         std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-        printf("");
+        hpprintf("");
     }
 
     exit(0);

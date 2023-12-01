@@ -4,9 +4,9 @@
 using namespace shared;
 
 CUDA_DEVICE_KERNEL void performLightPreSampling() {
-    uint32_t linearThreadIndex = blockDim.x * blockIdx.x + threadIdx.x;
-    //uint32_t subsetIndex = linearThreadIndex / lightSubsetSize;
-    uint32_t indexInSubset = linearThreadIndex % lightSubsetSize;
+    const uint32_t linearThreadIndex = blockDim.x * blockIdx.x + threadIdx.x;
+    //const uint32_t subsetIndex = linearThreadIndex / lightSubsetSize;
+    const uint32_t indexInSubset = linearThreadIndex % lightSubsetSize;
     PCG32RNG rng = plp.s->lightPreSamplingRngs[linearThreadIndex];
 
     // JP: 環境光テクスチャーが設定されている場合は一定の確率でサンプルする。
@@ -42,18 +42,10 @@ CUDA_DEVICE_KERNEL void performLightPreSampling() {
 
 
 CUDA_DEVICE_KERNEL void performPerPixelRIS() {
-    int2 launchIndex = make_int2(blockDim.x * blockIdx.x + threadIdx.x,
-                                 blockDim.y * blockIdx.y + threadIdx.y);
-
-    uint32_t curBufIdx = plp.f->bufferIndex;
-    GBuffer0 gBuffer0 = plp.s->GBuffer0[curBufIdx].read(launchIndex);
-    GBuffer1 gBuffer1 = plp.s->GBuffer1[curBufIdx].read(launchIndex);
-    GBuffer2 gBuffer2 = plp.s->GBuffer2[curBufIdx].read(launchIndex);
-
-    Point3D positionInWorld = gBuffer0.positionInWorld;
-    Normal3D shadingNormalInWorld = gBuffer1.normalInWorld;
-    Point2D texCoord(gBuffer0.texCoord_x, gBuffer1.texCoord_y);
-    uint32_t materialSlot = gBuffer2.materialSlot;
+    const int2 launchIndex = make_int2(
+        blockDim.x * blockIdx.x + threadIdx.x,
+        blockDim.y * blockIdx.y + threadIdx.y);
+    const uint32_t curBufIdx = plp.f->bufferIndex;
 
     // JP: タイルごとに共通のライトサブセットを選択することでメモリアクセスのコヒーレンシーを改善する。
     // EN: Select a common light subset for each tile to improve memory access coherency.
@@ -62,52 +54,58 @@ CUDA_DEVICE_KERNEL void performPerPixelRIS() {
     if (threadIdx.x == 0 && threadIdx.y == 0)
         sm_perTileLightSubsetIndex = mapPrimarySampleToDiscrete(rng.getFloat0cTo1o(), numLightSubsets);
     __syncthreads();
-    uint32_t perTileLightSubsetIndex = sm_perTileLightSubsetIndex;
-    const PreSampledLight* lightSubSet = &plp.s->preSampledLights[perTileLightSubsetIndex * lightSubsetSize];
+    const uint32_t perTileLightSubsetIndex = sm_perTileLightSubsetIndex;
+    const PreSampledLight* const lightSubSet = &plp.s->preSampledLights[perTileLightSubsetIndex * lightSubsetSize];
 
-    if (materialSlot == 0xFFFFFFFF)
+    const GBuffer0Elements gb0Elems = plp.s->GBuffer0[curBufIdx].read(launchIndex);
+    if (gb0Elems.instSlot == 0xFFFFFFFF)
         return;
 
-    const MaterialData &mat = plp.s->materialDataBuffer[materialSlot];
+    const GBuffer2Elements gb2Elems = plp.s->GBuffer2[curBufIdx].read(launchIndex);
+    const GBuffer3Elements gb3Elems = plp.s->GBuffer3[curBufIdx].read(launchIndex);
 
-    // TODO?: Use true geometric normal.
-    Normal3D geometricNormalInWorld = shadingNormalInWorld;
-    Vector3D vOut = plp.f->camera.position - positionInWorld;
-    float frontHit = dot(vOut, geometricNormalInWorld) >= 0.0f ? 1.0f : -1.0f;
+    Point3D positionInWorld = gb2Elems.positionInWorld;
+    const Normal3D geometricNormalInWorld = decodeNormal(gb2Elems.qGeometricNormal);
 
+    const Vector3D vOut = normalize(plp.f->camera.position - positionInWorld);
+    const float frontHit = dot(vOut, geometricNormalInWorld) >= 0.0f ? 1.0f : -1.0f;
+    // Offsetting assumes BRDF.
+    positionInWorld = offsetRayOrigin(positionInWorld, frontHit * geometricNormalInWorld);
+
+    const ReferenceFrame shadingFrame(
+        decodeNormal(gb3Elems.qShadingNormal), decodeVector(gb3Elems.qShadingTangent));
+    const Vector3D vOutLocal = shadingFrame.toLocal(vOut);
+
+    const MaterialData &mat = plp.s->materialDataBuffer[gb3Elems.matSlot];
+    const Point2D texCoord = decodeTexCoords(gb3Elems.qTexCoord);
     BSDF bsdf;
     bsdf.setup(mat, texCoord, 0.0f);
-    ReferenceFrame shadingFrame(shadingNormalInWorld);
-    positionInWorld = offsetRayOriginNaive(positionInWorld, frontHit * geometricNormalInWorld);
-    float dist = length(vOut);
-    vOut /= dist;
-    Vector3D vOutLocal = shadingFrame.toLocal(vOut);
 
-    uint32_t curResIndex = plp.currentReservoirIndex;
+    const uint32_t curResIndex = plp.currentReservoirIndex;
     Reservoir<LightSample> reservoir;
-    reservoir.initialize();
+    reservoir.initialize(LightSample());
 
     // JP: Unshadowed ContributionをターゲットPDFとしてStreaming RISを実行。
     // EN: Perform streaming RIS with unshadowed contribution as the target PDF.
     float selectedTargetDensity = 0.0f;
-    uint32_t numCandidates = 1 << plp.f->log2NumCandidateSamples;
+    const uint32_t numCandidates = 1 << plp.f->log2NumCandidateSamples;
     for (int i = 0; i < numCandidates; ++i) {
-        uint32_t lightIndex = mapPrimarySampleToDiscrete(rng.getFloat0cTo1o(), lightSubsetSize);
+        const uint32_t lightIndex = mapPrimarySampleToDiscrete(rng.getFloat0cTo1o(), lightSubsetSize);
         const PreSampledLight &preSampledLight = lightSubSet[lightIndex];
 
         // JP: 候補サンプルを生成して、ターゲットPDFを計算する。
         //     ターゲットPDFは正規化されていなくても良い。
         // EN: Generate a candidate sample then calculate the target PDF for it.
         //     Target PDF doesn't require to be normalized.
-        RGB cont = performDirectLighting<ReSTIRRayType, false>(
+        const RGB cont = performDirectLighting<ReSTIRRayType, false>(
             positionInWorld, vOutLocal, shadingFrame, bsdf,
             preSampledLight.sample);
-        float targetDensity = convertToWeight(cont);
+        const float targetDensity = convertToWeight(cont);
 
         // JP: 候補サンプル生成用のPDFとターゲットPDFは異なるためサンプルにはウェイトがかかる。
         // EN: The sample has a weight since the PDF to generate the candidate sample and the target PDF are
         //     different.
-        float weight = targetDensity / preSampledLight.areaPDensity;
+        const float weight = targetDensity / preSampledLight.areaPDensity;
         if (reservoir.update(preSampledLight.sample, weight, rng.getFloat0cTo1o()))
             selectedTargetDensity = targetDensity;
     }
@@ -125,6 +123,6 @@ CUDA_DEVICE_KERNEL void performPerPixelRIS() {
     reservoirInfo.targetDensity = selectedTargetDensity;
 
     plp.s->rngBuffer.write(launchIndex, rng);
-    plp.s->reservoirBuffer[curResIndex][launchIndex] = reservoir;
-    plp.s->reservoirInfoBuffer[curResIndex].write(launchIndex, reservoirInfo);
+    plp.s->reservoirBufferArray[curResIndex][launchIndex] = reservoir;
+    plp.s->reservoirInfoBufferArray[curResIndex].write(launchIndex, reservoirInfo);
 }

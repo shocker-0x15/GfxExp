@@ -607,7 +607,7 @@ static void parseCommandline(int32_t argc, const char* argv[]) {
             i += 1;
         }
         else {
-            printf("Unknown option.\n");
+            hpprintf("Unknown option.\n");
             exit(EXIT_FAILURE);
         }
     }
@@ -2251,15 +2251,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
         {
             ImGui::Begin("Stats", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
 
-#if !defined(USE_HARD_CODED_BSDF_FUNCTIONS)
-            ImGui::PushTextWrapPos(ImGui::GetCursorPos().x + 300);
-            ImGui::TextColored(
-                ImVec4(1.0f, 0.0f, 0.0f, 1.0f),
-                "BSDF callables are enabled.\n"
-                "USE_HARD_CODED_BSDF_FUNCTIONS is recommended for better performance.");
-            ImGui::PopTextWrapPos();
-#endif
-
             static MovingAverageTime cudaFrameTime;
             static MovingAverageTime updateTime;
 #if !SHOW_BASE_MESH
@@ -2427,7 +2418,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
             //    CUDADRV_CHECK(cuStreamSynchronize(curCuStream));
             //    std::vector<float2> minMaxValues(dstImageSize.x * dstImageSize.y);
             //    mat->minMaxMipMap.read(minMaxValues, 0);
-            //    printf("");
+            //    hpprintf("");
             //}
             dstImageSize /= 2;
             const uint32_t numMinMaxMipMapLevels = nextPowOf2Exponent(mat->texHeight.cudaArray->getWidth()) + 1;
@@ -2603,8 +2594,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
             linearBeautyBuffer,
             linearAlbedoBuffer,
             linearNormalBuffer,
-            linearFlowBuffer,
-            uint2(renderTargetSizeX, renderTargetSizeY));
+            linearFlowBuffer);
 
         curGPUTimer.denoise.start(curCuStream);
         if (bufferTypeToDisplay == shared::BufferToDisplay::DenoisedBeauty) {
@@ -2666,13 +2656,12 @@ int32_t main(int32_t argc, const char* argv[]) try {
             Assert_ShouldNotBeCalled();
             break;
         }
-        kernelVisualizeToOutputBuffer(
-            curCuStream, kernelVisualizeToOutputBuffer.calcGridDim(renderTargetSizeX, renderTargetSizeY),
+        kernelVisualizeToOutputBuffer.launchWithThreadDim(
+            curCuStream, cudau::dim3(renderTargetSizeX, renderTargetSizeY),
             bufferToDisplay,
             bufferTypeToDisplay,
             0.5f, std::pow(10.0f, motionVectorScale),
-            outputBufferSurfaceHolder.getNext(),
-            uint2(renderTargetSizeX, renderTargetSizeY));
+            outputBufferSurfaceHolder.getNext());
 
         outputBufferSurfaceHolder.endCUDAAccess(curCuStream, true);
 

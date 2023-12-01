@@ -32,6 +32,22 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE float decodeBarycentric(uint16_t qbc) {
     return qbc / 65535.0f;
 }
 
+CUDA_DEVICE_FUNCTION CUDA_INLINE uint32_t encodeVector(const Vector3D &v) {
+    float phi, theta;
+    toPolarYUp(v, &phi, &theta);
+    const uint32_t qPhi = min(static_cast<uint32_t>((phi / (2 * Pi)) * 65535u), 65535u);
+    const uint32_t qTheta = min(static_cast<uint32_t>((theta / Pi) * 65535u), 65535u);
+    return (qTheta << 16) | qPhi;
+}
+
+CUDA_DEVICE_FUNCTION CUDA_INLINE Vector3D decodeVector(uint32_t qv) {
+    const uint32_t qPhi = qv & 0xFFFF;
+    const uint32_t qTheta = qv >> 16;
+    const float phi = 2 * Pi * (qPhi / 65535.0f);
+    const float theta = Pi * (qTheta / 65535.0f);
+    return fromPolarYUp(phi, theta);
+}
+
 CUDA_DEVICE_FUNCTION CUDA_INLINE uint32_t encodeNormal(const Normal3D &n) {
     float phi, theta;
     toPolarYUp(static_cast<Vector3D>(n), &phi, &theta);
@@ -46,6 +62,20 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE Normal3D decodeNormal(uint32_t qn) {
     const float phi = 2 * Pi * (qPhi / 65535.0f);
     const float theta = Pi * (qTheta / 65535.0f);
     return static_cast<Normal3D>(fromPolarYUp(phi, theta));
+}
+
+CUDA_DEVICE_FUNCTION CUDA_INLINE uint32_t encodeTexCoords(const Point2D &tc) {
+    const uint32_t qtc0 = min(static_cast<uint32_t>((tc.x - std::floor(tc.x)) * 65535u), 65535u);
+    const uint32_t qtc1 = min(static_cast<uint32_t>((tc.y - std::floor(tc.y)) * 65535u), 65535u);
+    return (qtc1 << 16) | qtc0;
+}
+
+CUDA_DEVICE_FUNCTION CUDA_INLINE Point2D decodeTexCoords(uint32_t qtc) {
+    const uint32_t qtc0 = qtc & 0xFFFF;
+    const uint32_t qtc1 = qtc >> 16;
+    const float tc0 = qtc0 / 65535.0f;
+    const float tc1 = qtc1 / 65535.0f;
+    return Point2D(tc0, tc1);
 }
 
 CUDA_DEVICE_FUNCTION CUDA_INLINE Vector3D halfVector(const Vector3D &a, const Vector3D &b) {
