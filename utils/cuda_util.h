@@ -88,8 +88,6 @@ typedef unsigned long long CUsurfObject;
 #       include <cudaGL.h>
 #   endif
 
-#   define CUDA_UTIL_TEX_DIM_WORKAROUND 1
-
 #   undef min
 #   undef max
 #   undef near
@@ -821,15 +819,19 @@ namespace cudau {
         Float16,
         Float32,
         BC1_UNorm,
+        BC1_UNorm_sRGB,
         BC2_UNorm,
+        BC2_UNorm_sRGB,
         BC3_UNorm,
+        BC3_UNorm_sRGB,
         BC4_UNorm,
         BC4_SNorm,
         BC5_UNorm,
         BC5_SNorm,
         BC6H_UF16,
         BC6H_SF16,
-        BC7_UNorm
+        BC7_UNorm,
+        BC7_UNorm_sRGB
     };
 
     enum class ArraySurface {
@@ -848,15 +850,19 @@ namespace cudau {
 
     inline bool isBCFormat(ArrayElementType elemType) {
         return (elemType == cudau::ArrayElementType::BC1_UNorm ||
+                elemType == cudau::ArrayElementType::BC1_UNorm_sRGB ||
                 elemType == cudau::ArrayElementType::BC2_UNorm ||
+                elemType == cudau::ArrayElementType::BC2_UNorm_sRGB ||
                 elemType == cudau::ArrayElementType::BC3_UNorm ||
+                elemType == cudau::ArrayElementType::BC3_UNorm_sRGB ||
                 elemType == cudau::ArrayElementType::BC4_UNorm ||
                 elemType == cudau::ArrayElementType::BC4_SNorm ||
                 elemType == cudau::ArrayElementType::BC5_UNorm ||
                 elemType == cudau::ArrayElementType::BC5_SNorm ||
                 elemType == cudau::ArrayElementType::BC6H_UF16 ||
                 elemType == cudau::ArrayElementType::BC6H_SF16 ||
-                elemType == cudau::ArrayElementType::BC7_UNorm);
+                elemType == cudau::ArrayElementType::BC7_UNorm ||
+                elemType == cudau::ArrayElementType::BC7_UNorm_sRGB);
     }
 
     class Array {
@@ -898,28 +904,12 @@ namespace cudau {
             size_t width, size_t height, size_t depth, uint32_t numMipmapLevels,
             bool writable, bool useTextureGather, bool cubemap, bool layered, uint32_t glTexID);
 
-        template <bool forDevice>
         void computeDimensionsOfLevel(uint32_t mipmapLevel, size_t* width, size_t* height) const {
-            *width = m_width;
-            *height = m_height;
-
-            // JP: CUDAはNon-Power-of-twoテクスチャーを使えるが、MIPMAPに関して計算がおかしい気がする。
-            //     本当は常に下の手順でいきたい。
-            if constexpr (forDevice) {
-                if (isBCFormat(m_elemType)) {
-                    *width = (*width + 3) / 4;
-                    *height = (*height + 3) / 4;
-                }
-                *width = std::max<size_t>(1, *width >> mipmapLevel);
-                *height = std::max<size_t>(1, *height >> mipmapLevel);
-            }
-            else {
-                *width = std::max<size_t>(1, *width >> mipmapLevel);
-                *height = std::max<size_t>(1, *height >> mipmapLevel);
-                if (isBCFormat(m_elemType)) {
-                    *width = (*width + 3) / 4;
-                    *height = (*height + 3) / 4;
-                }
+            *width = std::max<size_t>(1, m_width >> mipmapLevel);
+            *height = std::max<size_t>(1, m_height >> mipmapLevel);
+            if (isBCFormat(m_elemType)) {
+                *width = (*width + 3) / 4;
+                *height = (*height + 3) / 4;
             }
         }
 
@@ -1046,28 +1036,23 @@ namespace cudau {
             const T* srcValues, size_t numValues, uint32_t mipmapLevel = 0, CUstream stream = 0) const {
             size_t depth = std::max<size_t>(1, m_depth);
 
-            size_t hostBw;
-            size_t hostBh;
-            computeDimensionsOfLevel<false>(mipmapLevel, &hostBw, &hostBh);
-            size_t hostSizePerRow = hostBw * m_stride;
-            size_t hostSize = depth * hostBh * hostSizePerRow;
-            if (sizeof(T) * numValues > hostSize)
+            size_t bw;
+            size_t bh;
+            computeDimensionsOfLevel(mipmapLevel, &bw, &bh);
+            size_t sizePerRow = bw * m_stride;
+            size_t size = depth * bh * sizePerRow;
+            if (sizeof(T) * numValues > size)
                 throw std::runtime_error("Too large transfer.");
-            size_t writeHeight = (sizeof(T) * numValues) / hostSizePerRow;
-
-            size_t deviceBw;
-            size_t deviceBh;
-            computeDimensionsOfLevel<CUDA_UTIL_TEX_DIM_WORKAROUND>(mipmapLevel, &deviceBw, &deviceBh);
-            size_t deviceSizePerRow = deviceBw * m_stride;
+            size_t writeHeight = (sizeof(T) * numValues) / sizePerRow;
 
             CUDA_MEMCPY3D params = {};
-            params.WidthInBytes = deviceSizePerRow;
-            params.Height = deviceBh;
+            params.WidthInBytes = sizePerRow;
+            params.Height = bh;
             params.Depth = depth;
 
             params.srcMemoryType = CU_MEMORYTYPE_HOST;
             params.srcHost = srcValues;
-            params.srcPitch = hostSizePerRow;
+            params.srcPitch = sizePerRow;
             params.srcHeight = writeHeight;
             params.srcXInBytes = 0;
             params.srcY = 0;
@@ -1091,23 +1076,18 @@ namespace cudau {
         void read(T* dstValues, size_t numValues, uint32_t mipmapLevel = 0, CUstream stream = 0) const {
             size_t depth = std::max<size_t>(1, m_depth);
 
-            size_t hostBw;
-            size_t hostBh;
-            computeDimensionsOfLevel<false>(mipmapLevel, &hostBw, &hostBh);
-            size_t hostSizePerRow = hostBw * m_stride;
-            size_t hostSize = depth * hostBh * hostSizePerRow;
-            if (sizeof(T) * numValues > hostSize)
+            size_t bw;
+            size_t bh;
+            computeDimensionsOfLevel(mipmapLevel, &bw, &bh);
+            size_t sizePerRow = bw * m_stride;
+            size_t size = depth * bh * sizePerRow;
+            if (sizeof(T) * numValues > size)
                 throw std::runtime_error("Too large transfer.");
-            size_t readHeight = (sizeof(T) * numValues) / hostSizePerRow;
-
-            size_t deviceBw;
-            size_t deviceBh;
-            computeDimensionsOfLevel<CUDA_UTIL_TEX_DIM_WORKAROUND>(mipmapLevel, &deviceBw, &deviceBh);
-            size_t deviceSizePerRow = deviceBw * m_stride;
+            size_t readHeight = (sizeof(T) * numValues) / sizePerRow;
 
             CUDA_MEMCPY3D params = {};
-            params.WidthInBytes = deviceSizePerRow;
-            params.Height = deviceBh;
+            params.WidthInBytes = sizePerRow;
+            params.Height = bh;
             params.Depth = depth;
 
             params.srcMemoryType = CU_MEMORYTYPE_ARRAY;
@@ -1119,7 +1099,7 @@ namespace cudau {
 
             params.dstMemoryType = CU_MEMORYTYPE_HOST;
             params.dstHost = dstValues;
-            params.dstPitch = hostSizePerRow;
+            params.dstPitch = sizePerRow;
             params.dstHeight = readHeight;
             params.dstXInBytes = 0;
             params.dstY = 0;
@@ -1134,13 +1114,13 @@ namespace cudau {
         }
         template <typename T>
         void fill(const T &value, uint32_t mipmapLevel = 0, CUstream stream = 0) const {
-            size_t hostBw;
-            size_t hostBh;
-            computeDimensionsOfLevel<false>(mipmapLevel, &hostBw, &hostBh);
+            size_t bw;
+            size_t bh;
+            computeDimensionsOfLevel(mipmapLevel, &bw, &bh);
             size_t depth = std::max<size_t>(1, m_depth);
-            size_t hostSizePerRow = hostBw * m_stride;
-            size_t hostSize = depth * hostBh * hostSizePerRow;
-            size_t numValues = hostSize / sizeof(T);
+            size_t sizePerRow = bw * m_stride;
+            size_t size = depth * bh * sizePerRow;
+            size_t numValues = size / sizeof(T);
             std::vector<T> values(value, numValues);
             write(values, mipmapLevel, stream);
         }
@@ -1326,7 +1306,6 @@ namespace cudau {
         [[nodiscard]]
         CUtexObject createTextureObject(const Array &array) {
             CUDA_RESOURCE_DESC resDesc = {};
-            CUDA_RESOURCE_VIEW_DESC resViewDesc = {};
             if (array.getNumMipmapLevels() > 1) {
                 resDesc.resType = CU_RESOURCE_TYPE_MIPMAPPED_ARRAY;
                 resDesc.res.mipmap.hMipmappedArray = array.getCUmipmappedArray();
@@ -1336,10 +1315,13 @@ namespace cudau {
                 resDesc.resType = CU_RESOURCE_TYPE_ARRAY;
                 resDesc.res.array.hArray = array.getCUarray(0);
             }
-            resViewDesc = array.getResourceViewDesc();
+            bool isBCTex = array.isBCTexture();
+            CUDA_RESOURCE_VIEW_DESC resViewDesc = {};
+            if (!isBCTex)
+                resViewDesc = array.getResourceViewDesc();
 
             CUtexObject texObj;
-            CUDADRV_CHECK(cuTexObjectCreate(&texObj, &resDesc, &m_texDesc, &resViewDesc));
+            CUDADRV_CHECK(cuTexObjectCreate(&texObj, &resDesc, &m_texDesc, isBCTex ? nullptr : &resViewDesc));
             return texObj;
         }
     };

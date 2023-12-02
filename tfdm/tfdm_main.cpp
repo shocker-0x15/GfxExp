@@ -2073,7 +2073,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
                         //matData.asLambert.reflectance = body.texReflectance.texObj;
                         //matData.asLambert.reflectanceDimInfo = calcDimInfo(*body.texReflectance.cudaArray);
 
-                        loadTexture<float, true>(
+                        loadTexture<float, false>(
                             dataDir / asset.height, 0.0f, gpuEnv.cuContext,
                             &tfdmMeshMaterial->texHeight.cudaArray, &needsDegamma);
 

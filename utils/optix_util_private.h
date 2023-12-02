@@ -1209,7 +1209,9 @@ namespace optixu {
 
         OptixPipelineCompileOptions pipelineCompileOptions;
         size_t sizeOfPipelineLaunchParams;
-        std::unordered_set<OptixProgramGroup> programGroups;
+        std::unordered_set<_Program*> programs;
+        std::unordered_set<_HitProgramGroup*> hitProgramGroups;
+        std::unordered_set<_CallableProgramGroup*> callableProgramGroups;
 
         _Scene* scene;
         uint32_t numMissRayTypes;
@@ -1217,10 +1219,10 @@ namespace optixu {
         size_t sbtSize;
 
         std::unordered_map<KeyForBuiltinISModule, _Module*, KeyForBuiltinISModule::Hash> modulesForBuiltinIS;
-        _Program* rayGenProgram;
-        _Program* exceptionProgram;
-        std::vector<_Program*> missPrograms;
-        std::vector<_CallableProgramGroup*> callablePrograms;
+        _Program* currentRayGenProgram;
+        _Program* currentExceptionProgram;
+        std::vector<_Program*> currentMissPrograms;
+        std::vector<_CallableProgramGroup*> currentCallablePrograms;
         BufferView sbt;
         void* sbtHostMem;
         BufferView hitGroupSbt;
@@ -1244,6 +1246,10 @@ namespace optixu {
             OptixPrimitiveType primType, OptixCurveEndcapFlags endcapFlags,
             ASTradeoff tradeoff, bool allowUpdate, bool allowCompaction, bool allowRandomVertexAccess);
 
+        void createProgramGroup(
+            const OptixProgramGroupDesc &desc, const OptixProgramGroupOptions &options,
+            OptixProgramGroup* group);
+
         void setupShaderBindingTable(CUstream stream);
 
     public:
@@ -1253,7 +1259,7 @@ namespace optixu {
             context(ctxt), rawPipeline(nullptr),
             sizeOfPipelineLaunchParams(0),
             scene(nullptr), numMissRayTypes(0), numCallablePrograms(0),
-            rayGenProgram(nullptr), exceptionProgram(nullptr),
+            currentRayGenProgram(nullptr), currentExceptionProgram(nullptr),
             pipelineLinked(false), sbtLayoutIsUpToDate(false),
             sbtIsUpToDate(false), hitGroupSbtIsUpToDate(false) {
             sbtParams = {};
@@ -1271,11 +1277,12 @@ namespace optixu {
 
 
 
+        bool isLinked() const { return pipelineLinked; }
         void markDirty();
-        void createProgram(
-            const OptixProgramGroupDesc &desc, const OptixProgramGroupOptions &options,
-            OptixProgramGroup* group);
-        void destroyProgram(OptixProgramGroup group);
+
+        void destroyProgram(_Program* program);
+        void destroyHitProgramGroup(_HitProgramGroup* hitGroup);
+        void destroyCallableProgramGroup(_CallableProgramGroup* callableGroup);
     };
 
 
@@ -1312,24 +1319,15 @@ namespace optixu {
     class Object<Program>::Priv : public PrivateObject {
         _Pipeline* pipeline;
         OptixProgramGroup rawGroup;
+        OptixProgramGroupKind kind;
         uint32_t stackSize;
+        bool isActiveInPipeline;
 
     public:
         OPTIXU_OPAQUE_BRIDGE(Program);
 
-        Priv(_Pipeline* pl, OptixProgramGroup _rawGroup, OptixProgramGroupKind kind) :
-            pipeline(pl), rawGroup(_rawGroup) {
-            OptixStackSizes stackSizes;
-            OPTIX_CHECK(optixProgramGroupGetStackSize(rawGroup, &stackSizes, pipeline->getRawPipeline()));
-            if (kind == OPTIX_PROGRAM_GROUP_KIND_RAYGEN)
-                stackSize = stackSizes.cssRG;
-            else if (kind == OPTIX_PROGRAM_GROUP_KIND_MISS)
-                stackSize = stackSizes.cssMS;
-            else if (kind == OPTIX_PROGRAM_GROUP_KIND_EXCEPTION)
-                stackSize = 0;
-            else
-                optixuAssert_ShouldNotBeCalled();
-        }
+        Priv(_Pipeline* pl, OptixProgramGroup _rawGroup, OptixProgramGroupKind _kind) :
+            pipeline(pl), rawGroup(_rawGroup), kind(_kind), isActiveInPipeline(true) {}
         ~Priv() {
             getContext()->unregisterName(this);
         }
@@ -1340,9 +1338,26 @@ namespace optixu {
         const _Pipeline* getPipeline() const {
             return pipeline;
         }
+        OPTIXU_DEFINE_THROW_RUNTIME_ERROR("Program");
 
         OptixProgramGroup getRawProgramGroup() const {
             return rawGroup;
+        }
+
+        bool isActive() const {
+            return isActiveInPipeline;
+        }
+        void setStackSize() {
+            OptixStackSizes stackSizes;
+            OPTIX_CHECK(optixProgramGroupGetStackSize(rawGroup, &stackSizes, pipeline->getRawPipeline()));
+            if (kind == OPTIX_PROGRAM_GROUP_KIND_RAYGEN)
+                stackSize = stackSizes.cssRG;
+            else if (kind == OPTIX_PROGRAM_GROUP_KIND_MISS)
+                stackSize = stackSizes.cssMS;
+            else if (kind == OPTIX_PROGRAM_GROUP_KIND_EXCEPTION)
+                stackSize = 0;
+            else
+                optixuAssert_ShouldNotBeCalled();
         }
 
         void packHeader(uint8_t* record) const {
@@ -1359,18 +1374,13 @@ namespace optixu {
         uint32_t stackSizeCH;
         uint32_t stackSizeAH;
         uint32_t stackSizeIS;
+        bool isActiveInPipeline;
 
     public:
         OPTIXU_OPAQUE_BRIDGE(HitProgramGroup);
 
         Priv(_Pipeline* pl, OptixProgramGroup _rawGroup) :
-            pipeline(pl), rawGroup(_rawGroup) {
-            OptixStackSizes stackSizes;
-            OPTIX_CHECK(optixProgramGroupGetStackSize(rawGroup, &stackSizes, pipeline->getRawPipeline()));
-            stackSizeCH = stackSizes.cssCH;
-            stackSizeAH = stackSizes.cssAH;
-            stackSizeIS = stackSizes.cssIS;
-        }
+            pipeline(pl), rawGroup(_rawGroup), isActiveInPipeline(true) {}
         ~Priv() {
             getContext()->unregisterName(this);
         }
@@ -1381,9 +1391,21 @@ namespace optixu {
         const _Pipeline* getPipeline() const {
             return pipeline;
         }
+        OPTIXU_DEFINE_THROW_RUNTIME_ERROR("HitProgramGroup");
 
         OptixProgramGroup getRawProgramGroup() const {
             return rawGroup;
+        }
+
+        bool isActive() const {
+            return isActiveInPipeline;
+        }
+        void setStackSizes() {
+            OptixStackSizes stackSizes;
+            OPTIX_CHECK(optixProgramGroupGetStackSize(rawGroup, &stackSizes, pipeline->getRawPipeline()));
+            stackSizeCH = stackSizes.cssCH;
+            stackSizeAH = stackSizes.cssAH;
+            stackSizeIS = stackSizes.cssIS;
         }
 
         void packHeader(uint8_t* record) const {
@@ -1399,17 +1421,13 @@ namespace optixu {
         OptixProgramGroup rawGroup;
         uint32_t stackSizeDC;
         uint32_t stackSizeCC;
+        bool isActiveInPipeline;
 
     public:
         OPTIXU_OPAQUE_BRIDGE(CallableProgramGroup);
 
         Priv(_Pipeline* pl, OptixProgramGroup _rawGroup) :
-            pipeline(pl), rawGroup(_rawGroup) {
-            OptixStackSizes stackSizes;
-            OPTIX_CHECK(optixProgramGroupGetStackSize(rawGroup, &stackSizes, pipeline->getRawPipeline()));
-            stackSizeDC = stackSizes.dssDC;
-            stackSizeCC = stackSizes.cssCC;
-        }
+            pipeline(pl), rawGroup(_rawGroup), isActiveInPipeline(true) {}
         ~Priv() {
             getContext()->unregisterName(this);
         }
@@ -1420,9 +1438,20 @@ namespace optixu {
         const _Pipeline* getPipeline() const {
             return pipeline;
         }
+        OPTIXU_DEFINE_THROW_RUNTIME_ERROR("CallableProgramGroup");
 
         OptixProgramGroup getRawProgramGroup() const {
             return rawGroup;
+        }
+
+        bool isActive() const {
+            return isActiveInPipeline;
+        }
+        void setStackSizes() {
+            OptixStackSizes stackSizes;
+            OPTIX_CHECK(optixProgramGroupGetStackSize(rawGroup, &stackSizes, pipeline->getRawPipeline()));
+            stackSizeDC = stackSizes.dssDC;
+            stackSizeCC = stackSizes.cssCC;
         }
 
         void packHeader(uint8_t* record) const {

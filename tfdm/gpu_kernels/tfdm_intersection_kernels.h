@@ -112,11 +112,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
 
     const int32_t maxDepth =
         prevPowOf2Exponent(max(mat.heightMapSize.x, mat.heightMapSize.y));
-#if USE_WORKAROUND_FOR_CUDA_BC_TEX
-    const int32_t targetMipLevel = min(dispParams.targetMipLevel, maxDepth - 2);
-#else
     const int32_t targetMipLevel = dispParams.targetMipLevel;
-#endif
 
 #if OUTPUT_TRAVERSAL_STATS
     uint32_t numIterations = 0;

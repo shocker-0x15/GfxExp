@@ -1180,9 +1180,8 @@ bool loadTexture(
         int32_t width, height, mipCount;
         dds::Format ddsFormat;
         size_t* sizes;
-        uint8_t** imageData = dds::load(filePath.string().c_str(),
-                                        &width, &height, &mipCount, &sizes, &ddsFormat);
-        mipCount = std::max(mipCount - 2, 1);
+        uint8_t** imageData = dds::load(
+            filePath.string().c_str(), &width, &height, &mipCount, &sizes, &ddsFormat);
         if (imageData) {
             cudau::ArrayElementType elemType;
             translate(ddsFormat, &elemType, &cacheValue.needsDegamma, &cacheValue.isHDR);
@@ -1296,7 +1295,6 @@ bool loadNormalTexture(
         size_t* sizes;
         uint8_t** imageData = dds::load(
             filePath.string().c_str(), &width, &height, &mipCount, &sizes, &ddsFormat);
-        mipCount = std::max(mipCount - 2, 1);
         if (imageData) {
             bool isHDR;
             if constexpr (useGLTexture) {

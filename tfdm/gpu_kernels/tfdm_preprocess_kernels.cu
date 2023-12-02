@@ -110,12 +110,10 @@ CUDA_DEVICE_FUNCTION void generateMinMaxMipMap_generic(
 
     // JP: 常に最高解像度のMIPレベルしか使わないのなら不要。
     // EN: This is not necessary when using only the finest mip level.
-    if (dstImageSize.x >= 4 || !USE_WORKAROUND_FOR_CUDA_BC_TEX) {
-        const float2 minMaxOfThisMipTexel = computeTexelMinMax<intersectionType>(
-            material->heightMap, srcMipLevel + 1, dstImageSize, dstPixIdx);
-        minHeight = std::fmin(minHeight, minMaxOfThisMipTexel.x);
-        maxHeight = std::fmax(maxHeight, minMaxOfThisMipTexel.y);
-    }
+    const float2 minMaxOfThisMipTexel = computeTexelMinMax<intersectionType>(
+        material->heightMap, srcMipLevel + 1, dstImageSize, dstPixIdx);
+    minHeight = std::fmin(minHeight, minMaxOfThisMipTexel.x);
+    maxHeight = std::fmax(maxHeight, minMaxOfThisMipTexel.y);
 
     material->minMaxMipMap[srcMipLevel + 1].write(dstPixIdx, make_float2(minHeight, maxHeight));
 }
@@ -208,12 +206,7 @@ CUDA_DEVICE_KERNEL void computeAABBs(
 #endif
 
         const int32_t maxDepth = prevPowOf2Exponent(material->heightMapSize.x);
-        //constexpr int32_t targetMipLevel = 0;
-#if USE_WORKAROUND_FOR_CUDA_BC_TEX
-        const int32_t targetMipLevel = min(tfdmGeomInst->params.targetMipLevel, maxDepth - 2);
-#else
         const int32_t targetMipLevel = tfdmGeomInst->params.targetMipLevel;
-#endif
         Texel roots[4];
         uint32_t numRoots;
         findRoots(texTriAabbMinP, texTriAabbMaxP, maxDepth, targetMipLevel, roots, &numRoots);

@@ -7,7 +7,6 @@
 #endif
 
 #define USE_DISPLACED_SURFACES 1
-#define USE_WORKAROUND_FOR_CUDA_BC_TEX 1
 #define OUTPUT_TRAVERSAL_STATS 1
 
 namespace shared {

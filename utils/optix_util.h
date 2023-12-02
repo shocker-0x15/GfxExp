@@ -31,6 +31,9 @@ EN:
 - In Visual Studio, does the CUDA property "Use Fast Math" not work for ptx compilation??
 
 変更履歴 / Update History:
+- JP: - 各プログラム(グループ)にsetActive()を追加。
+  EN: - Added setActive() to programs (groups).
+
 - !!BREAKING
   JP: - OptiX 8.0.0をサポート。
         Context::createDenoiser(), Denoiser::invoke()のパラメターを変更。
@@ -2087,6 +2090,10 @@ namespace optixu {
         void destroy();
 
         uint32_t getStackSize() const;
+
+        // JP: これはパイプラインをdirty状態になるためリンクが再度必要。
+        // EN: This makes the pipeline dirty and link is required again.
+        void setActiveInPipeline(bool b) const;
     };
 
 
@@ -2098,6 +2105,10 @@ namespace optixu {
         uint32_t getCHStackSize() const;
         uint32_t getAHStackSize() const;
         uint32_t getISStackSize() const;
+
+        // JP: これはパイプラインをdirty状態になるためリンクが再度必要。
+        // EN: This makes the pipeline dirty and link is required again.
+        void setActiveInPipeline(bool b) const;
     };
 
 
@@ -2108,6 +2119,10 @@ namespace optixu {
 
         uint32_t getDCStackSize() const;
         uint32_t getCCStackSize() const;
+
+        // JP: これはパイプラインをdirty状態になるためリンクが再度必要。
+        // EN: This makes the pipeline dirty and link is required again.
+        void setActiveInPipeline(bool b) const;
     };
 
 

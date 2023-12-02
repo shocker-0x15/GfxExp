@@ -564,10 +564,8 @@ namespace cudau {
             throw std::runtime_error("Array is already initialized.");
         if (numChannels != 1 && numChannels != 2 && numChannels != 4)
             throw std::runtime_error("numChannels must be 1, 2, or 4.");
-        if (elemType >= ArrayElementType::BC1_UNorm &&
-            elemType <= ArrayElementType::BC7_UNorm &&
-            numChannels != 1)
-            throw std::runtime_error("numChannels must be 1 for BC format.");
+        if (isBCFormat(elemType) && numChannels != 1)
+            throw std::runtime_error("numChannels must be 1 for BC format (internally determined).");
 
         m_cuContext = context;
 
@@ -631,38 +629,85 @@ namespace cudau {
             m_stride = 4;
             break;
         case cudau::ArrayElementType::BC1_UNorm:
-        case cudau::ArrayElementType::BC4_UNorm:
-        case cudau::ArrayElementType::BC4_SNorm:
-            arrayDesc.Format = CU_AD_FORMAT_UNSIGNED_INT32;
-            m_stride = 4;
-            m_numChannels = 2;
+            arrayDesc.Format = CU_AD_FORMAT_BC1_UNORM;
+            m_stride = 8;
+            m_numChannels = 4;
+            break;
+        case cudau::ArrayElementType::BC1_UNorm_sRGB:
+            arrayDesc.Format = CU_AD_FORMAT_BC1_UNORM_SRGB;
+            m_stride = 8;
+            m_numChannels = 4;
             break;
         case cudau::ArrayElementType::BC2_UNorm:
+            arrayDesc.Format = CU_AD_FORMAT_BC2_UNORM;
+            m_stride = 16;
+            m_numChannels = 4;
+            break;
+        case cudau::ArrayElementType::BC2_UNorm_sRGB:
+            arrayDesc.Format = CU_AD_FORMAT_BC2_UNORM_SRGB;
+            m_stride = 16;
+            m_numChannels = 4;
+            break;
         case cudau::ArrayElementType::BC3_UNorm:
+            arrayDesc.Format = CU_AD_FORMAT_BC3_UNORM;
+            m_stride = 16;
+            m_numChannels = 4;
+            break;
+        case cudau::ArrayElementType::BC3_UNorm_sRGB:
+            arrayDesc.Format = CU_AD_FORMAT_BC3_UNORM_SRGB;
+            m_stride = 16;
+            m_numChannels = 4;
+            break;
+        case cudau::ArrayElementType::BC4_UNorm:
+            arrayDesc.Format = CU_AD_FORMAT_BC4_UNORM;
+            m_stride = 8;
+            m_numChannels = 1;
+            break;
+        case cudau::ArrayElementType::BC4_SNorm:
+            arrayDesc.Format = CU_AD_FORMAT_BC4_SNORM;
+            m_stride = 8;
+            m_numChannels = 1;
+            break;
         case cudau::ArrayElementType::BC5_UNorm:
+            arrayDesc.Format = CU_AD_FORMAT_BC5_UNORM;
+            m_stride = 16;
+            m_numChannels = 2;
+            break;
         case cudau::ArrayElementType::BC5_SNorm:
+            arrayDesc.Format = CU_AD_FORMAT_BC5_SNORM;
+            m_stride = 16;
+            m_numChannels = 2;
+            break;
         case cudau::ArrayElementType::BC6H_UF16:
+            arrayDesc.Format = CU_AD_FORMAT_BC6H_UF16;
+            m_stride = 16;
+            m_numChannels = 3;
+            break;
         case cudau::ArrayElementType::BC6H_SF16:
+            arrayDesc.Format = CU_AD_FORMAT_BC6H_SF16;
+            m_stride = 16;
+            m_numChannels = 3;
+            break;
         case cudau::ArrayElementType::BC7_UNorm:
-            arrayDesc.Format = CU_AD_FORMAT_UNSIGNED_INT32;
-            m_stride = 4;
+            arrayDesc.Format = CU_AD_FORMAT_BC7_UNORM;
+            m_stride = 16;
+            m_numChannels = 4;
+            break;
+        case cudau::ArrayElementType::BC7_UNorm_sRGB:
+            arrayDesc.Format = CU_AD_FORMAT_BC7_UNORM_SRGB;
+            m_stride = 16;
             m_numChannels = 4;
             break;
         default:
             CUDAUAssert_ShouldNotBeCalled();
             break;
         }
-        if (isBCFormat(m_elemType)) {
-            arrayDesc.Width = (m_width + 3) / 4;
-            arrayDesc.Height = (m_height + 3) / 4;
-        }
-        else {
-            arrayDesc.Width = m_width;
-            arrayDesc.Height = m_height;
-        }
+        arrayDesc.Width = m_width;
+        arrayDesc.Height = m_height;
         arrayDesc.Depth = m_depth;
         arrayDesc.NumChannels = m_numChannels;
-        m_stride *= m_numChannels;
+        if (!isBCFormat(elemType))
+            m_stride *= m_numChannels;
 
         if (m_GLTexID != 0) {
 #if defined(CUDA_UTIL_USE_GL_INTEROP)
@@ -690,20 +735,6 @@ namespace cudau {
         for (uint32_t i = 0; i < m_numMipmapLevels; ++i) {
             m_mappedPointers[i] = nullptr;
 
-            // JP: CUDAはミップマップレベル数の計算に問題を抱えているように見える。
-            //     例: 64x64, BCフォーマットのテクスチャー(16x16ブロック)は次のミップレベルを持つことができる。
-            //         64x64(16x16), 32x32(8x8), 16x16(4x4), 8x8(2x2), 4x4(1x1), 2x2(1x1), 1x1(1x1)
-            //     しかしCUDAは最後のミップレベルが4x4(1x1)だと仮定しているように見える。
-            //     それとも何か勘違いしている？
-            // EN: CUDA seems to have an issue in calculation of the number of mipmap levels.
-            //     e.g. 64x64 texture with BC format (16x16 blocks) can have the following mipmap levels:
-            //          64x64(16x16), 32x32(8x8), 16x16(4x4), 8x8(2x2), 4x4(1x1), 2x2(1x1), 1x1(1x1)
-            //     However CUDA seems to suppose that the last mip level is 4x4(1x1).
-            //     Or do I misunderstand something?
-            //
-            // Bug reports:
-            // https://forums.developer.nvidia.com/t/how-to-create-cudatextureobject-with-texture-raw-data-in-block-compressed-bc-format/119570
-            // https://forums.developer.nvidia.com/t/mip-map-with-block-compressed-texture/72170
             if (m_numMipmapLevels > 1 && m_GLTexID == 0)
                 CUDADRV_CHECK(cuMipmappedArrayGetLevel(&m_mipmapArrays[i], m_mipmappedArray, i));
             else
@@ -856,51 +887,16 @@ namespace cudau {
 
         CUDADRV_CHECK(cuCtxSetCurrent(m_cuContext));
 
-        size_t depth = std::max<size_t>(1, m_depth);
+        size_t bw;
+        size_t bh;
+        computeDimensionsOfLevel(mipmapLevel, &bw, &bh);
+        size_t size = std::max<size_t>(1, m_depth) * bh * bw * m_stride;
 
-        size_t deviceBw;
-        size_t deviceBh;
-        computeDimensionsOfLevel<CUDA_UTIL_TEX_DIM_WORKAROUND>(mipmapLevel, &deviceBw, &deviceBh);
-        size_t deviceSizePerRow = deviceBw * m_stride;
-
-#if CUDA_UTIL_TEX_DIM_WORKAROUND
-        size_t hostBw;
-        size_t hostBh;
-        computeDimensionsOfLevel<false>(mipmapLevel, &hostBw, &hostBh);
-        size_t hostSizePerRow = hostBw * m_stride;
-        size_t hostSize = depth * hostBh * hostSizePerRow;
-#else
-        size_t hostBh = deviceBh;
-        size_t hostSizePerRow = deviceSizePerRow;
-        size_t hostSize = depth * hostBh * hostSizePerRow;
-#endif
-
-        m_mappedPointers[mipmapLevel] = allocHostMem(hostSize);
+        m_mappedPointers[mipmapLevel] = allocHostMem(size);
         m_mapFlags[mipmapLevel] = flag;
 
-        CUDA_MEMCPY3D params = {};
-        params.WidthInBytes = deviceSizePerRow;
-        params.Height = deviceBh;
-        params.Depth = depth;
-
-        params.srcMemoryType = CU_MEMORYTYPE_ARRAY;
-        params.srcArray = (m_numMipmapLevels > 1 || m_GLTexID != 0) ? m_mipmapArrays[mipmapLevel] : m_array;
-        params.srcXInBytes = 0;
-        params.srcY = 0;
-        params.srcZ = 0;
-        // srcDevice, srcHeight, srcHost, srcLOD, srcPitch are not used in this case.
-
-        params.dstMemoryType = CU_MEMORYTYPE_HOST;
-        params.dstHost = m_mappedPointers[mipmapLevel];
-        params.dstPitch = hostSizePerRow;
-        params.dstHeight = hostBh;
-        params.dstXInBytes = 0;
-        params.dstY = 0;
-        params.dstZ = 0;
-        // dstArray, dstDevice, dstLOD are not used in this case.
-
         if (m_mapFlags[mipmapLevel] != BufferMapFlag::WriteOnlyDiscard) {
-            CUDADRV_CHECK(cuMemcpy3DAsync(&params, stream));
+            read(reinterpret_cast<uint8_t*>(m_mappedPointers[mipmapLevel]), size, mipmapLevel, stream);
 #if defined(USE_PINNED_MAPPED_MEMORY)
             CUDADRV_CHECK(cuStreamSynchronize(stream));
 #endif
@@ -917,46 +913,14 @@ namespace cudau {
 
         CUDADRV_CHECK(cuCtxSetCurrent(m_cuContext));
 
-        size_t deviceBw;
-        size_t deviceBh;
-        computeDimensionsOfLevel<CUDA_UTIL_TEX_DIM_WORKAROUND>(mipmapLevel, &deviceBw, &deviceBh);
-        size_t depth = std::max<size_t>(1, m_depth);
-        size_t deviceSizePerRow = deviceBw * m_stride;
+        if (m_mapFlags[mipmapLevel] != BufferMapFlag::ReadOnly) {
+            size_t bw;
+            size_t bh;
+            computeDimensionsOfLevel(mipmapLevel, &bw, &bh);
+            size_t size = std::max<size_t>(1, m_depth) * bh * bw * m_stride;
 
-#if CUDA_UTIL_TEX_DIM_WORKAROUND
-        size_t hostBw;
-        size_t hostBh;
-        computeDimensionsOfLevel<false>(mipmapLevel, &hostBw, &hostBh);
-        size_t hostSizePerRow = hostBw * m_stride;
-        size_t hostSize = depth * hostBh * hostSizePerRow;
-#else
-        size_t hostSizePerRow = deviceSizePerRow;
-        size_t hostBh = deviceBh;
-#endif
-
-        CUDA_MEMCPY3D params = {};
-        params.WidthInBytes = deviceSizePerRow;
-        params.Height = deviceBh;
-        params.Depth = depth;
-
-        params.srcMemoryType = CU_MEMORYTYPE_HOST;
-        params.srcHost = m_mappedPointers[mipmapLevel];
-        params.srcPitch = hostSizePerRow;
-        params.srcHeight = hostBh;
-        params.srcXInBytes = 0;
-        params.srcY = 0;
-        params.srcZ = 0;
-        // srcArray, srcDevice, srcLOD are not used in this case.
-
-        params.dstMemoryType = CU_MEMORYTYPE_ARRAY;
-        params.dstArray = (m_numMipmapLevels > 1 || m_GLTexID != 0) ? m_mipmapArrays[mipmapLevel] : m_array;
-        params.dstXInBytes = 0;
-        params.dstY = 0;
-        params.dstZ = 0;
-        // dstDevice, dstHeight, dstHost, dstLOD, dstPitch are not used in this case.
-
-        if (m_mapFlags[mipmapLevel] != BufferMapFlag::ReadOnly)
-            CUDADRV_CHECK(cuMemcpy3DAsync(&params, stream));
+            write(reinterpret_cast<uint8_t*>(m_mappedPointers[mipmapLevel]), size, mipmapLevel, stream);
+        }
 
         releaseHostMem(m_mappedPointers[mipmapLevel]);
         m_mappedPointers[mipmapLevel] = nullptr;
@@ -967,11 +931,7 @@ namespace cudau {
         CUDA_RESOURCE_VIEW_DESC ret = {};
         size_t width;
         size_t height;
-        computeDimensionsOfLevel<CUDA_UTIL_TEX_DIM_WORKAROUND>(0, &width, &height);
-        if (isBCFormat(m_elemType)) {
-            width *= 4;
-            height *= 4;
-        }
+        computeDimensionsOfLevel(0, &width, &height);
         ret.format = getResourceViewFormat(m_elemType, m_numChannels);
         ret.width = width;
         ret.height = height;

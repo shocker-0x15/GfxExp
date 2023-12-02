@@ -3255,7 +3255,7 @@ namespace optixu {
         return modulesForBuiltinIS.at(key)->getRawModule();
     }
 
-    void Pipeline::Priv::createProgram(
+    void Pipeline::Priv::createProgramGroup(
         const OptixProgramGroupDesc &desc, const OptixProgramGroupOptions &options,
         OptixProgramGroup* group) {
         char log[4096];
@@ -3266,48 +3266,65 @@ namespace optixu {
             &options,
             log, &logSize,
             group));
-        programGroups.insert(*group);
 
         markDirty();
     }
 
-    void Pipeline::Priv::destroyProgram(OptixProgramGroup group) {
-        optixuAssert(programGroups.count(group) > 0, "This program group has not been registered.");
-        programGroups.erase(group);
-        OPTIX_CHECK(optixProgramGroupDestroy(group));
+    void Pipeline::Priv::destroyProgram(_Program* program) {
+        optixuAssert(programs.count(program) > 0, "This program has not been registered.");
+        programs.erase(program);
+        OPTIX_CHECK(optixProgramGroupDestroy(program->getRawProgramGroup()));
+
+        markDirty();
+    }
+
+    void Pipeline::Priv::destroyHitProgramGroup(_HitProgramGroup* hitGroup) {
+        optixuAssert(hitProgramGroups.count(hitGroup) > 0, "This hit program group has not been registered.");
+        hitProgramGroups.erase(hitGroup);
+        OPTIX_CHECK(optixProgramGroupDestroy(hitGroup->getRawProgramGroup()));
+
+        markDirty();
+    }
+
+    void Pipeline::Priv::destroyCallableProgramGroup(_CallableProgramGroup* callableGroup) {
+        optixuAssert(
+            callableProgramGroups.count(callableGroup) > 0,
+            "This callable program group has not been registered.");
+        callableProgramGroups.erase(callableGroup);
+        OPTIX_CHECK(optixProgramGroupDestroy(callableGroup->getRawProgramGroup()));
 
         markDirty();
     }
 
     void Pipeline::Priv::setupShaderBindingTable(CUstream stream) {
         if (!sbtIsUpToDate) {
-            throwRuntimeError(rayGenProgram, "Ray generation program is not set.");
+            throwRuntimeError(currentRayGenProgram, "Ray generation program is not set.");
             for (uint32_t i = 0; i < numMissRayTypes; ++i)
-                throwRuntimeError(missPrograms[i], "Miss program is not set for ray type %d.", i);
+                throwRuntimeError(currentMissPrograms[i], "Miss program is not set for ray type %d.", i);
             for (uint32_t i = 0; i < numCallablePrograms; ++i)
-                throwRuntimeError(callablePrograms[i], "Callable program is not set for index %d.", i);
+                throwRuntimeError(currentCallablePrograms[i], "Callable program is not set for index %d.", i);
 
             auto records = reinterpret_cast<uint8_t*>(sbtHostMem);
             size_t offset = 0;
 
             size_t rayGenRecordOffset = offset;
-            rayGenProgram->packHeader(records + offset);
+            currentRayGenProgram->packHeader(records + offset);
             offset += OPTIX_SBT_RECORD_HEADER_SIZE;
 
             size_t exceptionRecordOffset = offset;
-            if (exceptionProgram)
-                exceptionProgram->packHeader(records + offset);
+            if (currentExceptionProgram)
+                currentExceptionProgram->packHeader(records + offset);
             offset += OPTIX_SBT_RECORD_HEADER_SIZE;
 
             CUdeviceptr missRecordOffset = offset;
             for (uint32_t i = 0; i < numMissRayTypes; ++i) {
-                missPrograms[i]->packHeader(records + offset);
+                currentMissPrograms[i]->packHeader(records + offset);
                 offset += OPTIX_SBT_RECORD_HEADER_SIZE;
             }
 
             CUdeviceptr callableRecordOffset = offset;
             for (uint32_t i = 0; i < numCallablePrograms; ++i) {
-                callablePrograms[i]->packHeader(records + offset);
+                currentCallablePrograms[i]->packHeader(records + offset);
                 offset += OPTIX_SBT_RECORD_HEADER_SIZE;
             }
 
@@ -3315,7 +3332,7 @@ namespace optixu {
 
             CUdeviceptr baseAddress = sbt.getCUdeviceptr();
             sbtParams.raygenRecord = baseAddress + rayGenRecordOffset;
-            sbtParams.exceptionRecord = exceptionProgram ? baseAddress + exceptionRecordOffset : 0;
+            sbtParams.exceptionRecord = currentExceptionProgram ? baseAddress + exceptionRecordOffset : 0;
             sbtParams.missRecordBase = baseAddress + missRecordOffset;
             sbtParams.missRecordStrideInBytes = OPTIX_SBT_RECORD_HEADER_SIZE;
             sbtParams.missRecordCount = numMissRayTypes;
@@ -3414,9 +3431,12 @@ namespace optixu {
         OptixProgramGroupOptions options = {};
 
         OptixProgramGroup group;
-        m->createProgram(desc, options, &group);
+        m->createProgramGroup(desc, options, &group);
 
-        return (new _Program(m, group, desc.kind))->getPublicType();
+        auto program = new _Program(m, group, desc.kind);
+        m->programs.insert(program);
+
+        return program->getPublicType();
     }
 
     Program Pipeline::createExceptionProgram(Module module, const char* entryFunctionName) const {
@@ -3437,9 +3457,12 @@ namespace optixu {
         OptixProgramGroupOptions options = {};
 
         OptixProgramGroup group;
-        m->createProgram(desc, options, &group);
+        m->createProgramGroup(desc, options, &group);
 
-        return (new _Program(m, group, desc.kind))->getPublicType();
+        auto program = new _Program(m, group, desc.kind);
+        m->programs.insert(program);
+
+        return program->getPublicType();
     }
 
     Program Pipeline::createMissProgram(
@@ -3467,9 +3490,12 @@ namespace optixu {
             options.payloadType = &optixPayloadType;
 
         OptixProgramGroup group;
-        m->createProgram(desc, options, &group);
+        m->createProgramGroup(desc, options, &group);
 
-        return (new _Program(m, group, desc.kind))->getPublicType();
+        auto program = new _Program(m, group, desc.kind);
+        m->programs.insert(program);
+
+        return program->getPublicType();
     }
 
     HitProgramGroup Pipeline::createHitProgramGroupForTriangleIS(
@@ -3515,9 +3541,12 @@ namespace optixu {
             options.payloadType = &optixPayloadType;
 
         OptixProgramGroup group;
-        m->createProgram(desc, options, &group);
+        m->createProgramGroup(desc, options, &group);
 
-        return (new _HitProgramGroup(m, group))->getPublicType();
+        auto hitGroup = new _HitProgramGroup(m, group);
+        m->hitProgramGroups.insert(hitGroup);
+
+        return hitGroup->getPublicType();
     }
 
     HitProgramGroup Pipeline::createHitProgramGroupForCurveIS(
@@ -3578,9 +3607,12 @@ namespace optixu {
             options.payloadType = &optixPayloadType;
 
         OptixProgramGroup group;
-        m->createProgram(desc, options, &group);
+        m->createProgramGroup(desc, options, &group);
 
-        return (new _HitProgramGroup(m, group))->getPublicType();
+        auto hitGroup = new _HitProgramGroup(m, group);
+        m->hitProgramGroups.insert(hitGroup);
+
+        return hitGroup->getPublicType();
     }
 
     HitProgramGroup Pipeline::createHitProgramGroupForSphereIS(
@@ -3632,9 +3664,12 @@ namespace optixu {
             options.payloadType = &optixPayloadType;
 
         OptixProgramGroup group;
-        m->createProgram(desc, options, &group);
+        m->createProgramGroup(desc, options, &group);
 
-        return (new _HitProgramGroup(m, group))->getPublicType();
+        auto hitGroup = new _HitProgramGroup(m, group);
+        m->hitProgramGroups.insert(hitGroup);
+
+        return hitGroup->getPublicType();
     }
 
     HitProgramGroup Pipeline::createHitProgramGroupForCustomIS(
@@ -3691,9 +3726,12 @@ namespace optixu {
             options.payloadType = &optixPayloadType;
 
         OptixProgramGroup group;
-        m->createProgram(desc, options, &group);
+        m->createProgramGroup(desc, options, &group);
 
-        return (new _HitProgramGroup(m, group))->getPublicType();
+        auto hitGroup = new _HitProgramGroup(m, group);
+        m->hitProgramGroups.insert(hitGroup);
+
+        return hitGroup->getPublicType();
     }
 
     HitProgramGroup Pipeline::createEmptyHitProgramGroup() const {
@@ -3702,9 +3740,12 @@ namespace optixu {
         OptixProgramGroupOptions options = {};
 
         OptixProgramGroup group;
-        m->createProgram(desc, options, &group);
+        m->createProgramGroup(desc, options, &group);
 
-        return (new _HitProgramGroup(m, group))->getPublicType();
+        auto hitGroup = new _HitProgramGroup(m, group);
+        m->hitProgramGroups.insert(hitGroup);
+
+        return hitGroup->getPublicType();
     }
 
     CallableProgramGroup Pipeline::createCallableProgramGroup(
@@ -3750,9 +3791,12 @@ namespace optixu {
             options.payloadType = &optixPayloadType;
 
         OptixProgramGroup group;
-        m->createProgram(desc, options, &group);
+        m->createProgramGroup(desc, options, &group);
 
-        return (new _CallableProgramGroup(m, group))->getPublicType();
+        auto callableGroup = new _CallableProgramGroup(m, group);
+        m->callableProgramGroups.insert(callableGroup);
+
+        return callableGroup->getPublicType();
     }
 
     void Pipeline::link(uint32_t maxTraceDepth) const {
@@ -3762,8 +3806,18 @@ namespace optixu {
         pipelineLinkOptions.maxTraceDepth = maxTraceDepth;
 
         std::vector<OptixProgramGroup> groups;
-        groups.resize(m->programGroups.size());
-        std::copy(m->programGroups.cbegin(), m->programGroups.cend(), groups.begin());
+        for (auto it : m->programs) {
+            if (it->isActive())
+                groups.push_back(it->getRawProgramGroup());
+        }
+        for (auto it : m->hitProgramGroups) {
+            if (it->isActive())
+                groups.push_back(it->getRawProgramGroup());
+        }
+        for (auto it : m->callableProgramGroups) {
+            if (it->isActive())
+                groups.push_back(it->getRawProgramGroup());
+        }
 
         char log[4096];
         size_t logSize = sizeof(log);
@@ -3775,18 +3829,31 @@ namespace optixu {
             log, &logSize,
             &m->rawPipeline));
 
+        for (auto it : m->programs) {
+            if (it->isActive())
+                it->setStackSize();
+        }
+        for (auto it : m->hitProgramGroups) {
+            if (it->isActive())
+                it->setStackSizes();
+        }
+        for (auto it : m->callableProgramGroups) {
+            if (it->isActive())
+                it->setStackSizes();
+        }
+
         m->pipelineLinked = true;
     }
 
     void Pipeline::setNumMissRayTypes(uint32_t numMissRayTypes) const {
         m->numMissRayTypes = numMissRayTypes;
-        m->missPrograms.resize(m->numMissRayTypes);
+        m->currentMissPrograms.resize(m->numMissRayTypes);
         m->sbtLayoutIsUpToDate = false;
     }
 
     void Pipeline::setNumCallablePrograms(uint32_t numCallablePrograms) const {
         m->numCallablePrograms = numCallablePrograms;
-        m->callablePrograms.resize(m->numCallablePrograms);
+        m->currentCallablePrograms.resize(m->numCallablePrograms);
         m->sbtLayoutIsUpToDate = false;
     }
 
@@ -3815,7 +3882,7 @@ namespace optixu {
             "Pipeline mismatch for the given program %s.",
             _program->getName().c_str());
 
-        m->rayGenProgram = _program;
+        m->currentRayGenProgram = _program;
         m->sbtIsUpToDate = false;
     }
 
@@ -3830,7 +3897,7 @@ namespace optixu {
             "Pipeline mismatch for the given program %s.",
             _program->getName().c_str());
 
-        m->exceptionProgram = _program;
+        m->currentExceptionProgram = _program;
         m->sbtIsUpToDate = false;
     }
 
@@ -3848,7 +3915,7 @@ namespace optixu {
             "Pipeline mismatch for the given program %s.",
             _program->getName().c_str());
 
-        m->missPrograms[rayType] = _program;
+        m->currentMissPrograms[rayType] = _program;
         m->sbtIsUpToDate = false;
     }
 
@@ -3865,7 +3932,7 @@ namespace optixu {
             "Pipeline mismatch for the given program group %s.",
             _program->getName().c_str());
 
-        m->callablePrograms[index] = _program;
+        m->currentCallablePrograms[index] = _program;
         m->sbtIsUpToDate = false;
     }
 
@@ -3977,54 +4044,75 @@ namespace optixu {
 
     void Program::destroy() {
         if (m) {
-            m->pipeline->destroyProgram(m->rawGroup);
+            m->pipeline->destroyProgram(m);
             delete m;
         }
         m = nullptr;
     }
 
     uint32_t Program::getStackSize() const {
+        m->throwRuntimeError(m->pipeline->isLinked(), "Linking the pipeline is required to get the stack size.");
         return m->stackSize;
+    }
+
+    void Program::setActiveInPipeline(bool b) const {
+        m->isActiveInPipeline = b;
+        m->pipeline->markDirty();
     }
 
 
 
     void HitProgramGroup::destroy() {
         if (m) {
-            m->pipeline->destroyProgram(m->rawGroup);
+            m->pipeline->destroyHitProgramGroup(m);
             delete m;
         }
         m = nullptr;
     }
 
     uint32_t HitProgramGroup::getCHStackSize() const {
+        m->throwRuntimeError(m->pipeline->isLinked(), "Linking the pipeline is required to get the stack size.");
         return m->stackSizeCH;
     }
 
     uint32_t HitProgramGroup::getAHStackSize() const {
+        m->throwRuntimeError(m->pipeline->isLinked(), "Linking the pipeline is required to get the stack size.");
         return m->stackSizeAH;
     }
 
     uint32_t HitProgramGroup::getISStackSize() const {
+        m->throwRuntimeError(m->pipeline->isLinked(), "Linking the pipeline is required to get the stack size.");
         return m->stackSizeIS;
+    }
+
+    void HitProgramGroup::setActiveInPipeline(bool b) const {
+        m->isActiveInPipeline = b;
+        m->pipeline->markDirty();
     }
 
 
 
     void CallableProgramGroup::destroy() {
         if (m) {
-            m->pipeline->destroyProgram(m->rawGroup);
+            m->pipeline->destroyCallableProgramGroup(m);
             delete m;
         }
         m = nullptr;
     }
 
     uint32_t CallableProgramGroup::getDCStackSize() const {
+        m->throwRuntimeError(m->pipeline->isLinked(), "Linking the pipeline is required to get the stack size.");
         return m->stackSizeDC;
     }
 
     uint32_t CallableProgramGroup::getCCStackSize() const {
+        m->throwRuntimeError(m->pipeline->isLinked(), "Linking the pipeline is required to get the stack size.");
         return m->stackSizeCC;
+    }
+
+    void CallableProgramGroup::setActiveInPipeline(bool b) const {
+        m->isActiveInPipeline = b;
+        m->pipeline->markDirty();
     }
 
 
