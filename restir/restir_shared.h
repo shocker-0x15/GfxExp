@@ -345,8 +345,13 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void sampleLight(
 
         // JP: テクスチャー空間中のPDFを面積に関するものに変換する。
         // EN: convert the PDF in texture space to one with respect to area.
-        // The true value is: lim_{l to inf} uvPDF / (2 * Pi * Pi * std::sin(theta)) / l^2
-        *areaPDensity = uvPDF / (2 * Pi * Pi * std::sin(theta));
+        // The true value is: lim_{l to inf} uvPDF / (2 * Pi * Pi * sin(theta)) / l^2
+        const float sinTheta = std::sin(theta);
+        if (sinTheta == 0.0f) {
+            *areaPDensity = 0.0f;
+            return;
+        }
+        *areaPDensity = uvPDF / (2 * Pi * Pi * sinTheta);
 
         texEmittance = plp.s->envLightTexture;
         // JP: 環境マップテクスチャーの値に係数をかけて、通常の光源と同じように返り値を光束発散度
