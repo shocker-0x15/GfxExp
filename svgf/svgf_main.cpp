@@ -793,7 +793,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
     GLFWwindow* window = glfwCreateWindow(
         static_cast<int32_t>(renderTargetSizeX * UIScaling),
         static_cast<int32_t>(renderTargetSizeY * UIScaling),
-        "SVGF", NULL, NULL);
+        "SVGF: Spatiotemporal Variance-Guided Filtering", NULL, NULL);
     glfwSetWindowUserPointer(window, nullptr);
     if (!window) {
         hpprintf("Failed to create a GLFW window.\n");
