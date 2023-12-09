@@ -97,7 +97,7 @@ namespace shared {
         Normal3D shadingNormalInWorld;
         uint32_t instSlot;
         uint32_t geomInstSlot : 31;
-        uint32_t isTfdmMesh : 1;
+        uint32_t isDisplacedMesh : 1;
         uint32_t primIndex;
         uint16_t qbcB;
         uint16_t qbcC;
@@ -136,7 +136,7 @@ namespace shared {
     struct GBuffer0Elements {
         uint32_t instSlot;
         uint32_t geomInstSlot : 31;
-        uint32_t isTfdmMesh : 1;
+        uint32_t isDisplacedMesh : 1;
         uint32_t primIndex;
         uint16_t qbcB;
         uint16_t qbcC;

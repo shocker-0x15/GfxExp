@@ -32,7 +32,7 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(setupGBuffers)() {
     hitPointParams.shadingNormalInWorld = Normal3D(NAN);
     hitPointParams.instSlot = 0xFFFFFFFF;
     hitPointParams.geomInstSlot = 0x7FFFFFFF;
-    hitPointParams.isTfdmMesh = false;
+    hitPointParams.isDisplacedMesh = false;
     hitPointParams.primIndex = 0xFFFFFFFF;
     hitPointParams.qbcB = 0;
     hitPointParams.qbcC = 0;
@@ -63,7 +63,7 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(setupGBuffers)() {
     GBuffer0Elements gb0Elems = {};
     gb0Elems.instSlot = hitPointParams.instSlot;
     gb0Elems.geomInstSlot = hitPointParams.geomInstSlot;
-    gb0Elems.isTfdmMesh = hitPointParams.isTfdmMesh;
+    gb0Elems.isDisplacedMesh = hitPointParams.isDisplacedMesh;
     gb0Elems.primIndex = hitPointParams.primIndex;
     gb0Elems.qbcB = hitPointParams.qbcB;
     gb0Elems.qbcC = hitPointParams.qbcC;
@@ -131,7 +131,7 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
         || hitKind == CustomHitKind_DisplacedSurfaceBackFace;
     hitPointParams->instSlot = optixGetInstanceId();
     hitPointParams->geomInstSlot = sbtr.geomInstSlot;
-    hitPointParams->isTfdmMesh = isDisplacedTriangleHit;
+    hitPointParams->isDisplacedMesh = isDisplacedTriangleHit;
     hitPointParams->primIndex = hp.primIndex;
 #if OUTPUT_TRAVERSAL_STATS
     hitPointParams->numTravIterations = 0;

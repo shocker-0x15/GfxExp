@@ -99,7 +99,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_rayGen_generic() {
         // EN: There is difficulty (not impossible though) in restoring the hit position and normals
         //     from the G-buffers for displaced surfaces.
         //     Therefore displaced surfaces use additional G-buffers to store those information.
-        if (gb0Elems.isTfdmMesh) {
+        if (gb0Elems.isDisplacedMesh) {
             const GBuffer1Elements gb1Elems = plp.s->GBuffer1[bufIdx].read(launchIndex);
             geometricNormalInWorld = decodeNormal(gb1Elems.qGeometricNormal);
             shadingNormalInWorld = decodeNormal(gb1Elems.qShadingNormal);
@@ -108,7 +108,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_rayGen_generic() {
             positionInWorld = gb2Elems.positionInWorld;
         }
         computeSurfacePoint(
-            inst, geomInst, gb0Elems.isTfdmMesh,
+            inst, geomInst, gb0Elems.isDisplacedMesh,
             gb0Elems.primIndex, bcB, bcC,
             &positionInWorld, &shadingNormalInWorld, &texCoord0DirInWorld,
             &geometricNormalInWorld, &texCoord);
@@ -146,7 +146,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_rayGen_generic() {
             }
 
             float targetMipLevel = 0.0f;
-            if (gb0Elems.isTfdmMesh) {
+            if (gb0Elems.isDisplacedMesh) {
                 const GeometryInstanceDataForTFDM &tfdmGeomInst = plp.s->geomInstTfdmDataBuffer[geomInstSlot];
                 targetMipLevel = tfdmGeomInst.params.targetMipLevel;
                 // JP: ベース三角形のエッジに着色する。
