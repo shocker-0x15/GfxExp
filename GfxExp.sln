@@ -15,6 +15,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "svgf", "svgf\svgf.vcxproj",
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "tfdm", "tfdm\tfdm.vcxproj", "{C1ADE2D6-1C18-4558-A454-036EE13BAC70}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "nrtdsm", "nrtdsm\nrtdsm.vcxproj", "{6FE3FCE7-93DB-486C-AC45-EC28AB0004B1}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -45,6 +47,10 @@ Global
 		{C1ADE2D6-1C18-4558-A454-036EE13BAC70}.Debug|x64.Build.0 = Debug|x64
 		{C1ADE2D6-1C18-4558-A454-036EE13BAC70}.Release|x64.ActiveCfg = Release|x64
 		{C1ADE2D6-1C18-4558-A454-036EE13BAC70}.Release|x64.Build.0 = Release|x64
+		{6FE3FCE7-93DB-486C-AC45-EC28AB0004B1}.Debug|x64.ActiveCfg = Debug|x64
+		{6FE3FCE7-93DB-486C-AC45-EC28AB0004B1}.Debug|x64.Build.0 = Debug|x64
+		{6FE3FCE7-93DB-486C-AC45-EC28AB0004B1}.Release|x64.ActiveCfg = Release|x64
+		{6FE3FCE7-93DB-486C-AC45-EC28AB0004B1}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
