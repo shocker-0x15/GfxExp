@@ -2919,7 +2919,7 @@ struct Matrix4x4_T {
         c1(0, 1, 0, 0),
         c2(0, 0, 1, 0),
         c3(0, 0, 0, 1) { }
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix4x4_T(const F array[9]) :
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix4x4_T(const F array[16]) :
         m00(array[0]), m10(array[1]), m20(array[2]), m30(array[3]),
         m01(array[4]), m11(array[5]), m21(array[6]), m31(array[7]),
         m02(array[8]), m12(array[9]), m22(array[10]), m32(array[11]),
