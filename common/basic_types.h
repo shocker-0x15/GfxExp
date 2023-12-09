@@ -110,47 +110,50 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr size_t lengthof(const T (&array)[size
 
 
 template <typename T>
-CUDA_COMMON_FUNCTION CUDA_INLINE constexpr T pow2(T x) {
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr T pow2(const T &x) {
     return x * x;
 }
 
 template <typename T>
-CUDA_COMMON_FUNCTION CUDA_INLINE constexpr T pow3(T x) {
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr T pow3(const T &x) {
     return x * pow2(x);
 }
 
 template <typename T>
-CUDA_COMMON_FUNCTION CUDA_INLINE constexpr T pow4(T x) {
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr T pow4(const T &x) {
     return pow2(pow2(x));
 }
 
 template <typename T>
-CUDA_COMMON_FUNCTION CUDA_INLINE constexpr T pow5(T x) {
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr T pow5(const T &x) {
     return x * pow4(x);
 }
 
 template <typename T, std::floating_point F>
-CUDA_COMMON_FUNCTION CUDA_INLINE constexpr T lerp(const T &v0, const T &v1, F t) {
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr T lerp(const T &v0, const T &v1, const F t) {
     return (1 - t) * v0 + t * v1;
 }
 
 
 
 template <std::integral IntType>
-CUDA_COMMON_FUNCTION CUDA_INLINE constexpr IntType alignUp(IntType value, uint32_t alignment) {
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr IntType alignUp(
+    const IntType value, const uint32_t alignment) {
     return static_cast<IntType>((value + alignment - 1) / alignment * alignment);
 }
 
-CUDA_COMMON_FUNCTION CUDA_INLINE constexpr int32_t floorDiv(int32_t value, uint32_t modulus) {
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr int32_t floorDiv(
+    const int32_t value, const uint32_t modulus) {
     return (value < 0 ? (value - static_cast<int32_t>(modulus - 1)) : value) / static_cast<int32_t>(modulus);
 }
 
-CUDA_COMMON_FUNCTION CUDA_INLINE constexpr uint32_t floorMod(int32_t value, uint32_t modulus) {
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr uint32_t floorMod(
+    const int32_t value, const uint32_t modulus) {
     int32_t r = value % static_cast<int32_t>(modulus);
     return r < 0 ? r + modulus : r;
 }
 
-CUDA_COMMON_FUNCTION CUDA_INLINE uint32_t tzcnt(uint32_t x) {
+CUDA_COMMON_FUNCTION CUDA_INLINE uint32_t tzcnt(const uint32_t x) {
 #if defined(__CUDA_ARCH__)
     return __clz(__brev(x));
 #else
@@ -158,7 +161,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE uint32_t tzcnt(uint32_t x) {
 #endif
 }
 
-CUDA_COMMON_FUNCTION CUDA_INLINE uint32_t lzcnt(uint32_t x) {
+CUDA_COMMON_FUNCTION CUDA_INLINE uint32_t lzcnt(const uint32_t x) {
 #if defined(__CUDA_ARCH__)
     return __clz(x);
 #else
@@ -166,7 +169,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE uint32_t lzcnt(uint32_t x) {
 #endif
 }
 
-CUDA_COMMON_FUNCTION CUDA_INLINE int32_t popcnt(uint32_t x) {
+CUDA_COMMON_FUNCTION CUDA_INLINE int32_t popcnt(const uint32_t x) {
 #if defined(__CUDA_ARCH__)
     return __popc(x);
 #else
@@ -181,7 +184,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE int32_t popcnt(uint32_t x) {
 //  8-15: 3
 // 16-31: 4
 // ...
-CUDA_COMMON_FUNCTION CUDA_INLINE uint32_t prevPowOf2Exponent(uint32_t x) {
+CUDA_COMMON_FUNCTION CUDA_INLINE uint32_t prevPowOf2Exponent(const uint32_t x) {
     if (x == 0)
         return 0;
     return 31 - lzcnt(x);
@@ -194,7 +197,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE uint32_t prevPowOf2Exponent(uint32_t x) {
 // 5- 8: 3
 // 9-16: 4
 // ...
-CUDA_COMMON_FUNCTION CUDA_INLINE uint32_t nextPowOf2Exponent(uint32_t x) {
+CUDA_COMMON_FUNCTION CUDA_INLINE uint32_t nextPowOf2Exponent(const uint32_t x) {
     if (x == 0)
         return 0;
     return 32 - lzcnt(x - 1);
@@ -207,7 +210,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE uint32_t nextPowOf2Exponent(uint32_t x) {
 //  8-15: 8
 // 16-31: 16
 // ...
-CUDA_COMMON_FUNCTION CUDA_INLINE uint32_t prevPowerOf2(uint32_t x) {
+CUDA_COMMON_FUNCTION CUDA_INLINE uint32_t prevPowerOf2(const uint32_t x) {
     if (x == 0)
         return 0;
     return 1 << prevPowOf2Exponent(x);
@@ -220,20 +223,22 @@ CUDA_COMMON_FUNCTION CUDA_INLINE uint32_t prevPowerOf2(uint32_t x) {
 // 5- 8: 8
 // 9-16: 16
 // ...
-CUDA_COMMON_FUNCTION CUDA_INLINE uint32_t nextPowerOf2(uint32_t x) {
+CUDA_COMMON_FUNCTION CUDA_INLINE uint32_t nextPowerOf2(const uint32_t x) {
     if (x == 0)
         return 0;
     return 1 << nextPowOf2Exponent(x);
 }
 
 template <std::integral IntType>
-CUDA_COMMON_FUNCTION CUDA_INLINE constexpr IntType nextMultiplesForPowOf2(IntType x, uint32_t exponent) {
-    IntType mask = (1 << exponent) - 1;
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr IntType nextMultiplesForPowOf2(
+    const IntType x, const uint32_t exponent) {
+    const IntType mask = (1 << exponent) - 1;
     return (x + mask) & ~mask;
 }
 
 template <std::integral IntType>
-CUDA_COMMON_FUNCTION CUDA_INLINE constexpr IntType nextMultiplierForPowOf2(IntType x, uint32_t exponent) {
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr IntType nextMultiplierForPowOf2(
+    const IntType x, const uint32_t exponent) {
     return nextMultiplesForPowOf2(x, exponent) >> exponent;
 }
 
@@ -247,7 +252,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE uint32_t nthSetBit(uint32_t value, int32_t n) {
         if (value == 0)
             return 0xFFFFFFFF;
 
-        uint32_t mask = (1 << width) - 1;
+        const uint32_t mask = (1 << width) - 1;
         count = popcnt(value & mask);
         if (n >= count) {
             value >>= width;
@@ -268,77 +273,94 @@ CUDA_COMMON_FUNCTION CUDA_INLINE uint32_t nthSetBit(uint32_t value, int32_t n) {
 
 struct alignas(8) int2 {
     int32_t x, y;
-    constexpr int2(int32_t v = 0) : x(v), y(v) {}
-    constexpr int2(int32_t xx, int32_t yy) : x(xx), y(yy) {}
+    constexpr int2(const int32_t v = 0) :
+        x(v), y(v) {}
+    constexpr int2(const int32_t xx, const int32_t yy) :
+        x(xx), y(yy) {}
 };
-inline constexpr int2 make_int2(int32_t x, int32_t y) {
+inline constexpr int2 make_int2(const int32_t x, const int32_t y) {
     return int2(x, y);
 }
 struct int3 {
     int32_t x, y, z;
-    constexpr int3(int32_t v = 0) : x(v), y(v), z(v) {}
-    constexpr int3(int32_t xx, int32_t yy, int32_t zz) : x(xx), y(yy), z(zz) {}
+    constexpr int3(const int32_t v = 0) :
+        x(v), y(v), z(v) {}
+    constexpr int3(const int32_t xx, const int32_t yy, const int32_t zz) :
+        x(xx), y(yy), z(zz) {}
 };
-inline constexpr int3 make_int3(int32_t x, int32_t y, int32_t z) {
+inline constexpr int3 make_int3(const int32_t x, const int32_t y, const int32_t z) {
     return int3(x, y, z);
 }
 struct alignas(16) int4 {
     int32_t x, y, z, w;
-    constexpr int4(int32_t v = 0) : x(v), y(v), z(v), w(v) {}
-    constexpr int4(int32_t xx, int32_t yy, int32_t zz, int32_t ww) : x(xx), y(yy), z(zz), w(ww) {}
+    constexpr int4(const int32_t v = 0) :
+        x(v), y(v), z(v), w(v) {}
+    constexpr int4(const int32_t xx, const int32_t yy, const int32_t zz, const int32_t ww) :
+        x(xx), y(yy), z(zz), w(ww) {}
 };
-inline constexpr int4 make_int4(int32_t x, int32_t y, int32_t z, int32_t w) {
+inline constexpr int4 make_int4(const int32_t x, const int32_t y, const int32_t z, const int32_t w) {
     return int4(x, y, z, w);
 }
 struct alignas(8) uint2 {
     uint32_t x, y;
-    constexpr uint2(uint32_t v = 0) : x(v), y(v) {}
-    constexpr uint2(uint32_t xx, uint32_t yy) : x(xx), y(yy) {}
+    constexpr uint2(const uint32_t v = 0) : x(v), y(v) {}
+    constexpr uint2(const uint32_t xx, const uint32_t yy) : x(xx), y(yy) {}
 };
-inline constexpr uint2 make_uint2(uint32_t x, uint32_t y) {
+inline constexpr uint2 make_uint2(const uint32_t x, const uint32_t y) {
     return uint2(x, y);
 }
 struct uint3 {
     uint32_t x, y, z;
-    constexpr uint3(uint32_t v = 0) : x(v), y(v), z(v) {}
-    constexpr uint3(uint32_t xx, uint32_t yy, uint32_t zz) : x(xx), y(yy), z(zz) {}
+    constexpr uint3(const uint32_t v = 0) :
+        x(v), y(v), z(v) {}
+    constexpr uint3(const uint32_t xx, const uint32_t yy, const uint32_t zz) :
+        x(xx), y(yy), z(zz) {}
 };
-inline constexpr uint3 make_uint3(uint32_t x, uint32_t y, uint32_t z) {
+inline constexpr uint3 make_uint3(const uint32_t x, const uint32_t y, const uint32_t z) {
     return uint3(x, y, z);
 }
 struct uint4 {
     uint32_t x, y, z, w;
-    constexpr uint4(uint32_t v = 0) : x(v), y(v), z(v), w(v) {}
-    constexpr uint4(uint32_t xx, uint32_t yy, uint32_t zz, uint32_t ww) : x(xx), y(yy), z(zz), w(ww) {}
+    constexpr uint4(const uint32_t v = 0) :
+        x(v), y(v), z(v), w(v) {}
+    constexpr uint4(const uint32_t xx, const uint32_t yy, const uint32_t zz, const uint32_t ww) :
+        x(xx), y(yy), z(zz), w(ww) {}
 };
-inline constexpr uint4 make_uint4(uint32_t x, uint32_t y, uint32_t z, uint32_t w) {
+inline constexpr uint4 make_uint4(const uint32_t x, const uint32_t y, const uint32_t z, const uint32_t w) {
     return uint4(x, y, z, w);
 }
 struct alignas(8) float2 {
     float x, y;
-    constexpr float2(float v = 0) : x(v), y(v) {}
-    constexpr float2(float xx, float yy) : x(xx), y(yy) {}
+    constexpr float2(const float v = 0) :
+        x(v), y(v) {}
+    constexpr float2(const float xx, const float yy) :
+        x(xx), y(yy) {}
 };
-inline float2 make_float2(float x, float y) {
+inline float2 make_float2(const float x, const float y) {
     return float2(x, y);
 }
 struct float3 {
     float x, y, z;
-    constexpr float3(float v = 0) : x(v), y(v), z(v) {}
-    constexpr float3(float xx, float yy, float zz) : x(xx), y(yy), z(zz) {}
+    constexpr float3(const float v = 0) :
+        x(v), y(v), z(v) {}
+    constexpr float3(const float xx, const float yy, const float zz) :
+        x(xx), y(yy), z(zz) {}
     constexpr float3(const uint3 &v) :
         x(static_cast<float>(v.x)), y(static_cast<float>(v.y)), z(static_cast<float>(v.z)) {}
 };
-inline constexpr float3 make_float3(float x, float y, float z) {
+inline constexpr float3 make_float3(const float x, const float y, const float z) {
     return float3(x, y, z);
 }
 struct alignas(16) float4 {
     float x, y, z, w;
-    constexpr float4(float v = 0) : x(v), y(v), z(v), w(v) {}
-    constexpr float4(float xx, float yy, float zz, float ww) : x(xx), y(yy), z(zz), w(ww) {}
-    constexpr float4(const float3 &xyz, float ww) : x(xyz.x), y(xyz.y), z(xyz.z), w(ww) {}
+    constexpr float4(const float v = 0) :
+        x(v), y(v), z(v), w(v) {}
+    constexpr float4(const float xx, const float yy, const float zz, const float ww) :
+        x(xx), y(yy), z(zz), w(ww) {}
+    constexpr float4(const float3 &xyz, const float ww) :
+        x(xyz.x), y(xyz.y), z(xyz.z), w(ww) {}
 };
-inline constexpr float4 make_float4(float x, float y, float z, float w) {
+inline constexpr float4 make_float4(const float x, const float y, const float z, const float w) {
     return float4(x, y, z, w);
 }
 
@@ -348,7 +370,7 @@ inline constexpr float4 make_float4(float x, float y, float z, float w) {
 
 
 
-CUDA_COMMON_FUNCTION CUDA_INLINE int2 make_int2(int32_t v) {
+CUDA_COMMON_FUNCTION CUDA_INLINE int2 make_int2(const int32_t v) {
     return make_int2(v, v);
 }
 CUDA_COMMON_FUNCTION CUDA_INLINE int2 make_int2(const int3 &v) {
@@ -383,16 +405,16 @@ CUDA_COMMON_FUNCTION CUDA_INLINE int2 operator*(const int2 &a, const int2 &b) {
 CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator*(const int2 &a, const uint2 &b) {
     return make_uint2(a.x * b.x, a.y * b.y);
 }
-CUDA_COMMON_FUNCTION CUDA_INLINE int2 operator*(int32_t a, const int2 &b) {
+CUDA_COMMON_FUNCTION CUDA_INLINE int2 operator*(const int32_t a, const int2 &b) {
     return make_int2(a * b.x, a * b.y);
 }
-CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator*(uint32_t a, const int2 &b) {
+CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator*(const uint32_t a, const int2 &b) {
     return make_uint2(a * b.x, a * b.y);
 }
-CUDA_COMMON_FUNCTION CUDA_INLINE int2 operator*(const int2 &a, int32_t b) {
+CUDA_COMMON_FUNCTION CUDA_INLINE int2 operator*(const int2 &a, const int32_t b) {
     return make_int2(a.x * b, a.y * b);
 }
-CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator*(const int2 &a, uint32_t b) {
+CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator*(const int2 &a, const uint32_t b) {
     return make_uint2(a.x * b, a.y * b);
 }
 CUDA_COMMON_FUNCTION CUDA_INLINE int2 &operator*=(int2 &a, const int2 &b) {
@@ -405,12 +427,12 @@ CUDA_COMMON_FUNCTION CUDA_INLINE int2 &operator*=(int2 &a, const uint2 &b) {
     a.y *= b.y;
     return a;
 }
-CUDA_COMMON_FUNCTION CUDA_INLINE int2 &operator*=(int2 &a, int32_t b) {
+CUDA_COMMON_FUNCTION CUDA_INLINE int2 &operator*=(int2 &a, const int32_t b) {
     a.x *= b;
     a.y *= b;
     return a;
 }
-CUDA_COMMON_FUNCTION CUDA_INLINE int2 &operator*=(int2 &a, uint32_t b) {
+CUDA_COMMON_FUNCTION CUDA_INLINE int2 &operator*=(int2 &a, const uint32_t b) {
     a.x *= b;
     a.y *= b;
     return a;
@@ -422,10 +444,10 @@ CUDA_COMMON_FUNCTION CUDA_INLINE int2 operator/(const int2 &a, const int2 &b) {
 CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator/(const int2 &a, const uint2 &b) {
     return make_uint2(a.x / b.x, a.y / b.y);
 }
-CUDA_COMMON_FUNCTION CUDA_INLINE int2 operator/(const int2 &a, int32_t b) {
+CUDA_COMMON_FUNCTION CUDA_INLINE int2 operator/(const int2 &a, const int32_t b) {
     return make_int2(a.x / b, a.y / b);
 }
-CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator/(const int2 &a, uint32_t b) {
+CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator/(const int2 &a, const uint32_t b) {
     return make_uint2(a.x / b, a.y / b);
 }
 CUDA_COMMON_FUNCTION CUDA_INLINE int2 operator/=(int2 &a, const int2 &b) {
@@ -438,12 +460,12 @@ CUDA_COMMON_FUNCTION CUDA_INLINE int2 operator/=(int2 &a, const uint2 &b) {
     a.y /= b.y;
     return a;
 }
-CUDA_COMMON_FUNCTION CUDA_INLINE int2 &operator/=(int2 &a, int32_t b) {
+CUDA_COMMON_FUNCTION CUDA_INLINE int2 &operator/=(int2 &a, const int32_t b) {
     a.x /= b;
     a.y /= b;
     return a;
 }
-CUDA_COMMON_FUNCTION CUDA_INLINE int2 &operator/=(int2 &a, uint32_t b) {
+CUDA_COMMON_FUNCTION CUDA_INLINE int2 &operator/=(int2 &a, const uint32_t b) {
     a.x /= b;
     a.y /= b;
     return a;
@@ -453,31 +475,31 @@ CUDA_COMMON_FUNCTION CUDA_INLINE int2 operator%(const int2 &a, const int2 &b) {
     return make_int2(a.x % b.x, a.y % b.y);
 }
 
-CUDA_COMMON_FUNCTION CUDA_INLINE int2 operator<<(const int2 &a, int32_t b) {
+CUDA_COMMON_FUNCTION CUDA_INLINE int2 operator<<(const int2 &a, const int32_t b) {
     return make_int2(a.x << b, a.y << b);
 }
-CUDA_COMMON_FUNCTION CUDA_INLINE int2 operator<<(const int2 &a, uint32_t b) {
+CUDA_COMMON_FUNCTION CUDA_INLINE int2 operator<<(const int2 &a, const uint32_t b) {
     return make_int2(a.x << b, a.y << b);
 }
-CUDA_COMMON_FUNCTION CUDA_INLINE int2 &operator<<=(int2 &a, int32_t b) {
+CUDA_COMMON_FUNCTION CUDA_INLINE int2 &operator<<=(int2 &a, const int32_t b) {
     a = a << b;
     return a;
 }
-CUDA_COMMON_FUNCTION CUDA_INLINE int2 &operator<<=(int2 &a, uint32_t b) {
+CUDA_COMMON_FUNCTION CUDA_INLINE int2 &operator<<=(int2 &a, const uint32_t b) {
     a = a << b;
     return a;
 }
-CUDA_COMMON_FUNCTION CUDA_INLINE int2 operator>>(const int2 &a, int32_t b) {
+CUDA_COMMON_FUNCTION CUDA_INLINE int2 operator>>(const int2 &a, const int32_t b) {
     return make_int2(a.x >> b, a.y >> b);
 }
-CUDA_COMMON_FUNCTION CUDA_INLINE int2 operator>>(const int2 &a, uint32_t b) {
+CUDA_COMMON_FUNCTION CUDA_INLINE int2 operator>>(const int2 &a, const uint32_t b) {
     return make_int2(a.x >> b, a.y >> b);
 }
-CUDA_COMMON_FUNCTION CUDA_INLINE int2 &operator>>=(int2 &a, int32_t b) {
+CUDA_COMMON_FUNCTION CUDA_INLINE int2 &operator>>=(int2 &a, const int32_t b) {
     a = a >> b;
     return a;
 }
-CUDA_COMMON_FUNCTION CUDA_INLINE int2 &operator>>=(int2 &a, uint32_t b) {
+CUDA_COMMON_FUNCTION CUDA_INLINE int2 &operator>>=(int2 &a, const uint32_t b) {
     a = a >> b;
     return a;
 }
@@ -508,20 +530,20 @@ CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator+(const uint2 &a, const int2 &b) 
     return make_uint2(a.x + b.x, a.y + b.y);
 }
 
-CUDA_COMMON_FUNCTION CUDA_INLINE uint2 &operator+=(uint2 &a, uint32_t b) {
+CUDA_COMMON_FUNCTION CUDA_INLINE uint2 &operator+=(uint2 &a, const uint32_t b) {
     a.x += b;
     a.y += b;
     return a;
 }
-CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator-(const uint2 &a, uint32_t b) {
+CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator-(const uint2 &a, const uint32_t b) {
     return make_uint2(a.x - b, a.y - b);
 }
-CUDA_COMMON_FUNCTION CUDA_INLINE uint2 &operator-=(uint2 &a, uint32_t b) {
+CUDA_COMMON_FUNCTION CUDA_INLINE uint2 &operator-=(uint2 &a, const uint32_t b) {
     a.x -= b;
     a.y -= b;
     return a;
 }
-CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator*(uint32_t a, const uint2 &b) {
+CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator*(const uint32_t a, const uint2 &b) {
     return make_uint2(a * b.x, a * b.y);
 }
 CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator*(const uint2 &a, const uint2 &b) {
@@ -532,7 +554,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE uint2 &operator*=(uint2 &a, const uint2 &b) {
     a.y *= b.y;
     return a;
 }
-CUDA_COMMON_FUNCTION CUDA_INLINE uint2 &operator*=(uint2 &a, uint32_t b) {
+CUDA_COMMON_FUNCTION CUDA_INLINE uint2 &operator*=(uint2 &a, const uint32_t b) {
     a.x *= b;
     a.y *= b;
     return a;
@@ -543,10 +565,10 @@ CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator/(const uint2 &a, const uint2 &b)
 CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator/(const uint2 &a, const int2 &b) {
     return make_uint2(a.x / b.x, a.y / b.y);
 }
-CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator/(const uint2 &a, uint32_t b) {
+CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator/(const uint2 &a, const uint32_t b) {
     return make_uint2(a.x / b, a.y / b);
 }
-CUDA_COMMON_FUNCTION CUDA_INLINE uint2 &operator/=(uint2 &a, uint32_t b) {
+CUDA_COMMON_FUNCTION CUDA_INLINE uint2 &operator/=(uint2 &a, const uint32_t b) {
     a.x /= b;
     a.y /= b;
     return a;
@@ -554,31 +576,31 @@ CUDA_COMMON_FUNCTION CUDA_INLINE uint2 &operator/=(uint2 &a, uint32_t b) {
 CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator%(const uint2 &a, const uint2 &b) {
     return make_uint2(a.x % b.x, a.y % b.y);
 }
-CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator<<(const uint2 &a, int32_t b) {
+CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator<<(const uint2 &a, const int32_t b) {
     return make_uint2(a.x << b, a.y << b);
 }
-CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator<<(const uint2 &a, uint32_t b) {
+CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator<<(const uint2 &a, const uint32_t b) {
     return make_uint2(a.x << b, a.y << b);
 }
-CUDA_COMMON_FUNCTION CUDA_INLINE uint2 &operator<<=(uint2 &a, int32_t b) {
+CUDA_COMMON_FUNCTION CUDA_INLINE uint2 &operator<<=(uint2 &a, const int32_t b) {
     a = a << b;
     return a;
 }
-CUDA_COMMON_FUNCTION CUDA_INLINE uint2 &operator<<=(uint2 &a, uint32_t b) {
+CUDA_COMMON_FUNCTION CUDA_INLINE uint2 &operator<<=(uint2 &a, const uint32_t b) {
     a = a << b;
     return a;
 }
-CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator>>(const uint2 &a, int32_t b) {
+CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator>>(const uint2 &a, const int32_t b) {
     return make_uint2(a.x >> b, a.y >> b);
 }
-CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator>>(const uint2 &a, uint32_t b) {
+CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator>>(const uint2 &a, const uint32_t b) {
     return make_uint2(a.x >> b, a.y >> b);
 }
-CUDA_COMMON_FUNCTION CUDA_INLINE uint2 &operator>>=(uint2 &a, int32_t b) {
+CUDA_COMMON_FUNCTION CUDA_INLINE uint2 &operator>>=(uint2 &a, const int32_t b) {
     a = a >> b;
     return a;
 }
-CUDA_COMMON_FUNCTION CUDA_INLINE uint2 &operator>>=(uint2 &a, uint32_t b) {
+CUDA_COMMON_FUNCTION CUDA_INLINE uint2 &operator>>=(uint2 &a, const uint32_t b) {
     a = a >> b;
     return a;
 }
@@ -600,11 +622,11 @@ CUDA_COMMON_FUNCTION CUDA_INLINE float2 min(const float2 &a, const float2 &b) {
     return make_float2(std::fmin(a.x, b.x), std::fmin(a.y, b.y));
 }
 
-CUDA_COMMON_FUNCTION CUDA_INLINE float3 make_float3(float v) {
+CUDA_COMMON_FUNCTION CUDA_INLINE float3 make_float3(const float v) {
     return make_float3(v, v, v);
 }
 
-CUDA_COMMON_FUNCTION CUDA_INLINE float4 make_float4(const float3 &xyz, float w) {
+CUDA_COMMON_FUNCTION CUDA_INLINE float4 make_float4(const float3 &xyz, const float w) {
     return make_float4(xyz.x, xyz.y, xyz.z, w);
 }
 CUDA_COMMON_FUNCTION CUDA_INLINE float4 &operator*=(float4 &a, const float4 &b) {
@@ -625,18 +647,18 @@ struct Bool2D {
 
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Bool2D() :
         x(false), y(false) {}
-    CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr Bool2D(bool v) :
+    CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr Bool2D(const bool v) :
         x(v), y(v) {}
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Bool2D(bool xx, bool yy) :
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Bool2D(const bool xx, const bool yy) :
         x(xx), y(yy) {}
 
     template <std::integral I>
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr bool &operator[](I idx) {
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr bool &operator[](const I idx) {
         Assert(static_cast<uint32_t>(idx) < 2, "idx is out of bound.");
         return *(&x + idx);
     }
     template <std::integral I>
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr bool operator[](I idx) const {
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr bool operator[](const I idx) const {
         Assert(static_cast<uint32_t>(idx) < 2, "idx is out of bound.");
         return *(&x + idx);
     }
@@ -656,9 +678,11 @@ template <std::floating_point F>
 struct Vector2D_T {
     F x, y;
 
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector2D_T() : x(0.0f), y(0.0f) {}
-    CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr Vector2D_T(F v) : x(v), y(v) {}
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector2D_T(F xx, F yy) :
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector2D_T() :
+        x(0.0f), y(0.0f) {}
+    CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr Vector2D_T(const F v) :
+        x(v), y(v) {}
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector2D_T(const F xx, const F yy) :
         x(xx), y(yy) {}
 
     template <typename F2 = F, std::enable_if_t<(sizeof(F2) <= sizeof(F)), int> = 0>
@@ -677,12 +701,12 @@ struct Vector2D_T {
     }
 
     template <std::integral I>
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr F &operator[](I idx) {
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr F &operator[](const I idx) {
         Assert(static_cast<uint32_t>(idx) < 2, "idx is out of bound.");
         return *(&x + idx);
     }
     template <std::integral I>
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr F operator[](I idx) const {
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr F operator[](const I idx) const {
         Assert(static_cast<uint32_t>(idx) < 2, "idx is out of bound.");
         return *(&x + idx);
     }
@@ -714,7 +738,7 @@ struct Vector2D_T {
         y -= r.y;
         return *this;
     }
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector2D_T &operator*=(F r) {
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector2D_T &operator*=(const F r) {
         x *= r;
         y *= r;
         return *this;
@@ -724,8 +748,8 @@ struct Vector2D_T {
         y *= r.y;
         return *this;
     }
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector2D_T &operator/=(F r) {
-        F rr = 1 / r;
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector2D_T &operator/=(const F r) {
+        const F rr = 1 / r;
         x *= rr;
         y *= rr;
         return *this;
@@ -743,7 +767,7 @@ struct Vector2D_T {
         return std::sqrt(sqLength());
     }
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector2D_T &normalize() {
-        F l = length();
+        const F l = length();
         return *this /= l;
     }
 
@@ -809,7 +833,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector2D_T<F> operator-(
 
 template <std::floating_point F, Number N>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector2D_T<F> operator*(
-    const Vector2D_T<F> &a, N b) {
+    const Vector2D_T<F> &a, const N b) {
     Vector2D_T<F> ret = a;
     ret *= static_cast<F>(b);
     return ret;
@@ -817,7 +841,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector2D_T<F> operator*(
 
 template <Number N, std::floating_point F>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector2D_T<F> operator*(
-    N a, const Vector2D_T<F> &b) {
+    const N a, const Vector2D_T<F> &b) {
     Vector2D_T<F> ret = b;
     ret *= static_cast<F>(a);
     return ret;
@@ -833,7 +857,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector2D_T<F> operator*(
 
 template <std::floating_point F, Number N>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector2D_T<F> operator/(
-    const Vector2D_T<F> &a, N b) {
+    const Vector2D_T<F> &a, const N b) {
     Vector2D_T<F> ret = a;
     ret /= static_cast<F>(b);
     return ret;
@@ -841,7 +865,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector2D_T<F> operator/(
 
 template <Number N, std::floating_point F>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector2D_T<F> operator/(
-    N a, const Vector2D_T<F> &b) {
+    const N a, const Vector2D_T<F> &b) {
     Vector2D_T<F> ret(static_cast<F>(a));
     ret /= b;
     return ret;
@@ -923,9 +947,9 @@ struct Point2D_T {
 
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Point2D_T() :
         x(0.0f), y(0.0f) {}
-    CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr Point2D_T(F v) :
+    CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr Point2D_T(const F v) :
         x(v), y(v) {}
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Point2D_T(F xx, F yy) :
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Point2D_T(const F xx, const F yy) :
         x(xx), y(yy) {}
     CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr Point2D_T(const Vector2D_T<F> &v) :
         x(v.x), y(v.y) {}
@@ -934,7 +958,7 @@ struct Point2D_T {
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Point2D_T(const Point2D_T<F2> &v) :
         x(v.x), y(v.y) {}
     template <typename F2 = F, std::enable_if_t<(sizeof(F2) > sizeof(F)), int> = 0>
-    CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr Point2D_T(const Point2D_T<F2> &v) :
+        CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr Point2D_T(const Point2D_T<F2> &v) :
         x(static_cast<F>(v.x)), y(static_cast<F>(v.y)) {}
 
     CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr operator Vector2D_T<F>() const {
@@ -949,12 +973,12 @@ struct Point2D_T {
     }
 
     template <std::integral I>
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr F &operator[](I idx) {
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr F &operator[](const I idx) {
         Assert(static_cast<uint32_t>(idx) < 2, "idx is out of bound.");
         return *(&x + idx);
     }
     template <std::integral I>
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr F operator[](I idx) const {
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr F operator[](const I idx) const {
         Assert(static_cast<uint32_t>(idx) < 2, "idx is out of bound.");
         return *(&x + idx);
     }
@@ -991,7 +1015,7 @@ struct Point2D_T {
         y -= r.y;
         return *this;
     }
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Point2D_T &operator*=(F r) {
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Point2D_T &operator*=(const F r) {
         x *= r;
         y *= r;
         return *this;
@@ -1001,8 +1025,8 @@ struct Point2D_T {
         y *= r.y;
         return *this;
     }
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Point2D_T &operator/=(F r) {
-        F rr = 1 / r;
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Point2D_T &operator/=(const F r) {
+        const F rr = 1 / r;
         x *= rr;
         y *= rr;
         return *this;
@@ -1107,7 +1131,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Point2D_T<F> operator-(
 
 template <std::floating_point F, Number N>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Point2D_T<F> operator*(
-    const Point2D_T<F> &a, N b) {
+    const Point2D_T<F> &a, const N b) {
     Point2D_T<F> ret = a;
     ret *= static_cast<F>(b);
     return ret;
@@ -1115,7 +1139,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Point2D_T<F> operator*(
 
 template <Number N, std::floating_point F>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Point2D_T<F> operator*(
-    N a, const Point2D_T<F> &b) {
+    const N a, const Point2D_T<F> &b) {
     Point2D_T<F> ret = b;
     ret *= static_cast<F>(a);
     return ret;
@@ -1131,7 +1155,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Point2D_T<F> operator*(
 
 template <std::floating_point F, Number N>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Point2D_T<F> operator/(
-    const Point2D_T<F> &a, N b) {
+    const Point2D_T<F> &a, const N b) {
     Point2D_T<F> ret = a;
     ret /= static_cast<F>(b);
     return ret;
@@ -1208,20 +1232,20 @@ struct Bool3D {
 
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Bool3D() :
         x(false), y(false), z(false) {}
-    CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr Bool3D(bool v) :
+    CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr Bool3D(const bool v) :
         x(v), y(v), z(v) {}
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Bool3D(bool xx, bool yy, bool zz) :
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Bool3D(const bool xx, const bool yy, const bool zz) :
         x(xx), y(yy), z(zz) {}
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Bool3D(const Bool2D &xy, bool zz) :
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Bool3D(const Bool2D &xy, const bool zz) :
         x(xy.x), y(xy.y), z(zz) {}
 
     template <std::integral I>
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr bool &operator[](I idx) {
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr bool &operator[](const I idx) {
         Assert(static_cast<uint32_t>(idx) < 3, "idx is out of bound.");
         return *(&x + idx);
     }
     template <std::integral I>
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr bool operator[](I idx) const {
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr bool operator[](const I idx) const {
         Assert(static_cast<uint32_t>(idx) < 3, "idx is out of bound.");
         return *(&x + idx);
     }
@@ -1243,13 +1267,13 @@ struct Vector3D_T {
 
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector3D_T() :
         x(0.0f), y(0.0f), z(0.0f) {}
-    CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr Vector3D_T(F v) :
+    CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr Vector3D_T(const F v) :
         x(v), y(v), z(v) {}
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector3D_T(F xx, F yy, F zz) :
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector3D_T(const F xx, const F yy, const F zz) :
         x(xx), y(yy), z(zz) {}
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector3D_T(const Vector2D_T<F> &xy, F zz = 0) :
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector3D_T(const Vector2D_T<F> &xy, const F zz = 0) :
         x(xy.x), y(xy.y), z(zz) {}
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector3D_T(const Point2D_T<F> &xy, F zz = 1) :
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector3D_T(const Point2D_T<F> &xy, const F zz = 1) :
         x(xy.x), y(xy.y), z(zz) {}
     CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr Vector3D_T(const Vector3D_T<F, !isNormal> &v) :
         x(v.x), y(v.y), z(v.z) {}
@@ -1260,7 +1284,7 @@ struct Vector3D_T {
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector3D_T(const Vector3D_T<F2, isNormal> &v) :
         x(v.x), y(v.y), z(v.z) {}
     template <typename F2 = F, std::enable_if_t<(sizeof(F2) > sizeof(F)), int> = 0>
-    CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr Vector3D_T(const Vector3D_T<F2, isNormal> &v) :
+        CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr Vector3D_T(const Vector3D_T<F2, isNormal> &v) :
         x(static_cast<F>(v.x)), y(static_cast<F>(v.y)), z(static_cast<F>(v.z)) {}
 
     CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr operator Vector3D_T<F, !isNormal>() const {
@@ -1275,12 +1299,12 @@ struct Vector3D_T {
     }
 
     template <std::integral I>
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr F &operator[](I idx) {
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr F &operator[](const I idx) {
         Assert(static_cast<uint32_t>(idx) < 3, "idx is out of bound.");
         return *(&x + idx);
     }
     template <std::integral I>
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr F operator[](I idx) const {
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr F operator[](const I idx) const {
         Assert(static_cast<uint32_t>(idx) < 3, "idx is out of bound.");
         return *(&x + idx);
     }
@@ -1326,7 +1350,7 @@ struct Vector3D_T {
         z -= r.z;
         return *this;
     }
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector3D_T &operator*=(F r) {
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector3D_T &operator*=(const F r) {
         x *= r;
         y *= r;
         z *= r;
@@ -1338,7 +1362,7 @@ struct Vector3D_T {
         z *= r.z;
         return *this;
     }
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector3D_T &operator/=(F r) {
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector3D_T &operator/=(const F r) {
         F rr = 1 / r;
         x *= rr;
         y *= rr;
@@ -1365,7 +1389,7 @@ struct Vector3D_T {
         return std::sqrt(sqLength());
     }
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector3D_T &normalize() {
-        F l = length();
+        const F l = length();
         return *this /= l;
     }
 
@@ -1380,8 +1404,8 @@ struct Vector3D_T {
     }
 
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr void makeCoordinateSystem(
-        Vector3D_T<F, false>* tangent, Vector3D_T<F, false>* bitangent) const {
-        F sign = z >= 0 ? 1.0f : -1.0f;
+        Vector3D_T<F, false>* const tangent, Vector3D_T<F, false>* const bitangent) const {
+        const F sign = z >= 0 ? 1.0f : -1.0f;
         const F a = -1 / (sign + z);
         const F b = x * y * a;
         *tangent = Vector3D_T<F, false>(1 + sign * x * x * a, sign * b, -sign * x);
@@ -1392,17 +1416,17 @@ struct Vector3D_T {
     // (-1, 0,  0) <=> phi: 1/2 pi
     // ( 0, 0, -1) <=> phi:   1 pi
     // ( 1, 0,  0) <=> phi: 3/2 pi
-    CUDA_COMMON_FUNCTION CUDA_INLINE static constexpr Vector3D_T fromPolarYUp(F phi, F theta) {
+    CUDA_COMMON_FUNCTION CUDA_INLINE static constexpr Vector3D_T fromPolarYUp(const F phi, const F theta) {
+#if defined(__CUDA_ARCH__)
         F sinPhi, cosPhi;
         F sinTheta, cosTheta;
-#if defined(__CUDA_ARCH__)
         sincosf(phi, &sinPhi, &cosPhi);
         sincosf(theta, &sinTheta, &cosTheta);
 #else
-        sinPhi = std::sin(phi);
-        cosPhi = std::cos(phi);
-        sinTheta = std::sin(theta);
-        cosTheta = std::cos(theta);
+        const F sinPhi = std::sin(phi);
+        const F cosPhi = std::cos(phi);
+        const F sinTheta = std::sin(theta);
+        const F cosTheta = std::cos(theta);
 #endif
         return Vector3D_T(-sinPhi * sinTheta, cosTheta, cosPhi * sinTheta);
     }
@@ -1462,7 +1486,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector3D_T<F, isNormalA> operator-(
 
 template <std::floating_point F, bool isNormal, Number N>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector3D_T<F, isNormal> operator*(
-    const Vector3D_T<F, isNormal> &a, N b) {
+    const Vector3D_T<F, isNormal> &a, const N b) {
     Vector3D_T<F, isNormal> ret = a;
     ret *= static_cast<F>(b);
     return ret;
@@ -1470,7 +1494,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector3D_T<F, isNormal> operator*(
 
 template <Number N, std::floating_point F, bool isNormal>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector3D_T<F, isNormal> operator*(
-    N a, const Vector3D_T<F, isNormal> &b) {
+    const N a, const Vector3D_T<F, isNormal> &b) {
     Vector3D_T<F, isNormal> ret = b;
     ret *= static_cast<F>(a);
     return ret;
@@ -1486,7 +1510,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector3D_T<F, isNormal> operator*(
 
 template <std::floating_point F, bool isNormal, Number N>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector3D_T<F, isNormal> operator/(
-    const Vector3D_T<F, isNormal> &a, N b) {
+    const Vector3D_T<F, isNormal> &a, const N b) {
     Vector3D_T<F, isNormal> ret = a;
     ret /= static_cast<F>(b);
     return ret;
@@ -1494,7 +1518,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector3D_T<F, isNormal> operator/(
 
 template <Number N, std::floating_point F, bool isNormal>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector3D_T<F, isNormal> operator/(
-    N a, const Vector3D_T<F, isNormal> &b) {
+    const N a, const Vector3D_T<F, isNormal> &b) {
     Vector3D_T<F, isNormal> ret(static_cast<F>(a));
     ret /= b;
     return ret;
@@ -1596,11 +1620,11 @@ struct Point3D_T {
 
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Point3D_T() :
         x(0.0f), y(0.0f), z(0.0f) {}
-    CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr Point3D_T(F v) :
+    CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr Point3D_T(const F v) :
         x(v), y(v), z(v) {}
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Point3D_T(F xx, F yy, F zz) :
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Point3D_T(const F xx, const F yy, const F zz) :
         x(xx), y(yy), z(zz) {}
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Point3D_T(const Point2D_T<F> &xy, F zz) :
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Point3D_T(const Point2D_T<F> &xy, const F zz) :
         x(xy.x), y(xy.y), z(zz) {}
     template <bool isNormal>
     CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr Point3D_T(const Vector3D_T<F, isNormal> &v) :
@@ -1612,7 +1636,7 @@ struct Point3D_T {
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Point3D_T(const Point3D_T<F2> &v) :
         x(v.x), y(v.y), z(v.z) {}
     template <typename F2 = F, std::enable_if_t<(sizeof(F2) > sizeof(F)), int> = 0>
-    CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr Point3D_T(const Point3D_T<F2> &v) :
+        CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr Point3D_T(const Point3D_T<F2> &v) :
         x(static_cast<F>(v.x)), y(static_cast<F>(v.y)), z(static_cast<F>(v.z)) {}
 
     CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr operator Point2D_T<F>() const {
@@ -1631,12 +1655,12 @@ struct Point3D_T {
     }
 
     template <std::integral I>
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr F &operator[](I idx) {
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr F &operator[](const I idx) {
         Assert(static_cast<uint32_t>(idx) < 3, "idx is out of bound.");
         return *(&x + idx);
     }
     template <std::integral I>
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr F operator[](I idx) const {
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr F operator[](const I idx) const {
         Assert(static_cast<uint32_t>(idx) < 3, "idx is out of bound.");
         return *(&x + idx);
     }
@@ -1688,7 +1712,7 @@ struct Point3D_T {
         z -= r.z;
         return *this;
     }
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Point3D_T &operator*=(F r) {
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Point3D_T &operator*=(const F r) {
         x *= r;
         y *= r;
         z *= r;
@@ -1700,8 +1724,8 @@ struct Point3D_T {
         z *= r.z;
         return *this;
     }
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Point3D_T &operator/=(F r) {
-        F rr = 1 / r;
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Point3D_T &operator/=(const F r) {
+        const F rr = 1 / r;
         x *= rr;
         y *= rr;
         z *= rr;
@@ -1808,7 +1832,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Point3D_T<F> operator-(
 
 template <std::floating_point F, Number N>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Point3D_T<F> operator*(
-    const Point3D_T<F> &a, N b) {
+    const Point3D_T<F> &a, const N b) {
     Point3D_T<F> ret = a;
     ret *= static_cast<F>(b);
     return ret;
@@ -1816,7 +1840,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Point3D_T<F> operator*(
 
 template <Number N, std::floating_point F>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Point3D_T<F> operator*(
-    N a, const Point3D_T<F> &b) {
+    const N a, const Point3D_T<F> &b) {
     Point3D_T<F> ret = b;
     ret *= static_cast<F>(a);
     return ret;
@@ -1832,7 +1856,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Point3D_T<F> operator*(
 
 template <std::floating_point F, Number N>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Point3D_T<F> operator/(
-    const Point3D_T<F> &a, N b) {
+    const Point3D_T<F> &a, const N b) {
     Point3D_T<F> ret = a;
     ret /= static_cast<F>(b);
     return ret;
@@ -1887,8 +1911,8 @@ struct Bool4D {
     bool x, y, z, w;
 
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Bool4D() : x(false), y(false), z(false), w(false) {}
-    CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr Bool4D(bool v) : x(v), y(v), z(v), w(v) {}
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Bool4D(bool xx, bool yy, bool zz, bool ww) :
+    CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr Bool4D(const bool v) : x(v), y(v), z(v), w(v) {}
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Bool4D(const bool xx, bool yy, bool zz, bool ww) :
         x(xx), y(yy), z(zz), w(ww) {}
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Bool4D(const Bool3D &xyz, bool ww) :
         x(xyz.x), y(xyz.y), z(xyz.z), w(ww) {}
@@ -1908,20 +1932,22 @@ template <std::floating_point F>
 struct Vector4D_T {
     F x, y, z, w;
 
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector4D_T() : x(0.0f), y(0.0f), z(0.0f), w(0.0f) {}
-    CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr Vector4D_T(F v) : x(v), y(v), z(v), w(v) {}
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector4D_T(F xx, F yy, F zz, F ww) :
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector4D_T() :
+        x(0.0f), y(0.0f), z(0.0f), w(0.0f) {}
+    CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr Vector4D_T(const F v) :
+        x(v), y(v), z(v), w(v) {}
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector4D_T(const F xx, const F yy, const F zz, const F ww) :
         x(xx), y(yy), z(zz), w(ww) {}
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector4D_T(const Vector3D_T<F, false> &xyz, F ww = 0) :
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector4D_T(const Vector3D_T<F, false> &xyz, const F ww = 0) :
         x(xyz.x), y(xyz.y), z(xyz.z), w(ww) {}
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector4D_T(const Point3D_T<F> &xyz, F ww = 1) :
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector4D_T(const Point3D_T<F> &xyz, const F ww = 1) :
         x(xyz.x), y(xyz.y), z(xyz.z), w(ww) {}
 
     template <typename F2 = F, std::enable_if_t<(sizeof(F2) <= sizeof(F)), int> = 0>
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector4D_T(const Vector4D_T<F2> &v) :
         x(v.x), y(v.y), z(v.z), w(v.w) {}
     template <typename F2 = F, std::enable_if_t<(sizeof(F2) > sizeof(F)), int> = 0>
-    CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr Vector4D_T(const Vector4D_T<F2> &v) :
+        CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr Vector4D_T(const Vector4D_T<F2> &v) :
         x(static_cast<F>(v.x)), y(static_cast<F>(v.y)), z(static_cast<F>(v.z)), w(static_cast<F>(v.w)) {}
 
     template <bool isNormal>
@@ -1930,12 +1956,12 @@ struct Vector4D_T {
     }
 
     template <std::integral I>
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr F &operator[](I idx) {
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr F &operator[](const I idx) {
         Assert(static_cast<uint32_t>(idx) < 4, "idx is out of bound.");
         return *(&x + idx);
     }
     template <std::integral I>
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr F operator[](I idx) const {
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr F operator[](const I idx) const {
         Assert(static_cast<uint32_t>(idx) < 4, "idx is out of bound.");
         return *(&x + idx);
     }
@@ -1995,7 +2021,7 @@ struct Vector4D_T {
         w -= r.w;
         return *this;
     }
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector4D_T &operator*=(F r) {
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector4D_T &operator*=(const F r) {
         x *= r;
         y *= r;
         z *= r;
@@ -2009,8 +2035,8 @@ struct Vector4D_T {
         w *= r.w;
         return *this;
     }
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector4D_T &operator/=(F r) {
-        F rr = 1 / r;
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector4D_T &operator/=(const F r) {
+        const F rr = 1 / r;
         x *= rr;
         y *= rr;
         z *= rr;
@@ -2087,7 +2113,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector4D_T<F> operator-(
 
 template <std::floating_point F, Number N>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector4D_T<F> operator*(
-    const Vector4D_T<F> &a, N b) {
+    const Vector4D_T<F> &a, const N b) {
     Vector4D_T<F> ret = a;
     ret *= static_cast<F>(b);
     return ret;
@@ -2095,7 +2121,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector4D_T<F> operator*(
 
 template <Number N, std::floating_point F>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector4D_T<F> operator*(
-    N a, const Vector4D_T<F> &b) {
+    const N a, const Vector4D_T<F> &b) {
     Vector4D_T<F> ret = b;
     ret *= static_cast<F>(a);
     return ret;
@@ -2111,7 +2137,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector4D_T<F> operator*(
 
 template <std::floating_point F, Number N>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector4D_T<F> operator/(
-    const Vector4D_T<F> &a, N b) {
+    const Vector4D_T<F> &a, const N b) {
     Vector4D_T<F> ret = a;
     ret /= static_cast<F>(b);
     return ret;
@@ -2164,17 +2190,17 @@ struct Matrix2x2_T {
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix2x2_T(const Matrix2x2_T<F2> &v) :
         c0(v.c0), c1(v.c1) {}
     template <typename F2 = F, std::enable_if_t<(sizeof(F2) > sizeof(F)), int> = 0>
-    CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr Matrix2x2_T(const Matrix2x2_T<F2> &v) :
+        CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr Matrix2x2_T(const Matrix2x2_T<F2> &v) :
         c0(static_cast<Vector2D_T<F>>(v.c0)),
         c1(static_cast<Vector2D_T<F>>(v.c1)) {}
 
     template <std::integral I>
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector2D_T<F> &operator[](I idx) {
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector2D_T<F> &operator[](const I idx) {
         Assert(static_cast<uint32_t>(idx) < 2, "idx is out of bound.");
         return *(&c0 + idx);
     }
     template <std::integral I>
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector2D_T<F> operator[](I idx) const {
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector2D_T<F> operator[](const I idx) const {
         Assert(static_cast<uint32_t>(idx) < 2, "idx is out of bound.");
         return *(&c0 + idx);
     }
@@ -2196,27 +2222,28 @@ struct Matrix2x2_T {
         c1 -= r.c1;
         return *this;
     }
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix2x2_T &operator*=(F r) {
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix2x2_T &operator*=(const F r) {
         c0 *= r;
         c1 *= r;
         return *this;
     }
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix2x2_T &operator*=(const Matrix2x2_T &r) {
-        Vector2D_T<F> rs[] = { row(0), row(1) };
+        const Vector2D_T<F> rs[] = { row(0), row(1) };
         m00 = dot(rs[0], r.c0); m01 = dot(rs[0], r.c1);
         m10 = dot(rs[1], r.c0); m11 = dot(rs[1], r.c1);
         return *this;
     }
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix2x2_T &operator/=(F r) {
-        F rr = 1 / r;
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix2x2_T &operator/=(const F r) {
+        const F rr = 1 / r;
         c0 *= rr;
         c1 *= rr;
         return *this;
     }
 
     template <std::integral I>
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector2D_T<F> row(I index) const {
-        switch (index) {
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector2D_T<F> row(const I idx) const {
+        Assert(static_cast<uint32_t>(idx) < 2, "idx is out of bound.");
+        switch (idx) {
         case 0:
             return Vector2D_T<F>(c0.x, c1.x);
         case 1:
@@ -2227,7 +2254,7 @@ struct Matrix2x2_T {
     }
 
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix2x2_T &invert() {
-        F det = 1 / (m00 * m11 - m01 * m10);
+        const F det = 1 / (m00 * m11 - m01 * m10);
         Matrix2x2_T m;
         m.m00 = det * m11;
         m.m01 = -det * m01;
@@ -2239,8 +2266,9 @@ struct Matrix2x2_T {
     }
 
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix2x2_T &transpose() {
-        F temp;
-        temp = m10; m10 = m01; m01 = temp;
+        const F temp = m10;
+        m10 = m01;
+        m01 = temp;
         return *this;
     }
 
@@ -2270,7 +2298,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix2x2_T<F> operator-(
 
 template <std::floating_point F, Number N>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix2x2_T<F> operator*(
-    const Matrix2x2_T<F> &a, N b) {
+    const Matrix2x2_T<F> &a, const N b) {
     Matrix2x2_T<F> ret = a;
     ret *= static_cast<F>(b);
     return ret;
@@ -2278,7 +2306,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix2x2_T<F> operator*(
 
 template <Number N, std::floating_point F>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix2x2_T<F> operator*(
-    N a, const Matrix2x2_T<F> &b) {
+    const N a, const Matrix2x2_T<F> &b) {
     Matrix2x2_T<F> ret = b;
     ret *= static_cast<F>(a);
     return ret;
@@ -2301,7 +2329,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector2D_T<F> operator*(
 template <std::floating_point F>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Point2D_T<F> operator*(
     const Matrix2x2_T<F> &a, const Point2D_T<F> &b) {
-    auto vb = static_cast<Vector2D_T<F>>(b);
+    const auto vb = static_cast<Vector2D_T<F>>(b);
     return Point2D_T<F>(
         dot(a.row(0), vb),
         dot(a.row(1), vb));
@@ -2309,7 +2337,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Point2D_T<F> operator*(
 
 template <std::floating_point F, Number N>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix2x2_T<F> operator/(
-    const Matrix2x2_T<F> &a, N b) {
+    const Matrix2x2_T<F> &a, const N b) {
     Matrix2x2_T<F> ret = a;
     ret /= static_cast<F>(b);
     return ret;
@@ -2340,23 +2368,22 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix2x2_T<F> scale2D_2x2(
 }
 template <std::floating_point F>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix2x2_T<F> scale2D_2x2(
-    F sx, F sy) {
+    const F sx, const F sy) {
     return scale2D_2x2(Vector2D_T<F>(sx, sy));
 }
 template <std::floating_point F>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix2x2_T<F> scale2D_2x2(
-    F s) {
+    const F s) {
     return scale2D_2x2(Vector2D_T<F>(s, s));
 }
 
 template <std::floating_point F>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix2x2_T<F> rotate2D_2x2(
-    F angle) {
+    const F angle) {
+    const F s = std::sin(angle);
+    const F c = std::cos(angle);
 
     Matrix2x2_T<F> ret;
-    F s = std::sin(angle);
-    F c = std::cos(angle);
-
     ret.m00 = c; ret.m01 = -s;
     ret.m10 = s; ret.m11 = c;
 
@@ -2400,17 +2427,17 @@ struct Matrix3x2_T {
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix3x2_T(const Matrix3x2_T<F2> &v) :
         c0(v.c0), c1(v.c1) {}
     template <typename F2 = F, std::enable_if_t<(sizeof(F2) > sizeof(F)), int> = 0>
-    CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr Matrix3x2_T(const Matrix3x2_T<F2> &v) :
+        CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr Matrix3x2_T(const Matrix3x2_T<F2> &v) :
         c0(static_cast<Vector3D_T<F, false>>(v.c0)),
         c1(static_cast<Vector3D_T<F, false>>(v.c1)) {}
 
     template <std::integral I>
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector3D_T<F, false> &operator[](I idx) {
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector3D_T<F, false> &operator[](const I idx) {
         Assert(static_cast<uint32_t>(idx) < 2, "idx is out of bound.");
         return *(&c0 + idx);
     }
     template <std::integral I>
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector3D_T<F, false> operator[](I idx) const {
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector3D_T<F, false> operator[](const I idx) const {
         Assert(static_cast<uint32_t>(idx) < 2, "idx is out of bound.");
         return *(&c0 + idx);
     }
@@ -2432,21 +2459,22 @@ struct Matrix3x2_T {
         c1 -= r.c1;
         return *this;
     }
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix3x2_T &operator*=(F r) {
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix3x2_T &operator*=(const F r) {
         c0 *= r;
         c1 *= r;
         return *this;
     }
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix3x2_T &operator/=(F r) {
-        F rr = 1 / r;
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix3x2_T &operator/=(const F r) {
+        const F rr = 1 / r;
         c0 *= rr;
         c1 *= rr;
         return *this;
     }
 
     template <std::integral I>
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector2D_T<F> row(I index) const {
-        switch (index) {
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector2D_T<F> row(const I idx) const {
+        Assert(static_cast<uint32_t>(idx) < 3, "idx is out of bound.");
+        switch (idx) {
         case 0:
             return Vector2D_T<F>(c0.x, c1.x);
         case 1:
@@ -2484,7 +2512,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix3x2_T<F> operator-(
 
 template <std::floating_point F, Number N>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix3x2_T<F> operator*(
-    const Matrix3x2_T<F> &a, N b) {
+    const Matrix3x2_T<F> &a, const N b) {
     Matrix3x2_T<F> ret = a;
     ret *= static_cast<F>(b);
     return ret;
@@ -2492,7 +2520,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix3x2_T<F> operator*(
 
 template <Number N, std::floating_point F>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix3x2_T<F> operator*(
-    N a, const Matrix3x2_T<F> &b) {
+    const N a, const Matrix3x2_T<F> &b) {
     Matrix3x2_T<F> ret = b;
     ret *= static_cast<F>(a);
     return ret;
@@ -2500,7 +2528,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix3x2_T<F> operator*(
 
 template <std::floating_point F, Number N>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix3x2_T<F> operator/(
-    const Matrix3x2_T<F> &a, N b) {
+    const Matrix3x2_T<F> &a, const N b) {
     Matrix3x2_T<F> ret = a;
     ret /= static_cast<F>(b);
     return ret;
@@ -2571,18 +2599,18 @@ struct Matrix3x3_T {
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix3x3_T(const Matrix3x3_T<F2> &v) :
         c0(v.c0), c1(v.c1), c2(v.c2) {}
     template <typename F2 = F, std::enable_if_t<(sizeof(F2) > sizeof(F)), int> = 0>
-    CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr Matrix3x3_T(const Matrix3x3_T<F2> &v) :
+        CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr Matrix3x3_T(const Matrix3x3_T<F2> &v) :
         c0(static_cast<Vector3D_T<F, false>>(v.c0)),
         c1(static_cast<Vector3D_T<F, false>>(v.c1)),
         c2(static_cast<Vector3D_T<F, false>>(v.c2)) {}
 
     template <std::integral I>
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector3D_T<F, false> &operator[](I idx) {
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector3D_T<F, false> &operator[](const I idx) {
         Assert(static_cast<uint32_t>(idx) < 3, "idx is out of bound.");
         return *(&c0 + idx);
     }
     template <std::integral I>
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector3D_T<F, false> operator[](I idx) const {
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector3D_T<F, false> operator[](const I idx) const {
         Assert(static_cast<uint32_t>(idx) < 3, "idx is out of bound.");
         return *(&c0 + idx);
     }
@@ -2606,21 +2634,21 @@ struct Matrix3x3_T {
         c2 -= r.c2;
         return *this;
     }
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix3x3_T &operator*=(F r) {
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix3x3_T &operator*=(const F r) {
         c0 *= r;
         c1 *= r;
         c2 *= r;
         return *this;
     }
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix3x3_T &operator*=(const Matrix3x3_T &r) {
-        Vector3D_T<F, false> rs[] = { row(0), row(1), row(2) };
+        const Vector3D_T<F, false> rs[] = { row(0), row(1), row(2) };
         m00 = dot(rs[0], r.c0); m01 = dot(rs[0], r.c1); m02 = dot(rs[0], r.c2);
         m10 = dot(rs[1], r.c0); m11 = dot(rs[1], r.c1); m12 = dot(rs[1], r.c2);
         m20 = dot(rs[2], r.c0); m21 = dot(rs[2], r.c1); m22 = dot(rs[2], r.c2);
         return *this;
     }
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix3x3_T &operator/=(F r) {
-        F rr = 1 / r;
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix3x3_T &operator/=(const F r) {
+        const F rr = 1 / r;
         c0 *= rr;
         c1 *= rr;
         c2 *= rr;
@@ -2628,8 +2656,9 @@ struct Matrix3x3_T {
     }
 
     template <std::integral I>
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector3D_T<F, false> row(I index) const {
-        switch (index) {
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector3D_T<F, false> row(const I idx) const {
+        Assert(static_cast<uint32_t>(idx) < 3, "idx is out of bound.");
+        switch (idx) {
         case 0:
             return Vector3D_T<F, false>(c0.x, c1.x, c2.x);
         case 1:
@@ -2642,7 +2671,7 @@ struct Matrix3x3_T {
     }
 
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix3x3_T &invert() {
-        F det = 1 /
+        const F det = 1 /
             (m00 * m11 * m22 + m01 * m12 * m20 + m02 * m10 * m21
              - m02 * m11 * m20 - m01 * m10 * m22 - m00 * m12 * m21);
         Matrix3x3_T m;
@@ -2694,7 +2723,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix3x3_T<F> operator-(
 
 template <std::floating_point F, Number N>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix3x3_T<F> operator*(
-    const Matrix3x3_T<F> &a, N b) {
+    const Matrix3x3_T<F> &a, const N b) {
     Matrix3x3_T<F> ret = a;
     ret *= static_cast<F>(b);
     return ret;
@@ -2702,7 +2731,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix3x3_T<F> operator*(
 
 template <Number N, std::floating_point F>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix3x3_T<F> operator*(
-    N a, const Matrix3x3_T<F> &b) {
+    const N a, const Matrix3x3_T<F> &b) {
     Matrix3x3_T<F> ret = b;
     ret *= static_cast<F>(a);
     return ret;
@@ -2718,7 +2747,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix3x3_T<F> operator*(
 
 template <std::floating_point F, Number N>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix3x3_T<F> operator/(
-    const Matrix3x3_T<F> &a, N b) {
+    const Matrix3x3_T<F> &a, const N b) {
     Matrix3x3_T<F> ret = a;
     ret /= static_cast<F>(b);
     return ret;
@@ -2728,7 +2757,7 @@ template <std::floating_point F>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector2D_T<F> operator*(
     const Matrix3x3_T<F> &a, const Vector2D_T<F> &b) {
     const Vector3D_T<F, false> r[] = { a.row(0), a.row(1) };
-    Vector3D_T<F, false> v3(b, 0.0f);
+    const Vector3D_T<F, false> v3(b, 0.0f);
     return Vector2D_T<F>(
         dot(r[0], v3),
         dot(r[1], v3));
@@ -2738,7 +2767,7 @@ template <std::floating_point F>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Point2D_T<F> operator*(
     const Matrix3x3_T<F> &a, const Point2D_T<F> &b) {
     const Vector3D_T<F, false> r[] = { a.row(0), a.row(1) };
-    Vector3D_T<F, false> v3(b, 1.0f);
+    const Vector3D_T<F, false> v3(b, 1.0f);
     return Point2D_T<F>(
         dot(r[0], v3),
         dot(r[1], v3));
@@ -2756,7 +2785,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector3D_T<F, isNormal> operator*(
 template <std::floating_point F>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Point3D_T<F> operator*(
     const Matrix3x3_T<F> &a, const Point3D_T<F> &b) {
-    auto vb = static_cast<Vector3D_T<F, false>>(b);
+    const auto vb = static_cast<Vector3D_T<F, false>>(b);
     return Point3D_T<F>(
         dot(a.row(0), vb),
         dot(a.row(1), vb),
@@ -2789,23 +2818,22 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix3x3_T<F> scale2D_3x3(
 }
 template <std::floating_point F>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix3x3_T<F> scale2D_3x3(
-    F sx, F sy) {
+    const F sx, const F sy) {
     return scale2D_3x3(Vector2D_T<F>(sx, sy));
 }
 template <std::floating_point F>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix3x3_T<F> scale2D_3x3(
-    F s) {
+    const F s) {
     return scale2D_3x3(Vector2D_T<F>(s, s));
 }
 
 template <std::floating_point F>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix3x3_T<F> rotate2D_3x3(
-    F angle) {
+    const F angle) {
+    const F s = std::sin(angle);
+    const F c = std::cos(angle);
 
     Matrix3x3_T<F> ret;
-    F s = std::sin(angle);
-    F c = std::cos(angle);
-
     ret.m00 = c; ret.m01 = -s;
     ret.m10 = s; ret.m11 = c;
 
@@ -2827,7 +2855,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix3x3_T<F> translate2D_3x3(
 }
 template <std::floating_point F>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix3x3_T<F> translate2D_3x3(
-    F tx, F ty) {
+    const F tx, const F ty) {
     return translate2D_3x3(Vector2D_T<F>(tx, ty));
 }
 
@@ -2841,25 +2869,24 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix3x3_T<F> scale3D_3x3(
 }
 template <std::floating_point F>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix3x3_T<F> scale3D_3x3(
-    F sx, F sy, F sz) {
+    const F sx, const F sy, const F sz) {
     return scale3D_3x3(Vector3D_T<F, false>(sx, sy, sz));
 }
 template <std::floating_point F>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix3x3_T<F> scale3D_3x3(
-    F s) {
+    const F s) {
     return scale3D_3x3(Vector3D_T<F, false>(s, s, s));
 }
 
 template <std::floating_point F>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix3x3_T<F> rotate3D_3x3(
-    F angle, const Vector3D_T<F, false> &axis) {
+    const F angle, const Vector3D_T<F, false> &axis) {
+    const Vector3D_T<F, false> nAxis = normalize(axis);
+    const F s = std::sin(angle);
+    const F c = std::cos(angle);
+    const F oneMinusC = 1 - c;
 
     Matrix3x3_T<F> ret;
-    Vector3D_T<F, false> nAxis = normalize(axis);
-    F s = std::sin(angle);
-    F c = std::cos(angle);
-    F oneMinusC = 1 - c;
-
     ret.m00 = nAxis.x * nAxis.x * oneMinusC + c;
     ret.m10 = nAxis.x * nAxis.y * oneMinusC + nAxis.z * s;
     ret.m20 = nAxis.z * nAxis.x * oneMinusC - nAxis.y * s;
@@ -2874,22 +2901,22 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix3x3_T<F> rotate3D_3x3(
 }
 template <std::floating_point F>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix3x3_T<F> rotate3D_3x3(
-    F angle, F ax, F ay, F az) {
+    const F angle, const F ax, const F ay, const F az) {
     return rotate3D_3x3(angle, Vector3D_T<F, false>(ax, ay, az));
 }
 template <std::floating_point F>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix3x3_T<F> rotate3DX_3x3(
-    F angle) {
+    const F angle) {
     return rotate3D_3x3(angle, Vector3D_T<F, false>(1, 0, 0));
 }
 template <std::floating_point F>
-CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix3x3_T<F> rotate3DY_3x3(
-    F angle) {
+const CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix3x3_T<F> rotate3DY_3x3(
+    const F angle) {
     return rotate3D_3x3(angle, Vector3D_T<F, false>(0, 1, 0));
 }
 template <std::floating_point F>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix3x3_T<F> rotate3DZ_3x3(
-    F angle) {
+    const F angle) {
     return rotate3D_3x3(angle, Vector3D_T<F, false>(0, 0, 1));
 }
 
@@ -2918,58 +2945,58 @@ struct Matrix4x4_T {
         c0(1, 0, 0, 0),
         c1(0, 1, 0, 0),
         c2(0, 0, 1, 0),
-        c3(0, 0, 0, 1) { }
+        c3(0, 0, 0, 1) {}
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix4x4_T(const F array[16]) :
         m00(array[0]), m10(array[1]), m20(array[2]), m30(array[3]),
         m01(array[4]), m11(array[5]), m21(array[6]), m31(array[7]),
         m02(array[8]), m12(array[9]), m22(array[10]), m32(array[11]),
-        m03(array[12]), m13(array[13]), m23(array[14]), m33(array[15]) { }
+        m03(array[12]), m13(array[13]), m23(array[14]), m33(array[15]) {}
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix4x4_T(
         const Vector4D_T<F> &col0,
         const Vector4D_T<F> &col1,
         const Vector4D_T<F> &col2,
         const Vector4D_T<F> &col3) :
         c0(col0), c1(col1), c2(col2), c3(col3)
-    { }
+    {}
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix4x4_T(
         const Matrix3x3_T<F> &mat3x3) :
         c0(Vector4D_T<F>(mat3x3.c0)),
         c1(Vector4D_T<F>(mat3x3.c1)),
         c2(Vector4D_T<F>(mat3x3.c2)),
         c3(0.0f, 0.0f, 0.0f, 1.0f)
-    { }
+    {}
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix4x4_T(
         const Matrix3x3_T<F> &mat3x3, const Vector3D_T<F, false> &position) :
         c0(Vector4D_T<F>(mat3x3.c0)),
         c1(Vector4D_T<F>(mat3x3.c1)),
         c2(Vector4D_T<F>(mat3x3.c2)),
         c3(Vector4D_T<F>(position, 1.0f))
-    { }
+    {}
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix4x4_T(
         const Matrix3x3_T<F> &mat3x3, const Point3D_T<F> &position) :
         c0(Vector4D_T<F>(mat3x3.c0)),
         c1(Vector4D_T<F>(mat3x3.c1)),
         c2(Vector4D_T<F>(mat3x3.c2)),
         c3(Vector4D_T<F>(position))
-    { }
+    {}
 
     template <typename F2 = F, std::enable_if_t<(sizeof(F2) <= sizeof(F)), int> = 0>
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix4x4_T(const Matrix4x4_T<F2> &v) :
         c0(v.c0), c1(v.c1), c2(v.c2), c3(v.c3) {}
     template <typename F2 = F, std::enable_if_t<(sizeof(F2) > sizeof(F)), int> = 0>
-    CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr Matrix4x4_T(const Matrix4x4_T<F2> &v) :
+        CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr Matrix4x4_T(const Matrix4x4_T<F2> &v) :
         c0(static_cast<Vector4D_T<F>>(v.c0)),
         c1(static_cast<Vector4D_T<F>>(v.c1)),
         c2(static_cast<Vector4D_T<F>>(v.c2)),
         c3(static_cast<Vector4D_T<F>>(v.c3)) {}
 
     template <std::integral I>
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector4D_T<F> &operator[](I idx) {
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector4D_T<F> &operator[](const I idx) {
         Assert(static_cast<uint32_t>(idx) < 4, "idx is out of bound.");
         return *(&c0 + idx);
     }
     template <std::integral I>
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector4D_T<F> operator[](I idx) const {
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector4D_T<F> operator[](const I idx) const {
         Assert(static_cast<uint32_t>(idx) < 4, "idx is out of bound.");
         return *(&c0 + idx);
     }
@@ -2995,7 +3022,7 @@ struct Matrix4x4_T {
         c3 -= r.c3;
         return *this;
     }
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix4x4_T &operator*=(F r) {
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix4x4_T &operator*=(const F r) {
         c0 *= r;
         c1 *= r;
         c2 *= r;
@@ -3010,8 +3037,8 @@ struct Matrix4x4_T {
         c3 = Vector4D_T<F>(dot(rs[0], r.c3), dot(rs[1], r.c3), dot(rs[2], r.c3), dot(rs[3], r.c3));
         return *this;
     }
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix4x4_T &operator/=(F r) {
-        F rr = 1 / r;
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix4x4_T &operator/=(const F r) {
+        const F rr = 1 / r;
         c0 *= rr;
         c1 *= rr;
         c2 *= rr;
@@ -3019,13 +3046,10 @@ struct Matrix4x4_T {
         return *this;
     }
 
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector4D_T<F> &operator[](uint32_t c) {
-        //Assert(c < 3, "\"c\" is out of range [0, 3].");
-        return *(&c0 + c);
-    }
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector4D_T<F> row(unsigned int r) const {
-        //Assert(r < 3, "\"r\" is out of range [0, 3].");
-        switch (r) {
+    template <std::integral I>
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector4D_T<F> row(const I idx) const {
+        Assert(static_cast<uint32_t>(idx) < 4, "idx is out of bound.");
+        switch (idx) {
         case 0:
             return Vector4D_T<F>(m00, m01, m02, m03);
         case 1:
@@ -3062,7 +3086,7 @@ struct Matrix4x4_T {
             +((m00 * m11 * m22) - (m20 * m11 * m02) + (m10 * m21 * m02) - (m00 * m21 * m12) + (m20 * m01 * m12) - (m10 * m01 * m22)),
         };
 
-        F recDet = 1.0f / (m00 * inv[0] + m10 * inv[4] + m20 * inv[8] + m30 * inv[12]);
+        const F recDet = 1.0f / (m00 * inv[0] + m10 * inv[4] + m20 * inv[8] + m30 * inv[12]);
         for (int i = 0; i < 16; ++i)
             inv[i] *= recDet;
         *this = Matrix4x4_T(inv);
@@ -3089,9 +3113,9 @@ struct Matrix4x4_T {
     }
 
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr void decompose(
-        Vector3D_T<F, false>* retScale,
-        Vector3D_T<F, false>* rotation,
-        Vector3D_T<F, false>* translation) const {
+        Vector3D_T<F, false>* const retScale,
+        Vector3D_T<F, false>* const rotation,
+        Vector3D_T<F, false>* const translation) const {
         Matrix4x4_T mat = *this;
 
         // JP: 移動成分
@@ -3099,7 +3123,7 @@ struct Matrix4x4_T {
         if (translation)
             *translation = Vector3D_T<F, false>(mat.c3);
 
-        Vector3D_T<F, false> scale(
+        const Vector3D_T<F, false> scale(
             length(Vector3D_T<F, false>(mat.c0)),
             length(Vector3D_T<F, false>(mat.c1)),
             length(Vector3D_T<F, false>(mat.c2)));
@@ -3137,7 +3161,7 @@ struct Matrix4x4_T {
         //     求めたBを使ってさらに求まる成分がないため、Aを0と仮定する。
         // EN: 
         rotation->y = std::asin(-mat.c0.z);
-        F cosBeta = std::cos(rotation->y);
+        const F cosBeta = std::cos(rotation->y);
 
         if (std::fabs(cosBeta) < 0.000001f) {
             rotation->x = 0;
@@ -3175,7 +3199,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix4x4_T<F> operator-(
 
 template <std::floating_point F, Number N>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix4x4_T<F> operator*(
-    const Matrix4x4_T<F> &a, N b) {
+    const Matrix4x4_T<F> &a, const N b) {
     Matrix4x4_T<F> ret = a;
     ret *= static_cast<F>(b);
     return ret;
@@ -3183,7 +3207,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix4x4_T<F> operator*(
 
 template <Number N, std::floating_point F>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix4x4_T<F> operator*(
-    N a, const Matrix4x4_T<F> &b) {
+    const N a, const Matrix4x4_T<F> &b) {
     Matrix4x4_T<F> ret = b;
     ret *= static_cast<F>(a);
     return ret;
@@ -3199,7 +3223,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix4x4_T<F> operator*(
 
 template <std::floating_point F, Number N>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix4x4_T<F> operator/(
-    const Matrix4x4_T<F> &a, N b) {
+    const Matrix4x4_T<F> &a, const N b) {
     Matrix4x4_T<F> ret = a;
     ret /= static_cast<F>(b);
     return ret;
@@ -3209,7 +3233,7 @@ template <std::floating_point F>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector3D_T<F, false> operator*(
     const Matrix4x4_T<F> &a, const Vector3D_T<F, false> &b) {
     const Vector4D_T<F> r[] = { a.row(0), a.row(1), a.row(2) };
-    Vector4D_T<F> v4(b, 0.0f);
+    const Vector4D_T<F> v4(b, 0.0f);
     return Vector3D_T<F, false>(
         dot(r[0], v4),
         dot(r[1], v4),
@@ -3220,7 +3244,7 @@ template <std::floating_point F>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Point3D_T<F> operator*(
     const Matrix4x4_T<F> &a, const Point3D_T<F> &b) {
     const Vector4D_T<F> r[] = { a.row(0), a.row(1), a.row(2) };
-    Vector4D_T<F> v4(b, 1.0f);
+    const Vector4D_T<F> v4(b, 1.0f);
     return Point3D_T<F>(
         dot(r[0], v4),
         dot(r[1], v4),
@@ -3262,24 +3286,24 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix4x4_T<F> scale3D_4x4(
 }
 template <std::floating_point F>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix4x4_T<F> scale3D_4x4(
-    F sx, F sy, F sz) {
+    const F sx, const F sy, const F sz) {
     return scale3D_4x4(Vector3D_T<F, false>(sx, sy, sz));
 }
 template <std::floating_point F>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix4x4_T<F> scale3D_4x4(
-    F s) {
+    const F s) {
     return scale3D_4x4(Vector3D_T<F, false>(s, s, s));
 }
 
 template <std::floating_point F>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix4x4_T<F> rotate3D_4x4(
-    F angle, const Vector3D_T<F, false> &axis) {
-    Matrix4x4_T<F> matrix;
-    Vector3D_T<F, false> nAxis = normalize(axis);
-    F s = std::sin(angle);
-    F c = std::cos(angle);
-    F oneMinusC = 1 - c;
+    const F angle, const Vector3D_T<F, false> &axis) {
+    const Vector3D_T<F, false> nAxis = normalize(axis);
+    const F s = std::sin(angle);
+    const F c = std::cos(angle);
+    const F oneMinusC = 1 - c;
 
+    Matrix4x4_T<F> matrix;
     matrix.m00 = nAxis.x * nAxis.x * oneMinusC + c;
     matrix.m10 = nAxis.x * nAxis.y * oneMinusC + nAxis.z * s;
     matrix.m20 = nAxis.z * nAxis.x * oneMinusC - nAxis.y * s;
@@ -3301,22 +3325,22 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix4x4_T<F> rotate3D_4x4(
 }
 template <std::floating_point F>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix4x4_T<F> rotate3D_4x4(
-    F angle, F ax, F ay, F az) {
+    const F angle, const F ax, const F ay, const F az) {
     return rotate3D_4x4(angle, Vector3D_T<F, false>(ax, ay, az));
 }
 template <std::floating_point F>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix4x4_T<F> rotate3DX_4x4(
-    F angle) {
+    const F angle) {
     return rotate3D_4x4(angle, Vector3D_T<F, false>(1, 0, 0));
 }
 template <std::floating_point F>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix4x4_T<F> rotate3DY_4x4(
-    F angle) {
+    const F angle) {
     return rotate3D_4x4(angle, Vector3D_T<F, false>(0, 1, 0));
 }
 template <std::floating_point F>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix4x4_T<F> rotate3DZ_4x4(
-    F angle) {
+    const F angle) {
     return rotate3D_4x4(angle, Vector3D_T<F, false>(0, 0, 1));
 }
 
@@ -3336,17 +3360,17 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix3x3_T<F> translate3D_4x4(
 }
 template <std::floating_point F>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix4x4_T<F> translate3D_4x4(
-    F tx, F ty, F tz) {
+    const F tx, const F ty, const F tz) {
     return translate3D_4x4(Vector3D_T<F, false>(tx, ty, tz));
 }
 
 template <std::floating_point F>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix4x4_T<F> camera(
-    F aspect, F fovY, F near, F far) {
-    Matrix4x4_T<F> matrix;
-    F f = 1 / std::tan(fovY / 2);
-    F dz = far - near;
+    const F aspect, const F fovY, const F near, const F far) {
+    const F f = 1 / std::tan(fovY / 2);
+    const F dz = far - near;
 
+    Matrix4x4_T<F> matrix;
     matrix.m00 = f / aspect;
     matrix.m11 = f;
     matrix.m22 = -(near + far) / dz;
@@ -3376,16 +3400,16 @@ struct Quaternion_T {
 
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Quaternion_T() :
         v(0), w(1) {}
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Quaternion_T(F xx, F yy, F zz, F ww) :
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Quaternion_T(const F xx, const F yy, const F zz, const F ww) :
         v(xx, yy, zz), w(ww) {}
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Quaternion_T(const Vector3D_T<F, false> &vv, F ww) :
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Quaternion_T(const Vector3D_T<F, false> &vv, const F ww) :
         v(vv), w(ww) {}
 
     template <typename F2 = F, std::enable_if_t<(sizeof(F2) <= sizeof(F)), int> = 0>
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Quaternion_T(const Quaternion_T<F2> &v) :
         x(v.x), y(v.y), z(v.z), w(v.w) {}
     template <typename F2 = F, std::enable_if_t<(sizeof(F2) > sizeof(F)), int> = 0>
-    CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr Quaternion_T(const Quaternion_T<F2> &v) :
+        CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr Quaternion_T(const Quaternion_T<F2> &v) :
         x(static_cast<F>(v.x)), y(static_cast<F>(v.y)), z(static_cast<F>(v.z)), w(static_cast<F>(v.w)) {}
 
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Quaternion_T operator+() const {
@@ -3405,43 +3429,44 @@ struct Quaternion_T {
         w -= r.w;
         return *this;
     }
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Quaternion_T &operator*=(F r) {
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Quaternion_T &operator*=(const F r) {
         v *= r;
         w *= r;
         return *this;
     }
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Quaternion_T &operator*=(const Quaternion_T &r) {
-        Vector3D_T<F, false> vv = v;
+        const Vector3D_T<F, false> vv = v;
         v = cross(v, r.v) + w * r.v + r.w * v;
         w = w * r.w - dot(vv, r.v);
         return *this;
     }
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Quaternion_T &operator/=(F r) {
-        F rr = 1 / r;
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Quaternion_T &operator/=(const F r) {
+        const F rr = 1 / r;
         v *= rr;
         w *= rr;
         return *this;
     }
 
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr void toEulerAngles(F* roll, F* pitch, F* yaw) const {
-        F xx = x * x;
-        F xy = x * y;
-        F xz = x * z;
-        F xw = x * w;
-        F yy = y * y;
-        F yz = y * z;
-        F yw = y * w;
-        F zz = z * z;
-        F zw = z * w;
-        F ww = w * w;
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr void toEulerAngles(
+        F* const roll, F* const pitch, F* const yaw) const {
+        const F xx = x * x;
+        const F xy = x * y;
+        const F xz = x * z;
+        const F xw = x * w;
+        const F yy = y * y;
+        const F yz = y * z;
+        const F yw = y * w;
+        const F zz = z * z;
+        const F zw = z * w;
+        const F ww = w * w;
         *pitch = std::atan2(2 * (xw + yz), ww - xx - yy + zz); // around x
         *yaw = std::asin(std::fmin(std::fmax(2.0f * (yw - xz), -1.0f), 1.0f)); // around y
         *roll = std::atan2(2 * (zw + xy), ww + xx - yy - zz); // around z
     }
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix3x3_T<F> toMatrix3x3() const {
-        F xx = x * x, yy = y * y, zz = z * z;
-        F xy = x * y, yz = y * z, zx = z * x;
-        F xw = x * w, yw = y * w, zw = z * w;
+        const F xx = x * x, yy = y * y, zz = z * z;
+        const F xy = x * y, yz = y * z, zx = z * x;
+        const F xw = x * w, yw = y * w, zw = z * w;
         return Matrix3x3_T<F>(
             Vector3D_T<F, false>(1 - 2 * (yy + zz), 2 * (xy + zw), 2 * (zx - yw)),
             Vector3D_T<F, false>(2 * (xy - zw), 1 - 2 * (xx + zz), 2 * (yz + xw)),
@@ -3486,7 +3511,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Quaternion_T<F> operator-(
 
 template <std::floating_point F, Number N>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Quaternion_T<F> operator*(
-    const Quaternion_T<F> &a, N b) {
+    const Quaternion_T<F> &a, const N b) {
     Quaternion_T<F> ret = a;
     ret *= static_cast<F>(b);
     return ret;
@@ -3494,7 +3519,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Quaternion_T<F> operator*(
 
 template <Number N, std::floating_point F>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Quaternion_T<F> operator*(
-    N a, const Quaternion_T<F> &b) {
+    const N a, const Quaternion_T<F> &b) {
     Quaternion_T<F> ret = b;
     ret *= static_cast<F>(a);
     return ret;
@@ -3510,7 +3535,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Quaternion_T<F> operator*(
 
 template <std::floating_point F, Number N>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Quaternion_T<F> operator/(
-    const Quaternion_T<F> &a, N b) {
+    const Quaternion_T<F> &a, const N b) {
     Quaternion_T<F> ret = a;
     ret /= static_cast<F>(b);
     return ret;
@@ -3536,51 +3561,50 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Quaternion_T<F> normalize(
 
 template <std::floating_point F>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Quaternion_T<F> qRotate(
-    F angle, const Vector3D_T<F, false> &axis) {
-    F ha = angle / 2;
-    F s = std::sin(ha), c = std::cos(ha);
+    const F angle, const Vector3D_T<F, false> &axis) {
+    const F ha = angle / 2;
+    const F s = std::sin(ha), c = std::cos(ha);
     return Quaternion_T<F>(s * normalize(axis), c);
 }
 template <std::floating_point F>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Quaternion_T<F> qRotate(
-    F angle, F ax, F ay, F az) {
+    const F angle, const F ax, const F ay, const F az) {
     return qRotate(angle, Vector3D_T<F, false>(ax, ay, az));
 }
 template <std::floating_point F>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Quaternion_T<F> qRotateX(
-    F angle) {
+    const F angle) {
     return qRotate(angle, Vector3D_T<F, false>(1, 0, 0));
 }
 template <std::floating_point F>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Quaternion_T<F> qRotateY(
-    F angle) {
+    const F angle) {
     return qRotate(angle, Vector3D_T<F, false>(0, 1, 0));
 }
 template <std::floating_point F>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Quaternion_T<F> qRotateZ(
-    F angle) {
+    const F angle) {
     return qRotate(angle, Vector3D_T<F, false>(0, 0, 1));
 }
 
 template <std::floating_point F>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Quaternion_T<F> qFromEulerAngles(
-    F roll, F pitch, F yaw) {
+    const F roll, const F pitch, const F yaw) {
     return qRotateZ(roll) * qRotateY(yaw) * qRotateX(pitch);
 }
 
 template <std::floating_point F>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Quaternion_T<F> Slerp(
-    F t, const Quaternion_T<F> &q0, const Quaternion_T<F> &q1) {
-    F cosTheta = dot(q0, q1);
+    const F t, const Quaternion_T<F> &q0, const Quaternion_T<F> &q1) {
+    const F cosTheta = dot(q0, q1);
     if (cosTheta > 0.9995f)
         return normalize((1 - t) * q0 + t * q1);
     else {
-        F theta = std::acos(std::fmin(std::fmax(cosTheta, -1.0f), 1.0f));
-        F thetap = theta * t;
-        Quaternion_T<F> qPerp = normalize(q1 - q0 * cosTheta);
-        F sinThetaP, cosThetaP;
-        sinThetaP = std::sin(thetap);
-        cosThetaP = std::cos(thetap);
+        const F theta = std::acos(std::fmin(std::fmax(cosTheta, -1.0f), 1.0f));
+        const F thetap = theta * t;
+        const Quaternion_T<F> qPerp = normalize(q1 - q0 * cosTheta);
+        const F sinThetaP = std::sin(thetap);
+        const F cosThetaP = std::cos(thetap);
         //sincos(thetap, &sinThetaP, &cosThetaP);
         return q0 * cosThetaP + qPerp * sinThetaP;
     }
@@ -3594,9 +3618,9 @@ struct RGB_T {
 
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr RGB_T() :
         r(0.0f), g(0.0f), b(0.0f) {}
-    CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr RGB_T(F v) :
+    CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr RGB_T(const F v) :
         r(v), g(v), b(v) {}
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr RGB_T(F rr, F gg, F bb) :
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr RGB_T(const F rr, const F gg, const F bb) :
         r(rr), g(gg), b(bb) {}
     CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr RGB_T(const float3 &v) :
         r(v.x), g(v.y), b(v.z) {}
@@ -3635,7 +3659,7 @@ struct RGB_T {
         b -= o.b;
         return *this;
     }
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr RGB_T &operator*=(F o) {
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr RGB_T &operator*=(const F o) {
         r *= o;
         g *= o;
         b *= o;
@@ -3647,8 +3671,8 @@ struct RGB_T {
         b *= o.b;
         return *this;
     }
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr RGB_T &operator/=(F o) {
-        F ro = 1 / o;
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr RGB_T &operator/=(const F o) {
+        const F ro = 1 / o;
         r *= ro;
         g *= ro;
         b *= ro;
@@ -3660,9 +3684,9 @@ struct RGB_T {
         b /= o.b;
         return *this;
     }
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr RGB_T &safeDivide(F o) {
-        F ro = 1 / o;
-        bool c = o != 0;
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr RGB_T &safeDivide(const F o) {
+        const F ro = 1 / o;
+        const bool c = o != 0;
         r = c ? r * ro : 0.0f;
         g = c ? g * ro : 0.0f;
         b = c ? b * ro : 0.0f;
@@ -3737,7 +3761,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr RGB_T<F> operator-(
 
 template <std::floating_point F, Number N>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr RGB_T<F> operator*(
-    const RGB_T<F> &a, N b) {
+    const RGB_T<F> &a, const N b) {
     RGB_T<F> ret = a;
     ret *= static_cast<F>(b);
     return ret;
@@ -3745,7 +3769,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr RGB_T<F> operator*(
 
 template <Number N, std::floating_point F>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr RGB_T<F> operator*(
-    N a, const RGB_T<F> &b) {
+    const N a, const RGB_T<F> &b) {
     RGB_T<F> ret = b;
     ret *= static_cast<F>(a);
     return ret;
@@ -3761,7 +3785,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr RGB_T<F> operator*(
 
 template <std::floating_point F, Number N>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr RGB_T<F> operator/(
-    const RGB_T<F> &a, N b) {
+    const RGB_T<F> &a, const N b) {
     RGB_T<F> ret = a;
     ret /= static_cast<F>(b);
     return ret;
@@ -3777,7 +3801,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr RGB_T<F> operator/(
 
 template <std::floating_point F, Number N>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr RGB_T<F> safeDivide(
-    const RGB_T<F> &a, N b) {
+    const RGB_T<F> &a, const N b) {
     RGB_T<F> ret = a;
     ret.safeDivide(static_cast<F>(b));
     return ret;
@@ -3812,16 +3836,16 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr RGB_T<F> max(
 
 
 template <std::floating_point F>
-CUDA_COMMON_FUNCTION CUDA_INLINE constexpr RGB_T<F> HSVtoRGB(F h, F s, F v) {
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr RGB_T<F> HSVtoRGB(const F h, const F s, const F v) {
     if (s == 0)
         return RGB_T<F>(v, v, v);
 
-    h = h - std::floor(h);
-    int32_t hi = static_cast<int32_t>(h * 6);
-    F f = h * 6 - hi;
-    F m = v * (1 - s);
-    F n = v * (1 - s * f);
-    F k = v * (1 - s * (1 - f));
+    const F hm = h - std::floor(h);
+    const int32_t hi = static_cast<int32_t>(hm * 6);
+    const F f = hm * 6 - hi;
+    const F m = v * (1 - s);
+    const F n = v * (1 - s * f);
+    const F k = v * (1 - s * (1 - f));
     if (hi == 0)
         return RGB_T<F>(v, k, m);
     else if (hi == 1)
@@ -3838,13 +3862,13 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr RGB_T<F> HSVtoRGB(F h, F s, F v) {
 }
 
 template <std::floating_point F>
-CUDA_COMMON_FUNCTION CUDA_INLINE constexpr F simpleToneMap_s(F value) {
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr F simpleToneMap_s(const F value) {
     Assert(value >= 0, "Input value must be equal to or greater than 0: %g", value);
     return 1 - std::exp(-value);
 }
 
 template <std::floating_point F>
-CUDA_COMMON_FUNCTION CUDA_INLINE constexpr F sRGB_degamma_s(F value) {
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr F sRGB_degamma_s(const F value) {
     Assert(value >= 0, "Input value must be equal to or greater than 0: %g", value);
     if (value <= 0.04045f)
         return value / 12.92f;
@@ -3852,7 +3876,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr F sRGB_degamma_s(F value) {
 }
 
 template <std::floating_point F>
-CUDA_COMMON_FUNCTION CUDA_INLINE constexpr F sRGB_gamma_s(F value) {
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr F sRGB_gamma_s(const F value) {
     Assert(value >= 0, "Input value must be equal to or greater than 0: %g", value);
     if (value <= 0.0031308f)
         return 12.92f * value;
@@ -3903,7 +3927,7 @@ struct AABB_T {
         return *this;
     }
 
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr AABB_T &dilate(F scale) {
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr AABB_T &dilate(const F scale) {
         Vector3D_T<F, false> d = maxP - minP;
         minP -= 0.5f * (scale - 1) * d;
         maxP += 0.5f * (scale - 1) * d;
@@ -3920,14 +3944,14 @@ struct AABB_T {
     }
 
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr bool intersect(
-        const Point3D_T<F> &org, const Vector3D_T<F, false> &dir, F distMin, F distMax) const {
+        const Point3D_T<F> &org, const Vector3D_T<F, false> &dir, const F distMin, const F distMax) const {
         if (!isValid())
             return INFINITY;
-        Vector3D_T<F, false> invRayDir = 1.0f / dir;
-        Vector3D_T<F, false> tNear = (minP - org) * invRayDir;
-        Vector3D_T<F, false> tFar = (maxP - org) * invRayDir;
-        Vector3D_T<F, false> near = min(tNear, tFar);
-        Vector3D_T<F, false> far = max(tNear, tFar);
+        const Vector3D_T<F, false> invRayDir = 1.0f / dir;
+        const Vector3D_T<F, false> tNear = (minP - org) * invRayDir;
+        const Vector3D_T<F, false> tFar = (maxP - org) * invRayDir;
+        const Vector3D_T<F, false> near = min(tNear, tFar);
+        const Vector3D_T<F, false> far = max(tNear, tFar);
         F t0 = std::fmax(std::fmax(near.x, near.y), near.z);
         F t1 = std::fmin(std::fmin(far.x, far.y), far.z);
         t0 = std::fmax(t0, distMin);
@@ -3937,15 +3961,15 @@ struct AABB_T {
 
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr F intersect(
         const Point3D_T<F> &org, const Vector3D_T<F, false> &dir,
-        F distMin, F distMax,
-        F* u, F* v, bool* isFrontHit) const {
+        const F distMin, const F distMax,
+        F* const u, F* const v, bool* const isFrontHit) const {
         if (!isValid())
             return INFINITY;
-        Vector3D_T<F, false> invRayDir = 1.0f / dir;
-        Vector3D_T<F, false> tNear = (minP - org) * invRayDir;
-        Vector3D_T<F, false> tFar = (maxP - org) * invRayDir;
-        Vector3D_T<F, false> near = min(tNear, tFar);
-        Vector3D_T<F, false> far = max(tNear, tFar);
+        const Vector3D_T<F, false> invRayDir = 1.0f / dir;
+        const Vector3D_T<F, false> tNear = (minP - org) * invRayDir;
+        const Vector3D_T<F, false> tFar = (maxP - org) * invRayDir;
+        const Vector3D_T<F, false> near = min(tNear, tFar);
+        const Vector3D_T<F, false> far = max(tNear, tFar);
         F t0 = std::fmax(std::fmax(near.x, near.y), near.z);
         F t1 = std::fmin(std::fmin(far.x, far.y), far.z);
         *isFrontHit = t0 >= 0.0f;
@@ -3954,7 +3978,7 @@ struct AABB_T {
         if (!(t0 <= t1 && t1 > 0.0f))
             return INFINITY;
 
-        F t = *isFrontHit ? t0 : t1;
+        const F t = *isFrontHit ? t0 : t1;
         Vector3D_T<F, false> n = -sign(dir) * step(near.yzx(), near) * step(near.zxy(), near);
         if (!*isFrontHit)
             n = -n;
@@ -3962,14 +3986,14 @@ struct AABB_T {
         int32_t faceID = static_cast<int32_t>(dot(abs(n), Vector3D_T<F, false>(2, 4, 8)));
         faceID ^= static_cast<int32_t>(any(n > Vector3D_T<F, false>(0.0f)));
 
-        int32_t faceDim = tzcnt(faceID & ~0b1) - 1;
-        int32_t dim0 = (faceDim + 1) % 3;
-        int32_t dim1 = (faceDim + 2) % 3;
-        Point3D_T<F> p = org + t * dir;
-        F min0 = minP[dim0];
-        F max0 = maxP[dim0];
-        F min1 = minP[dim1];
-        F max1 = maxP[dim1];
+        const int32_t faceDim = tzcnt(faceID & ~0b1) - 1;
+        const int32_t dim0 = (faceDim + 1) % 3;
+        const int32_t dim1 = (faceDim + 2) % 3;
+        const Point3D_T<F> p = org + t * dir;
+        const F min0 = minP[dim0];
+        const F max0 = maxP[dim0];
+        const F min1 = minP[dim1];
+        const F max1 = maxP[dim1];
         *u = std::fmin(std::fmax((p[dim0] - min0) / (max0 - min0), 0.0f), 1.0f)
             + static_cast<F>(faceID);
         *v = std::fmin(std::fmax((p[dim1] - min1) / (max1 - min1), 0.0f), 1.0f);
@@ -3978,17 +4002,17 @@ struct AABB_T {
     }
 
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Point3D_T<F> restoreHitPoint(
-        F u, F v, Vector3D_T<F, true>* normal) const {
-        auto faceID = static_cast<uint32_t>(u);
+        F u, const F v, Vector3D_T<F, true>* const normal) const {
+        const auto faceID = static_cast<uint32_t>(u);
         u = std::fmod(u, 1.0f);
 
-        int32_t faceDim = tzcnt(faceID & ~0b1) - 1;
-        bool isPosSide = faceID & 0b1;
+        const int32_t faceDim = tzcnt(faceID & ~0b1) - 1;
+        const bool isPosSide = faceID & 0b1;
         *normal = Vector3D_T<F, true>(0.0f);
         (*normal)[faceDim] = isPosSide ? 1 : -1;
 
-        int32_t dim0 = (faceDim + 1) % 3;
-        int32_t dim1 = (faceDim + 2) % 3;
+        const int32_t dim0 = (faceDim + 1) % 3;
+        const int32_t dim1 = (faceDim + 2) % 3;
         Point3D_T<F> p;
         p[faceDim] = isPosSide ? maxP[faceDim] : minP[faceDim];
         p[dim0] = lerp(minP[dim0], maxP[dim0], u);
@@ -3997,10 +4021,10 @@ struct AABB_T {
         return p;
     }
 
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector3D_T<F, true> restoreNormal(F u, F v) const {
-        auto faceID = static_cast<uint32_t>(u);
-        int32_t faceDim = tzcnt(faceID & ~0b1) - 1;
-        bool isPosSide = faceID & 0b1;
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector3D_T<F, true> restoreNormal(const F u, const F v) const {
+        const auto faceID = static_cast<uint32_t>(u);
+        const int32_t faceDim = tzcnt(faceID & ~0b1) - 1;
+        const bool isPosSide = faceID & 0b1;
         auto normal = Vector3D_T<F, true>(0.0f);
         normal[faceDim] = isPosSide ? 1 : -1;
         return normal;
@@ -4031,7 +4055,7 @@ struct CompensatedSum_T {
     RealType comp;
 
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr CompensatedSum_T(const RealType &value = RealType(0)) :
-        result(value), comp(0.0) { };
+        result(value), comp(0.0) {};
 
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr CompensatedSum_T &operator=(const RealType &value) {
         result = value;
@@ -4040,14 +4064,16 @@ struct CompensatedSum_T {
     }
 
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr CompensatedSum_T &operator+=(const RealType &value) {
-        RealType cInput = value - comp;
-        RealType sumTemp = result + cInput;
+        const RealType cInput = value - comp;
+        const RealType sumTemp = result + cInput;
         comp = (sumTemp - result) - cInput;
         result = sumTemp;
         return *this;
     }
 
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr operator RealType() const { return result; };
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr operator RealType() const {
+        return result;
+    };
 };
 
 
@@ -4069,16 +4095,16 @@ using FloatSum = CompensatedSum_T<float>;
 
 
 
-CUDA_COMMON_FUNCTION CUDA_INLINE int32_t floatToOrderedInt(float fVal) {
+CUDA_COMMON_FUNCTION CUDA_INLINE int32_t floatToOrderedInt(const float fVal) {
 #if defined(__CUDA_ARCH__)
     int32_t iVal = __float_as_int(fVal);
 #else
-    int32_t iVal = *reinterpret_cast<int32_t*>(&fVal);
+    const int32_t iVal = *reinterpret_cast<const int32_t*>(&fVal);
 #endif
     return (iVal >= 0) ? iVal : iVal ^ 0x7FFFFFFF;
 }
 
-CUDA_COMMON_FUNCTION CUDA_INLINE float orderedIntToFloat(int32_t iVal) {
+CUDA_COMMON_FUNCTION CUDA_INLINE float orderedIntToFloat(const int32_t iVal) {
     int32_t orgVal = (iVal >= 0) ? iVal : iVal ^ 0x7FFFFFFF;
 #if defined(__CUDA_ARCH__)
     return __int_as_float(orgVal);
@@ -4144,14 +4170,14 @@ struct RGBAsOrderedInt {
 #   endif
 
 CUDA_DEVICE_FUNCTION CUDA_INLINE void atomicMin_RGB(
-    RGBAsOrderedInt* dst, const RGBAsOrderedInt &v) {
+    RGBAsOrderedInt* const dst, const RGBAsOrderedInt &v) {
     atomicMin(&dst->r, v.r);
     atomicMin(&dst->g, v.g);
     atomicMin(&dst->b, v.b);
 }
 
 CUDA_DEVICE_FUNCTION CUDA_INLINE void atomicMax_RGB(
-    RGBAsOrderedInt* dst, const RGBAsOrderedInt &v) {
+    RGBAsOrderedInt* const dst, const RGBAsOrderedInt &v) {
     atomicMax(&dst->r, v.r);
     atomicMax(&dst->g, v.g);
     atomicMax(&dst->b, v.b);
@@ -4164,20 +4190,20 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void atomicAdd_RGB(RGB* dst, const RGB &v) {
 }
 
 CUDA_DEVICE_FUNCTION CUDA_INLINE void atomicMin_RGB_block(
-    RGBAsOrderedInt* dst, const RGBAsOrderedInt &v) {
+    RGBAsOrderedInt* const dst, const RGBAsOrderedInt &v) {
     atomicMin_block(&dst->r, v.r);
     atomicMin_block(&dst->g, v.g);
     atomicMin_block(&dst->b, v.b);
 }
 
 CUDA_DEVICE_FUNCTION CUDA_INLINE void atomicMax_RGB_block(
-    RGBAsOrderedInt* dst, const RGBAsOrderedInt &v) {
+    RGBAsOrderedInt* const dst, const RGBAsOrderedInt &v) {
     atomicMax_block(&dst->r, v.r);
     atomicMax_block(&dst->g, v.g);
     atomicMax_block(&dst->b, v.b);
 }
 
-CUDA_DEVICE_FUNCTION CUDA_INLINE void atomicAdd_RGB_block(RGB* dst, const RGB &v) {
+CUDA_DEVICE_FUNCTION CUDA_INLINE void atomicAdd_RGB_block(RGB* const dst, const RGB &v) {
     atomicAdd_block(&dst->r, v.r);
     atomicAdd_block(&dst->g, v.g);
     atomicAdd_block(&dst->b, v.b);
