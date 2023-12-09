@@ -13,6 +13,7 @@
   <ItemGroup>
     <ClCompile Include="..\common\common_host.cpp" />
     <ClCompile Include="..\common\dds_loader.cpp" />
+    <ClCompile Include="..\common\vdb.cpp" />
     <ClCompile Include="..\ext\imgui\backends\imgui_impl_glfw.cpp" />
     <ClCompile Include="..\ext\imgui\backends\imgui_impl_opengl3.cpp" />
     <ClCompile Include="..\ext\imgui\imgui.cpp" />
@@ -26,7 +27,7 @@
     <ClCompile Include="..\utils\cuda_util.cpp" />
     <ClCompile Include="..\utils\gl_util.cpp" />
     <ClCompile Include="..\utils\optix_util.cpp" />
-    <ClCompile Include="sandbox.cpp" />
+    <ClCompile Include="tfdm_sandbox.cpp" />
     <ClCompile Include="tfdm_main.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -35,6 +36,7 @@
     <ClInclude Include="..\common\common_shared.h" />
     <ClInclude Include="..\common\common_host.h" />
     <ClInclude Include="..\common\dds_loader.h" />
+    <ClInclude Include="..\common\vdb_interface.h" />
     <ClInclude Include="..\ext\glfw\include\GLFW\glfw3.h" />
     <ClInclude Include="..\ext\glfw\include\GLFW\glfw3native.h" />
     <ClInclude Include="..\ext\imgui\backends\imgui_impl_glfw.h" />
@@ -53,6 +55,7 @@
     <ClInclude Include="..\ext\stb_image_write.h" />
     <ClInclude Include="..\ext\tinyexr\deps\miniz\miniz.h" />
     <ClInclude Include="..\ext\tinyexr\tinyexr.h" />
+    <ClInclude Include="..\ext\vdb\vdb.h" />
     <ClInclude Include="..\utils\cuda_util.h" />
     <ClInclude Include="..\utils\gl_util.h" />
     <ClInclude Include="..\utils\optixu_on_cudau.h" />

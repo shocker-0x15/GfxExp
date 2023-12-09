@@ -38,6 +38,7 @@ file(
     "ext/glfw/include/*"
     "ext/imgui/*"
     "ext/tinyexr/*"
+    "ext/vdb/vdb.h"
 )
 list(
     FILTER COMMON_SOURCES INCLUDE REGEX
@@ -165,6 +166,9 @@ function(set_common_sources)
     source_group(
         "non-essentials/ext/cubd" REGULAR_EXPRESSION
         "../ext/cubd/[^/]*\.h$")
+    source_group(
+        "non-essentials/ext/vdb" REGULAR_EXPRESSION
+        "../(ext/vdb/[^/]*|common/vdb[^/]*)$")
     source_group(
         "non-essentials/ext" REGULAR_EXPRESSION
         "../ext/[^/]*\.(h|hpp|c|cc|cpp)$")

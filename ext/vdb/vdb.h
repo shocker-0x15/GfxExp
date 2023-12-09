@@ -7,6 +7,7 @@
 
 #else
 //#define VDB_CALL static
+// Modified by shocker-0x15
 #define VDB_CALL
 
 #ifndef _CRT_SECURE_NO_WARNINGS

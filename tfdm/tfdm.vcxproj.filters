@@ -37,6 +37,9 @@
     <Filter Include="GPU kernels">
       <UniqueIdentifier>{a8830245-b8ba-4f7a-97ec-61cc7d96c262}</UniqueIdentifier>
     </Filter>
+    <Filter Include="non-essentials\ext\vdb">
+      <UniqueIdentifier>{84f960f4-3672-485f-a8b7-8514f1edc97b}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="tfdm_main.cpp" />
@@ -85,7 +88,10 @@
     <ClCompile Include="..\ext\stb_image_compile.cpp">
       <Filter>non-essentials\ext</Filter>
     </ClCompile>
-    <ClCompile Include="sandbox.cpp" />
+    <ClCompile Include="tfdm_sandbox.cpp" />
+    <ClCompile Include="..\common\vdb.cpp">
+      <Filter>non-essentials\ext\vdb</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="tfdm_shared.h" />
@@ -176,6 +182,12 @@
     </ClInclude>
     <ClInclude Include="gpu_kernels\tfdm_intersection_kernels.h">
       <Filter>GPU kernels</Filter>
+    </ClInclude>
+    <ClInclude Include="..\common\vdb_interface.h">
+      <Filter>non-essentials\ext\vdb</Filter>
+    </ClInclude>
+    <ClInclude Include="..\ext\vdb\vdb.h">
+      <Filter>non-essentials\ext\vdb</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

@@ -107,7 +107,6 @@ static void findRoots(
     const Point2D &triAabbMinP, const Point2D &triAabbMaxP, const int32_t maxDepth, uint32_t targetMipLevel,
     Texel* const roots, uint32_t* const numRoots) {
     using namespace shared;
-    static_assert(useMultipleRootOptimization, "Naive method is not implemented.");
     const Vector2D d = triAabbMaxP - triAabbMinP;
     const uint32_t largerDim = d.y > d.x;
     int32_t startMipLevel = maxDepth - prevPowOf2Exponent(static_cast<uint32_t>(1.0f / d[largerDim])) - 1;
