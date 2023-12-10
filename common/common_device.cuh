@@ -135,23 +135,10 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE Point3D offsetRayOrigin(
                    std::fabs(p.z) < kOrigin ? newP2.z : newP1.z);
 }
 
-CUDA_DEVICE_FUNCTION CUDA_INLINE Point2D adjustTexCoord(
-    shared::TexDimInfo dimInfo, const Point2D &texCoord) {
-    Point2D mTexCoord = texCoord;
-    if (dimInfo.isNonPowerOfTwo && dimInfo.isBCTexture) {
-        uint32_t bcWidth = (dimInfo.dimX + 3) / 4 * 4;
-        uint32_t bcHeight = (dimInfo.dimY + 3) / 4 * 4;
-        mTexCoord.x *= static_cast<float>(dimInfo.dimX) / bcWidth;
-        mTexCoord.y *= static_cast<float>(dimInfo.dimY) / bcHeight;
-    }
-    return mTexCoord;
-}
-
 template <typename T>
 CUDA_DEVICE_FUNCTION CUDA_INLINE T sample(
     CUtexObject texture, shared::TexDimInfo dimInfo, const Point2D &texCoord, float mipLevel) {
-    Point2D mTexCoord = adjustTexCoord(dimInfo, texCoord);
-    return tex2DLod<T>(texture, mTexCoord.x, mTexCoord.y, mipLevel);
+    return tex2DLod<T>(texture, texCoord.x, texCoord.y, mipLevel);
 }
 
 struct ReferenceFrame {
@@ -235,12 +222,6 @@ CUDA_DECLARE_CALLABLE_PROGRAM_POINTER(readModifiedNormalFromNormalMap2ch);
 
 RT_CALLABLE_PROGRAM Normal3D RT_DC_NAME(readModifiedNormalFromHeightMap)
 (CUtexObject texture, shared::TexDimInfo dimInfo, Point2D texCoord) {
-    if (dimInfo.isNonPowerOfTwo && dimInfo.isBCTexture) {
-        uint32_t bcWidth = (dimInfo.dimX + 3) / 4 * 4;
-        uint32_t bcHeight = (dimInfo.dimY + 3) / 4 * 4;
-        texCoord.x *= static_cast<float>(dimInfo.dimX) / bcWidth;
-        texCoord.y *= static_cast<float>(dimInfo.dimY) / bcHeight;
-    }
     float4 heightValues = tex2Dgather<float4>(texture, texCoord.x, texCoord.y, 0);
     constexpr float coeff = (5.0f / 1024);
     uint32_t width = dimInfo.dimX;
