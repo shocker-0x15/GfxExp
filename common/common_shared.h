@@ -385,10 +385,10 @@ namespace shared {
 
     class ProbabilityTexture {
         CUtexObject m_cuTexObj;
-        unsigned int m_maxDimX : 16;
-        unsigned int m_maxDimY : 16;
-        unsigned int m_dimX : 16;
-        unsigned int m_dimY : 16;
+        uint32_t m_maxDimX : 16;
+        uint32_t m_maxDimY : 16;
+        uint32_t m_dimX : 16;
+        uint32_t m_dimY : 16;
         float m_integral;
 
     public:

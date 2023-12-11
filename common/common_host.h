@@ -201,7 +201,7 @@ class DiscreteDistribution1DTemplate {
 #endif
     RealType m_integral;
     uint32_t m_numValues;
-    unsigned int m_isInitialized : 1;
+    uint32_t m_isInitialized : 1;
 
 public:
     DiscreteDistribution1DTemplate() :
@@ -213,17 +213,13 @@ public:
         if (!m_isInitialized)
             return;
 #if defined(USE_WALKER_ALIAS_METHOD)
-        if (m_valueMaps.isInitialized() && m_aliasTable.isInitialized() && m_weights.isInitialized()) {
-            m_valueMaps.finalize();
-            m_aliasTable.finalize();
-            m_weights.finalize();
-        }
+        m_valueMaps.finalize();
+        m_aliasTable.finalize();
 #else
-        if (m_CDF.isInitialized() && m_weights.isInitialized()) {
-            m_CDF.finalize();
-            m_weights.finalize();
-        }
+        m_CDF.finalize();
 #endif
+        m_weights.finalize();
+        m_isInitialized = false;
     }
 
     DiscreteDistribution1DTemplate &operator=(DiscreteDistribution1DTemplate &&v) {
@@ -284,7 +280,7 @@ class RegularConstantContinuousDistribution1DTemplate {
 #endif
     RealType m_integral;
     uint32_t m_numValues;
-    unsigned int m_isInitialized : 1;
+    uint32_t m_isInitialized : 1;
 
 public:
     RegularConstantContinuousDistribution1DTemplate() : m_isInitialized(false) {}
@@ -296,20 +292,18 @@ public:
         if (!m_isInitialized)
             return;
 #if defined(USE_WALKER_ALIAS_METHOD)
-        if (m_valueMaps.isInitialized() && m_aliasTable.isInitialized() && m_PDF.isInitialized()) {
-            m_valueMaps.finalize();
-            m_aliasTable.finalize();
-            m_PDF.finalize();
-        }
+        m_valueMaps.finalize();
+        m_aliasTable.finalize();
 #else
-        if (m_CDF.isInitialized() && m_PDF.isInitialized()) {
-            m_CDF.finalize();
-            m_PDF.finalize();
-        }
+        m_CDF.finalize();
 #endif
+        m_PDF.finalize();
+
+        m_isInitialized = false;
     }
 
-    RegularConstantContinuousDistribution1DTemplate &operator=(RegularConstantContinuousDistribution1DTemplate &&v) {
+    RegularConstantContinuousDistribution1DTemplate &operator=(
+        RegularConstantContinuousDistribution1DTemplate &&v) {
         m_PDF = std::move(v.m_PDF);
 #if defined(USE_WALKER_ALIAS_METHOD)
         m_aliasTable = std::move(v.m_aliasTable);
@@ -346,12 +340,13 @@ class RegularConstantContinuousDistribution2DTemplate {
     cudau::TypedBuffer<shared::RegularConstantContinuousDistribution1DTemplate<RealType>> m_raw1DDists;
     RegularConstantContinuousDistribution1DTemplate<RealType>* m_1DDists;
     RegularConstantContinuousDistribution1DTemplate<RealType> m_top1DDist;
-    unsigned int m_isInitialized : 1;
+    uint32_t m_isInitialized : 1;
 
 public:
     RegularConstantContinuousDistribution2DTemplate() : m_1DDists(nullptr), m_isInitialized(false) {}
 
-    RegularConstantContinuousDistribution2DTemplate &operator=(RegularConstantContinuousDistribution2DTemplate &&v) {
+    RegularConstantContinuousDistribution2DTemplate &operator=(
+        RegularConstantContinuousDistribution2DTemplate &&v) {
         m_raw1DDists = std::move(v.m_raw1DDists);
         m_1DDists = std::move(v.m_1DDists);
         m_top1DDist = std::move(v.m_top1DDist);
@@ -374,6 +369,8 @@ public:
         m_raw1DDists.finalize();
         delete[] m_1DDists;
         m_1DDists = nullptr;
+
+        m_isInitialized = false;
     }
 
     bool isInitialized() const { return m_isInitialized; }
@@ -397,7 +394,7 @@ using RegularConstantContinuousDistribution2D = RegularConstantContinuousDistrib
 class ProbabilityTexture {
     cudau::Array m_cuArray;
     CUtexObject m_cuTexObj;
-    unsigned int m_isInitialized : 1;
+    uint32_t m_isInitialized : 1;
 
 public:
     ProbabilityTexture() : m_cuTexObj(0), m_isInitialized(false) {}
@@ -1411,9 +1408,9 @@ void saveImageHDR(
 struct SDRImageSaverConfig {
     float alphaForOverride;
     float brightnessScale;
-    unsigned int applyToneMap : 1;
-    unsigned int apply_sRGB_gammaCorrection : 1;
-    unsigned int flipY : 1;
+    uint32_t applyToneMap : 1;
+    uint32_t apply_sRGB_gammaCorrection : 1;
+    uint32_t flipY : 1;
 
     SDRImageSaverConfig() :
         brightnessScale(1.0f),
