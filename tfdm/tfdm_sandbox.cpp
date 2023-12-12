@@ -311,12 +311,7 @@ void testNewtonMethod() {
         vdb_frame();
 
         constexpr float axisScale = 1;
-        setColor(RGB(1, 0, 0));
-        drawLine(Point3D(0, 0, 0), Point3D(axisScale, 0, 0));
-        setColor(RGB(0, 1, 0));
-        drawLine(Point3D(0, 0, 0), Point3D(0, axisScale, 0));
-        setColor(RGB(0, 0, 1));
-        drawLine(Point3D(0, 0, 0), Point3D(0, 0, axisScale));
+        drawAxes(axisScale);
 
         for (uint32_t testIdx = 0; testIdx < testData.size(); ++testIdx) {
             const TestData &test = testData[testIdx];
@@ -689,12 +684,7 @@ void testNewtonMethod() {
         vdb_frame();
 
         constexpr float axisScale = 5;
-        setColor(RGB(1, 0, 0));
-        drawLine(Point3D(0, 0, 0), Point3D(axisScale, 0, 0));
-        setColor(RGB(0, 1, 0));
-        drawLine(Point3D(0, 0, 0), Point3D(0, axisScale, 0));
-        setColor(RGB(0, 0, 1));
-        drawLine(Point3D(0, 0, 0), Point3D(0, 0, axisScale));
+        drawAxes(axisScale);
 
         setColor(RGB(0, 1, 1));
         drawVector(pUL, nUL, 0.5f);

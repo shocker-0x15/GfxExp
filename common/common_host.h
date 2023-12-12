@@ -110,6 +110,15 @@ inline void drawAabbWithXfm(const AABB &aabb, const Matrix4x4 &mat) {
     drawLine(pUUL, pUUU);
 }
 
+inline void drawAxes(float axisScale, const Vector3D &offset = Vector3D(0, 0, 0)) {
+    setColor(RGB(1, 0, 0));
+    drawLine(offset + Point3D(0, 0, 0), offset + Point3D(axisScale, 0, 0));
+    setColor(RGB(0, 1, 0));
+    drawLine(offset + Point3D(0, 0, 0), offset + Point3D(0, axisScale, 0));
+    setColor(RGB(0, 0, 1));
+    drawLine(offset + Point3D(0, 0, 0), offset + Point3D(0, 0, axisScale));
+}
+
 #endif
 
 template <std::floating_point T>
