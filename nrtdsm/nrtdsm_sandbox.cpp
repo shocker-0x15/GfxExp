@@ -53,9 +53,9 @@ static void solveCubicEquation(
 			+ std::copysign(std::pow(std::fabs(qrB), 1.0f / 3.0f), qrB);
 		*x1 = *x2 = NAN;
 	}
-	else if (r2 >= -1e-12) {
-		*x0 = b3a + 2 * std::pow(-q, 1.0f / 3.0f);
-		*x1 = *x2 = b3a - std::pow(-q, 1.0f / 3.0f);
+	else if (r2 * pow4(a) >= -1e-6) {
+		*x0 = b3a + 2 * std::copysign(std::pow(std::fabs(q), 1.0f / 3.0f), -q);
+		*x1 = *x2 = b3a - std::copysign(std::pow(std::fabs(q), 1.0f / 3.0f), -q);
 	}
 	else {
 		const float r = std::sqrt(-r2);
@@ -68,6 +68,17 @@ static void solveCubicEquation(
 		*x1 = b3a - zr - sqrt3 * zi;
 		*x2 = b3a - zr + sqrt3 * zi;
 	}
+
+	const auto substitute = [&](const float x) {
+		return a * pow3(x) + b * pow2(x) + c * x + d;
+	};
+	hpprintf(
+		"[%g, %g, %g, %g], r2*a4: %g\n",
+		a, b, c, d, r2 * pow4(a));
+	hpprintf(
+		"(%.6f, %.6f, %.6f) => (%.6f, %.6f, %.6f)\n",
+		*x0, *x1, *x2,
+		substitute(*x0), substitute(*x1), substitute(*x2));
 }
 
 // Solve the equation (4)
@@ -91,22 +102,22 @@ static void findHeight(
 	const float c_c = dot(eAp, alpha1) - dot(nA, alpha0);
 	const float c_d = dot(eAp, alpha0);
 
-	//const float c_a3 = pow3(c_a);
-	//const float c_a2 = pow2(c_a);
-	//const float c_b3 = pow3(c_b);
-	//const float c_b2 = pow2(c_b);
-	//const float c_c3 = pow3(c_c);
-	//const float c_c2 = pow2(c_c);
-	//const float c_d2 = pow2(c_d);
+	/*const float c_a3 = pow3(c_a);
+	const float c_a2 = pow2(c_a);
+	const float c_b3 = pow3(c_b);
+	const float c_b2 = pow2(c_b);
+	const float c_c3 = pow3(c_c);
+	const float c_c2 = pow2(c_c);
+	const float c_d2 = pow2(c_d);
 
-	//const float tA = (-2 * c_b3 + 9 * c_a * c_b * c_c - 27 * c_a2 * c_d) / (54 * c_a3);
-	//const float _tB = (-c_b2 + 3 * c_a * c_c) / (9 * c_a2);
-	//const float tB = std::sqrt(pow2(tA) + pow3(_tB));
+	const float tA = (-2 * c_b3 + 9 * c_a * c_b * c_c - 27 * c_a2 * c_d) / (54 * c_a3);
+	const float _tB = (-c_b2 + 3 * c_a * c_c) / (9 * c_a2);
+	const float tB = std::sqrt(pow2(tA) + pow3(_tB));
 
-	//const float h0 =
-	//	-c_b / (3 * c_a)
-	//	+ std::pow(tA + tB, 1.0f / 3.0f)
-	//	+ std::pow(tA - tB, 1.0f / 3.0f);
+	const float h0 =
+		-c_b / (3 * c_a)
+		+ std::pow(tA + tB, 1.0f / 3.0f)
+		+ std::pow(tA - tB, 1.0f / 3.0f);*/
 	solveCubicEquation(c_a, c_b, c_c, c_d, h0, h1, h2);
 }
 
@@ -132,8 +143,8 @@ void testFindHeight() {
 		normalize(Normal3D(0.8f, -0.3f, 0.4f)),
 		normalize(Normal3D(0.4f, 0.2f, 1.0f)),
 		Point2D(0.4f, 0.7f),
-		Point2D(0.7f, 0.4f),
-		Point2D(0.2f, 0.2f)
+		Point2D(0.2f, 0.2f),
+		Point2D(0.7f, 0.4f)
 	};
 
 	vdb_frame();
@@ -241,22 +252,29 @@ static void computeCoeffs(
 		NA = Vector2D(dot(nA, e0), dot(nA, e1));
 	}
 
-	*alpha2 = -NA.x * fAC.y + NA.y * fAC.x;
-	*alpha1 = eAO.x * fAC.y - eAC.y * NA.x - eAO.y * fAC.x + NA.y * eAC.x;
-	*alpha0 = eAO.x * eAC.y - eAO.y * eAC.x;
-	*denom2 = fAB.x * fAC.y - fAB.y * fAC.x;
-	*denom1 = eAB.x * fAC.y + fAB.x * eAC.y - eAB.y * fAC.x - fAB.y * eAC.x;
-	*denom0 = eAB.x * eAC.y - eAB.y * eAC.x;
+	//*alpha2 = -NA.x * fAC.y + NA.y * fAC.x;
+	//*alpha1 = eAO.x * fAC.y - eAC.y * NA.x - eAO.y * fAC.x + NA.y * eAC.x;
+	//*alpha0 = eAO.x * eAC.y - eAO.y * eAC.x;
 	//const float denA2 = fAB.x * fAC.y - fAB.y * fAC.x;
 	//const float denA1 = eAB.x * fAC.y + fAB.x * eAC.y - eAB.y * fAC.x - fAB.y * eAC.x;
 	//const float denA0 = eAB.x * eAC.y - eAB.y * eAC.x;
-	*beta2 = -NA.x * fAB.y + NA.y * fAB.x;
-	*beta1 = eAO.x * fAB.y - eAB.y * NA.x - eAO.y * fAB.x + NA.y * eAB.x;
-	*beta0 = eAO.x * eAB.y - eAO.y * eAB.x;
+	//*beta2 = -NA.x * fAB.y + NA.y * fAB.x;
+	//*beta1 = eAO.x * fAB.y - eAB.y * NA.x - eAO.y * fAB.x + NA.y * eAB.x;
+	//*beta0 = eAO.x * eAB.y - eAO.y * eAB.x;
 	//const float denB2 = fAC.x * fAB.y - fAC.y * fAB.x;
 	//const float denB1 = eAC.x * fAB.y + fAC.x * eAB.y - eAC.y * fAB.x - fAC.y * eAB.x;
 	//const float denB0 = eAC.x * eAB.y - eAC.y * eAB.x;
+
 	// denA* == -denB* となるので分母はbeta*を反転すれば共通で使える。
+	*denom2 = fAB.x * fAC.y - fAB.y * fAC.x;
+	*denom1 = eAB.x * fAC.y + fAB.x * eAC.y - eAB.y * fAC.x - fAB.y * eAC.x;
+	*denom0 = eAB.x * eAC.y - eAB.y * eAC.x;
+	*alpha2 = -NA.x * fAC.y + NA.y * fAC.x;
+	*alpha1 = eAO.x * fAC.y - eAC.y * NA.x - eAO.y * fAC.x + NA.y * eAC.x;
+	*alpha0 = eAO.x * eAC.y - eAO.y * eAC.x;
+	*beta2 = -(-NA.x * fAB.y + NA.y * fAB.x);
+	*beta1 = -(eAO.x * fAB.y - eAB.y * NA.x - eAO.y * fAB.x + NA.y * eAB.x);
+	*beta0 = -(eAO.x * eAB.y - eAO.y * eAB.x);
 }
 
 void testComputeCoeffs() {
@@ -280,14 +298,27 @@ void testComputeCoeffs() {
 		normalize(Normal3D(0.8f, -0.3f, 0.4f)),
 		normalize(Normal3D(0.4f, 0.2f, 1.0f)),
 		Point2D(0.4f, 0.7f),
-		Point2D(0.7f, 0.4f),
-		Point2D(0.2f, 0.2f)
+		Point2D(0.2f, 0.2f),
+		Point2D(0.7f, 0.4f)
 	};
 
 	vdb_frame();
 
 	constexpr float axisScale = 1.0f;
 	drawAxes(axisScale);
+
+	constexpr bool showNegativeShell = true;
+
+	const auto drawWiredDottedTriangle = []
+	(const Point3D &pA, const Point3D pB, const Point3D &pC) {
+		drawWiredTriangle(pA, pB, pC);
+		setColor(RGB(0, 1, 1));
+		drawPoint(pA);
+		setColor(RGB(1, 0, 1));
+		drawPoint(pB);
+		setColor(RGB(1, 1, 0));
+		drawPoint(pC);
+	};
 
 	// World-space Shell
 	setColor(RGB(0.25f));
@@ -299,7 +330,14 @@ void testComputeCoeffs() {
 	for (int i = 1; i <= 10; ++i) {
 		const float p = static_cast<float>(i) / 10;
 		setColor(RGB(p));
-		drawWiredTriangle(test.pA + p * test.nA, test.pB + p * test.nB, test.pC + p * test.nC);
+		drawWiredDottedTriangle(test.pA + p * test.nA, test.pB + p * test.nB, test.pC + p * test.nC);
+	}
+	if constexpr (showNegativeShell) {
+		for (int i = 1; i <= 10; ++i) {
+			const float p = -static_cast<float>(i) / 10;
+			setColor(RGB(-p));
+			drawWiredDottedTriangle(test.pA + p * test.nA, test.pB + p * test.nB, test.pC + p * test.nC);
+		}
 	}
 
 	// World-space Ray
@@ -309,6 +347,62 @@ void testComputeCoeffs() {
 	setColor(RGB(1.0f));
 	drawCross(rayOrg, 0.05f);
 	drawVector(rayOrg, rayDir, rayLength);
+
+	// JP: 単一間区間の終わりと多重解区間の終わり
+	drawCross(rayOrg + 348.0f / 500.0f * rayLength * rayDir, 0.05f);
+	drawCross(rayOrg + 375.0f / 500.0f * rayLength * rayDir, 0.05f);
+
+	constexpr Vector3D globalOffsetForCanonical(-1.0f, -2.0f, 0);
+	constexpr Vector3D globalOffsetForTexture(1.0f, -2.0f, 0);
+	drawAxes(axisScale, globalOffsetForCanonical);
+	drawAxes(axisScale, globalOffsetForTexture);
+
+	// Canonical-space and Texture-space Shell
+	setColor(RGB(0.25f));
+	drawWiredTriangle(
+		globalOffsetForCanonical + Point3D(0, 0, 0),
+		globalOffsetForCanonical + Point3D(1, 0, 0),
+		globalOffsetForCanonical + Point3D(0, 1, 0));
+	setColor(RGB(0.25f));
+	drawWiredTriangle(
+		globalOffsetForTexture + Point3D(test.tcA, 0.0f),
+		globalOffsetForTexture + Point3D(test.tcB, 0.0f),
+		globalOffsetForTexture + Point3D(test.tcC, 0.0f));
+	setColor(RGB(0.0f, 0.5f, 1.0f));
+	drawVector(globalOffsetForCanonical + Point3D(0, 0, 0), Normal3D(0, 0, 1), 1.0f);
+	drawVector(globalOffsetForCanonical + Point3D(1, 0, 0), Normal3D(0, 0, 1), 1.0f);
+	drawVector(globalOffsetForCanonical + Point3D(0, 1, 0), Normal3D(0, 0, 1), 1.0f);
+	drawVector(globalOffsetForTexture + Point3D(test.tcA, 0), Normal3D(0, 0, 1), 1.0f);
+	drawVector(globalOffsetForTexture + Point3D(test.tcB, 0), Normal3D(0, 0, 1), 1.0f);
+	drawVector(globalOffsetForTexture + Point3D(test.tcC, 0), Normal3D(0, 0, 1), 1.0f);
+	for (int i = 1; i <= 10; ++i) {
+		const float p = static_cast<float>(i) / 10;
+		setColor(RGB(p));
+		drawWiredDottedTriangle(
+			globalOffsetForCanonical + Point3D(0, 0, 0) + p * Normal3D(0, 0, 1),
+			globalOffsetForCanonical + Point3D(1, 0, 0) + p * Normal3D(0, 0, 1),
+			globalOffsetForCanonical + Point3D(0, 1, 0) + p * Normal3D(0, 0, 1));
+		setColor(RGB(p));
+		drawWiredDottedTriangle(
+			globalOffsetForTexture + Point3D(test.tcA, 0) + p * Normal3D(0, 0, 1),
+			globalOffsetForTexture + Point3D(test.tcB, 0) + p * Normal3D(0, 0, 1),
+			globalOffsetForTexture + Point3D(test.tcC, 0) + p * Normal3D(0, 0, 1));
+	}
+	if constexpr (showNegativeShell) {
+		for (int i = 1; i <= 10; ++i) {
+			const float p = -static_cast<float>(i) / 10;
+			setColor(RGB(-p));
+			drawWiredDottedTriangle(
+				globalOffsetForCanonical + Point3D(0, 0, 0) + p * Normal3D(0, 0, 1),
+				globalOffsetForCanonical + Point3D(1, 0, 0) + p * Normal3D(0, 0, 1),
+				globalOffsetForCanonical + Point3D(0, 1, 0) + p * Normal3D(0, 0, 1));
+			setColor(RGB(-p));
+			drawWiredDottedTriangle(
+				globalOffsetForTexture + Point3D(test.tcA, 0) + p * Normal3D(0, 0, 1),
+				globalOffsetForTexture + Point3D(test.tcB, 0) + p * Normal3D(0, 0, 1),
+				globalOffsetForTexture + Point3D(test.tcC, 0) + p * Normal3D(0, 0, 1));
+		}
+	}
 
 	float alpha2, alpha1, alpha0;
 	float beta2, beta1, beta0;
@@ -321,28 +415,6 @@ void testComputeCoeffs() {
 		&beta2, &beta1, &beta0,
 		&denom2, &denom1, &denom0);
 
-	constexpr Vector3D globalOffset(0, -1.5f, 0);
-	drawAxes(axisScale, globalOffset);
-
-	// Canonical-space Shell
-	setColor(RGB(0.25f));
-	drawWiredTriangle(
-		globalOffset + Point3D(0, 0, 0),
-		globalOffset + Point3D(1, 0, 0),
-		globalOffset + Point3D(0, 1, 0));
-	setColor(RGB(0.0f, 0.5f, 1.0f));
-	drawVector(globalOffset + Point3D(0, 0, 0), Normal3D(0, 0, 1), 1.0f);
-	drawVector(globalOffset + Point3D(1, 0, 0), Normal3D(0, 0, 1), 1.0f);
-	drawVector(globalOffset + Point3D(0, 1, 0), Normal3D(0, 0, 1), 1.0f);
-	for (int i = 1; i <= 10; ++i) {
-		const float p = static_cast<float>(i) / 10;
-		setColor(RGB(p));
-		drawWiredTriangle(
-			globalOffset + Point3D(0, 0, 0) + p * Normal3D(0, 0, 1),
-			globalOffset + Point3D(1, 0, 0) + p * Normal3D(0, 0, 1),
-			globalOffset + Point3D(0, 1, 0) + p * Normal3D(0, 0, 1));
-	}
-
 	const auto selectH = [](const float hs[3]) {
 		float ret = hs[0];
 		if (!std::isfinite(ret) || std::fabs(hs[1]) < std::fabs(ret))
@@ -352,8 +424,9 @@ void testComputeCoeffs() {
 		return ret;
 	};
 
-	// Canonical-space Ray
-	Point3D prevCurvedRayP;
+	// Canonical-space and Texture-space Ray
+	Point3D prevCurvedRayPInCanonical;
+	Point3D prevCurvedRayPInTexture;
 	{
 		float hs[3];
 		findHeight(
@@ -364,15 +437,31 @@ void testComputeCoeffs() {
 		const float h = selectH(hs);
 		const float h2 = pow2(h);
 		const float denom = denom2 * h2 + denom1 * h + denom0;
-		const float alpha = (alpha2 * h2 + alpha1 * h + alpha0) / denom;
-		const float beta = -(beta2 * h2 + beta1 * h + beta0) / denom;
-		prevCurvedRayP = Point3D(alpha, beta, h);
+		prevCurvedRayPInCanonical = Point3D(
+			(alpha2 * h2 + alpha1 * h + alpha0) / denom,
+			(beta2 * h2 + beta1 * h + beta0) / denom,
+			h);
+		const Point2D tc2 =
+			(denom2 - alpha2 - beta2) * test.tcA
+			+ alpha2 * test.tcB
+			+ beta2 * test.tcC;
+		const Point2D tc1 =
+			(denom1 - alpha1 - beta1) * test.tcA
+			+ alpha1 * test.tcB
+			+ beta1 * test.tcC;
+		const Point2D tc0 =
+			(denom0 - alpha0 - beta0) * test.tcA
+			+ alpha0 * test.tcB
+			+ beta0 * test.tcC;
+		prevCurvedRayPInTexture = Point3D(Point2D(tc2 * h2 + tc1 * h + tc0) / denom, h);
 	}
 	setColor(RGB(1.0f));
-	drawCross(globalOffset + prevCurvedRayP, 0.05f);
-	for (int i = 1; i <= 100; ++i) {
-		const float t = static_cast<float>(i) / 100;
+	drawCross(globalOffsetForCanonical + prevCurvedRayPInCanonical, 0.05f);
+	drawCross(globalOffsetForTexture + prevCurvedRayPInTexture, 0.05f);
+	for (int i = 1; i <= 500; ++i) {
+		const float t = static_cast<float>(i) / 500;
 		float hs[3];
+		hpprintf("%u:\n", i);
 		findHeight(
 			test.pA, test.pB, test.pC,
 			test.nA, test.nB, test.nC,
@@ -381,11 +470,41 @@ void testComputeCoeffs() {
 		const float h = selectH(hs);
 		const float h2 = pow2(h);
 		const float denom = denom2 * h2 + denom1 * h + denom0;
-		const float alpha = (alpha2 * h2 + alpha1 * h + alpha0) / denom;
-		const float beta = -(beta2 * h2 + beta1 * h + beta0) / denom;
-		const Point3D p(alpha, beta, h);
-		drawLine(globalOffset + prevCurvedRayP, globalOffset + p);
-		prevCurvedRayP = p;
+		const Point3D p(
+			(alpha2 * h2 + alpha1 * h + alpha0) / denom,
+			(beta2 * h2 + beta1 * h + beta0) / denom,
+			h);
+		const Point2D tc2 =
+			(denom2 - alpha2 - beta2) * test.tcA
+			+ alpha2 * test.tcB
+			+ beta2 * test.tcC;
+		const Point2D tc1 =
+			(denom1 - alpha1 - beta1) * test.tcA
+			+ alpha1 * test.tcB
+			+ beta1 * test.tcC;
+		const Point2D tc0 =
+			(denom0 - alpha0 - beta0) * test.tcA
+			+ alpha0 * test.tcB
+			+ beta0 * test.tcC;
+		Point3D tcp(Point2D(tc2 * h2 + tc1 * h + tc0) / denom, h);
+
+		drawLine(globalOffsetForCanonical + prevCurvedRayPInCanonical, globalOffsetForCanonical + p);
+		drawLine(globalOffsetForTexture + prevCurvedRayPInTexture, globalOffsetForTexture + tcp);
+		prevCurvedRayPInCanonical = p;
+		prevCurvedRayPInTexture = tcp;
+		if (i == 374)
+			printf("");
+		if (i == 375)
+			printf("");
+	}
+
+	{
+		float hs[3];
+		findHeight(
+			test.pA, test.pB, test.pC,
+			test.nA, test.nB, test.nC,
+			rayOrg + 5 * rayLength * rayDir,
+			&hs[0], &hs[1], &hs[2]);
 	}
 
 	printf("");
