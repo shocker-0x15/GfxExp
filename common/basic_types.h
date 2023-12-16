@@ -2253,22 +2253,39 @@ struct Matrix2x2_T {
         }
     }
 
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix2x2_T &invert() {
-        const F det = 1 / (m00 * m11 - m01 * m10);
-        Matrix2x2_T m;
-        m.m00 = det * m11;
-        m.m01 = -det * m01;
-        m.m10 = -det * m10;
-        m.m11 = det * m00;
-        *this = m;
-
-        return *this;
-    }
-
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix2x2_T &transpose() {
         const F temp = m10;
         m10 = m01;
         m01 = temp;
+        return *this;
+    }
+
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix2x2_T &adjugate() {
+        Matrix2x2_T m;
+        m.m00 = m11;
+        m.m01 = -m01;
+        m.m10 = -m10;
+        m.m11 = m00;
+        *this = m;
+        return *this;
+    }
+
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix2x2_T &adjugateWithoutTranspose() {
+        Matrix2x2_T m;
+        m.m00 = m11;
+        m.m01 = -m10;
+        m.m10 = -m01;
+        m.m11 = m00;
+        *this = m;
+        return *this;
+    }
+
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix2x2_T &invert() {
+        const F det = m00 * m11 - m01 * m10;
+        Matrix2x2_T m = *this;
+        m.adjugate();
+        m /= det;
+        *this = m;
         return *this;
     }
 
@@ -2344,18 +2361,34 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix2x2_T<F> operator/(
 }
 
 template <std::floating_point F>
-CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix2x2_T<F> invert(
-    const Matrix2x2_T<F> &m) {
-    Matrix2x2_T<F> ret = m;
-    ret.invert();
-    return ret;
-}
-
-template <std::floating_point F>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix2x2_T<F> transpose(
     const Matrix2x2_T<F> &m) {
     Matrix2x2_T<F> ret = m;
     ret.transpose();
+    return ret;
+}
+
+template <std::floating_point F>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix2x2_T<F> adjugate(
+    const Matrix2x2_T<F> &m) {
+    Matrix2x2_T<F> ret = m;
+    ret.adjugate();
+    return ret;
+}
+
+template <std::floating_point F>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix2x2_T<F> adjugateWithoutTranspose(
+    const Matrix2x2_T<F> &m) {
+    Matrix2x2_T<F> ret = m;
+    ret.adjugateWithoutTranspose();
+    return ret;
+}
+
+template <std::floating_point F>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix2x2_T<F> invert(
+    const Matrix2x2_T<F> &m) {
+    Matrix2x2_T<F> ret = m;
+    ret.invert();
     return ret;
 }
 
@@ -2670,30 +2703,53 @@ struct Matrix3x3_T {
         }
     }
 
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix3x3_T &invert() {
-        const F det = 1 /
-            (m00 * m11 * m22 + m01 * m12 * m20 + m02 * m10 * m21
-             - m02 * m11 * m20 - m01 * m10 * m22 - m00 * m12 * m21);
-        Matrix3x3_T m;
-        m.m00 = det * (m11 * m22 - m12 * m21);
-        m.m01 = -det * (m01 * m22 - m02 * m21);
-        m.m02 = det * (m01 * m12 - m02 * m11);
-        m.m10 = -det * (m10 * m22 - m12 * m20);
-        m.m11 = det * (m00 * m22 - m02 * m20);
-        m.m12 = -det * (m00 * m12 - m02 * m10);
-        m.m20 = det * (m10 * m21 - m11 * m20);
-        m.m21 = -det * (m00 * m21 - m01 * m20);
-        m.m22 = det * (m00 * m11 - m01 * m10);
-        *this = m;
-
-        return *this;
-    }
-
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix3x3_T &transpose() {
         F temp;
         temp = m10; m10 = m01; m01 = temp;
         temp = m20; m20 = m02; m02 = temp;
         temp = m21; m21 = m12; m12 = temp;
+        return *this;
+    }
+
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix3x3_T &adjugate() {
+        Matrix3x3_T m;
+        m.m00 = (m11 * m22 - m12 * m21);
+        m.m01 = -(m01 * m22 - m02 * m21);
+        m.m02 = (m01 * m12 - m02 * m11);
+        m.m10 = -(m10 * m22 - m12 * m20);
+        m.m11 = (m00 * m22 - m02 * m20);
+        m.m12 = -(m00 * m12 - m02 * m10);
+        m.m20 = (m10 * m21 - m11 * m20);
+        m.m21 = -(m00 * m21 - m01 * m20);
+        m.m22 = (m00 * m11 - m01 * m10);
+        *this = m;
+
+        return *this;
+    }
+
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix3x3_T &adjugateWithoutTranspose() {
+        Matrix3x3_T m;
+        m.m00 = (m11 * m22 - m12 * m21);
+        m.m01 = -(m10 * m22 - m12 * m20);
+        m.m02 = (m10 * m21 - m11 * m20);
+        m.m10 = -(m01 * m22 - m02 * m21);
+        m.m11 = (m00 * m22 - m02 * m20);
+        m.m12 = -(m00 * m21 - m01 * m20);
+        m.m20 = (m01 * m12 - m02 * m11);
+        m.m21 = -(m00 * m12 - m02 * m10);
+        m.m22 = (m00 * m11 - m01 * m10);
+        *this = m;
+
+        return *this;
+    }
+
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix3x3_T &invert() {
+        const F det = m00 * m11 * m22 + m01 * m12 * m20 + m02 * m10 * m21
+            - m02 * m11 * m20 - m01 * m10 * m22 - m00 * m12 * m21;
+        Matrix3x3_T m = *this;
+        m.adjugate();
+        m /= det;
+        *this = m;
         return *this;
     }
 
@@ -2793,18 +2849,34 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Point3D_T<F> operator*(
 }
 
 template <std::floating_point F>
-CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix3x3_T<F> invert(
-    const Matrix3x3_T<F> &m) {
-    Matrix3x3_T<F> ret = m;
-    ret.invert();
-    return ret;
-}
-
-template <std::floating_point F>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix3x3_T<F> transpose(
     const Matrix3x3_T<F> &m) {
     Matrix3x3_T<F> ret = m;
     ret.transpose();
+    return ret;
+}
+
+template <std::floating_point F>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix3x3_T<F> adjugate(
+    const Matrix3x3_T<F> &m) {
+    Matrix3x3_T<F> ret = m;
+    ret.adjugate();
+    return ret;
+}
+
+template <std::floating_point F>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix3x3_T<F> adjugateWithoutTranspose(
+    const Matrix3x3_T<F> &m) {
+    Matrix3x3_T<F> ret = m;
+    ret.adjugateWithoutTranspose();
+    return ret;
+}
+
+template <std::floating_point F>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix3x3_T<F> invert(
+    const Matrix3x3_T<F> &m) {
+    Matrix3x3_T<F> ret = m;
+    ret.invert();
     return ret;
 }
 
@@ -3063,6 +3135,17 @@ struct Matrix4x4_T {
         }
     }
 
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix4x4_T &transpose() {
+        F temp;
+        temp = m10; m10 = m01; m01 = temp;
+        temp = m20; m20 = m02; m02 = temp;
+        temp = m21; m21 = m12; m12 = temp;
+        temp = m30; m30 = m03; m03 = temp;
+        temp = m31; m31 = m13; m13 = temp;
+        temp = m32; m32 = m23; m23 = temp;
+        return *this;
+    }
+
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix4x4_T &invert() {
         F inv[] = {
             +((m11 * m22 * m33) - (m31 * m22 * m13) + (m21 * m32 * m13) - (m11 * m32 * m23) + (m31 * m12 * m23) - (m21 * m12 * m33)),
@@ -3091,17 +3174,6 @@ struct Matrix4x4_T {
             inv[i] *= recDet;
         *this = Matrix4x4_T(inv);
 
-        return *this;
-    }
-
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix4x4_T &transpose() {
-        F temp;
-        temp = m10; m10 = m01; m01 = temp;
-        temp = m20; m20 = m02; m02 = temp;
-        temp = m21; m21 = m12; m12 = temp;
-        temp = m30; m30 = m03; m03 = temp;
-        temp = m31; m31 = m13; m13 = temp;
-        temp = m32; m32 = m23; m23 = temp;
         return *this;
     }
 
