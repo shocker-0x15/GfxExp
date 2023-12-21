@@ -3,7 +3,13 @@
 
 #if ENABLE_VDB
 
-namespace {
+static Vector3D uniformSampleSphere(float u0, float u1) {
+    float phi = 2 * pi_v<float> * u1;
+    float theta = std::acos(1 - 2 * u0);
+    return Vector3D::fromPolarZUp(phi, theta);
+}
+
+
 
 /*
 Reference: High-Performance Polynomial Root Finding for Graphics
@@ -30,7 +36,7 @@ inline bool testIfDifferentSigns(const float a, const float b) {
 }
 
 template <uint32_t degree, bool boundError>
-inline float findSingleRootClosed(
+static float findSingleRootClosed(
     const float coeffs[degree + 1], const float derivCoeffs[degree],
     const float xMin, const float xMax, const float yMin, const float yMax,
     const float epsilon) {
@@ -123,7 +129,7 @@ inline float findSingleRootClosed(
     return xr;
 }
 
-static inline uint32_t solveQuadraticEquation(
+static uint32_t solveQuadraticEquation(
     const float coeffs[3], const float xMin, const float xMax,
     float roots[2]) {
     const float a = coeffs[2];
@@ -151,7 +157,7 @@ static inline uint32_t solveQuadraticEquation(
 }
 
 template <bool boundError>
-inline uint32_t solveCubicEquation(
+static uint32_t solveCubicEquation(
     const float coeffs[4], const float xMin, const float xMax, float epsilon,
     float roots[3]) {
     Assert(std::isfinite(xMin) && std::isfinite(xMax) && xMin < xMax, "Invalid interval.");
@@ -324,7 +330,7 @@ inline uint32_t solveCubicEquation(
     }
 }
 
-}
+
 
 static inline uint32_t solveLinearEquation(
     const float a, const float b,
@@ -338,7 +344,7 @@ static inline uint32_t solveLinearEquation(
     return 1;
 }
 
-static inline uint32_t solveQuadraticEquation(
+static uint32_t solveQuadraticEquation(
     const float a, const float b, const float c,
     float* const x0, float* const x1) {
     if (a == 0.0f) {
@@ -365,7 +371,7 @@ static inline uint32_t solveQuadraticEquation(
     return 2;
 }
 
-static inline uint32_t solveCubicEquation(
+static uint32_t solveCubicEquation(
     const float a, const float b, const float c, const float d,
     float* const x0, float* const x1, float* const x2) {
     if (a == 0.0f) {
@@ -1466,6 +1472,337 @@ void testNonlinearRayVsMicroTriangle() {
             globalOffsetForTexture + mpAInTc,
             globalOffsetForTexture + mpBInTc,
             globalOffsetForTexture + mpCInTc);
+    }
+}
+
+
+
+static bool testRayVsTriangle(
+    const Point3D &rayOrg, const Vector3D &rayDir, const float distMin, const float distMax,
+    const Point3D &pA, const Point3D &pB, const Point3D &pC,
+    float* const hitDist, Normal3D* const hitNormal, float* const bcB, float* const bcC) {
+    const Vector3D eAB = pB - pA;
+    const Vector3D eAC = pA - pC;
+    *hitNormal = static_cast<Normal3D>(cross(eAC, eAB));
+
+    const Vector3D e = (1.0f / dot(*hitNormal, rayDir)) * (pA - rayOrg);
+    const Vector3D i = cross(rayDir, e);
+
+    *bcB = dot(i, eAC);
+    *bcC = dot(i, eAB);
+    *hitDist = dot(*hitNormal, e);
+
+    return
+        ((*hitDist < distMax) & (*hitDist > distMin)
+         & (*bcB >= 0.0f) & (*bcC >= 0.0f) & (*bcB + *bcC <= 1));
+}
+
+// Reference: Chapter 8. Cool Patches: A Geometric Approach to Ray/Bilinear Patch Intersections
+//            Ray Tracing Gems
+static bool testRayVsBilinearPatch(
+    const Point3D &rayOrg, const Vector3D &rayDir, const float distMin, const float distMax,
+    const Point3D &pA, const Point3D &pB, const Point3D &pC, const Point3D &pD,
+    float* const hitDist, Normal3D* const hitNormal, float* const u, float* const v) {
+    const Vector3D eAB = pB - pA;
+    const Vector3D eAC = pC - pA;
+    const Vector3D eBD = pD - pB;
+    const Vector3D eCD = pD - pC;
+    const Vector3D pARel = pA - rayOrg;
+    const Vector3D pBRel = pB - rayOrg;
+
+    float u1, u2;
+    {
+        const Vector3D qN = cross(eAB, -eCD);
+        const float a = dot(qN, rayDir);
+        float b = dot(cross(pBRel, rayDir), eBD);
+        const float c = dot(cross(pARel, rayDir), eAC);
+        b -= a + c;
+
+        const float det = pow2(b) - 4 * a * c;
+        if (det < 0)
+            return false;
+
+        if (a == 0) {
+            u1 = -c / b;
+            u2 = -1;
+        }
+        else {
+            const float sqrtDet = std::sqrt(det);
+            const float temp = -0.5f * (b + std::copysign(sqrtDet, b));
+            u1 = temp / a;
+            u2 = c / temp;
+        }
+    }
+
+    *hitDist = distMax;
+
+    const auto find_v_t = [&](const float uu) {
+        if (uu >= 0 && uu <= 1) {
+            const Vector3D pAB = lerp(pARel, pBRel, uu);
+            const Vector3D pCD = lerp(eAC, eBD, uu);
+            Vector3D n = cross(rayDir, pCD);
+            const float recDet = 1.0f / dot(n, n);
+            n = cross(n, pAB);
+            const float tt = dot(n, pCD) * recDet;
+            const float vv = dot(n, rayDir) * recDet;
+            if (vv >= 0 && vv <= 1 && tt > distMin && tt < *hitDist) {
+                *hitDist = tt;
+                *u = uu;
+                *v = vv;
+            }
+        }
+    };
+
+    find_v_t(u1);
+    find_v_t(u2);
+    if (*hitDist == distMax)
+        return false;
+
+    const Vector3D dpdu = lerp(eAB, eCD, *v);
+    const Vector3D dpdv = lerp(eAC, eBD, *u);
+    *hitNormal = static_cast<Normal3D>(cross(dpdu, dpdv));
+
+    return true;
+}
+
+static bool testRayVsPrism(
+    const Point3D &rayOrg, const Vector3D &rayDir, const float distMin, const float distMax,
+    const Point3D &pA, const Point3D &pB, const Point3D &pC,
+    const Point3D &pD, const Point3D &pE, const Point3D &pF,
+    float* const hitDistEnter, float* const hitDistLeave,
+    Normal3D* const hitNormalEnter, Normal3D* const hitNormalLeave) {
+    *hitDistEnter = distMin;
+    *hitDistLeave = distMax;
+
+    const auto updateHit = [&]
+    (const float t, const Normal3D &n, const float u, const float v, bool enter) {
+        if (enter) {
+            *hitDistEnter = t;
+            *hitNormalEnter = n;
+            //*hitParam0Enter = u;
+            //*hitParam1Enter = v;
+        }
+        else {
+            *hitDistLeave = t;
+            *hitNormalLeave = n;
+            //*hitParam0Leave = u;
+            //*hitParam1Leave = v;
+        }
+    };
+
+    float tt;
+    Normal3D nn;
+    float uu, vv;
+    if (testRayVsTriangle(
+        rayOrg, rayDir, *hitDistEnter, *hitDistLeave,
+        pC, pB, pA,
+        &tt, &nn, &uu, &vv)) {
+        updateHit(tt, normalize(nn), uu, vv, dot(nn, rayDir) < 0);
+    }
+    if (testRayVsTriangle(
+        rayOrg, rayDir, *hitDistEnter, *hitDistLeave,
+        pD, pE, pF,
+        &tt, &nn, &uu, &vv)) {
+        updateHit(tt, normalize(nn), uu, vv, dot(nn, rayDir) < 0);
+    }
+    if (testRayVsBilinearPatch(
+        rayOrg, rayDir, *hitDistEnter, *hitDistLeave,
+        pA, pB, pD, pE,
+        &tt, &nn, &uu, &vv)) {
+        updateHit(tt, normalize(nn), uu, vv, dot(nn, rayDir) < 0);
+    }
+    if (testRayVsBilinearPatch(
+        rayOrg, rayDir, *hitDistEnter, *hitDistLeave,
+        pB, pC, pE, pF,
+        &tt, &nn, &uu, &vv)) {
+        updateHit(tt, normalize(nn), uu, vv, dot(nn, rayDir) < 0);
+    }
+    if (testRayVsBilinearPatch(
+        rayOrg, rayDir, *hitDistEnter, *hitDistLeave,
+        pC, pA, pF, pD,
+        &tt, &nn, &uu, &vv)) {
+        updateHit(tt, normalize(nn), uu, vv, dot(nn, rayDir) < 0);
+    }
+
+    return *hitDistEnter > distMin || *hitDistLeave < distMax;
+}
+
+void testRayVsPrism() {
+    struct TestData {
+        Point3D pA;
+        Point3D pB;
+        Point3D pC;
+        Normal3D nA;
+        Normal3D nB;
+        Normal3D nC;
+
+        Point3D SA(float h) const {
+            return pA + h * nA;
+        }
+        Point3D SB(float h) const {
+            return pB + h * nB;
+        }
+        Point3D SC(float h) const {
+            return pC + h * nC;
+        }
+        Point3D p(const float alpha, const float beta) const {
+            return (1 - alpha - beta) * pA + alpha * pB + beta * pC;
+        }
+        Normal3D n(const float alpha, const float beta) const {
+            return (1 - alpha - beta) * nA + alpha * nB + beta * nC;
+        }
+        Point3D S(const float alpha, const float beta, const float h) const {
+            const Point3D ret = (1 - alpha - beta) * SA(h) + alpha * SB(h) + beta * SC(h);
+            return ret;
+        }
+    };
+
+    const TestData test = {
+        Point3D(-0.5f, -0.4f, 0.1f),
+        Point3D(0.4f, 0.1f, 0.4f),
+        Point3D(-0.3f, 0.5f, 0.6f),
+        normalize(Normal3D(-0.3f, -0.2f, 1.0f)),
+        normalize(Normal3D(0.8f, -0.3f, 0.4f)),
+        normalize(Normal3D(0.4f, 0.2f, 1.0f)),
+    };
+
+    std::mt19937 rng(51231011);
+    std::uniform_real_distribution<float> u01;
+
+    constexpr uint32_t numRays = 500;
+    for (int rayIdx = 0; rayIdx < numRays; ++rayIdx) {
+        const Point3D rayOrg(
+            2 * u01(rng) - 1,
+            2 * u01(rng) - 1,
+            2 * u01(rng) - 1);
+        const Vector3D rayDir = uniformSampleSphere(u01(rng), u01(rng));
+        constexpr float rayLength = 1.5f;
+
+        vdb_frame();
+
+        constexpr float axisScale = 1.0f;
+        drawAxes(axisScale);
+
+        const auto drawWiredDottedTriangle = []
+        (const Point3D &pA, const Point3D pB, const Point3D &pC) {
+            drawWiredTriangle(pA, pB, pC);
+            setColor(RGB(0, 1, 1));
+            drawPoint(pA);
+            setColor(RGB(1, 0, 1));
+            drawPoint(pB);
+            setColor(RGB(1, 1, 0));
+            drawPoint(pC);
+        };
+
+        // World-space Shell
+        setColor(RGB(0.25f));
+        drawWiredTriangle(test.pA, test.pB, test.pC);
+        setColor(RGB(0.0f, 0.5f, 1.0f));
+        drawVector(test.pA, test.nA, 1.0f);
+        drawVector(test.pB, test.nB, 1.0f);
+        drawVector(test.pC, test.nC, 1.0f);
+        for (int i = 1; i <= 10; ++i) {
+            const float p = static_cast<float>(i) / 10;
+            setColor(RGB(p));
+            drawWiredDottedTriangle(test.SA(p), test.SB(p), test.SC(p));
+        }
+
+        // World-space Ray
+        setColor(RGB(1.0f));
+        drawCross(rayOrg, 0.05f);
+        drawVector(rayOrg, rayDir, rayLength);
+
+#if 0
+        {
+            const Point3D p00(-0.5f, 0.5f, 0.1f);
+            const Point3D p10(0.5f, 0.6f, 0.3f);
+            const Point3D p01(-0.5f, 0.5f, 0.9f);
+            const Point3D p11(0.5f, 0.3f, 1.0f);
+            setColor(RGB(1));
+            drawLine(p00, p10);
+            drawLine(p01, p11);
+            drawLine(p00, p01);
+            drawLine(p10, p11);
+
+            {
+                /*
+                JP: 任意のuだと当然レイとは交わらない。
+                    (レイがバイリニアパッチと交差する場合は)uを動かすとPa-Pbがレイと交わる箇所が見つかるはず。
+                */
+                const float u = 0.3f;
+                const Point3D Pa = lerp(p00, p10, u);
+                const Point3D Pb = lerp(p01, p11, u);
+
+                setColor(RGB(0.25f));
+                drawLine(Pa, Pb);
+                Vector3D n = cross(Pb - Pa, rayDir);
+                n.normalize();
+                setColor(RGB(0, 1, 1));
+                drawVector(Pa, n);
+                float dist = dot(Pa - rayOrg, n);
+            }
+
+            /*
+            JP: uに関する二次方程式を解くことでレイと交わるuを求めることができる。
+            */
+            const Vector3D eAB = p10 - p00;
+            const Vector3D eAC = p01 - p00;
+            const Vector3D eCD = p11 - p01;
+            const Vector3D eOA = p00 - rayOrg;
+            const Vector3D f = eCD - eAB;
+            const Vector3D cr_f_d = cross(f, rayDir);
+            const Vector3D cr_eAC_d = cross(eAC, rayDir);
+            const float coeffs[] = {
+                dot(eOA, cr_eAC_d),
+                dot(eOA, cr_f_d) + dot(eAB, cr_eAC_d),
+                dot(eAB, cr_f_d),
+            };
+            float us[2];
+            solveQuadraticEquation(coeffs, 0.0f, 1.0f, us);
+            const float u = us[0];
+
+            const Point3D Pa = lerp(p00, p10, u);
+            const Point3D Pb = lerp(p01, p11, u);
+
+            setColor(RGB(1.0f));
+            drawLine(Pa, Pb);
+            Vector3D n = cross(Pb - Pa, rayDir);
+            n.normalize();
+            setColor(RGB(0, 1, 1));
+            drawVector(Pa, n);
+            float dist = dot(Pa - rayOrg, n);
+
+            printf("");
+        }
+#endif
+
+        const Point3D SA1 = test.SA(1);
+        const Point3D SB1 = test.SB(1);
+        const Point3D SC1 = test.SC(1);
+
+        float hitDistEnter, hitDistLeave;
+        Normal3D hitNormalEnter, hitNormalLeave;
+
+        if (testRayVsPrism(
+            rayOrg, rayDir, 0.0f, rayLength,
+            test.pA, test.pB, test.pC, SA1, SB1, SC1,
+            &hitDistEnter, &hitDistLeave, &hitNormalEnter, &hitNormalLeave)) {
+            if (hitDistEnter > 0.0f) {
+                const Point3D hpE = rayOrg + hitDistEnter * rayDir;
+                setColor(RGB(1, 0.5f, 0));
+                drawCross(hpE, 0.05f);
+                setColor(RGB(0, 1, 1));
+                drawVector(hpE, hitNormalEnter, 0.1f);
+            }
+
+            if (hitDistLeave < rayLength) {
+                const Point3D hpL = rayOrg + hitDistLeave * rayDir;
+                setColor(RGB(1, 0.5f, 0));
+                drawCross(hpL, 0.05f);
+                setColor(RGB(0, 1, 1));
+                drawVector(hpL, hitNormalLeave, 0.1f);
+            }
+        }
     }
 }
 

@@ -1430,6 +1430,25 @@ struct Vector3D_T {
 #endif
         return Vector3D_T(-sinPhi * sinTheta, cosTheta, cosPhi * sinTheta);
     }
+
+    // ( 1,  0, 0) <=> phi:      0
+    // ( 0,  1, 0) <=> phi: 1/2 pi
+    // (-1,  0, 0) <=> phi:   1 pi
+    // ( 0, -1, 0) <=> phi: 3/2 pi
+    CUDA_COMMON_FUNCTION CUDA_INLINE static constexpr Vector3D_T fromPolarZUp(const F phi, const F theta) {
+#if defined(__CUDA_ARCH__)
+        F sinPhi, cosPhi;
+        F sinTheta, cosTheta;
+        sincosf(phi, &sinPhi, &cosPhi);
+        sincosf(theta, &sinTheta, &cosTheta);
+#else
+        const F sinPhi = std::sin(phi);
+        const F cosPhi = std::cos(phi);
+        const F sinTheta = std::sin(theta);
+        const F cosTheta = std::cos(theta);
+#endif
+        return Vector3D_T(cosPhi * sinTheta, sinPhi * sinTheta, cosTheta);
+    }
 };
 
 template <std::floating_point F, bool isNormal>
