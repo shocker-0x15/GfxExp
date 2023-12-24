@@ -1491,6 +1491,13 @@ static bool testRayVsTriangle(
          & (*bcB >= 0.0f) & (*bcC >= 0.0f) & (*bcB + *bcC <= 1));
 }
 
+static Point3D restoreTriangleHitPoint(
+    const Point3D &pA, const Point3D &pB, const Point3D &pC,
+    const float bcB, const float bcC, Normal3D* const hitNormal) {
+    *hitNormal = static_cast<Normal3D>(cross(pB - pA, pC - pA));
+    return (1 - (bcB + bcC)) * pA + bcB * pB + bcC * pC;
+}
+
 // Reference: Chapter 8. Cool Patches: A Geometric Approach to Ray/Bilinear Patch Intersections
 //            Ray Tracing Gems
 static bool testRayVsBilinearPatch(
@@ -1559,28 +1566,45 @@ static bool testRayVsBilinearPatch(
     return true;
 }
 
+static Point3D restoreBilinearPatchHitPoint(
+    const Point3D &pA, const Point3D &pB, const Point3D &pC, const Point3D &pD,
+    const float u, const float v, Normal3D* const hitNormal) {
+    const Vector3D eAB = pB - pA;
+    const Vector3D eAC = pC - pA;
+    const Vector3D eBD = pD - pB;
+    const Vector3D eCD = pD - pC;
+    const Vector3D dpdu = lerp(eAB, eCD, v);
+    const Vector3D dpdv = lerp(eAC, eBD, u);
+    *hitNormal = static_cast<Normal3D>(cross(dpdu, dpdv));
+    return (1 - u) * (1 - v) * pA + u * (1 - v) * pB + (1 - u) * v * pC + u * v * pD;
+}
+
 static bool testRayVsPrism(
     const Point3D &rayOrg, const Vector3D &rayDir, const float distMin, const float distMax,
     const Point3D &pA, const Point3D &pB, const Point3D &pC,
     const Point3D &pD, const Point3D &pE, const Point3D &pF,
     float* const hitDistEnter, float* const hitDistLeave,
-    Normal3D* const hitNormalEnter, Normal3D* const hitNormalLeave) {
+    Normal3D* const hitNormalEnter, Normal3D* const hitNormalLeave,
+    float* const hitParam0Enter, float* const hitParam0Leave,
+    float* const hitParam1Enter, float* const hitParam1Leave) {
     *hitDistEnter = distMin;
     *hitDistLeave = distMax;
 
     const auto updateHit = [&]
-    (const float t, const Normal3D &n, const float u, const float v, bool enter) {
+    (const float t, const Normal3D &n, const uint32_t faceID, const float u, const float v) {
+        const Normal3D nn = normalize(n);
+        const bool enter = dot(n, rayDir) < 0;
         if (enter) {
             *hitDistEnter = t;
-            *hitNormalEnter = n;
-            //*hitParam0Enter = u;
-            //*hitParam1Enter = v;
+            *hitNormalEnter = nn;
+            *hitParam0Enter = faceID + u;
+            *hitParam1Enter = v;
         }
         else {
             *hitDistLeave = t;
-            *hitNormalLeave = n;
-            //*hitParam0Leave = u;
-            //*hitParam1Leave = v;
+            *hitNormalLeave = nn;
+            *hitParam0Leave = faceID + u;
+            *hitParam1Leave = v;
         }
     };
 
@@ -1591,34 +1615,55 @@ static bool testRayVsPrism(
         rayOrg, rayDir, *hitDistEnter, *hitDistLeave,
         pC, pB, pA,
         &tt, &nn, &uu, &vv)) {
-        updateHit(tt, normalize(nn), uu, vv, dot(nn, rayDir) < 0);
+        updateHit(tt, nn, 0, uu, vv);
     }
     if (testRayVsTriangle(
         rayOrg, rayDir, *hitDistEnter, *hitDistLeave,
         pD, pE, pF,
         &tt, &nn, &uu, &vv)) {
-        updateHit(tt, normalize(nn), uu, vv, dot(nn, rayDir) < 0);
+        updateHit(tt, nn, 1, uu, vv);
     }
     if (testRayVsBilinearPatch(
         rayOrg, rayDir, *hitDistEnter, *hitDistLeave,
         pA, pB, pD, pE,
         &tt, &nn, &uu, &vv)) {
-        updateHit(tt, normalize(nn), uu, vv, dot(nn, rayDir) < 0);
+        updateHit(tt, nn, 2, uu, vv);
     }
     if (testRayVsBilinearPatch(
         rayOrg, rayDir, *hitDistEnter, *hitDistLeave,
         pB, pC, pE, pF,
         &tt, &nn, &uu, &vv)) {
-        updateHit(tt, normalize(nn), uu, vv, dot(nn, rayDir) < 0);
+        updateHit(tt, nn, 3, uu, vv);
     }
     if (testRayVsBilinearPatch(
         rayOrg, rayDir, *hitDistEnter, *hitDistLeave,
         pC, pA, pF, pD,
         &tt, &nn, &uu, &vv)) {
-        updateHit(tt, normalize(nn), uu, vv, dot(nn, rayDir) < 0);
+        updateHit(tt, nn, 4, uu, vv);
     }
 
     return *hitDistEnter > distMin || *hitDistLeave < distMax;
+}
+
+Point3D restorePrismHitPoint(
+    const Point3D &pA, const Point3D &pB, const Point3D &pC,
+    const Point3D &pD, const Point3D &pE, const Point3D &pF,
+    const float hitParam0, const float hitParam1,
+    Normal3D* const hitNormal) {
+    const uint32_t faceID = static_cast<uint32_t>(hitParam0);
+    const float u = std::fmod(hitParam0, 1.0f);
+    const float v = std::fmod(hitParam1, 1.0f);
+    if (faceID == 0)
+        return restoreTriangleHitPoint(pC, pB, pA, u, v, hitNormal);
+    else if (faceID == 1)
+        return restoreTriangleHitPoint(pD, pE, pF, u, v, hitNormal);
+    else if (faceID == 2)
+        return restoreBilinearPatchHitPoint(pA, pB, pD, pE, u, v, hitNormal);
+    else if (faceID == 3)
+        return restoreBilinearPatchHitPoint(pB, pC, pE, pF, u, v, hitNormal);
+    else if (faceID == 4)
+        return restoreBilinearPatchHitPoint(pC, pA, pF, pD, u, v, hitNormal);
+    return Point3D(NAN);
 }
 
 void testRayVsPrism() {
@@ -1776,25 +1821,43 @@ void testRayVsPrism() {
 
         float hitDistEnter, hitDistLeave;
         Normal3D hitNormalEnter, hitNormalLeave;
+        float hitParam0Enter, hitParam0Leave;
+        float hitParam1Enter, hitParam1Leave;
 
         if (testRayVsPrism(
             rayOrg, rayDir, 0.0f, rayLength,
             test.pA, test.pB, test.pC, SA1, SB1, SC1,
-            &hitDistEnter, &hitDistLeave, &hitNormalEnter, &hitNormalLeave)) {
+            &hitDistEnter, &hitDistLeave, &hitNormalEnter, &hitNormalLeave,
+            &hitParam0Enter, &hitParam0Leave,
+            &hitParam1Enter, &hitParam1Leave)) {
             if (hitDistEnter > 0.0f) {
-                const Point3D hpE = rayOrg + hitDistEnter * rayDir;
+                const Point3D hp = rayOrg + hitDistEnter * rayDir;
                 setColor(RGB(1, 0.5f, 0));
-                drawCross(hpE, 0.05f);
+                drawCross(hp, 0.05f);
                 setColor(RGB(0, 1, 1));
-                drawVector(hpE, hitNormalEnter, 0.1f);
+                drawVector(hp, hitNormalEnter, 0.1f);
+
+                Normal3D hn;
+                const Point3D _hp = restorePrismHitPoint(
+                    test.pA, test.pB, test.pC, SA1, SB1, SC1,
+                    hitParam0Enter, hitParam1Enter, &hn);
+                hn.normalize();
+                printf("");
             }
 
             if (hitDistLeave < rayLength) {
-                const Point3D hpL = rayOrg + hitDistLeave * rayDir;
+                const Point3D hp = rayOrg + hitDistLeave * rayDir;
                 setColor(RGB(1, 0.5f, 0));
-                drawCross(hpL, 0.05f);
+                drawCross(hp, 0.05f);
                 setColor(RGB(0, 1, 1));
-                drawVector(hpL, hitNormalLeave, 0.1f);
+                drawVector(hp, hitNormalLeave, 0.1f);
+
+                Normal3D hn;
+                const Point3D _hp = restorePrismHitPoint(
+                    test.pA, test.pB, test.pC, SA1, SB1, SC1,
+                    hitParam0Leave, hitParam1Leave, &hn);
+                hn.normalize();
+                printf("");
             }
         }
     }
