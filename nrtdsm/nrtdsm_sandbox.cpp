@@ -11,10 +11,6 @@ static Vector3D uniformSampleSphere(float u0, float u1) {
 
 
 
-/*
-Reference: High-Performance Polynomial Root Finding for Graphics
-*/
-
 template <uint32_t degree>
 inline float evaluatePolynomial(const float coeffs[degree + 1], const float x) {
     // a_d * x^d + a_{d-1} * x^{d-1} + ... + a_1 * x + a_0
@@ -23,6 +19,37 @@ inline float evaluatePolynomial(const float coeffs[degree + 1], const float x) {
         ret = ret * x + coeffs[deg];
     return ret;
 }
+
+static uint32_t solveQuadraticEquation(
+    const float coeffs[3], const float xMin, const float xMax,
+    float roots[2]) {
+    const float a = coeffs[2];
+    const float b = coeffs[1];
+    const float c = coeffs[0];
+    const float D = pow2(b) - 4 * a * c;
+    if (D < 0)
+        return 0;
+    if (D == 0.0f) {
+        roots[0] = -b / (2 * a);
+        return roots[0] >= xMin && roots[0] <= xMax;
+    }
+    const float sqrtD = std::sqrt(D);
+    const float temp = -0.5f * (b + std::copysign(sqrtD, b));
+    float xx0 = c / temp;
+    float xx1 = temp / a;
+    if (xx0 > xx1)
+        std::swap(xx0, xx1);
+    uint32_t idx = 0;
+    if (xx0 >= xMin && xx0 <= xMax)
+        roots[idx++] = xx0;
+    if (xx1 >= xMin && xx1 <= xMax)
+        roots[idx++] = xx1;
+    return idx;
+}
+
+// ----------------------------------------------------------------
+// Fast and Accurate Numerical Cubic Equation Solver
+// Reference: High-Performance Polynomial Root Finding for Graphics
 
 template <uint32_t degree>
 inline void deflatePolynomial(const float coeffs[degree + 1], const float root, float defCoeffs[degree]) {
@@ -129,35 +156,8 @@ static float findSingleRootClosed(
     return xr;
 }
 
-static uint32_t solveQuadraticEquation(
-    const float coeffs[3], const float xMin, const float xMax,
-    float roots[2]) {
-    const float a = coeffs[2];
-    const float b = coeffs[1];
-    const float c = coeffs[0];
-    const float D = pow2(b) - 4 * a * c;
-    if (D < 0)
-        return 0;
-    if (D == 0.0f) {
-        roots[0] = -b / (2 * a);
-        return roots[0] >= xMin && roots[0] <= xMax;
-    }
-    const float sqrtD = std::sqrt(D);
-    const float temp = -0.5f * (b + std::copysign(sqrtD, b));
-    float xx0 = c / temp;
-    float xx1 = temp / a;
-    if (xx0 > xx1)
-        std::swap(xx0, xx1);
-    uint32_t idx = 0;
-    if (xx0 >= xMin && xx0 <= xMax)
-        roots[idx++] = xx0;
-    if (xx1 >= xMin && xx1 <= xMax)
-        roots[idx++] = xx1;
-    return idx;
-}
-
 template <bool boundError>
-static uint32_t solveCubicEquation(
+static uint32_t solveCubicEquationNumerical(
     const float coeffs[4], const float xMin, const float xMax, float epsilon,
     float roots[3]) {
     Assert(std::isfinite(xMin) && std::isfinite(xMax) && xMin < xMax, "Invalid interval.");
@@ -330,88 +330,102 @@ static uint32_t solveCubicEquation(
     }
 }
 
+// END: Fast and Accurate Numerical Cubic Equation Solver
+// ----------------------------------------------------------------
 
-
-static inline uint32_t solveLinearEquation(
-    const float a, const float b,
-    float* const x) {
-    if (a == 0) {
-        *x = NAN;
-        return 0;
-    }
-
-    *x = -b / a;
-    return 1;
-}
-
-static uint32_t solveQuadraticEquation(
-    const float a, const float b, const float c,
-    float* const x0, float* const x1) {
-    if (a == 0.0f) {
-        *x1 = NAN;
-        return solveLinearEquation(b, c, x0);
-    }
-
-    const float D = pow2(b) - 4 * a * c;
-    if (D < 0.0f) {
-        *x0 = *x1 = NAN;
-        return 0;
-    }
-    else if (D == 0.0f) {
-        *x1 = NAN;
-        *x0 = -b / (2 * a);
-        return 1;
-    }
-    const float sqrtD = std::sqrt(D);
-    const float temp = -0.5f * (b + std::copysign(sqrtD, b));
-    const float xx0 = c / temp;
-    const float xx1 = temp / a;
-    *x0 = std::fmin(xx0, xx1);
-    *x1 = std::fmax(xx0, xx1);
-    return 2;
-}
-
-static uint32_t solveCubicEquation(
-    const float a, const float b, const float c, const float d,
-    float* const x0, float* const x1, float* const x2) {
-    if (a == 0.0f) {
-        *x2 = NAN;
-        return solveQuadraticEquation(b, c, d, x0, x1);
-    }
-
-    const auto substitute = [&](const float x) {
-        return a * pow3(x) + b * pow2(x) + c * x + d;
+static uint32_t solveCubicEquationAnalytical(
+    const float coeffs[4], const float xMin, const float xMax,
+    float roots[3]) {
+    uint32_t numRoots = 0;
+    const auto testRoot = [&](const float x) {
+        if (x >= xMin && x <= xMax)
+            roots[numRoots++] = x;
     };
 
-    const float a3 = pow3(a);
-    const float a2 = pow2(a);
-    const float b3 = pow3(b);
-    const float b2 = pow2(b);
-    const float c3 = pow3(c);
-    const float c2 = pow2(c);
-    const float d2 = pow2(d);
+    const auto sortAndTestRoots = [&]
+    (const float x0, const float x1, const float x2) {
+        float root0;
+        float root1;
+        float root2;
+        if (x0 < x1) {
+            if (x0 < x2) {
+                root0 = x0;
+                root1 = x1 < x2 ? x1 : x2;
+                root2 = x1 < x2 ? x2 : x1;
+            }
+            else {
+                root0 = x2;
+                root1 = x0;
+                root2 = x1;
+            }
+        }
+        else {
+            if (x1 < x2) {
+                root0 = x1;
+                root1 = x0 < x2 ? x0 : x2;
+                root2 = x0 < x2 ? x2 : x0;
+            }
+            else {
+                root0 = x2;
+                root1 = x1;
+                root2 = x0;
+            }
+        }
+        testRoot(root0);
+        testRoot(root1);
+        testRoot(root2);
+    };
 
-    const float p = (-b2 + 3 * a * c) / (9 * a2);
-    const float q = (2 * b3 - 9 * a * b * c + 27 * a2 * d) / (54 * a3);
+    if (coeffs[3] == 0.0f)
+        return solveQuadraticEquation(coeffs, xMin, xMax, roots);
+
+    const float recCubicCoeff = 1.0f / coeffs[3];
+    const float a = coeffs[2] * recCubicCoeff;
+    const float b = coeffs[1] * recCubicCoeff;
+    const float c = coeffs[0] * recCubicCoeff;
+
+#if 1 // Reference: Numerical Recipes in C
+    const float Q = (pow2(a) - 3 * b) / 9;
+    const float R = (2 * pow3(a) - 9 * a * b + 27 * c) / 54;
+    const float R2 = pow2(R);
+    const float Q3 = pow3(Q);
+    const float a_over_3 = a / 3;
+    if (R2 >= Q3) {
+        const float temp = std::fabs(R) + std::sqrt(R2 - Q3);
+        const float A = -std::copysign(std::pow(temp, 1.0f / 3), R);
+        const float B = A != 0 ? Q / A : 0;
+        testRoot((A + B) - a_over_3);
+        return numRoots;
+    }
+    const float theta = std::acos(std::clamp(R / std::sqrt(Q3), -1.0f, 1.0f));
+
+    constexpr float _2pi_over_3 = 2 * pi_v<float> / 3;
+    const float theta_over_3 = theta / 3;
+    const float minus2sqrtQ = -2 * std::sqrt(Q);
+    sortAndTestRoots(
+        minus2sqrtQ * std::cos(theta_over_3) - a_over_3,
+        minus2sqrtQ * std::cos(theta_over_3 + _2pi_over_3) - a_over_3,
+        minus2sqrtQ * std::cos(theta_over_3 - _2pi_over_3) - a_over_3);
+#else
+    const float p = (-pow2(a) + 3 * b) / 9;
+    const float q = (2 * pow3(a) - 9 * a * b + 27 * c) / 54;
     const float r2 = pow2(q) + pow3(p);
-    const float b3a = -b / (3 * a);
+    const float a_over_3 = a / 3;
     if (r2 > 0) {
         const float r = std::sqrt(r2);
         const float qrA = -q + r;
         const float qrB = -q - r;
-        *x0 = b3a
+        const float x = -a_over_3
             + std::copysign(std::pow(std::fabs(qrA), 1.0f / 3.0f), qrA)
             + std::copysign(std::pow(std::fabs(qrB), 1.0f / 3.0f), qrB);
-        *x1 = *x2 = NAN;
-        return 1;
+        testRoot(x);
     }
     else if (r2 * pow4(a) >= -1e-6) {
-        const float xx0 = b3a + 2 * std::copysign(std::pow(std::fabs(q), 1.0f / 3.0f), -q);
-        const float xx1 = b3a - std::copysign(std::pow(std::fabs(q), 1.0f / 3.0f), -q);
-        *x0 = std::fmin(xx0, xx1);
-        *x1 = std::fmax(xx0, xx1);
-        *x2 = NAN;
-        return 2;
+        const float temp = std::copysign(std::pow(std::fabs(q), 1.0f / 3.0f), q);
+        const float xx0 = -a_over_3 - 2 * temp;
+        const float xx1 = -a_over_3 + temp;
+        testRoot(std::fmin(xx0, xx1));
+        testRoot(std::fmax(xx0, xx1));
     }
     else {
         const float r = std::sqrt(-r2);
@@ -420,93 +434,83 @@ static uint32_t solveCubicEquation(
         const float zr = radius * std::cos(arg);
         const float zi = radius * std::sin(arg);
         const float sqrt3 = std::sqrt(3.0f);
-        const float xx0 = b3a + 2 * zr;
-        const float xx1 = b3a - zr - sqrt3 * zi;
-        const float xx2 = b3a - zr + sqrt3 * zi;
-        if (xx0 < xx1) {
-            if (xx0 < xx2) {
-                *x0 = xx0;
-                *x1 = xx1 < xx2 ? xx1 : xx2;
-                *x2 = xx1 < xx2 ? xx2 : xx1;
-            }
-            else {
-                *x0 = xx2;
-                *x1 = xx0;
-                *x2 = xx1;
-            }
-        }
-        else {
-            if (xx1 < xx2) {
-                *x0 = xx1;
-                *x1 = xx0 < xx2 ? xx0 : xx2;
-                *x2 = xx0 < xx2 ? xx2 : xx0;
-            }
-            else {
-                *x0 = xx2;
-                *x1 = xx1;
-                *x2 = xx0;
-            }
-        }
-        return 3;
+        sortAndTestRoots(
+            -a_over_3 + 2 * zr,
+            -a_over_3 - zr - sqrt3 * zi,
+            -a_over_3 - zr + sqrt3 * zi);
     }
+#endif
 
-    //hpprintf(
-    //    "[%g, %g, %g, %g], r2*a4: %g\n",
-    //    a, b, c, d, r2 * pow4(a));
-    //hpprintf(
-    //    "(%.6f, %.6f, %.6f) => (%.6f, %.6f, %.6f)\n",
-    //    *x0, *x1, *x2,
-    //    substitute(*x0), substitute(*x1), substitute(*x2));
+    return numRoots;
 }
 
 void testSolveCubicEquation() {
     struct TestData {
-        float a, b, c, d;
+        float coeffs[4];
     };
 
     std::mt19937 rng(149013111);
     std::uniform_real_distribution<float> u01;
 
-    constexpr uint32_t numTests = 10000;
+    constexpr uint32_t numTests = 100000;
     std::vector<TestData> tests(numTests);
     for (uint32_t testIdx = 0; testIdx < numTests; ++testIdx) {
         TestData &test = tests[testIdx];
-        test.a = 2 * u01(rng) - 1;
-        test.b = 2 * u01(rng) - 1;
-        test.c = 2 * u01(rng) - 1;
-        test.d = 2 * u01(rng) - 1;
+#if 1
+        // Bernstein Polynomials
+        const float beta0 = 2 * u01(rng) - 1;
+        const float beta1 = 2 * u01(rng) - 1;
+        const float beta2 = 2 * u01(rng) - 1;
+        const float beta3 = 2 * u01(rng) - 1;
+        test.coeffs[0] = beta0;
+        test.coeffs[1] = 3 * beta1 - beta0;
+        test.coeffs[2] = 3 * beta2 - 6 * beta1 + beta0;
+        test.coeffs[3] = beta3 - 3 * beta2 + 3 * beta1 - beta0;
+#else
+        test.coeffs[0] = 2 * u01(rng) - 1;
+        test.coeffs[1] = 2 * u01(rng) - 1;
+        test.coeffs[2] = 2 * u01(rng) - 1;
+        test.coeffs[3] = 2 * u01(rng) - 1;
+#endif
     }
 
-    const auto substitute = []
-    (const float a, const float b, const float c, const float d, const float x) {
-        return a * pow3(x) + b * pow2(x) + c * x + d;
-    };
+    // JP: この範囲だとNumericalのほうが速い様子。
+    //     論文を見ると有効な解が見つからない場合の処理が特に速いことが貢献しているように見えるが、
+    //     解が存在する場合もこの範囲だとNumericalがAnalyticalと同等の速さ。
+    constexpr float rootMin = 0.0f;
+    constexpr float rootMax = 1.0f;
 
+    uint32_t numRootsCounts[4] = { 0, 0, 0, 0 };
     StopWatchHiRes sw;
     sw.start();
     for (uint32_t testIdx = 0; testIdx < numTests; ++testIdx) {
         const TestData &test = tests[testIdx];
         float xs[3];
 #if 0
-        solveCubicEquation(test.a, test.b, test.c, test.d, &xs[0], &xs[1], &xs[2]);
+        const uint32_t numRoots = solveCubicEquationAnalytical(test.coeffs, rootMin, rootMax, xs);
 #else
-        const float coeffs[] = {
-            test.d, test.c, test.b, test.a
-        };
-        const uint32_t numRoots = solveCubicEquation<false>(
-            coeffs, -5, 5, 1e-3f, xs);
-        for (uint32_t i = numRoots; i < 3; ++i)
-            xs[i] = NAN;
+        const float epsilon = 3.5e-4f;
+        const uint32_t numRoots = solveCubicEquationNumerical<false>(test.coeffs, rootMin, rootMax, epsilon, xs);
 #endif
+        //for (uint32_t i = numRoots; i < 3; ++i)
+        //    xs[i] = NAN;
         //hpprintf(
         //    "%4u: (%9.6f, %9.6f), (%9.6f, %9.6f), (%9.6f, %9.6f)\n", testIdx,
-        //    xs[0], substitute(test.a, test.b, test.c, test.d, xs[0]),
-        //    xs[1], substitute(test.a, test.b, test.c, test.d, xs[1]),
-        //    xs[2], substitute(test.a, test.b, test.c, test.d, xs[2]));
+        //    xs[0], evaluatePolynomial<3>(test.coeffs, xs[0]),
+        //    xs[1], evaluatePolynomial<3>(test.coeffs, xs[1]),
+        //    xs[2], evaluatePolynomial<3>(test.coeffs, xs[2]));
+        //hpprintf(
+        //    "%4u: (%9.6f, %9.6f)\n", testIdx,
+        //    xs[0], evaluatePolynomial<3>(test.coeffs, xs[0]));
+        ++numRootsCounts[numRoots];
     }
     const uint32_t mIdx = sw.stop();
 
     hpprintf("%.3f [ms]\n", sw.getMeasurement(mIdx, StopWatchDurationType::Microseconds) * 1e-3f);
+    hpprintf("0 roots: %5u\n", numRootsCounts[0]);
+    hpprintf("1 roots: %5u\n", numRootsCounts[1]);
+    hpprintf("2 roots: %5u\n", numRootsCounts[2]);
+    hpprintf("3 roots: %5u\n", numRootsCounts[3]);
 }
 
 
@@ -516,7 +520,7 @@ static void findHeight(
     const Point3D &pA, const Point3D &pB, const Point3D &pC,
     const Normal3D &nA, const Normal3D &nB, const Normal3D &nC,
     const Point3D &p,
-    float* const h0, float* const h1, float* const h2) {
+    float hs[3]) {
     const Vector3D eAB = pB - pA;
     const Vector3D eAC = pC - pA;
     const Vector3D fAB = static_cast<Vector3D>(nB - nA);
@@ -527,28 +531,16 @@ static void findHeight(
     const Vector3D alpha1 = cross(eAB, fAC) + cross(fAB, eAC);
     const Vector3D alpha0 = cross(eAB, eAC);
 
-    const float c_a = -dot(nA, alpha2);
-    const float c_b = dot(eAp, alpha2) - dot(nA, alpha1);
-    const float c_c = dot(eAp, alpha1) - dot(nA, alpha0);
-    const float c_d = dot(eAp, alpha0);
+    const float coeffs[] = {
+        dot(eAp, alpha0),
+        dot(eAp, alpha1) - dot(nA, alpha0),
+        dot(eAp, alpha2) - dot(nA, alpha1),
+        -dot(nA, alpha2)
+    };
 
-    /*const float c_a3 = pow3(c_a);
-    const float c_a2 = pow2(c_a);
-    const float c_b3 = pow3(c_b);
-    const float c_b2 = pow2(c_b);
-    const float c_c3 = pow3(c_c);
-    const float c_c2 = pow2(c_c);
-    const float c_d2 = pow2(c_d);
-
-    const float tA = (-2 * c_b3 + 9 * c_a * c_b * c_c - 27 * c_a2 * c_d) / (54 * c_a3);
-    const float _tB = (-c_b2 + 3 * c_a * c_c) / (9 * c_a2);
-    const float tB = std::sqrt(pow2(tA) + pow3(_tB));
-
-    const float h0 =
-        -c_b / (3 * c_a)
-        + std::pow(tA + tB, 1.0f / 3.0f)
-        + std::pow(tA - tB, 1.0f / 3.0f);*/
-    solveCubicEquation(c_a, c_b, c_c, c_d, h0, h1, h2);
+    const uint32_t numRoots = solveCubicEquationAnalytical(coeffs, -INFINITY, INFINITY, hs);
+    for (int i = numRoots; i < 3; ++i)
+        hs[i] = NAN;
 }
 
 void testFindHeight() {
@@ -648,7 +640,7 @@ void testFindHeight() {
             test.pA, test.pB, test.pC,
             test.nA, test.nB, test.nC,
             p,
-            &hs[0], &hs[1], &hs[2]);
+            hs);
         for (int j = 0; j < 3; ++j) {
             const float h = hs[j];
             if (!std::isfinite(h))
@@ -906,7 +898,7 @@ void testComputeCoeffs() {
             test.pA, test.pB, test.pC,
             test.nA, test.nB, test.nC,
             rayOrg,
-            &hs[0], &hs[1], &hs[2]);
+            hs);
         const float h = selectH(hs);
         const float h2 = pow2(h);
         const float denom = denom2 * h2 + denom1 * h + denom0;
@@ -939,7 +931,7 @@ void testComputeCoeffs() {
             test.pA, test.pB, test.pC,
             test.nA, test.nB, test.nC,
             rayOrg + t * rayLength * rayDir,
-            &hs[0], &hs[1], &hs[2]);
+            hs);
         const float h = selectH(hs);
         const float h2 = pow2(h);
         const float denom = denom2 * h2 + denom1 * h + denom0;
@@ -1019,12 +1011,14 @@ bool testNonlinearRayVsMicroTriangle(
             &beta2, &beta1, &beta0,
             &denom2, &denom1, &denom0);
 
+        const float coeffs[] = {
+            nInCan.x * alpha0 + nInCan.y * beta0 + KInCan * denom0,
+            nInCan.x * alpha1 + nInCan.y * beta1 + nInCan.z * denom0 + KInCan * denom1,
+            nInCan.x * alpha2 + nInCan.y * beta2 + nInCan.z * denom1 + KInCan * denom2,
+            nInCan.z * denom2
+        };
         float hs[3];
-        const float a = nInCan.z * denom2;
-        const float b = nInCan.x * alpha2 + nInCan.y * beta2 + nInCan.z * denom1 + KInCan * denom2;
-        const float c = nInCan.x * alpha1 + nInCan.y * beta1 + nInCan.z * denom0 + KInCan * denom1;
-        const float d = nInCan.x * alpha0 + nInCan.y * beta0 + KInCan * denom0;
-        solveCubicEquation(a, b, c, d, &hs[0], &hs[1], &hs[2]);
+        solveCubicEquationAnalytical(coeffs, -INFINITY, INFINITY, hs);
         h = hs[0];
         if (h < 0 || h > 1.0f)
             h = hs[1];
@@ -1411,7 +1405,7 @@ void testNonlinearRayVsMicroTriangle() {
             test.pA, test.pB, test.pC,
             test.nA, test.nB, test.nC,
             rayOrg,
-            &hs[0], &hs[1], &hs[2]);
+            hs);
         const float h = selectH(hs);
         const float h2 = pow2(h);
         const float denom = denom2 * h2 + denom1 * h + denom0;
@@ -1435,7 +1429,7 @@ void testNonlinearRayVsMicroTriangle() {
             test.pA, test.pB, test.pC,
             test.nA, test.nB, test.nC,
             rayOrg + t * rayLength * rayDir,
-            &hs[0], &hs[1], &hs[2]);
+            hs);
         const float h = selectH(hs);
         const float h2 = pow2(h);
         const float denom = denom2 * h2 + denom1 * h + denom0;
