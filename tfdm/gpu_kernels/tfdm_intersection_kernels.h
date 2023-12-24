@@ -313,17 +313,17 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
 
                 const auto testRayVsTriangleIntersection = []
                 (const Point3D &org, const Vector3D &dir, float distMin, float distMax,
-                 const Point3D &p0, const Point3D &p1, const Point3D &p2,
+                 const Point3D &pA, const Point3D &pB, const Point3D &pC,
                  Vector3D* n, float* t, float* beta, float* gamma) {
-                    const Vector3D e0 = p1 - p0;
-                    const Vector3D e1 = p0 - p2;
-                    *n = cross(e1, e0);
+                    const Vector3D eAB = pB - pA;
+                    const Vector3D eCA = pA - pC;
+                    *n = cross(eCA, eAB);
 
-                    const Vector3D e2 = (1.0f / dot(*n, dir)) * (p0 - org);
+                    const Vector3D e2 = (1.0f / dot(*n, dir)) * (pA - org);
                     const Vector3D i = cross(dir, e2);
 
-                    *beta = dot(i, e1);
-                    *gamma = dot(i, e0);
+                    *beta = dot(i, eCA);
+                    *gamma = dot(i, eAB);
                     *t = dot(*n, e2);
 
                     return (

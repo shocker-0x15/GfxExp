@@ -761,8 +761,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void down(Texel &texel, bool signX, bool signY)
 
 CUDA_DEVICE_FUNCTION CUDA_INLINE void next(Texel &texel, int32_t maxDepth) {
     while (true) {
-        switch (2 * floorMod(texel.x, 2) + floorMod(texel.y, 2)) {
         //switch (2 * (texel.x % 2) + texel.y % 2) {
+        switch (2 * floorMod(texel.x, 2) + floorMod(texel.y, 2)) {
         case 1:
             --texel.y;
             ++texel.x;
@@ -781,8 +781,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void next(Texel &texel, int32_t maxDepth) {
 
 CUDA_DEVICE_FUNCTION CUDA_INLINE void next(Texel &texel, bool signX, bool signY, int32_t maxDepth) {
     while (true) {
-        switch (2 * floorMod(texel.x + signX, 2) + floorMod(texel.y + signY, 2)) {
         //switch (2 * ((texel.x + signX) % 2) + (texel.y + signY) % 2) {
+        switch (2 * floorMod(texel.x + signX, 2) + floorMod(texel.y + signY, 2)) {
         case 1:
             texel.y += signY ? 1 : -1;
             texel.x += signX ? -1 : 1;
