@@ -127,7 +127,7 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
         || hitKind == CustomHitKind_DisplacedSurfaceBackFace;
     hitPointParams->instSlot = optixGetInstanceId();
     hitPointParams->geomInstSlot = sbtr.geomInstSlot;
-    hitPointParams->isDisplacedMesh = isDisplacedTriangleHit;
+    hitPointParams->isDisplacedMesh = !isTriangleHit;
     hitPointParams->primIndex = hp.primIndex;
 #if OUTPUT_TRAVERSAL_STATS
     hitPointParams->numTravIterations = 0;
@@ -183,16 +183,32 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
             texCoord0DirInWorld = Vector3D(1, 0, 0);
         }
     }
-    else { // for AABB debugging
-        //const GeometryInstanceDataForTFDM &nrtdsm = plp.s->geomInstTfdmDataBuffer[sbtr.geomInstSlot];
-        //const AABB &aabb = nrtdsm.aabbBuffer[hp.primIndex];
-        //Normal3D normalInObj;
-        //const Point3D positionInObj = aabb.restoreHitPoint(hp.bcB, hp.bcC, &normalInObj);
-        //positionInWorld = transformPointFromObjectToWorldSpace(positionInObj);
-        //shadingNormalInWorld = normalize(transformNormalFromObjectToWorldSpace(normalInObj));
-        //texCoord = Point2D(0.0f, 0.0f);
-        //Vector3D bitangent;
-        //makeCoordinateSystem(shadingNormalInWorld, &texCoord0DirInWorld, &bitangent);
+    else { // for Prism debugging
+        const GeometryInstanceDataForNRTDSM &nrtdsm = plp.s->geomInstNrtdsmDataBuffer[sbtr.geomInstSlot];
+        const NRTDSMTriangleAuxInfo &dispTriAuxInfo = nrtdsm.dispTriAuxInfoBuffer[hp.primIndex];
+        const Triangle &tri = geomInst.triangleBuffer[hp.primIndex];
+        const Vertex &vA = geomInst.vertexBuffer[tri.index0];
+        const Vertex &vB = geomInst.vertexBuffer[tri.index1];
+        const Vertex &vC = geomInst.vertexBuffer[tri.index2];
+        const float minHeight = dispTriAuxInfo.minHeight;
+        const float maxHeight = minHeight + dispTriAuxInfo.amplitude;
+        const Point3D pA = vA.position + minHeight * vA.normal;
+        const Point3D pB = vB.position + minHeight * vB.normal;
+        const Point3D pC = vC.position + minHeight * vC.normal;
+        const Point3D pD = vA.position + maxHeight * vA.normal;
+        const Point3D pE = vB.position + maxHeight * vB.normal;
+        const Point3D pF = vC.position + maxHeight * vC.normal;
+        Normal3D normalInObj;
+        const Point3D positionInObj = restorePrismHitPoint(
+            pA, pB, pC,
+            pD, pE, pF,
+            hp.bcB, hp.bcC, &normalInObj);
+        positionInWorld = transformPointFromObjectToWorldSpace(positionInObj);
+        geometricNormalInWorld = normalize(transformNormalFromObjectToWorldSpace(normalInObj));
+        shadingNormalInWorld = geometricNormalInWorld;
+        texCoord = Point2D(0.0f, 0.0f);
+        Vector3D bitangent;
+        makeCoordinateSystem(shadingNormalInWorld, &texCoord0DirInWorld, &bitangent);
     }
 
     hitPointParams->positionInWorld = positionInWorld;

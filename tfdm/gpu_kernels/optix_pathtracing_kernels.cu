@@ -290,12 +290,12 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_closestHit_generic() {
         Normal3D normalInObj;
         const Point3D positionInObj = aabb.restoreHitPoint(hp.bcB, hp.bcC, &normalInObj);
         positionInWorld = transformPointFromObjectToWorldSpace(positionInObj);
-        shadingNormalInWorld = normalize(transformNormalFromObjectToWorldSpace(normalInObj));
+        geometricNormalInWorld = normalize(transformNormalFromObjectToWorldSpace(normalInObj));
+        shadingNormalInWorld = geometricNormalInWorld;
         texCoord = Point2D(0.0f, 0.0f);
         Vector3D bitangent;
         makeCoordinateSystem(shadingNormalInWorld, &texCoord0DirInWorld, &bitangent);
 
-        geometricNormalInWorld = shadingNormalInWorld;
         hypAreaPDensity = 0.0f;
     }
     if constexpr (!useMultipleImportanceSampling)

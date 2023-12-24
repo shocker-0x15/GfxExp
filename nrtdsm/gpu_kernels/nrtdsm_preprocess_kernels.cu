@@ -75,3 +75,164 @@ CUDA_DEVICE_KERNEL void generateMinMaxMipMap(
 
     material->minMaxMipMap[srcMipLevel + 1].write(dstPixIdx, make_float2(minHeight, maxHeight));
 }
+
+
+
+CUDA_DEVICE_KERNEL void computeAABBs(
+    const GeometryInstanceData* const geomInst, const GeometryInstanceDataForNRTDSM* const nrtdsmGeomInst,
+    const MaterialData* const material) {
+    const uint32_t primIndex = blockDim.x * blockIdx.x + threadIdx.x;
+    if (primIndex >= geomInst->triangleBuffer.getNumElements())
+        return;
+
+#define DEBUG_TRAVERSAL 0
+
+    const Triangle &tri = geomInst->triangleBuffer[primIndex];
+    const Vertex (&vs)[] = {
+        geomInst->vertexBuffer[tri.index0],
+        geomInst->vertexBuffer[tri.index1],
+        geomInst->vertexBuffer[tri.index2]
+    };
+#if DEBUG_TRAVERSAL
+    constexpr uint32_t debugPrimIndex = 0;
+    if (primIndex == debugPrimIndex) {
+        printf(
+            "prim %u: "
+            "p (" V3FMT "), n (" V3FMT "), tc (" V2FMT "), "
+            "p (" V3FMT "), n (" V3FMT "), tc (" V2FMT "), "
+            "p (" V3FMT "), n (" V3FMT "), tc (" V2FMT ")\n",
+            primIndex,
+            v3print(vs[0].position), v3print(vs[0].normal), v2print(vs[0].texCoord),
+            v3print(vs[1].position), v3print(vs[1].normal), v2print(vs[1].texCoord),
+            v3print(vs[2].position), v3print(vs[2].normal), v2print(vs[2].texCoord));
+    }
+#endif
+
+    // JP: 三角形を含むテクセルのmin/maxを読み取る。
+    // EN: Compute the min/max of texels overlapping with the triangle.
+    float minHeight = INFINITY;
+    float maxHeight = -INFINITY;
+    {
+        const Matrix3x3 &texXfm = nrtdsmGeomInst->params.textureTransform;
+        const Point2D tcs[] = {
+            texXfm * vs[0].texCoord,
+            texXfm * vs[1].texCoord,
+            texXfm * vs[2].texCoord,
+        };
+        const bool tcFlipped = cross(tcs[1] - tcs[0], tcs[2] - tcs[0]) < 0;
+#if DEBUG_TRAVERSAL
+        if (primIndex == debugPrimIndex) {
+            printf("prim %u: (" V2FMT "), (" V2FMT "), (" V2FMT ")\n",
+                   primIndex,
+                   v2print(tcs[0]), v2print(tcs[1]), v2print(tcs[2]));
+        }
+#endif
+
+        const Vector2D texTriEdgeNormals[] = {
+            Vector2D(tcs[1].y - tcs[0].y, tcs[0].x - tcs[1].x),
+            Vector2D(tcs[2].y - tcs[1].y, tcs[1].x - tcs[2].x),
+            Vector2D(tcs[0].y - tcs[2].y, tcs[2].x - tcs[0].x),
+        };
+        const Point2D texTriAabbMinP = min(tcs[0], min(tcs[1], tcs[2]));
+        const Point2D texTriAabbMaxP = max(tcs[0], max(tcs[1], tcs[2]));
+#if DEBUG_TRAVERSAL
+        if (primIndex == debugPrimIndex) {
+            printf("prim %u: (" V2FMT "), (" V2FMT ")\n",
+                   primIndex,
+                   v2print(texTriAabbMinP), v2print(texTriAabbMaxP));
+        }
+#endif
+
+        const int32_t maxDepth = prevPowOf2Exponent(material->heightMapSize.x);
+        const int32_t targetMipLevel = nrtdsmGeomInst->params.targetMipLevel;
+        Texel roots[4];
+        uint32_t numRoots;
+        findRoots(texTriAabbMinP, texTriAabbMaxP, maxDepth, targetMipLevel, roots, &numRoots);
+#if DEBUG_TRAVERSAL
+        if (primIndex == debugPrimIndex) {
+            printf("prim %u: %u roots\n",
+                   primIndex, numRoots);
+        }
+#endif
+        for (int rootIdx = 0; rootIdx < lengthof(roots); ++rootIdx) {
+            if (rootIdx >= numRoots)
+                break;
+            Texel curTexel = roots[rootIdx];
+#if DEBUG_TRAVERSAL
+            if (primIndex == debugPrimIndex) {
+                printf("prim %u, root %d: %d - %d, %d\n",
+                       primIndex, rootIdx, curTexel.lod, curTexel.x, curTexel.y);
+            }
+#endif
+            // JP: 三角形のテクスチャー座標の範囲がかなり大きい場合は
+            //     最大ミップレベルからmin/maxを読み取って処理を終了する。
+            // EN: Imediately finish with reading the min/max from the maximum mip level
+            //     when the texture coordinate range of the triangle is fairly large.
+            if (curTexel.lod >= maxDepth) {
+                const float2 minmax = material->minMaxMipMap[maxDepth].read(make_int2(0, 0));
+                minHeight = minmax.x;
+                maxHeight = minmax.y;
+                break;
+            }
+            Texel endTexel = curTexel;
+            const int16_t initialLod = curTexel.lod;
+            next(endTexel, initialLod);
+            while (curTexel != endTexel) {
+                const float texelScale = 1.0f / (1 << (maxDepth - curTexel.lod));
+                const TriangleSquareIntersection2DResult isectResult =
+                    testTriangleSquareIntersection2D(
+                        tcs, tcFlipped, texTriEdgeNormals, texTriAabbMinP, texTriAabbMaxP,
+                        Point2D((curTexel.x + 0.5f) * texelScale, (curTexel.y + 0.5f) * texelScale),
+                        0.5f * texelScale);
+#if DEBUG_TRAVERSAL
+                if (primIndex == debugPrimIndex) {
+                    printf("step: texel %u, %u, %u: (%u)\n", curTexel.x, curTexel.y, curTexel.lod, isectResult);
+                }
+#endif
+                if (isectResult == TriangleSquareIntersection2DResult::SquareOutsideTriangle) {
+                    // JP: テクセルがベース三角形の外にある場合はテクセルをスキップ。
+                    // EN: Skip the texel if it is outside of the base triangle.
+                    next(curTexel, initialLod);
+                }
+                else if (isectResult == TriangleSquareIntersection2DResult::SquareInsideTriangle ||
+                         curTexel.lod <= targetMipLevel) {
+                    const int2 imgSize = make_int2(1 << (maxDepth - curTexel.lod));
+                    const int2 wrapIndex = make_int2(floorDiv(curTexel.x, imgSize.x), floorDiv(curTexel.y, imgSize.y));
+                    const uint2 wrappedTexel =
+                        make_uint2(curTexel.x - wrapIndex.x * imgSize.x, curTexel.y - wrapIndex.y * imgSize.y);
+                    const float2 minmax = material->minMaxMipMap[curTexel.lod].read(wrappedTexel);
+                    minHeight = std::fmin(minHeight, minmax.x);
+                    maxHeight = std::fmax(maxHeight, minmax.y);
+                    next(curTexel, initialLod);
+                }
+                else {
+                    down(curTexel);
+                }
+            }
+        }
+    }
+#if DEBUG_TRAVERSAL
+    if (primIndex == debugPrimIndex) {
+        printf("prim %u: height min/max: %g/%g\n", primIndex, minHeight, maxHeight);
+    }
+#endif
+
+    RWBuffer aabbBuffer(nrtdsmGeomInst->aabbBuffer);
+    RWBuffer dispTriAuxInfoBuffer(nrtdsmGeomInst->dispTriAuxInfoBuffer);
+
+    const float amplitude = nrtdsmGeomInst->params.hScale * (maxHeight - minHeight);
+    minHeight = nrtdsmGeomInst->params.hOffset + nrtdsmGeomInst->params.hScale * (
+        minHeight - nrtdsmGeomInst->params.hBias);
+
+    AABB triAabb;
+    triAabb.unify(vs[0].position + minHeight * vs[0].normal);
+    triAabb.unify(vs[1].position + minHeight * vs[1].normal);
+    triAabb.unify(vs[2].position + minHeight * vs[2].normal);
+    triAabb.unify(vs[0].position + (minHeight + amplitude) * vs[0].normal);
+    triAabb.unify(vs[1].position + (minHeight + amplitude) * vs[1].normal);
+    triAabb.unify(vs[2].position + (minHeight + amplitude) * vs[2].normal);
+
+    aabbBuffer[primIndex] = triAabb;
+    dispTriAuxInfoBuffer[primIndex].minHeight = minHeight;
+    dispTriAuxInfoBuffer[primIndex].amplitude = amplitude;
+}

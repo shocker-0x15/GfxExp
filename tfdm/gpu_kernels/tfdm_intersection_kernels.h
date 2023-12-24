@@ -74,7 +74,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
     //     ここでのテクスチャー座標とはテクスチャートランスフォーム前のオリジナルのテクスチャー座標。
     // EN: Prepare matrices to express a position and a normal and so on as functions of the texture coordinate.
     //     Texure coordinate here is the original one before applying the texture transform.
-    const DisplacedTriangleAuxInfo &dispTriAuxInfo = tfdm.dispTriAuxInfoBuffer[optixGetPrimitiveIndex()];
+    const TFDMTriangleAuxInfo &dispTriAuxInfo = tfdm.dispTriAuxInfoBuffer[optixGetPrimitiveIndex()];
     const Matrix3x3 invTexXfm = invert(texXfm);
     const Matrix3x3 matTcToBc = dispTriAuxInfo.matTcToBc * invTexXfm;
     const Matrix3x3 matTcToPInObj =

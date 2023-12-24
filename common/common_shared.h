@@ -835,25 +835,37 @@ namespace shared {
     };
 
     // for TFDM
-    struct DisplacedTriangleAuxInfo {
+    struct TFDMTriangleAuxInfo {
         Matrix4x4 matObjToTc;
         Matrix3x3 matTcToBc;
         Matrix3x3 matTcToNInObj;
     };
 
-    // for TFDM
+    struct NRTDSMTriangleAuxInfo {
+        float minHeight;
+        float amplitude;
+    };
+
+    // for TFDM, NRTDSM
     struct DisplacementParameters {
         Matrix3x3 textureTransform;
         float hOffset;
         float hScale;
         float hBias;
+        // not used for NRTDSM (at least for now)
         int32_t targetMipLevel;
         uint32_t localIntersectionType : 2;
     };
 
     // for TFDM
     struct GeometryInstanceDataForTFDM {
-        ROBuffer<DisplacedTriangleAuxInfo> dispTriAuxInfoBuffer;
+        ROBuffer<TFDMTriangleAuxInfo> dispTriAuxInfoBuffer;
+        ROBuffer<AABB> aabbBuffer;
+        DisplacementParameters params;
+    };
+
+    struct GeometryInstanceDataForNRTDSM {
+        ROBuffer<NRTDSMTriangleAuxInfo> dispTriAuxInfoBuffer;
         ROBuffer<AABB> aabbBuffer;
         DisplacementParameters params;
     };

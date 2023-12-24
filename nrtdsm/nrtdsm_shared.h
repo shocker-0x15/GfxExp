@@ -2,7 +2,8 @@
 
 #include "../common/common_shared.h"
 
-#define USE_DISPLACED_SURFACES 1
+#define USE_DISPLACED_SURFACES 0
+#define OUTPUT_TRAVERSAL_STATS 1
 
 namespace shared {
     static constexpr float probToSampleEnvLight = 0.25f;
@@ -10,8 +11,8 @@ namespace shared {
 
 
     enum CustomHitKind : uint8_t {
-        CustomHitKind_AABBFrontFace = 0,
-        CustomHitKind_AABBBackFace,
+        CustomHitKind_PrismFrontFace = 0,
+        CustomHitKind_PrismBackFace,
         CustomHitKind_DisplacedSurfaceFrontFace,
         CustomHitKind_DisplacedSurfaceBackFace,
     };
@@ -20,6 +21,9 @@ namespace shared {
 
     struct DisplacedSurfaceAttributes {
         Normal3D normalInObj;
+#if OUTPUT_TRAVERSAL_STATS
+        uint32_t numIterations;
+#endif
     };
 
 
@@ -86,6 +90,9 @@ namespace shared {
         uint32_t primIndex;
         uint16_t qbcB;
         uint16_t qbcC;
+#if OUTPUT_TRAVERSAL_STATS
+        uint32_t numTravIterations;
+#endif
     };
 
 
@@ -163,9 +170,14 @@ namespace shared {
         optixu::NativeBlockBuffer2D<GBuffer1Elements> GBuffer1[2];
         optixu::NativeBlockBuffer2D<GBuffer2Elements> GBuffer2[2];
 
+#if OUTPUT_TRAVERSAL_STATS
+        optixu::NativeBlockBuffer2D<uint32_t> numTravItrsBuffer;
+#endif
+
         ROBuffer<MaterialData> materialDataBuffer;
         ROBuffer<InstanceData> instanceDataBufferArray[2];
         ROBuffer<GeometryInstanceData> geometryInstanceDataBuffer;
+        ROBuffer<GeometryInstanceDataForNRTDSM> geomInstNrtdsmDataBuffer;
         LightDistribution lightInstDist;
         RegularConstantContinuousDistribution2D envLightImportanceMap;
         CUtexObject envLightTexture;
@@ -221,12 +233,13 @@ namespace shared {
         Normal,
         TexCoord,
         Flow,
+        TraversalIterations,
         DenoisedBeauty,
     };
 
 
 
-    using AABBAttributeSignature = optixu::AttributeSignature<float, float>;
+    using PrismAttributeSignature = optixu::AttributeSignature<float, float>;
     using DisplacedSurfaceAttributeSignature = optixu::AttributeSignature<float, float, DisplacedSurfaceAttributes>;
 
     using PrimaryRayPayloadSignature =
@@ -682,7 +695,7 @@ struct HitPointParameter {
 #if USE_DISPLACED_SURFACES
             DisplacedSurfaceAttributeSignature::get(&ret.bcB, &ret.bcC, nullptr);
 #else
-            AABBAttributeSignature::get(&ret.bcB, &ret.bcC);
+            PrismAttributeSignature::get(&ret.bcB, &ret.bcC);
 #endif
         }
         ret.primIndex = optixGetPrimitiveIndex();
@@ -697,6 +710,169 @@ struct HitGroupSBTRecordData {
         return *reinterpret_cast<HitGroupSBTRecordData*>(optixGetSbtDataPointer());
     }
 };
+
+
+
+struct Texel {
+    int16_t x;
+    int16_t y;
+    int16_t lod;
+
+    CUDA_DEVICE_FUNCTION bool operator==(const Texel &r) const {
+        return x == r.x && y == r.y && lod == r.lod;
+    }
+    CUDA_DEVICE_FUNCTION bool operator!=(const Texel &r) const {
+        return x != r.x || y != r.y || lod != r.lod;
+    }
+};
+
+CUDA_DEVICE_FUNCTION CUDA_INLINE void up(Texel &texel) {
+    ++texel.lod;
+    texel.x = floorDiv(texel.x, 2);
+    texel.y = floorDiv(texel.y, 2);
+    //texel.x /= 2;
+    //texel.y /= 2;
+}
+
+CUDA_DEVICE_FUNCTION CUDA_INLINE void down(Texel &texel) {
+    --texel.lod;
+    texel.x *= 2;
+    texel.y *= 2;
+}
+
+CUDA_DEVICE_FUNCTION CUDA_INLINE void down(Texel &texel, bool signX, bool signY) {
+    --texel.lod;
+    texel.x = 2 * texel.x + signX;
+    texel.y = 2 * texel.y + signY;
+    //texel.x = 2 * texel.x + signX;
+    //texel.y = 2 * texel.y + signY;
+}
+
+CUDA_DEVICE_FUNCTION CUDA_INLINE void next(Texel &texel, int32_t maxDepth) {
+    while (true) {
+        //switch (2 * (texel.x % 2) + texel.y % 2) {
+        switch (2 * floorMod(texel.x, 2) + floorMod(texel.y, 2)) {
+        case 1:
+            --texel.y;
+            ++texel.x;
+            return;
+        case 3:
+            up(texel);
+            if (texel.lod > maxDepth)
+                return;
+            break;
+        default:
+            ++texel.y;
+            return;
+        }
+    }
+}
+
+CUDA_DEVICE_FUNCTION CUDA_INLINE void next(Texel &texel, bool signX, bool signY, int32_t maxDepth) {
+    while (true) {
+        //switch (2 * ((texel.x + signX) % 2) + (texel.y + signY) % 2) {
+        switch (2 * floorMod(texel.x + signX, 2) + floorMod(texel.y + signY, 2)) {
+        case 1:
+            texel.y += signY ? 1 : -1;
+            texel.x += signX ? -1 : 1;
+            return;
+        case 3:
+            up(texel);
+            if (texel.lod > maxDepth)
+                return;
+            break;
+        default:
+            texel.y += signY ? -1 : 1;
+            return;
+        }
+    }
+}
+
+enum class TriangleSquareIntersection2DResult {
+    SquareOutsideTriangle = 0,
+    SquareInsideTriangle,
+    SquareOverlappingTriangle
+};
+
+CUDA_DEVICE_FUNCTION CUDA_INLINE TriangleSquareIntersection2DResult testTriangleSquareIntersection2D(
+    const Point2D triPs[3], bool tcFlipped, const Vector2D triEdgeNormals[3],
+    const Point2D &triAabbMinP, const Point2D &triAabbMaxP,
+    const Point2D &squareCenter, float squareHalfWidth) {
+    const Vector2D vSquareCenter = static_cast<Vector2D>(squareCenter);
+    const Point2D relTriPs[] = {
+        triPs[0] - vSquareCenter,
+        triPs[1] - vSquareCenter,
+        triPs[2] - vSquareCenter,
+    };
+
+    // JP: テクセルのAABBと三角形のAABBのIntersectionを計算する。
+    // EN: Test intersection between the texel AABB and the triangle AABB.
+    if (any(min(Point2D(squareHalfWidth), triAabbMaxP - vSquareCenter) <=
+            max(Point2D(-squareHalfWidth), triAabbMinP - vSquareCenter)))
+        return TriangleSquareIntersection2DResult::SquareOutsideTriangle;
+
+    // JP: いずれかの三角形のエッジの法線方向にテクセルがあるならテクセルは三角形の外にある。
+    // EN: Texel is outside of the triangle if the texel is in the normal direction of any edge.
+    for (int eIdx = 0; eIdx < 3; ++eIdx) {
+        Vector2D eNormal = (tcFlipped ? -1 : 1) * triEdgeNormals[eIdx];
+        Bool2D b = eNormal >= Vector2D(0.0f);
+        Vector2D e = static_cast<Vector2D>(relTriPs[eIdx]) +
+            Vector2D((b.x ? 1 : -1) * squareHalfWidth,
+                     (b.y ? 1 : -1) * squareHalfWidth);
+        if (dot(eNormal, e) <= 0)
+            return TriangleSquareIntersection2DResult::SquareOutsideTriangle;
+    }
+
+    // JP: テクセルが三角形のエッジとかぶっているかどうかを調べる。
+    // EN: Test if the texel is overlapping with some edges of the triangle.
+    for (int i = 0; i < 4; ++i) {
+        Point2D corner(
+            (i % 2 ? -1 : 1) * squareHalfWidth,
+            (i / 2 ? -1 : 1) * squareHalfWidth);
+        for (int eIdx = 0; eIdx < 3; ++eIdx) {
+            const Point2D &o = relTriPs[eIdx];
+            const Vector2D &e1 = relTriPs[(eIdx + 1) % 3] - o;
+            Vector2D e2 = corner - o;
+            if ((tcFlipped ? -1 : 1) * cross(e1, e2) < 0)
+                return TriangleSquareIntersection2DResult::SquareOverlappingTriangle;
+        }
+    }
+
+    // JP: それ以外の場合はテクセルは三角形に囲まれている。
+    // EN: Otherwise, the texel is encompassed by the triangle.
+    return TriangleSquareIntersection2DResult::SquareInsideTriangle;
+}
+
+CUDA_DEVICE_FUNCTION CUDA_INLINE void findRoots(
+    const Point2D &triAabbMinP, const Point2D &triAabbMaxP, const int32_t maxDepth, uint32_t targetMipLevel,
+    Texel* const roots, uint32_t* const numRoots) {
+    using namespace shared;
+    const Vector2D d = triAabbMaxP - triAabbMinP;
+    const uint32_t largerDim = d.y > d.x;
+    int32_t startMipLevel = maxDepth - prevPowOf2Exponent(static_cast<uint32_t>(1.0f / d[largerDim])) - 1;
+    startMipLevel = /*std::*/max(startMipLevel, 0);
+    while (true) {
+        const float res = std::pow(2.0f, static_cast<float>(maxDepth - startMipLevel));
+        const int32_t minTexelX = static_cast<int32_t>(std::floor(res * triAabbMinP.x));
+        const int32_t minTexelY = static_cast<int32_t>(std::floor(res * triAabbMinP.y));
+        const int32_t maxTexelX = static_cast<int32_t>(std::floor(res * triAabbMaxP.x));
+        const int32_t maxTexelY = static_cast<int32_t>(std::floor(res * triAabbMaxP.y));
+        if ((maxTexelX - minTexelX) < 2 && (maxTexelY - minTexelY) < 2 &&
+            startMipLevel >= targetMipLevel) {
+            *numRoots = 0;
+            for (int y = minTexelY; y <= maxTexelY; ++y) {
+                for (int x = minTexelX; x <= maxTexelX; ++x) {
+                    Texel &root = roots[(*numRoots)++];
+                    root.x = x;
+                    root.y = y;
+                    root.lod = startMipLevel;
+                }
+            }
+            break;
+        }
+        ++startMipLevel;
+    }
+}
 
 
 

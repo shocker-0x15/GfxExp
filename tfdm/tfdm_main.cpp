@@ -720,11 +720,11 @@ static void createSphere(
 static void computeDisplacedTriangleAuxiliaryInfos(
     const std::vector<shared::Vertex> &vertices,
     const std::vector<shared::Triangle> &triangles,
-    std::vector<shared::DisplacedTriangleAuxInfo>* dispTriAuxInfos) {
+    std::vector<shared::TFDMTriangleAuxInfo>* dispTriAuxInfos) {
     dispTriAuxInfos->resize(triangles.size());
     for (int triIdx = 0; triIdx < triangles.size(); ++triIdx) {
         const shared::Triangle &tri = triangles[triIdx];
-        shared::DisplacedTriangleAuxInfo &dispTriAuxInfo = (*dispTriAuxInfos)[triIdx];
+        shared::TFDMTriangleAuxInfo &dispTriAuxInfo = (*dispTriAuxInfos)[triIdx];
 
         using Vector2Dd = Vector2D_T<double>;
         using Vector3Dd = Vector3D_T<double, false>;
@@ -1051,7 +1051,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
     // EN: Setup a scene.
 
     scene.map();
-    geomInstTfdmDataBuffer.map();
 
     // Area Light
     if (g_envLightTexturePath.empty()) {
@@ -1101,9 +1100,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
         std::vector<shared::Vertex> vertices = {
             shared::Vertex{Point3D(-1.0f, 0.0f, -1.0f), Normal3D(0, 1, 0), Vector3D(1, 0, 0), Point2D(0.0f, 0.0f)},
-            shared::Vertex{Point3D(1.0f, 0.0f, -1.0f), Normal3D(0, 1, 0), Vector3D(1, 0, 0), Point2D(1.0f, 0.0f)},
-            shared::Vertex{Point3D(1.0f, 0.0f, 1.0f), Normal3D(0, 1, 0), Vector3D(1, 0, 0), Point2D(1.0f, 1.0f)},
             shared::Vertex{Point3D(-1.0f, 0.0f, 1.0f), Normal3D(0, 1, 0), Vector3D(1, 0, 0), Point2D(0.0f, 1.0f)},
+            shared::Vertex{Point3D(1.0f, 0.0f, 1.0f), Normal3D(0, 1, 0), Vector3D(1, 0, 0), Point2D(1.0f, 1.0f)},
+            shared::Vertex{Point3D(1.0f, 0.0f, -1.0f), Normal3D(0, 1, 0), Vector3D(1, 0, 0), Point2D(1.0f, 0.0f)},
         };
         std::vector<shared::Triangle> triangles = {
             shared::Triangle{0, 1, 2},
@@ -1190,7 +1189,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
     g_cameraDirectionalMovingSpeed = 0.0015f;
     g_cameraTiltSpeed = 0.025f;
 
-    geomInstTfdmDataBuffer.unmap();
     scene.unmap();
 
     uint32_t totalNumEmitterPrimitives = 0;
@@ -1935,11 +1933,11 @@ int32_t main(int32_t argc, const char* argv[]) try {
                         displacedMeshGeomInst->optixGeomInst.setVertexBuffer(displacedMeshGeomInst->vertexBuffer);
                         displacedMeshGeomInst->optixGeomInst.setTriangleBuffer(displacedMeshGeomInst->triangleBuffer);
 #else
-                        std::vector<shared::DisplacedTriangleAuxInfo> dispTriAuxInfos;
+                        std::vector<shared::TFDMTriangleAuxInfo> dispTriAuxInfos;
                         computeDisplacedTriangleAuxiliaryInfos(vertices, triangles, &dispTriAuxInfos);
 
-                        displacedMeshGeomInst->dispTriAuxInfoBuffer.finalize();
-                        displacedMeshGeomInst->dispTriAuxInfoBuffer.initialize(
+                        displacedMeshGeomInst->tfdmTriAuxInfoBuffer.finalize();
+                        displacedMeshGeomInst->tfdmTriAuxInfoBuffer.initialize(
                             gpuEnv.cuContext, cudau::BufferType::Device, dispTriAuxInfos);
                         displacedMeshGeomInst->aabbBuffer.finalize();
                         displacedMeshGeomInst->aabbBuffer.initialize(
@@ -1947,7 +1945,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
                         shared::GeometryInstanceDataForTFDM tfdmData = {};
                         tfdmData.dispTriAuxInfoBuffer =
-                            displacedMeshGeomInst->dispTriAuxInfoBuffer.getROBuffer<shared::enableBufferOobCheck>();
+                            displacedMeshGeomInst->tfdmTriAuxInfoBuffer.getROBuffer<shared::enableBufferOobCheck>();
                         tfdmData.aabbBuffer =
                             displacedMeshGeomInst->aabbBuffer.getROBuffer<shared::enableBufferOobCheck>();
                         CUDADRV_CHECK(cuMemcpyHtoDAsync(
@@ -1955,7 +1953,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
                             &tfdmData, sizeof(tfdmData),
                             curCuStream));
 
-                        displacedMeshGeomInst->optixGeomInst.setCustomPrimitiveAABBBuffer(displacedMeshGeomInst->aabbBuffer);
+                        displacedMeshGeomInst->optixGeomInst.setCustomPrimitiveAABBBuffer(
+                            displacedMeshGeomInst->aabbBuffer);
 #endif
 
                         geomChanged = true;
@@ -2153,9 +2152,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
                         "Offset U", &heightMapTexOffset.x, -1, 1);
                     heightParamChanged |= ImGui::SliderFloat(
                         "Offset V", &heightMapTexOffset.y, -1, 1);
+                    resetAccumulation |= heightParamChanged;
                     ImGui::PopID();
 
-                    resetAccumulation |= heightParamChanged;
 
                     ImGui::Text("Local Intersection Type");
 

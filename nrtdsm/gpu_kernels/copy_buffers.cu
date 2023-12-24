@@ -97,6 +97,18 @@ CUDA_DEVICE_KERNEL void visualizeToOutputBuffer(
             motionVectorOffset, 1.0f);
         break;
     }
+#if OUTPUT_TRAVERSAL_STATS
+    case BufferToDisplay::TraversalIterations: {
+        const uint32_t numIterations = plp.s->numTravItrsBuffer.read(launchIndex);
+        const float t = static_cast<float>(numIterations) / 150;
+        const RGB Red(1, 0, 0);
+        const RGB Green(0, 1, 0);
+        const RGB Blue(0, 0, 1);
+        const RGB rgb = t < 0.5f ? lerp(Blue, Green, 2.0f * t) : lerp(Green, Red, 2.0f * t - 1.0);
+        value = make_float4(static_cast<float3>(rgb), 1.0f);
+        break;
+    }
+#endif
     default:
         break;
     }

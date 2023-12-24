@@ -647,7 +647,10 @@ struct GeometryInstance {
     AABB aabb;
     optixu::GeometryType geometryType;
     // for TFDM
-    cudau::TypedBuffer<shared::DisplacedTriangleAuxInfo> dispTriAuxInfoBuffer;
+    cudau::TypedBuffer<shared::TFDMTriangleAuxInfo> tfdmTriAuxInfoBuffer;
+    // for NRTDSM
+    cudau::TypedBuffer<shared::NRTDSMTriangleAuxInfo> nrtdsmTriAuxInfoBuffer;
+    // for TFDM, NRTDSM
     cudau::TypedBuffer<AABB> aabbBuffer;
 
     void draw() const {
@@ -917,7 +920,8 @@ struct Scene {
         for (int i = static_cast<int>(geomInsts.size()) - 1; i >= 0; --i) {
             GeometryInstance* geomInst = geomInsts[i];
             geomInst->aabbBuffer.finalize();
-            geomInst->dispTriAuxInfoBuffer.finalize();
+            geomInst->nrtdsmTriAuxInfoBuffer.finalize();
+            geomInst->tfdmTriAuxInfoBuffer.finalize();
             geomInst->optixGeomInst.destroy();
             geomInst->emitterPrimDist.finalize();
             geomInst->triangleBuffer.finalize();

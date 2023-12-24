@@ -131,7 +131,7 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
         || hitKind == CustomHitKind_DisplacedSurfaceBackFace;
     hitPointParams->instSlot = optixGetInstanceId();
     hitPointParams->geomInstSlot = sbtr.geomInstSlot;
-    hitPointParams->isDisplacedMesh = isDisplacedTriangleHit;
+    hitPointParams->isDisplacedMesh = !isTriangleHit;
     hitPointParams->primIndex = hp.primIndex;
 #if OUTPUT_TRAVERSAL_STATS
     hitPointParams->numTravIterations = 0;
@@ -197,7 +197,8 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
         Normal3D normalInObj;
         const Point3D positionInObj = aabb.restoreHitPoint(hp.bcB, hp.bcC, &normalInObj);
         positionInWorld = transformPointFromObjectToWorldSpace(positionInObj);
-        shadingNormalInWorld = normalize(transformNormalFromObjectToWorldSpace(normalInObj));
+        geometricNormalInWorld = normalize(transformNormalFromObjectToWorldSpace(normalInObj));
+        shadingNormalInWorld = geometricNormalInWorld;
         texCoord = Point2D(0.0f, 0.0f);
         Vector3D bitangent;
         makeCoordinateSystem(shadingNormalInWorld, &texCoord0DirInWorld, &bitangent);

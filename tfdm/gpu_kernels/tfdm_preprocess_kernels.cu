@@ -284,7 +284,7 @@ CUDA_DEVICE_KERNEL void computeAABBs(
         Point3D(vs[1].texCoord, 1.0f),
         Point3D(vs[2].texCoord, 1.0f),
     };
-    const DisplacedTriangleAuxInfo &dispTriAuxInfo = tfdmGeomInst->dispTriAuxInfoBuffer[primIndex];
+    const TFDMTriangleAuxInfo &dispTriAuxInfo = tfdmGeomInst->dispTriAuxInfoBuffer[primIndex];
     const Matrix3x3 matBcToPInObj(vs[0].position, vs[1].position, vs[2].position);
     const Matrix3x3 matTcToPInObj = matBcToPInObj * dispTriAuxInfo.matTcToBc;
     const Matrix3x3 &matTcToNInObj = dispTriAuxInfo.matTcToNInObj;
@@ -292,7 +292,8 @@ CUDA_DEVICE_KERNEL void computeAABBs(
     RWBuffer aabbBuffer(tfdmGeomInst->aabbBuffer);
 
     const float amplitude = tfdmGeomInst->params.hScale * (maxHeight - minHeight);
-    minHeight = tfdmGeomInst->params.hOffset + tfdmGeomInst->params.hScale * (minHeight - tfdmGeomInst->params.hBias);
+    minHeight = tfdmGeomInst->params.hOffset + tfdmGeomInst->params.hScale * (
+        minHeight - tfdmGeomInst->params.hBias);
     const AAFloatOn2D hBound(minHeight + 0.5f * amplitude, 0, 0, 0.5f * amplitude);
 
     /*
