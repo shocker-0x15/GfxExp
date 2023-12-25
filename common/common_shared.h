@@ -836,7 +836,7 @@ namespace shared {
 
     // for TFDM
     struct TFDMTriangleAuxInfo {
-        Matrix4x4 matObjToTc;
+        Matrix4x4 matObjToTcTang;
         Matrix3x3 matTcToBc;
         Matrix3x3 matTcToNInObj;
     };

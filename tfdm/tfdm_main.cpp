@@ -776,16 +776,20 @@ static void computeDisplacedTriangleAuxiliaryInfos(
             Point3D(vs[2].texCoord, 1.0f),
         };
 
-        Matrix4x4d matObjToTc(invert(Matrix3x3d(tc0Dir, tc1Dir, geomNormal)));
-        matObjToTc =
-            translate3D_4x4(Point3Dd(vs[0].texCoord, 0.0f) - matObjToTc * static_cast<Point3Dd>(vs[0].position))
-            * matObjToTc;
+        Matrix4x4d matObjToTcTang(invert(Matrix3x3d(tc0Dir, tc1Dir, geomNormal)));
+        matObjToTcTang =
+            translate3D_4x4(Point3Dd(vs[0].texCoord, 0.0f) - matObjToTcTang * static_cast<Point3Dd>(vs[0].position))
+            * matObjToTcTang;
 
         const Matrix3x3d matTcToBc = invert(Matrix3x3d(tcs3D[0], tcs3D[1], tcs3D[2]));
         const Matrix3x3d matBcToNInObj(vs[0].normal, vs[1].normal, vs[2].normal);
         const Matrix3x3d matTcToNInObj = matBcToNInObj * matTcToBc;
 
-        dispTriAuxInfo.matObjToTc = static_cast<Matrix4x4>(matObjToTc);
+        // JP: 最初の行列は2つの空間の間の変換行列だが、残りの2つはテクスチャー座標から対応する他の属性値を求める行列
+        //     であることに注意。
+        // EN: Note that the first matrix is a transform matrix between two spaces, but the others are
+        //     matrices to obtain corresponding attribute values from texture coordinates.
+        dispTriAuxInfo.matObjToTcTang = static_cast<Matrix4x4>(matObjToTcTang);
         dispTriAuxInfo.matTcToBc = static_cast<Matrix3x3>(matTcToBc);
         dispTriAuxInfo.matTcToNInObj = static_cast<Matrix3x3>(matTcToNInObj);
     }
