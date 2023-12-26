@@ -34,6 +34,7 @@ JP: このプログラムはNeural Radiance Caching (NRC) [1]の実装例です�
     NRCは比較的小さなネットワークであり、トレーニングはレンダリングの最中に行うオンラインラーニングとすることで、
     「適応による汎化」を実現、推論の実行時間もリアルタイムレンダリングに適した短いものとなります。
     ニューラルネットワーク部分にはtiny-cuda-nn [2]というライブラリーを使用しています。
+    元の論文のネットワークに加えて多重解像度ハッシュグリッドエンコーディング [3]も実装しています。
     ※TuringアーキテクチャーのGPUでも動くと思いますが、現状RTX 3080 (Ampere)でしか動作確認していません。
       CMakeを使わずにこのサンプルをビルドするには外部ライブラリを先に手動でビルドしておく必要があります。
       tiny-cuda-nnのビルドの調整やnetwork_interface.cuのTCNN_MIN_GPU_ARCHの変更などが必要だと思います。
@@ -50,6 +51,7 @@ EN: This program is an example implementation of Neural Radiance Caching (NRC) [
     NRC is a relatively small network, and training is online learning during rendering.
     This achieve "generalization via adaptation", and short inference time appropriate to real-time rendering.
     This program uses tiny-cuda-nn [2] for the neural network part.
+    In addition to the network in the original paper, the program implements multiresolution hash grid encoding [3].
     * I have tested only with RTX 3080 (Ampere) while I think the program would work with
       Turing architecture GPU as well.
       It requires to manually build external libaries before building the program when not using CMake.
@@ -63,6 +65,8 @@ EN: This program is an example implementation of Neural Radiance Caching (NRC) [
     https://research.nvidia.com/publication/2021-06_Real-time-Neural-Radiance
 [2] Tiny CUDA Neural Networks
     https://github.com/NVlabs/tiny-cuda-nn
+[3] Instant Neural Graphics Primitives with a Multiresolution Hash Encoding
+    https://nvlabs.github.io/instant-ngp/
 
 */
 

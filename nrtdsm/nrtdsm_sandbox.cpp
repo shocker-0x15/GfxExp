@@ -48,7 +48,7 @@ static uint32_t solveQuadraticEquation(
 }
 
 // ----------------------------------------------------------------
-// Fast and Accurate Numerical Cubic Equation Solver
+// Bracketed Newton Bisection
 // Reference: High-Performance Polynomial Root Finding for Graphics
 
 template <uint32_t degree>
@@ -330,7 +330,7 @@ static uint32_t solveCubicEquationNumerical(
     }
 }
 
-// END: Fast and Accurate Numerical Cubic Equation Solver
+// END: Bracketed Newton Bisection
 // ----------------------------------------------------------------
 
 static uint32_t solveCubicEquationAnalytical(

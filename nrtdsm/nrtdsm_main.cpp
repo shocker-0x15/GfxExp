@@ -8,7 +8,7 @@ You can use an HDR environment map by downloading from the internet.
 
 (2) -cam-pos 0 3 0 -cam-yaw 90 -env-texture envlight.exr
 
-JP: このプログラムはNonlinear Ray Tracing for Displacement and Shell Mapping [1]の実装例です。
+JP: このプログラムは"Nonlinear Ray Tracing for Displacement and Shell Mapping" [1]の実装例です。
     ディスプレイスメントマッピングやシェルマッピングによって3Dのサーフェスに
     詳細なジオメトリを付加することができますが、事前にメッシュからBVHなどのAcceleration Structureを
     作っておく必要があるレイトレーシングでは事前のポリゴン分割、事前テッセレーションが必要で、
@@ -26,7 +26,7 @@ JP: このプログラムはNonlinear Ray Tracing for Displacement and Shell Map
     テクスチャー空間中でのマイクロ三角形の交叉判定を直接解くことで
     省メモリかつ面倒な初期化処理が不要で効率的なディスプレイスメントマッピングやシェルマッピングを実現します。
 
-EN: This program is an example implementation of Nonlinear Ray Tracing for Displacement and Shell Mapping [1].
+EN: This program is an example implementation of "Nonlinear Ray Tracing for Displacement and Shell Mapping" [1].
     Displacement mapping and shell mapping can add fine details to 3D surfaces.
     However, ray tracing requires building an acceleration structure like BVH beforehand from the mesh
     with prior polygon subdivision, that is pre-tessellation, and this means significant amount of memory consumption.

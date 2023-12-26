@@ -8,7 +8,7 @@ You can use an HDR environment map by downloading from the internet.
 
 (2) -cam-pos 0 3 0 -cam-yaw 90 -env-texture envlight.exr
 
-JP: このプログラムはTFDM (Tessellation-Free Displacement Mapping) [1]の実装例です。
+JP: このプログラムは"Tessellation-Free Displacement Mapping for Ray Tracing" [1] (TFDM)の実装例です。
     ディスプレイスメントマッピングによって3Dのサーフェスに詳細なジオメトリを付加することができますが、
     事前にメッシュからBVHなどのAcceleration Structureを作っておく必要があるレイトレーシングでは事前のポリゴン分割、
     事前テッセレーションが必要で、膨大なメモリ使用量が問題になります。
@@ -22,7 +22,7 @@ JP: このプログラムはTFDM (Tessellation-Free Displacement Mapping) [1]の
     BVHトラバーサルを実行、目的のMIPレベルに到達した段階で最終的な形状との交叉判定を行います。
     テクセル単位で交叉判定を行うためポリゴンの適切な事前分割について考える必要もありません。
 
-EN: This program is an example implementation of TFDM (Tessellation-Free Displacement Mapping) [1].
+EN: This program is an example implementation of "Tessellation-Free Displacement Mapping for Ray Tracing" [1] (TFDM).
     Displacement mapping can add fine details to 3D surfaces.
     However, ray tracing requires building an acceleration structure like BVH beforehand from the mesh
     with prior polygon subdivision, that is pre-tessellation, and this means significant amount of memory consumption.
