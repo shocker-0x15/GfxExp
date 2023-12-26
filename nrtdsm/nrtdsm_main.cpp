@@ -8,9 +8,41 @@ You can use an HDR environment map by downloading from the internet.
 
 (2) -cam-pos 0 3 0 -cam-yaw 90 -env-texture envlight.exr
 
-JP: 
+JP: このプログラムはNonlinear Ray Tracing for Displacement and Shell Mapping [1]の実装例です。
+    ディスプレイスメントマッピングやシェルマッピングによって3Dのサーフェスに
+    詳細なジオメトリを付加することができますが、事前にメッシュからBVHなどのAcceleration Structureを
+    作っておく必要があるレイトレーシングでは事前のポリゴン分割、事前テッセレーションが必要で、
+    膨大なメモリ使用量が問題になります。また適切な事前分割の仕方を考えるのも簡単ではありません。
+    Minmaxミップマップ(ハイトマップの2x2ピクセルごとの最小値・最大値を階層的に記録することで作る)による暗黙的なBVHや
+    シェルマッピングにおけるインスタンスBVHが定義されるテクスチャー空間でレイのトラバーサルを考えることができれば
+    ベースメッシュとそれらのBVHを切り離すことができるため、
+    省メモリにディスプレイスメントマッピングやシェルマッピングを実現できます。
+    しかしシェル空間(ベース三角形と頂点法線からつくられるオフセット三角形に囲まれる空間)と
+    テクスチャー空間(ディスプレイスメントマッピングにおけるハイトフィールドや
+    シェルマッピングにおけるインスタンスのBVHが「歪みなく」存在する)のマッピングを考えると、
+    テクスチャー空間内ではレイは曲線、具体的には二次の有理関数で表されることになり、
+    従来手法では区分ごとの線形近似表現やレイマーチングを使う必要がありました。
+    同手法では曲線レイと、MinmaxミップマップやインスタンスのBVHによって与えられるAABBや
+    テクスチャー空間中でのマイクロ三角形の交叉判定を直接解くことで
+    省メモリかつ面倒な初期化処理が不要で効率的なディスプレイスメントマッピングやシェルマッピングを実現します。
 
-EN: 
+EN: This program is an example implementation of Nonlinear Ray Tracing for Displacement and Shell Mapping [1].
+    Displacement mapping and shell mapping can add fine details to 3D surfaces.
+    However, ray tracing requires building an acceleration structure like BVH beforehand from the mesh
+    with prior polygon subdivision, that is pre-tessellation, and this means significant amount of memory consumption.
+    Also, it is not easy to plan appropriate subdivision.
+    If it is possible to consider ray traversal in texture space, where an implicit BVH given by a minmax mipmap
+    (constructed by hierarchically computing the minimum and maximum values for every 2x2 pixels of a height map)
+    and an instanced BVH in shell mapping are defined, decoupling those BVHs from the base mesh becomes possible,
+    leading to low-memory displacement mapping and shell mapping.
+    However, given the mapping between shell space (a space enclosed by the base triangle and the offset triangle
+    formed by vertex normals) and texture space (where height fields in displacement mapping and instanced BVHs
+    in shell mapping exist without "distortion"), rays in texture space are represented as curves,
+    specifically degree-2 as rational functions. Because of this, the existing methods have relied on
+    piecewise linear approximation or ray marching.
+    The proposed method directly solves the intersection test between a curved ray and an AABB given by
+    a minmax mipmap or an instanced BVH, and the test between the curved ray and a micro triangle in texture space
+    to achieve efficient and low-memory displacement mapping and shell mapping without troublesome initialization.
 
 [1] Nonlinear Ray Tracing for Displacement and Shell Mapping
     https://github.com/shinjiogaki/shinjiogaki.github.io/blob/master/Nonlinear%20Ray%20Tracing%20for%20Displacement%20and%20Shell%20Mapping.pdf

@@ -8,6 +8,8 @@ I'll randomly put something for implementing/validating graphics papers here.
 
 You need to install [Git LFS](https://git-lfs.github.com/) to correctly clone this repository.
 
+
+
 ## 実装 / Implementations
 
 ### ReSTIR: Reservoir-based Spatiotemporal Importance Resampling
@@ -102,10 +104,34 @@ In TFDM, a minmax mipmap is used to store the minimum and maximum values of each
 ![example](tfdm/comparison.jpg)
 Height map from [textures.com](https://www.textures.com/download/3DScans0422/133306)
 
+### Nonlinear Ray Tracing for Displacement and Shell Mapping
+Nonlinear Ray Tracing for Displacement and Shell Mapping\
+https://github.com/shinjiogaki/shinjiogaki.github.io/tree/master
+
+シェル空間(ベース三角形と頂点法線からつくられるオフセット三角形に囲まれる空間)とテクスチャー空間(ディスプレイスメントマッピングにおけるハイトフィールドやシェルマッピングにおけるインスタンスのBVHが「歪みなく」存在する)のマッピングを考えると、テクスチャー空間内ではレイは曲線、具体的には二次の有理関数で表されます。同手法では曲線レイと、MinmaxミップマップやインスタンスのBVHによって与えられるAABBやテクスチャー空間中でのマイクロ三角形の交叉判定を直接解くことで省メモリかつ面倒な初期化処理が不要で効率的なディスプレイスメントマッピングやシェルマッピングを実現します。
+
+Given the mapping between shell space (a space enclosed by the base triangle and the offset triangle formed by vertex normals) and texture space (where height fields in displacement mapping and instanced BVHs in shell mapping exist without "distortion"), rays in texture space are represented as curves, specifically degree-2 as rational functions. The proposed method directly solves the intersection test between a curved ray and an AABB given by a minmax mipmap or an instanced BVH, and the test between the curved ray and a micro triangle in texture space to achieve efficient and low-memory displacement mapping and shell mapping without troublesome initialization.
+
+- [ ] Basic Implementation (Displacement mapping, non-wrapping texture)
+- [ ] Advanced Items
+  - [ ] Shell mapping
+  - [x] Better root choice
+  - [x] Flexible traversal order
+  - [ ] Traversal order based on ray-box hit distance
+  - [x] Texture wrapping
+  - [x] Texture transform
+
+![example](nrtdsm/comparison.jpg)
+Height map from [aaa](bbb)
+
+
+
 ## その他 / Miscellaneous
 OptiX/CUDAのラッパーとして[OptiX Utility](https://github.com/shocker-0x15/OptiX_Utility)を使用しています。
 
 Programs here use [OptiX Utility](https://github.com/shocker-0x15/OptiX_Utility) as OptiX/CUDA wrapper.
+
+
 
 ## 動作環境 / Confirmed Environment
 現状以下の環境で動作を確認しています。\
@@ -120,6 +146,8 @@ It requires the following libraries.
 
 * CUDA 12.2
 * OptiX 8.0.0 (requires Maxwell or later generation NVIDIA GPU)
+
+
 
 ## オープンソースソフトウェア / Open Source Software
 - [Open Asset Import Library (assimp)](https://github.com/assimp/assimp)
