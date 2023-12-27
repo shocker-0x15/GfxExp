@@ -45,7 +45,7 @@ EN: This program is an example implementation of "Nonlinear Ray Tracing for Disp
     to achieve efficient and low-memory displacement mapping and shell mapping without troublesome initialization.
 
 [1] Nonlinear Ray Tracing for Displacement and Shell Mapping
-    https://github.com/shinjiogaki/shinjiogaki.github.io/blob/master/Nonlinear%20Ray%20Tracing%20for%20Displacement%20and%20Shell%20Mapping.pdf
+    https://github.com/shinjiogaki/nonlinear-ray-tracing
 
 */
 

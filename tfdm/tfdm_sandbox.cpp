@@ -1,4 +1,13 @@
-﻿#include "tfdm_shared.h"
+﻿/*
+
+JP: このソースコードは作者が色々試すためだけのもの。
+    ここの関数は一切サンプルでは使われない。
+EN: This source code is just a sand box, where the author try different things.
+    Functions here are not used in the sample at all.
+
+*/
+
+#include "tfdm_shared.h"
 #include "../common/common_host.h"
 
 #if ENABLE_VDB

@@ -123,6 +123,24 @@ namespace stc {
     }
 
     template <std::floating_point F>
+    CUDA_COMMON_FUNCTION CUDA_INLINE bool isinf(const F x) {
+#if defined(__CUDA_ARCH__)
+        return static_cast<bool>(::isinf(x));
+#else
+        return std::isinf(x);
+#endif
+    }
+
+    template <std::floating_point F>
+    CUDA_COMMON_FUNCTION CUDA_INLINE bool isnan(const F x) {
+#if defined(__CUDA_ARCH__)
+        return static_cast<bool>(::isnan(x));
+#else
+        return std::isnan(x);
+#endif
+    }
+
+    template <std::floating_point F>
     CUDA_COMMON_FUNCTION CUDA_INLINE bool isfinite(const F x) {
 #if defined(__CUDA_ARCH__)
         return static_cast<bool>(::isfinite(x));

@@ -718,10 +718,13 @@ struct Texel {
     int16_t y;
     int16_t lod;
 
-    CUDA_DEVICE_FUNCTION bool operator==(const Texel &r) const {
+    CUDA_DEVICE_FUNCTION CUDA_INLINE Texel() {}
+    CUDA_DEVICE_FUNCTION CUDA_INLINE Texel(const int16_t _x, const int16_t _y, const int16_t _lod) :
+        x(_x), y(_y), lod(_lod) {}
+    CUDA_DEVICE_FUNCTION CUDA_INLINE bool operator==(const Texel &r) const {
         return x == r.x && y == r.y && lod == r.lod;
     }
-    CUDA_DEVICE_FUNCTION bool operator!=(const Texel &r) const {
+    CUDA_DEVICE_FUNCTION CUDA_INLINE bool operator!=(const Texel &r) const {
         return x != r.x || y != r.y || lod != r.lod;
     }
 };

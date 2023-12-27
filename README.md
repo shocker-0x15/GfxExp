@@ -106,7 +106,7 @@ Height map from [textures.com](https://www.textures.com/download/3DScans0422/133
 
 ### Nonlinear Ray Tracing for Displacement and Shell Mapping
 Nonlinear Ray Tracing for Displacement and Shell Mapping\
-https://github.com/shinjiogaki/shinjiogaki.github.io/tree/master
+https://github.com/shinjiogaki/nonlinear-ray-tracing
 
 シェル空間(ベース三角形と頂点法線からつくられるオフセット三角形に囲まれる空間)とテクスチャー空間(ディスプレイスメントマッピングにおけるハイトフィールドやシェルマッピングにおけるインスタンスのBVHが「歪みなく」存在する)のマッピングを考えると、テクスチャー空間内ではレイは曲線、具体的には二次の有理関数で表されます。同手法では曲線レイと、MinmaxミップマップやインスタンスのBVHによって与えられるAABBやテクスチャー空間中でのマイクロ三角形の交叉判定を直接解くことで省メモリかつ面倒な初期化処理が不要で効率的なディスプレイスメントマッピングやシェルマッピングを実現します。
 
