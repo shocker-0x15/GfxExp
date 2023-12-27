@@ -226,7 +226,7 @@ namespace shared {
                 if (idx < m_numValues - 1)
                     rCDF = m_CDF[idx + 1];
                 *remapped = (u - lCDF) / (rCDF - lCDF);
-                Assert(isfinite(*remapped), "Remapped value is not a finite value %g.",
+                Assert(stc::isfinite(*remapped), "Remapped value is not a finite value %g.",
                        *remapped);
             }
 #endif

@@ -41,7 +41,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE float computeTriangleImportance(
     emittanceEstimate /= 3;
 
     float importance = sRGB_calcLuminance(emittanceEstimate) * area;
-    Assert(isfinite(importance), "imp: %g, area: %g", importance, area);
+    Assert(stc::isfinite(importance), "imp: %g, area: %g", importance, area);
     return importance;
 }
 

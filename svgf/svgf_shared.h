@@ -598,7 +598,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void computeSurfacePoint(
         const float instImportance = inst.lightGeomInstDist.integral();
         lightProb *= (pow2(inst.uniformScale) * instImportance) / plp.s->lightInstDist.integral();
         lightProb *= geomInst.emitterPrimDist.integral() / instImportance;
-        if (!isfinite(lightProb)) {
+        if (!stc::isfinite(lightProb)) {
             *hypAreaPDensity = 0.0f;
             return;
         }
@@ -620,7 +620,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void computeSurfacePoint(
             const float dist2ToRefPoint = sqLength(refDir);
             refDir /= std::sqrt(dist2ToRefPoint);
             const float lpCos = dot(refDir, *geometricNormalInWorld);
-            if (lpCos > 0 && isfinite(dirPDF))
+            if (lpCos > 0 && stc::isfinite(dirPDF))
                 *hypAreaPDensity = lightProb * (dirPDF * lpCos / dist2ToRefPoint);
             else
                 *hypAreaPDensity = 0.0f;
@@ -628,7 +628,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void computeSurfacePoint(
         else {
             *hypAreaPDensity = lightProb / area;
         }
-        Assert(isfinite(*hypAreaPDensity), "hypP: %g, area: %g", *hypAreaPDensity, area);
+        Assert(stc::isfinite(*hypAreaPDensity), "hypP: %g, area: %g", *hypAreaPDensity, area);
     }
     else {
         (void)*hypAreaPDensity;

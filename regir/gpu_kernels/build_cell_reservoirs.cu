@@ -165,7 +165,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void buildCellReservoirsAndTemporalReuse(uint32
     // JP: 現在のサンプルが生き残る確率密度の逆数の推定値を計算する。
     // EN: Calculate the estimate of the reciprocal of the probability density that the current sample survives.
     float recPDFEstimate = reservoir.getSumWeights() / (selectedTargetPDensity * reservoir.getStreamLength());
-    if (!isfinite(recPDFEstimate)) {
+    if (!stc::isfinite(recPDFEstimate)) {
         recPDFEstimate = 0.0f;
         selectedTargetPDensity = 0.0f;
     }
@@ -208,7 +208,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void buildCellReservoirsAndTemporalReuse(uint32
         // EN: Calculate the estimate of the reciprocal of the probability density that the current sample survives.
         const float weightForEstimate = 1.0f / reservoir.getStreamLength();
         recPDFEstimate = weightForEstimate * reservoir.getSumWeights() / selectedTargetPDensity;
-        if (!isfinite(recPDFEstimate)) {
+        if (!stc::isfinite(recPDFEstimate)) {
             recPDFEstimate = 0.0f;
             selectedTargetPDensity = 0.0f;
         }

@@ -109,6 +109,41 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr size_t lengthof(const T (&array)[size
 
 
 
+// std-complementary functions for CUDA
+namespace stc {
+    template <typename T>
+    CUDA_COMMON_FUNCTION CUDA_INLINE void swap(T &a, T &b) {
+#if defined(__CUDA_ARCH__)
+        T temp = a;
+        a = b;
+        b = temp;
+#else
+        std::swap(a, b);
+#endif
+    }
+
+    template <std::floating_point F>
+    CUDA_COMMON_FUNCTION CUDA_INLINE bool isfinite(const F x) {
+#if defined(__CUDA_ARCH__)
+        return static_cast<bool>(::isfinite(x));
+#else
+        return std::isfinite(x);
+#endif
+    }
+
+    template <std::floating_point F>
+    CUDA_COMMON_FUNCTION CUDA_INLINE void sincos(const F x, F* const s, F* const c) {
+#if defined(__CUDA_ARCH__)
+        ::sincosf(x, s, c);
+#else
+        *s = std::sin(x);
+        *c = std::cos(x);
+#endif
+    }
+}
+
+
+
 template <typename T>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr T pow2(const T &x) {
     return x * x;
@@ -772,10 +807,7 @@ struct Vector2D_T {
     }
 
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr bool allFinite() const {
-#if !defined(__CUDA_ARCH__)
-        using std::isfinite;
-#endif
-        return isfinite(x) && isfinite(y);
+        return stc::isfinite(x) && stc::isfinite(y);
     }
 };
 
@@ -1038,10 +1070,7 @@ struct Point2D_T {
     }
 
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr bool allFinite() const {
-#if !defined(__CUDA_ARCH__)
-        using std::isfinite;
-#endif
-        return isfinite(x) && isfinite(y);
+        return stc::isfinite(x) && stc::isfinite(y);
     }
 };
 
@@ -1397,10 +1426,7 @@ struct Vector3D_T {
         return x == 0 && y == 0 && z == 0;
     }
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr bool allFinite() const {
-#if !defined(__CUDA_ARCH__)
-        using std::isfinite;
-#endif
-        return isfinite(x) && isfinite(y) && isfinite(z);
+        return stc::isfinite(x) && stc::isfinite(y) && stc::isfinite(z);
     }
 
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr void makeCoordinateSystem(
@@ -1417,17 +1443,10 @@ struct Vector3D_T {
     // ( 0, 0, -1) <=> phi:   1 pi
     // ( 1, 0,  0) <=> phi: 3/2 pi
     CUDA_COMMON_FUNCTION CUDA_INLINE static constexpr Vector3D_T fromPolarYUp(const F phi, const F theta) {
-#if defined(__CUDA_ARCH__)
         F sinPhi, cosPhi;
         F sinTheta, cosTheta;
-        sincosf(phi, &sinPhi, &cosPhi);
-        sincosf(theta, &sinTheta, &cosTheta);
-#else
-        const F sinPhi = std::sin(phi);
-        const F cosPhi = std::cos(phi);
-        const F sinTheta = std::sin(theta);
-        const F cosTheta = std::cos(theta);
-#endif
+        stc::sincos(phi, &sinPhi, &cosPhi);
+        stc::sincos(theta, &sinTheta, &cosTheta);
         return Vector3D_T(-sinPhi * sinTheta, cosTheta, cosPhi * sinTheta);
     }
 
@@ -1436,17 +1455,10 @@ struct Vector3D_T {
     // (-1,  0, 0) <=> phi:   1 pi
     // ( 0, -1, 0) <=> phi: 3/2 pi
     CUDA_COMMON_FUNCTION CUDA_INLINE static constexpr Vector3D_T fromPolarZUp(const F phi, const F theta) {
-#if defined(__CUDA_ARCH__)
         F sinPhi, cosPhi;
         F sinTheta, cosTheta;
-        sincosf(phi, &sinPhi, &cosPhi);
-        sincosf(theta, &sinTheta, &cosTheta);
-#else
-        const F sinPhi = std::sin(phi);
-        const F cosPhi = std::cos(phi);
-        const F sinTheta = std::sin(theta);
-        const F cosTheta = std::cos(theta);
-#endif
+        stc::sincos(phi, &sinPhi, &cosPhi);
+        stc::sincos(theta, &sinTheta, &cosTheta);
         return Vector3D_T(cosPhi * sinTheta, sinPhi * sinTheta, cosTheta);
     }
 };
@@ -1758,10 +1770,7 @@ struct Point3D_T {
     }
 
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr bool allFinite() const {
-#if !defined(__CUDA_ARCH__)
-        using std::isfinite;
-#endif
-        return isfinite(x) && isfinite(y) && isfinite(z);
+        return stc::isfinite(x) && stc::isfinite(y) && stc::isfinite(z);
     }
 };
 
@@ -2071,10 +2080,7 @@ struct Vector4D_T {
     }
 
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr bool allFinite() const {
-#if !defined(__CUDA_ARCH__)
-        using std::isfinite;
-#endif
-        return isfinite(x) && isfinite(y) && isfinite(z) && isfinite(w);
+        return stc::isfinite(x) && stc::isfinite(y) && stc::isfinite(z) && stc::isfinite(w);
     }
 };
 
@@ -2309,9 +2315,6 @@ struct Matrix2x2_T {
     }
 
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr bool allFinite() const {
-#if !defined(__CUDA_ARCH__)
-        using std::isfinite;
-#endif
         return c0.allFinite() && c1.allFinite();
     }
 };
@@ -2539,9 +2542,6 @@ struct Matrix3x2_T {
     }
 
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr bool allFinite() const {
-#if !defined(__CUDA_ARCH__)
-        using std::isfinite;
-#endif
         return c0.allFinite() && c1.allFinite();
     }
 };
@@ -2773,9 +2773,6 @@ struct Matrix3x3_T {
     }
 
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr bool allFinite() const {
-#if !defined(__CUDA_ARCH__)
-        using std::isfinite;
-#endif
         return c0.allFinite() && c1.allFinite() && c2.allFinite();
     }
 };
@@ -3265,9 +3262,6 @@ struct Matrix4x4_T {
     }
 
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr bool allFinite() const {
-#if !defined(__CUDA_ARCH__)
-        using std::isfinite;
-#endif
         return c0.allFinite() && c1.allFinite() && c2.allFinite() && c3.allFinite();
     }
 };
@@ -3565,10 +3559,7 @@ struct Quaternion_T {
     }
 
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr bool allFinite() const {
-#if !defined(__CUDA_ARCH__)
-        using std::isfinite;
-#endif
-        return v.allFinite() && isfinite(w);
+        return v.allFinite() && stc::isfinite(w);
     }
 };
 
@@ -3791,10 +3782,7 @@ struct RGB_T {
     }
 
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr bool allFinite() const {
-#if !defined(__CUDA_ARCH__)
-        using std::isfinite;
-#endif
-        return isfinite(r) && isfinite(g) && isfinite(b);
+        return stc::isfinite(r) && stc::isfinite(g) && stc::isfinite(b);
     }
 };
 

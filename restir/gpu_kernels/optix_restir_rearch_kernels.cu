@@ -630,7 +630,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void shadeAndResample() {
         // JP: 現在のサンプルが生き残る確率密度の逆数の推定値を計算する。
         // EN: Calculate the estimate of the reciprocal of the probability density that the current sample survives.
         float recPDFEstimate = selectedMisWeight * combinedReservoir.getSumWeights() / selectedTargetDensity;
-        if (!isfinite(recPDFEstimate) || (plp.f->reuseVisibility && !sampleVis.selectedSample)) {
+        if (!stc::isfinite(recPDFEstimate) || (plp.f->reuseVisibility && !sampleVis.selectedSample)) {
             recPDFEstimate = 0.0f;
             selectedTargetDensity = 0.0f;
         }

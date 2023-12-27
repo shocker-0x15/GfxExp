@@ -18,7 +18,7 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(aabb)() {
         Vector3D(optixGetObjectRayDirection()),
         optixGetRayTmin(), optixGetRayTmax(),
         &u, &v, &isFrontHit);
-    if (!isfinite(t))
+    if (!stc::isfinite(t))
         return;
 
     AABBAttributeSignature::reportIntersection(

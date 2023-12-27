@@ -74,7 +74,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE RGB sampleFromCell(
 
     const float weightForEstimate = 1.0f / combinedReservoir.getStreamLength();
     *recProbDensityEstimate = weightForEstimate * combinedReservoir.getSumWeights() / selectedTargetPDensity;
-    if (!isfinite(*recProbDensityEstimate))
+    if (!stc::isfinite(*recProbDensityEstimate))
         *recProbDensityEstimate = 0.0f;
 
     return selectedContribution;
@@ -135,7 +135,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE RGB performNextEventEstimation(
                 const Vector3D vInLocal = shadingFrame.toLocal(shadowRay);
                 const float lpCos = std::fabs(dot(shadowRay, lightSample.normal));
                 float bsdfPDensity = bsdf.evaluatePDF(vOutLocal, vInLocal) * lpCos / dist2;
-                if (!isfinite(bsdfPDensity))
+                if (!stc::isfinite(bsdfPDensity))
                     bsdfPDensity = 0.0f;
                 const float lightPDensity = areaPDensity;
                 misWeight = pow2(lightPDensity) / (pow2(bsdfPDensity) + pow2(lightPDensity));
@@ -239,7 +239,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_rayGen_generic() {
         Point3D rayOrg = positionInWorld;
         Vector3D rayDir = vIn;
         while (true) {
-            const bool isValidSampling = rwPayload.prevDirPDensity > 0.0f && isfinite(rwPayload.prevDirPDensity);
+            const bool isValidSampling = rwPayload.prevDirPDensity > 0.0f && stc::isfinite(rwPayload.prevDirPDensity);
             if (!isValidSampling)
                 break;
 
