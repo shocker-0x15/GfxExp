@@ -3,7 +3,6 @@
 #include "common_shared.h"
 
 #include "../utils/gl_util.h"
-#include <numbers>
 #include <fstream>
 #include <sstream>
 #include <array>
@@ -120,9 +119,6 @@ inline void drawAxes(float axisScale, const Vector3D &offset = Vector3D(0, 0, 0)
 }
 
 #endif
-
-template <std::floating_point T>
-static constexpr T pi_v = std::numbers::pi_v<T>;
 
 #if 1
 #   define hpprintf(fmt, ...) do { devPrintf(fmt, ##__VA_ARGS__); printf(fmt, ##__VA_ARGS__); } while (0)

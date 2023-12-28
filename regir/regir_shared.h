@@ -314,11 +314,11 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void sampleLight(
         float u, v;
         float uvPDF;
         plp.s->envLightImportanceMap.sample(u0, u1, &u, &v, &uvPDF);
-        const float phi = 2 * Pi * u;
-        const float theta = Pi * v;
+        const float phi = 2 * pi_v<float> * u;
+        const float theta = pi_v<float> * v;
 
         float posPhi = phi - plp.f->envLightRotation;
-        posPhi = posPhi - floorf(posPhi / (2 * Pi)) * 2 * Pi;
+        posPhi = posPhi - floorf(posPhi / (2 * pi_v<float>)) * 2 * pi_v<float>;
 
         const Vector3D direction = fromPolarYUp(posPhi, theta);
         const Point3D position(direction.x, direction.y, direction.z);
@@ -335,13 +335,13 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void sampleLight(
             *areaPDensity = 0.0f;
             return;
         }
-        *areaPDensity = uvPDF / (2 * Pi * Pi * sinTheta);
+        *areaPDensity = uvPDF / (2 * pi_v<float> * pi_v<float> * sinTheta);
 
         texEmittance = plp.s->envLightTexture;
         // JP: 環境マップテクスチャーの値に係数をかけて、通常の光源と同じように返り値を光束発散度
         //     として扱えるようにする。
         // EN: Multiply a coefficient to make the return value possible to be handled as luminous emittance.
-        emittance = RGB(Pi * plp.f->envLightPowerCoeff);
+        emittance = RGB(pi_v<float> * plp.f->envLightPowerCoeff);
         texCoord.x = u;
         texCoord.y = v;
     }
@@ -424,7 +424,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void sampleLight(
                 const float cosGamma = -dot(cCA, cBC);
                 const float alpha = std::acos(cosAlpha);
                 const float sinAlpha = std::sqrt(1 - pow2(cosAlpha));
-                const float sphArea = alpha + std::acos(cosBeta) + std::acos(cosGamma) - Pi;
+                const float sphArea = alpha + std::acos(cosBeta) + std::acos(cosGamma) - pi_v<float>;
 
                 const float sphAreaHat = sphArea * u0;
                 const float s = std::sin(sphAreaHat - alpha);
@@ -527,7 +527,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE RGB performDirectLighting(
     }
 
     if (visibility > 0 && lpCos > 0) {
-        const RGB Le = lightSample.emittance / Pi; // assume diffuse emitter.
+        const RGB Le = lightSample.emittance / pi_v<float>; // assume diffuse emitter.
         const RGB fsValue = bsdf.evaluate(vOutLocal, shadowRayDirLocal);
         const float G = lpCos * std::fabs(spCos) / dist2;
         const RGB ret = fsValue * Le * G;
@@ -638,7 +638,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void computeSurfacePoint(
             const float cosAlpha = -dot(cAB, cCA);
             const float cosBeta = -dot(cBC, cAB);
             const float cosGamma = -dot(cCA, cBC);
-            const float sphArea = std::acos(cosAlpha) + std::acos(cosBeta) + std::acos(cosGamma) - Pi;
+            const float sphArea = std::acos(cosAlpha) + std::acos(cosBeta) + std::acos(cosGamma) - pi_v<float>;
             const float dirPDF = 1.0f / sphArea;
             Vector3D refDir = referencePoint - *positionInWorld;
             const float dist2ToRefPoint = sqLength(refDir);

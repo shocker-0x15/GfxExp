@@ -174,7 +174,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_raygen_generic() {
             positionInWorld = offsetRayOrigin(positionInWorld, frontHit * geometricNormalInWorld);
 
             if constexpr (useNRC)
-                primaryPathSpread = primaryDist2 / (4 * Pi * std::fabs(primaryDotVN));
+                primaryPathSpread = primaryDist2 / (4 * pi_v<float> * std::fabs(primaryDotVN));
 
             ReferenceFrame shadingFrame(shadingNormalInWorld, texCoord0DirInWorld);
             if (plp.f->enableBumpMapping) {
@@ -189,7 +189,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_raygen_generic() {
             if (vOutLocal.z > 0 && mat.emittance) {
                 const float4 texValue = tex2DLod<float4>(mat.emittance, texCoord.x, texCoord.y, 0.0f);
                 const RGB emittance(getXYZ(texValue));
-                contribution += alpha * emittance / Pi;
+                contribution += alpha * emittance / pi_v<float>;
             }
 
             BSDF bsdf;
@@ -417,7 +417,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_closestHit_generic() {
         const float lightPDensity = hypAreaPDensity * dist2 / vOutLocal.z;
         const float bsdfPDensity = rwPayload->prevDirPDensity;
         const float misWeight = pow2(bsdfPDensity) / (pow2(bsdfPDensity) + pow2(lightPDensity));
-        const RGB directContImplicit = emittance * (misWeight / Pi);
+        const RGB directContImplicit = emittance * (misWeight / pi_v<float>);
         rwPayload->contribution += rwPayload->alpha * directContImplicit;
 
         if constexpr (useNRC) {
@@ -633,14 +633,14 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_miss_generic() {
     toPolarYUp(rayDir, &posPhi, &theta);
 
     float phi = posPhi + plp.f->envLightRotation;
-    phi = phi - floorf(phi / (2 * Pi)) * 2 * Pi;
-    const Point2D texCoord(phi / (2 * Pi), theta / Pi);
+    phi = phi - floorf(phi / (2 * pi_v<float>)) * 2 * pi_v<float>;
+    const Point2D texCoord(phi / (2 * pi_v<float>), theta / pi_v<float>);
 
     // Implicit Light Sampling
     const float4 texValue = tex2DLod<float4>(plp.s->envLightTexture, texCoord.x, texCoord.y, 0.0f);
     const RGB luminance = plp.f->envLightPowerCoeff * RGB(getXYZ(texValue));
     const float uvPDF = plp.s->envLightImportanceMap.evaluatePDF(texCoord.x, texCoord.y);
-    const float hypAreaPDensity = uvPDF / (2 * Pi * Pi * std::sin(theta));
+    const float hypAreaPDensity = uvPDF / (2 * pi_v<float> * pi_v<float> * std::sin(theta));
     const float lightPDensity = probToSampleEnvLight * hypAreaPDensity;
     const float bsdfPDensity = rwPayload->prevDirPDensity;
     const float misWeight = pow2(bsdfPDensity) / (pow2(bsdfPDensity) + pow2(lightPDensity));

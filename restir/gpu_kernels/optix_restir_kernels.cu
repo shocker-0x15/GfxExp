@@ -367,7 +367,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void performSpatialRIS() {
         }
         else {
             radius *= std::sqrt(rng.getFloat0cTo1o());
-            const float angle = 2 * Pi * rng.getFloat0cTo1o();
+            const float angle = 2 * pi_v<float> * rng.getFloat0cTo1o();
             deltaX = radius * std::cos(angle);
             deltaY = radius * std::sin(angle);
         }
@@ -462,7 +462,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void performSpatialRIS() {
                 }
                 else {
                     radius *= std::sqrt(rng.getFloat0cTo1o());
-                    const float angle = 2 * Pi * rng.getFloat0cTo1o();
+                    const float angle = 2 * pi_v<float> * rng.getFloat0cTo1o();
                     deltaX = radius * std::cos(angle);
                     deltaY = radius * std::sin(angle);
                 }
@@ -597,7 +597,7 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(shading)() {
                 const float4 texValue = tex2DLod<float4>(mat.emittance, texCoord.x, texCoord.y, 0.0f);
                 emittance = RGB(getXYZ(texValue));
             }
-            contribution += emittance / Pi;
+            contribution += emittance / pi_v<float>;
         }
 
         // JP: 最終的に残ったサンプルとそのウェイトを使ってシェーディングを実行する。

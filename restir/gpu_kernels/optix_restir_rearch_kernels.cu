@@ -140,7 +140,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void traceShadowRays() {
         else {
             PCG32RNG rng = plp.s->rngBuffer.read(launchIndex);
             radius *= std::sqrt(rng.getFloat0cTo1o());
-            const float angle = 2 * Pi * rng.getFloat0cTo1o();
+            const float angle = 2 * pi_v<float> * rng.getFloat0cTo1o();
             deltaX = radius * std::cos(angle);
             deltaY = radius * std::sin(angle);
             // JP: シェーディング時に同じ近傍を得るためにRNGのステート変化は保存しない。
@@ -455,7 +455,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void shadeAndResample() {
             }
             else {
                 radius *= std::sqrt(rng.getFloat0cTo1o());
-                const float angle = 2 * Pi * rng.getFloat0cTo1o();
+                const float angle = 2 * pi_v<float> * rng.getFloat0cTo1o();
                 deltaX = radius * std::cos(angle);
                 deltaY = radius * std::sin(angle);
             }
@@ -493,7 +493,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void shadeAndResample() {
                 const float4 texValue = tex2DLod<float4>(mat.emittance, texCoord.x, texCoord.y, 0.0f);
                 emittance = RGB(getXYZ(texValue));
             }
-            contribution += emittance / Pi;
+            contribution += emittance / pi_v<float>;
         }
 
         SampleVisibility sampleVis = curSampleVisBuffer.read(launchIndex);

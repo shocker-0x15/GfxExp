@@ -58,7 +58,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE RGB sampleIntensity(
     }
 
     if (lpCos > 0.0f) {
-        const RGB Le = lightSample->emittance / Pi;
+        const RGB Le = lightSample->emittance / pi_v<float>;
         const RGB ret = Le * (lpCos / dist2);
         return ret;
     }

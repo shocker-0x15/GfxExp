@@ -112,7 +112,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr size_t lengthof(const T (&array)[size
 // std-complementary functions for CUDA
 namespace stc {
     template <typename T>
-    CUDA_COMMON_FUNCTION CUDA_INLINE void swap(T &a, T &b) {
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr void swap(T &a, T &b) {
 #if defined(__CUDA_ARCH__)
         T temp = a;
         a = b;
@@ -120,6 +120,21 @@ namespace stc {
 #else
         std::swap(a, b);
 #endif
+    }
+
+    template <typename T>
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr T min(const T &a, const T &b) {
+        return a < b ? a : b;
+    }
+
+    template <typename T>
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr T max(const T &a, const T &b) {
+        return a > b ? a : b;
+    }
+
+    template <typename T>
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr T clamp(const T &x, const T &_min, const T &_max) {
+        return min(max(x, _min), _max);
     }
 
     template <std::floating_point F>

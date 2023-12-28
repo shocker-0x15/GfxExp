@@ -247,9 +247,9 @@ CUDA_DEVICE_KERNEL void RT_MS_NAME(setupGBuffers)() {
 
     const float phi = posPhi + plp.f->envLightRotation;
 
-    float u = phi / (2 * Pi);
+    float u = phi / (2 * pi_v<float>);
     u -= floorf(u);
-    const float v = posTheta / Pi;
+    const float v = posTheta / pi_v<float>;
 
     HitPointParams* hitPointParams;
     PickInfo* pickInfo;
@@ -272,7 +272,7 @@ CUDA_DEVICE_KERNEL void RT_MS_NAME(setupGBuffers)() {
         if (plp.s->envLightTexture && plp.f->enableEnvLight) {
             float4 texValue = tex2DLod<float4>(plp.s->envLightTexture, u, v, 0.0f);
             emittance = RGB(getXYZ(texValue));
-            emittance *= Pi * plp.f->envLightPowerCoeff;
+            emittance *= pi_v<float> * plp.f->envLightPowerCoeff;
         }
         pickInfo->emittance = emittance;
     }

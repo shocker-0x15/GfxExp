@@ -2,7 +2,6 @@
 
 #include "common_shared.h"
 
-static constexpr float Pi = 3.14159265358979323846f;
 static constexpr float RayEpsilon = 1e-4;
 
 
@@ -20,8 +19,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE Vector3D fromPolarYUp(float phi, float theta) {
 }
 CUDA_DEVICE_FUNCTION CUDA_INLINE void toPolarYUp(const Vector3D &v, float* phi, float* theta) {
     *theta = std::acos(min(max(v.y, -1.0f), 1.0f));
-    *phi = std::fmod(std::atan2(-v.x, v.z) + 2 * Pi,
-                     2 * Pi);
+    *phi = std::fmod(std::atan2(-v.x, v.z) + 2 * pi_v<float>,
+                     2 * pi_v<float>);
 }
 
 CUDA_DEVICE_FUNCTION CUDA_INLINE uint16_t encodeBarycentric(float bc) {
@@ -35,32 +34,32 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE float decodeBarycentric(uint16_t qbc) {
 CUDA_DEVICE_FUNCTION CUDA_INLINE uint32_t encodeVector(const Vector3D &v) {
     float phi, theta;
     toPolarYUp(v, &phi, &theta);
-    const uint32_t qPhi = min(static_cast<uint32_t>((phi / (2 * Pi)) * 65535u), 65535u);
-    const uint32_t qTheta = min(static_cast<uint32_t>((theta / Pi) * 65535u), 65535u);
+    const uint32_t qPhi = min(static_cast<uint32_t>((phi / (2 * pi_v<float>)) * 65535u), 65535u);
+    const uint32_t qTheta = min(static_cast<uint32_t>((theta / pi_v<float>) * 65535u), 65535u);
     return (qTheta << 16) | qPhi;
 }
 
 CUDA_DEVICE_FUNCTION CUDA_INLINE Vector3D decodeVector(uint32_t qv) {
     const uint32_t qPhi = qv & 0xFFFF;
     const uint32_t qTheta = qv >> 16;
-    const float phi = 2 * Pi * (qPhi / 65535.0f);
-    const float theta = Pi * (qTheta / 65535.0f);
+    const float phi = 2 * pi_v<float> * (qPhi / 65535.0f);
+    const float theta = pi_v<float> * (qTheta / 65535.0f);
     return fromPolarYUp(phi, theta);
 }
 
 CUDA_DEVICE_FUNCTION CUDA_INLINE uint32_t encodeNormal(const Normal3D &n) {
     float phi, theta;
     toPolarYUp(static_cast<Vector3D>(n), &phi, &theta);
-    const uint32_t qPhi = min(static_cast<uint32_t>((phi / (2 * Pi)) * 65535u), 65535u);
-    const uint32_t qTheta = min(static_cast<uint32_t>((theta / Pi) * 65535u), 65535u);
+    const uint32_t qPhi = min(static_cast<uint32_t>((phi / (2 * pi_v<float>)) * 65535u), 65535u);
+    const uint32_t qTheta = min(static_cast<uint32_t>((theta / pi_v<float>) * 65535u), 65535u);
     return (qTheta << 16) | qPhi;
 }
 
 CUDA_DEVICE_FUNCTION CUDA_INLINE Normal3D decodeNormal(uint32_t qn) {
     const uint32_t qPhi = qn & 0xFFFF;
     const uint32_t qTheta = qn >> 16;
-    const float phi = 2 * Pi * (qPhi / 65535.0f);
-    const float theta = Pi * (qTheta / 65535.0f);
+    const float phi = 2 * pi_v<float> * (qPhi / 65535.0f);
+    const float theta = pi_v<float> * (qTheta / 65535.0f);
     return static_cast<Normal3D>(fromPolarYUp(phi, theta));
 }
 
@@ -265,7 +264,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void concentricSampleDisk(float u0, float u1, f
             theta = 4 + sy / sx;
         }
     }
-    theta *= Pi / 4;
+    theta *= pi_v<float> / 4;
     *dx = r * cos(theta);
     *dy = r * sin(theta);
 }
@@ -302,20 +301,20 @@ public:
         const Vector3D &vGiven, float uDir0, float uDir1,
         Vector3D* vSampled, float* dirPDensity) const {
         *vSampled = cosineSampleHemisphere(uDir0, uDir1);
-        *dirPDensity = vSampled->z / Pi;
+        *dirPDensity = vSampled->z / pi_v<float>;
         if (vGiven.z <= 0.0f)
             vSampled->z *= -1;
         return m_reflectance;
     }
     CUDA_DEVICE_FUNCTION RGB evaluate(const Vector3D &vGiven, const Vector3D &vSampled) const {
         if (vGiven.z * vSampled.z > 0)
-            return m_reflectance / Pi;
+            return m_reflectance / pi_v<float>;
         else
             return RGB(0.0f, 0.0f, 0.0f);
     }
     CUDA_DEVICE_FUNCTION float evaluatePDF(const Vector3D &vGiven, const Vector3D &vSampled) const {
         if (vGiven.z * vSampled.z > 0)
-            return fabs(vSampled.z) / Pi;
+            return fabs(vSampled.z) / pi_v<float>;
         else
             return 0.0f;
     }
@@ -398,7 +397,7 @@ class DiffuseAndSpecularBRDF {
             if (m.z <= 0.0f)
                 return 0.0f;
             float temp = pow2(m.x) + pow2(m.y) + pow2(m.z * alpha_g);
-            return pow2(alpha_g) / (Pi * pow2(temp));
+            return pow2(alpha_g) / (pi_v<float> * pow2(temp));
         }
         CUDA_DEVICE_FUNCTION float evaluateSmithG1(const Vector3D &v, const Normal3D &m) const {
             if (dot(v, m) * v.z <= 0)
@@ -433,9 +432,9 @@ class DiffuseAndSpecularBRDF {
             // sample point with polar coordinates (r, phi)
             float a = 1.0f / (1.0f + sv.z);
             float r = std::sqrt(u0);
-            float phi = Pi * ((u1 < a) ? u1 / a : 1 + (u1 - a) / (1.0f - a));
+            float phi = pi_v<float> * ((u1 < a) ? u1 / a : 1 + (u1 - a) / (1.0f - a));
             float sinPhi, cosPhi;
-            sincosf(phi, &sinPhi, &cosPhi);
+            stc::sincos(phi, &sinPhi, &cosPhi);
             float P1 = r * cosPhi;
             float P2 = r * sinPhi * ((u1 < a) ? 1.0f : sv.z);
 
@@ -524,7 +523,7 @@ public:
             // JP: コサイン分布からサンプルする。
             // EN: sample based on cosine distribution.
             dirL = cosineSampleHemisphere(uDir0, uDir1);
-            diffuseDirPDF = dirL.z / Pi;
+            diffuseDirPDF = dirL.z / pi_v<float>;
 
             // JP: 同じ方向サンプルをスペキュラー層からサンプルする確率密度を求める。
             // EN: calculate PDF to generate the sampled direction from the specular layer.
@@ -554,7 +553,7 @@ public:
 
             // JP: 同じ方向サンプルをコサイン分布からサンプルする確率密度を求める。
             // EN: calculate PDF to generate the sampled direction from the cosine distribution.
-            diffuseDirPDF = dirL.z / Pi;
+            diffuseDirPDF = dirL.z / pi_v<float>;
         }
 
         float oneMinusDotLH5 = pow5(1 - dotLH);
@@ -577,7 +576,7 @@ public:
         float diffuseFresnelOut = lerp(1.0f, F_D90, oneMinusDotVN5);
         float diffuseFresnelIn = lerp(1.0f, F_D90, oneMinusDotLN5);
         RGB diffuseValue = m_diffuseColor *
-            (diffuseFresnelOut * diffuseFresnelIn * lerp(1.0f, 1.0f / 1.51f, m_roughness) / Pi);
+            (diffuseFresnelOut * diffuseFresnelIn * lerp(1.0f, 1.0f / 1.51f, m_roughness) / pi_v<float>);
 
         RGB ret = diffuseValue + specularValue;
 
@@ -627,7 +626,7 @@ public:
         float diffuseFresnelIn = lerp(1.0f, F_D90, oneMinusDotLN5);
 
         RGB diffuseValue = m_diffuseColor *
-            (diffuseFresnelOut * diffuseFresnelIn * lerp(1.0f, 1.0f / 1.51f, m_roughness) / Pi);
+            (diffuseFresnelOut * diffuseFresnelIn * lerp(1.0f, 1.0f / 1.51f, m_roughness) / pi_v<float>);
 
         RGB ret = diffuseValue + specularValue;
 
@@ -670,7 +669,7 @@ public:
         if (sumWeights == 0.0f)
             return 0.0f;
 
-        float diffuseDirPDF = dirL.z / Pi;
+        float diffuseDirPDF = dirL.z / pi_v<float>;
         float specularDirPDF = commonPDFTerm * ggx.evaluatePDF(dirV, m);
 
         float ret = (diffuseDirPDF * diffuseWeight + specularDirPDF * specularWeight) / sumWeights;
