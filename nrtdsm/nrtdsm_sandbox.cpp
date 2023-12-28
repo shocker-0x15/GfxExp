@@ -640,6 +640,7 @@ void testFindHeight() {
     drawVector(rayOrg, rayDir, rayLength);
 
     // 3.3 Mapping between Two Spaces
+    // Eq.4
     setColor(RGB(1.0f, 0.5f, 0));
     for (int i = 0; i <= 10; ++i) {
         const float t = static_cast<float>(i) / 10;
@@ -674,7 +675,7 @@ void testFindHeight() {
 
 
 
-// Compute coefficients of the equation (7)
+// Compute canonical-space ray coefficients of the equation (7)
 static void computeCanonicalSpaceRayCoeffs(
     const Point3D &rayOrg, const Vector3D &rayDir, const Vector3D &e0, const Vector3D &e1,
     const Point3D &pA, const Point3D &pB, const Point3D &pC,
@@ -725,7 +726,7 @@ static void computeCanonicalSpaceRayCoeffs(
     *beta0 = -(eAO.x * eAB.y - eAO.y * eAB.x);
 }
 
-void testComputeCoeffs() {
+void testComputeCanonicalSpaceRayCoeffs() {
     struct TestData {
         Point3D pA;
         Point3D pB;
@@ -914,6 +915,7 @@ void testComputeCoeffs() {
     // Canonical-space and Texture-space Ray
     Point3D prevCurvedRayPInCanonical;
     Point3D prevCurvedRayPInTexture;
+    float prevH;
     {
         float hs[3];
         findHeight(
@@ -924,6 +926,7 @@ void testComputeCoeffs() {
         const float h = selectH(hs);
         const float h2 = pow2(h);
         const float denom = denom2 * h2 + denom1 * h + denom0;
+        prevH = h;
         prevCurvedRayPInCanonical = Point3D(
             (alpha2 * h2 + alpha1 * h + alpha0) / denom,
             (beta2 * h2 + beta1 * h + beta0) / denom,
@@ -951,8 +954,11 @@ void testComputeCoeffs() {
             h);
         Point3D tcp((tc2 * h2 + tc1 * h + tc0) / denom, h);
 
-        drawLine(globalOffsetForCanonical + prevCurvedRayPInCanonical, globalOffsetForCanonical + p);
-        drawLine(globalOffsetForTexture + prevCurvedRayPInTexture, globalOffsetForTexture + tcp);
+        if (std::fabs(h - prevH) < 0.1f) {
+            drawLine(globalOffsetForCanonical + prevCurvedRayPInCanonical, globalOffsetForCanonical + p);
+            drawLine(globalOffsetForTexture + prevCurvedRayPInTexture, globalOffsetForTexture + tcp);
+        }
+        prevH = h;
         prevCurvedRayPInCanonical = p;
         prevCurvedRayPInTexture = tcp;
         if (i == 374)
@@ -2095,6 +2101,53 @@ void testNonlinearRayVsAabb() {
                 globalOffsetForTexture + Point3D(test.tcC, 0) + p * Normal3D(0, 0, 1));
         }
 
+        const Matrix2x2 invA = invert(Matrix2x2(test.tcB - test.tcA, test.tcC - test.tcA));
+        const auto computePInWorldSpace = [&]
+        (const float u, const float v, const float h) {
+            const Vector2D bc = invA * (Point2D(u, v) - test.tcA);
+            return test.S(bc.x, bc.y, h);
+        };
+
+        Point3D prevAabbPs[12];
+        setColor(RGB(1));
+        for (int i = 0; i <= 100; ++i) {
+            const float t = static_cast<float>(i) / 100;
+            Point3D ps[12];
+            // x
+            ps[0] = computePInWorldSpace(
+                lerp(test.aabb.minP.x, test.aabb.maxP.x, t), test.aabb.minP.y, test.aabb.minP.z);
+            ps[1] = computePInWorldSpace(
+                lerp(test.aabb.minP.x, test.aabb.maxP.x, t), test.aabb.maxP.y, test.aabb.minP.z);
+            ps[2] = computePInWorldSpace(
+                lerp(test.aabb.minP.x, test.aabb.maxP.x, t), test.aabb.minP.y, test.aabb.maxP.z);
+            ps[3] = computePInWorldSpace(
+                lerp(test.aabb.minP.x, test.aabb.maxP.x, t), test.aabb.maxP.y, test.aabb.maxP.z);
+            // y
+            ps[4] = computePInWorldSpace(
+                test.aabb.minP.x, lerp(test.aabb.minP.y, test.aabb.maxP.y, t), test.aabb.minP.z);
+            ps[5] = computePInWorldSpace(
+                test.aabb.maxP.x, lerp(test.aabb.minP.y, test.aabb.maxP.y, t), test.aabb.minP.z);
+            ps[6] = computePInWorldSpace(
+                test.aabb.minP.x, lerp(test.aabb.minP.y, test.aabb.maxP.y, t), test.aabb.maxP.z);
+            ps[7] = computePInWorldSpace(
+                test.aabb.maxP.x, lerp(test.aabb.minP.y, test.aabb.maxP.y, t), test.aabb.maxP.z);
+            // z
+            ps[8] = computePInWorldSpace(
+                test.aabb.minP.x, test.aabb.minP.y, lerp(test.aabb.minP.z, test.aabb.maxP.z, t));
+            ps[9] = computePInWorldSpace(
+                test.aabb.maxP.x, test.aabb.minP.y, lerp(test.aabb.minP.z, test.aabb.maxP.z, t));
+            ps[10] = computePInWorldSpace(
+                test.aabb.minP.x, test.aabb.maxP.y, lerp(test.aabb.minP.z, test.aabb.maxP.z, t));
+            ps[11] = computePInWorldSpace(
+                test.aabb.maxP.x, test.aabb.maxP.y, lerp(test.aabb.minP.z, test.aabb.maxP.z, t));
+            if (i > 0) {
+                for (int j = 0; j < 12; ++j)
+                    drawLine(prevAabbPs[j], ps[j]);
+            }
+            for (int j = 0; j < 12; ++j)
+                prevAabbPs[j] = ps[j];
+        }
+
         // Texture-space AABB
         setColor(RGB(1));
         drawAabb(AABB(globalOffsetForTexture + test.aabb.minP, globalOffsetForTexture + test.aabb.maxP));
@@ -2266,11 +2319,12 @@ void testNonlinearRayVsAabb() {
         if (hit) {
             //hitDistMin = std::fmax(hitDistMin, 0.0f);
             {
+                const Point3D p = rayOrg + hitDistMin * rayDir;
                 float hs[3];
                 findHeight(
                     test.pA, test.pB, test.pC,
                     test.nA, test.nB, test.nC,
-                    rayOrg + hitDistMin * rayDir,
+                    p,
                     hs);
                 const float h = selectH(hs);
                 const float h2 = pow2(h);
@@ -2278,14 +2332,16 @@ void testNonlinearRayVsAabb() {
                 Point3D tcp((tc2 * h2 + tc1 * h + tc0) / denom, h);
 
                 setColor(RGB(1, 0.5f, 0));
+                drawCross(p, 0.05f);
                 drawCross(globalOffsetForTexture + tcp, 0.05f);
             }
             {
+                const Point3D p = rayOrg + hitDistMax * rayDir;
                 float hs[3];
                 findHeight(
                     test.pA, test.pB, test.pC,
                     test.nA, test.nB, test.nC,
-                    rayOrg + hitDistMax * rayDir,
+                    p,
                     hs);
                 const float h = selectH(hs);
                 const float h2 = pow2(h);
@@ -2293,6 +2349,7 @@ void testNonlinearRayVsAabb() {
                 Point3D tcp((tc2 * h2 + tc1 * h + tc0) / denom, h);
 
                 setColor(RGB(1, 0.5f, 0));
+                drawCross(p, 0.05f);
                 drawCross(globalOffsetForTexture + tcp, 0.05f);
             }
             printf("");
