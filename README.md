@@ -116,8 +116,7 @@ Given the mapping between shell space (a space enclosed by the base triangle and
 - [ ] Advanced Items
   - [ ] Shell mapping
   - [x] Better root choice
-  - [x] Flexible traversal order
-  - [ ] Traversal order based on ray-box hit distance
+  - [x] Traversal order based on ray-box hit distance
   - [x] Texture wrapping
   - [x] Texture transform
 

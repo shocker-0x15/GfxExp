@@ -78,6 +78,10 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(setupGBuffers)() {
     plp.s->GBuffer1[bufIdx].write(launchIndex, gb1Elems);
     plp.s->GBuffer2[bufIdx].write(launchIndex, gb2Elems);
 
+#if OUTPUT_TRAVERSAL_STATS
+    plp.s->numTravItrsBuffer.write(launchIndex, hitPointParams.numTravIterations);
+#endif
+
     if (launchIndex.x == plp.f->mousePosition.x &&
         launchIndex.y == plp.f->mousePosition.y) {
         pickInfo.instSlot = hitPointParams.instSlot;

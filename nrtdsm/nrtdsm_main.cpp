@@ -161,6 +161,10 @@ struct GPUEnvironment {
                 m, RT_CH_NAME_STR("setupGBuffers"),
                 emptyModule, nullptr,
                 m, RT_IS_NAME_STR("prism"));
+            pipeline.hitPrograms["displacedSurface"] = p.createHitProgramGroupForCustomIS(
+                m, RT_CH_NAME_STR("setupGBuffers"),
+                emptyModule, nullptr,
+                m, RT_IS_NAME_STR("displacedSurface"));
 
             pipeline.hitPrograms["emptyHitGroup"] = p.createEmptyHitProgramGroup();
 
@@ -191,6 +195,7 @@ struct GPUEnvironment {
                     {
                         pipeline.hitPrograms.at("triangle").getCHStackSize(),
                         pipeline.hitPrograms.at("prism").getCHStackSize(),
+                        pipeline.hitPrograms.at("displacedSurface").getCHStackSize(),
                         pipeline.programs.at("miss").getStackSize()
                     });
 
@@ -200,7 +205,10 @@ struct GPUEnvironment {
             for (uint32_t rayType = shared::GBufferRayType::NumTypes; rayType < shared::maxNumRayTypes; ++rayType)
                 optixDefaultMaterial.setHitGroup(rayType, pipeline.hitPrograms.at("emptyHitGroup"));
 
-#if !USE_DISPLACED_SURFACES
+#if USE_DISPLACED_SURFACES
+            optixDisplacedMeshMaterial.setHitGroup(
+                shared::GBufferRayType::Primary, pipeline.hitPrograms.at("displacedSurface"));
+#else
             optixDisplacedMeshMaterial.setHitGroup(
                 shared::GBufferRayType::Primary, pipeline.hitPrograms.at("prism"));
 #endif
@@ -254,6 +262,10 @@ struct GPUEnvironment {
                 m, RT_CH_NAME_STR("pathTrace"),
                 emptyModule, nullptr,
                 m, RT_IS_NAME_STR("prism"));
+            pipeline.hitPrograms["pathTraceClosestDisplacedSurface"] = p.createHitProgramGroupForCustomIS(
+                m, RT_CH_NAME_STR("pathTrace"),
+                emptyModule, nullptr,
+                m, RT_IS_NAME_STR("displacedSurface"));
 
             pipeline.hitPrograms["pathTraceVisibilityTriangle"] = p.createHitProgramGroupForTriangleIS(
                 emptyModule, nullptr,
@@ -262,6 +274,10 @@ struct GPUEnvironment {
                 emptyModule, nullptr,
                 m, RT_AH_NAME_STR("visibility"),
                 m, RT_IS_NAME_STR("prism"));
+            pipeline.hitPrograms["pathTraceVisibilityDisplacedSurface"] = p.createHitProgramGroupForCustomIS(
+                emptyModule, nullptr,
+                m, RT_AH_NAME_STR("visibility"),
+                m, RT_IS_NAME_STR("displacedSurface"));
 
             pipeline.programs["emptyMiss"] = p.createMissProgram(emptyModule, nullptr);
 
@@ -294,10 +310,12 @@ struct GPUEnvironment {
                         std::max({
                             pipeline.hitPrograms.at("pathTraceClosestTriangle").getCHStackSize(),
                             pipeline.hitPrograms.at("pathTraceClosestPrism").getCHStackSize(),
+                            pipeline.hitPrograms.at("pathTraceClosestDisplacedSurface").getCHStackSize(),
                                  }) +
                         std::max({
                             pipeline.hitPrograms.at("pathTraceVisibilityTriangle").getAHStackSize(),
                             pipeline.hitPrograms.at("pathTraceVisibilityPrism").getAHStackSize(),
+                            pipeline.hitPrograms.at("pathTraceVisibilityDisplacedSurface").getAHStackSize(),
                                  }),
                         pipeline.programs.at(RT_MS_NAME_STR("pathTrace")).getStackSize()
                     });
@@ -311,7 +329,14 @@ struct GPUEnvironment {
                 shared::PathTracingRayType::Visibility,
                 pipeline.hitPrograms.at("pathTraceVisibilityTriangle"));
 
-#if !USE_DISPLACED_SURFACES
+#if USE_DISPLACED_SURFACES
+            optixDisplacedMeshMaterial.setHitGroup(
+                shared::PathTracingRayType::Closest,
+                pipeline.hitPrograms.at("pathTraceClosestDisplacedSurface"));
+            optixDisplacedMeshMaterial.setHitGroup(
+                shared::PathTracingRayType::Visibility,
+                pipeline.hitPrograms.at("pathTraceVisibilityDisplacedSurface"));
+#else
             optixDisplacedMeshMaterial.setHitGroup(
                 shared::PathTracingRayType::Closest,
                 pipeline.hitPrograms.at("pathTraceClosestPrism"));

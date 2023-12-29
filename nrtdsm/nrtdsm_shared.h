@@ -2,7 +2,7 @@
 
 #include "../common/common_shared.h"
 
-#define USE_DISPLACED_SURFACES 0
+#define USE_DISPLACED_SURFACES 1
 #define OUTPUT_TRAVERSAL_STATS 1
 
 namespace shared {

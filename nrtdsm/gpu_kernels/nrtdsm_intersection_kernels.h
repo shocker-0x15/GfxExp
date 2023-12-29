@@ -311,16 +311,154 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE float evaluateCubicPolynomial(
     return ((a * x + b) * x + c) * x + d;
 }
 
+CUDA_DEVICE_FUNCTION CUDA_INLINE uint32_t solveQuadraticEquation(
+    const float coeffs[3], const float xMin, const float xMax,
+    float roots[2]) {
+    const float a = coeffs[2];
+    const float b = coeffs[1];
+    const float c = coeffs[0];
+    const float D = pow2(b) - 4 * a * c;
+    if (D < 0)
+        return 0;
+    if (D == 0.0f) {
+        roots[0] = -b / (2 * a);
+        return roots[0] >= xMin && roots[0] <= xMax;
+    }
+    const float sqrtD = std::sqrt(D);
+    const float temp = -0.5f * (b + std::copysign(sqrtD, b));
+    float xx0 = c / temp;
+    float xx1 = temp / a;
+    if (xx0 > xx1) {
+        stc::swap(xx0, xx1);
+    }
+    uint32_t idx = 0;
+    if (xx0 >= xMin && xx0 <= xMax)
+        roots[idx++] = xx0;
+    if (xx1 >= xMin && xx1 <= xMax)
+        roots[idx++] = xx1;
+    return idx;
+}
+
+CUDA_DEVICE_FUNCTION CUDA_INLINE uint32_t solveCubicEquation(
+    const float coeffs[4], const float xMin, const float xMax,
+    float roots[3]) {
+    uint32_t numRoots = 0;
+    const auto testRoot = [&](const float x) {
+        if (x >= xMin && x <= xMax)
+            roots[numRoots++] = x;
+    };
+
+    const auto sortAndTestRoots = [&]
+    (const float x0, const float x1, const float x2) {
+        float root0;
+        float root1;
+        float root2;
+        if (x0 < x1) {
+            if (x0 < x2) {
+                root0 = x0;
+                root1 = x1 < x2 ? x1 : x2;
+                root2 = x1 < x2 ? x2 : x1;
+            }
+            else {
+                root0 = x2;
+                root1 = x0;
+                root2 = x1;
+            }
+        }
+        else {
+            if (x1 < x2) {
+                root0 = x1;
+                root1 = x0 < x2 ? x0 : x2;
+                root2 = x0 < x2 ? x2 : x0;
+            }
+            else {
+                root0 = x2;
+                root1 = x1;
+                root2 = x0;
+            }
+        }
+        testRoot(root0);
+        testRoot(root1);
+        testRoot(root2);
+    };
+
+    if (coeffs[3] == 0.0f)
+        return solveQuadraticEquation(coeffs, xMin, xMax, roots);
+
+    const float recCubicCoeff = 1.0f / coeffs[3];
+    const float a = coeffs[2] * recCubicCoeff;
+    const float b = coeffs[1] * recCubicCoeff;
+    const float c = coeffs[0] * recCubicCoeff;
+
+#if 1 // Reference: Numerical Recipes in C
+    const float Q = (pow2(a) - 3 * b) / 9;
+    const float R = (2 * pow3(a) - 9 * a * b + 27 * c) / 54;
+    const float R2 = pow2(R);
+    const float Q3 = pow3(Q);
+    const float a_over_3 = a / 3;
+    if (R2 >= Q3) {
+        const float temp = std::fabs(R) + std::sqrt(R2 - Q3);
+        const float A = -std::copysign(std::pow(temp, 1.0f / 3), R);
+        const float B = A != 0 ? Q / A : 0;
+        testRoot((A + B) - a_over_3);
+        return numRoots;
+    }
+    const float theta = std::acos(stc::clamp(R / std::sqrt(Q3), -1.0f, 1.0f));
+
+    constexpr float _2pi_over_3 = 2 * pi_v<float> / 3;
+    const float theta_over_3 = theta / 3;
+    const float minus2sqrtQ = -2 * std::sqrt(Q);
+    sortAndTestRoots(
+        minus2sqrtQ * std::cos(theta_over_3) - a_over_3,
+        minus2sqrtQ * std::cos(theta_over_3 + _2pi_over_3) - a_over_3,
+        minus2sqrtQ * std::cos(theta_over_3 - _2pi_over_3) - a_over_3);
+#else
+    const float p = (-pow2(a) + 3 * b) / 9;
+    const float q = (2 * pow3(a) - 9 * a * b + 27 * c) / 54;
+    const float r2 = pow2(q) + pow3(p);
+    const float a_over_3 = a / 3;
+    if (r2 > 0) {
+        const float r = std::sqrt(r2);
+        const float qrA = -q + r;
+        const float qrB = -q - r;
+        const float x = -a_over_3
+            + std::copysign(std::pow(std::fabs(qrA), 1.0f / 3.0f), qrA)
+            + std::copysign(std::pow(std::fabs(qrB), 1.0f / 3.0f), qrB);
+        testRoot(x);
+    }
+    else if (r2 * pow4(a) >= -1e-6) {
+        const float temp = std::copysign(std::pow(std::fabs(q), 1.0f / 3.0f), q);
+        const float xx0 = -a_over_3 - 2 * temp;
+        const float xx1 = -a_over_3 + temp;
+        testRoot(std::fmin(xx0, xx1));
+        testRoot(std::fmax(xx0, xx1));
+    }
+    else {
+        const float r = std::sqrt(-r2);
+        const float radius = std::pow(pow2(q) + pow2(r), 1.0f / 6.0f);
+        const float arg = std::atan2(r, -q) / 3.0f;
+        const float zr = radius * std::cos(arg);
+        const float zi = radius * std::sin(arg);
+        const float sqrt3 = std::sqrt(3.0f);
+        sortAndTestRoots(
+            -a_over_3 + 2 * zr,
+            -a_over_3 - zr - sqrt3 * zi,
+            -a_over_3 - zr + sqrt3 * zi);
+    }
+#endif
+
+    return numRoots;
+}
+
+
+
 CUDA_DEVICE_FUNCTION CUDA_INLINE void computeCanonicalSpaceRayCoeffs(
-    const Point3D &rayOrg, const Vector3D &rayDir,
+    const Point3D &rayOrg, const Vector3D &rayDir, const Vector3D &e0, const Vector3D &e1,
     const Point3D &pA, const Point3D &pB, const Point3D &pC,
     const Normal3D &nA, const Normal3D &nB, const Normal3D &nC,
     float* const alpha2, float* const alpha1, float* const alpha0,
     float* const beta2, float* const beta1, float* const beta0,
     float* const denom2, float* const denom1, float* const denom0) {
-    Vector3D e0, e1;
-    rayDir.makeCoordinateSystem(&e0, &e1);
-
     Vector2D eAB, fAB;
     Vector2D eAC, fAC;
     Vector2D eAO, NA;
@@ -375,6 +513,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void computeTextureSpaceRayCoeffs(
     *tc0 = (denom0 - alpha0 - beta0) * tcA + alpha0 * tcB + beta0 * tcC;
 }
 
+
+
 class MipMapStack {
     // JP: 各8ビットがカウンター(2ビット)と最大3つの要素(それぞれ2ビット)を持つ。
     // EN: every 8 bits represents counter (2-bit) and up to three entries (each with 2-bit).
@@ -419,8 +559,10 @@ public:
             newData |= numEntries;
             const uint32_t dataIdx = level / 8;
             const uint32_t bitPosInData = (level % 8) * 8;
-            (dataIdx == 0 ? m_data0 : dataIdx == 1 ? m_data1 : m_data2) &= ~(0xFF << bitPosInData);
-            (dataIdx == 0 ? m_data0 : dataIdx == 1 ? m_data1 : m_data2) |= (newData << bitPosInData);
+            (dataIdx == 0 ? m_data0 : dataIdx == 1 ? m_data1 : m_data2) &=
+                ~(static_cast<uint64_t>(0xFF) << bitPosInData);
+            (dataIdx == 0 ? m_data0 : dataIdx == 1 ? m_data1 : m_data2) |=
+                (static_cast<uint64_t>(newData) << bitPosInData);
         }
     }
     CUDA_DEVICE_FUNCTION CUDA_INLINE bool tryPop(const uint32_t level, Entry* const entry) {
@@ -433,49 +575,13 @@ public:
             return false;
         entry->asUInt8 = (data >> 2) & 0b11;
         const uint8_t newData = ((data >> 2) & ~0b11) | (counter - 1);
-        (dataIdx == 0 ? m_data0 : dataIdx == 1 ? m_data1 : m_data2) &= ~(0xFF << bitPosInData);
-        (dataIdx == 0 ? m_data0 : dataIdx == 1 ? m_data1 : m_data2) |= (newData << bitPosInData);
+        (dataIdx == 0 ? m_data0 : dataIdx == 1 ? m_data1 : m_data2) &=
+            ~(static_cast<uint64_t>(0xFF) << bitPosInData);
+        (dataIdx == 0 ? m_data0 : dataIdx == 1 ? m_data1 : m_data2) |=
+            (static_cast<uint64_t>(newData) << bitPosInData);
         return true;
     }
 };
-
-CUDA_DEVICE_FUNCTION CUDA_INLINE uint32_t solveQuadraticEquation(
-    const float coeffs[3], const float xMin, const float xMax,
-    float roots[2]) {
-    const float a = coeffs[2];
-    const float b = coeffs[1];
-    const float c = coeffs[0];
-    const float D = pow2(b) - 4 * a * c;
-    if (D < 0)
-        return 0;
-    if (D == 0.0f) {
-        roots[0] = -b / (2 * a);
-        return roots[0] >= xMin && roots[0] <= xMax;
-    }
-    const float sqrtD = std::sqrt(D);
-    const float temp = -0.5f * (b + std::copysign(sqrtD, b));
-    float xx0 = c / temp;
-    float xx1 = temp / a;
-    if (xx0 > xx1) {
-        stc::swap(xx0, xx1);
-    }
-    uint32_t idx = 0;
-    if (xx0 >= xMin && xx0 <= xMax)
-        roots[idx++] = xx0;
-    if (xx1 >= xMin && xx1 <= xMax)
-        roots[idx++] = xx1;
-    return idx;
-}
-
-CUDA_DEVICE_FUNCTION CUDA_INLINE float solveQuadraticEquation(
-    const float a, const float b, const float c, const float xMin, const float xMax) {
-    const float coeffs[] = { c, b, a };
-    float roots[2];
-    const uint32_t numRoots = ::solveQuadraticEquation(coeffs, xMin, xMax, roots);
-    if (numRoots == 0)
-        return NAN;
-    return roots[0];
-}
 
 CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsAabb(
     // Prism
@@ -490,10 +596,10 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsAabb(
     const float denom2, const float denom1, const float denom0,
     const Point2D &tc2, const Point2D &tc1, const Point2D &tc0,
     // Intermediate intersection results
-    const float h_uLo, const float v_uLo,
-    const float h_uHi, const float v_uHi,
-    const float h_vLo, const float u_vLo,
-    const float h_vHi, const float u_vHi,
+    const float hs_uLo[2], const float vs_uLo[2],
+    const float hs_uHi[2], const float vs_uHi[2],
+    const float hs_vLo[2], const float us_vLo[2],
+    const float hs_vHi[2], const float us_vHi[2],
     // results
     float* const hitDistMin, float* const hitDistMax) {
     *hitDistMin = INFINITY;
@@ -550,8 +656,10 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsAabb(
     };
 
     // min/max u plane
-    testUPlane(v_uLo, h_uLo);
-    testUPlane(v_uHi, h_uHi);
+    testUPlane(vs_uLo[0], hs_uLo[0]);
+    testUPlane(vs_uLo[1], hs_uLo[1]);
+    testUPlane(vs_uHi[0], hs_uHi[0]);
+    testUPlane(vs_uHi[1], hs_uHi[1]);
 
     const auto testVPlane = [&]
     (const float u, const float h) {
@@ -571,8 +679,10 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsAabb(
     };
 
     // min/max v plane
-    testVPlane(u_vLo, h_vLo);
-    testVPlane(u_vHi, h_vHi);
+    testVPlane(us_vLo[0], hs_vLo[0]);
+    testVPlane(us_vLo[1], hs_vLo[1]);
+    testVPlane(us_vHi[0], hs_vHi[0]);
+    testVPlane(us_vHi[1], hs_vHi[1]);
 
     *hitDistMin = std::fmax(*hitDistMin, distMin);
     *hitDistMax = std::fmin(*hitDistMax, distMax);
@@ -582,11 +692,136 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsAabb(
 
 
 
+CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsMicroTriangle(
+    const Point3D &pA, const Point3D &pB, const Point3D &pC,
+    const Normal3D &nA, const Normal3D &nB, const Normal3D &nC,
+    const Point2D &tcA, const Point2D &tcB, const Point2D &tcC,
+    const Point3D &mpAInTex, const Point3D &mpBInTex, const Point3D &mpCInTex,
+    const Point3D &rayOrg, const Vector3D &rayDir, const float distMin, const float distMax,
+    const Vector3D &e0, const Vector3D &e1,
+    const Point2D &tc2, const Point2D &tc1, const Point2D &tc0,
+    const float denom2, const float denom1, const float denom0,
+    Point3D* const hitPointInCan, /*Point3D* const hitPointInTex,*/
+    float* const hitDist, Normal3D* const hitNormalInObj) {
+    // JP: テクスチャー空間中のマイクロ三角形を含む平面の方程式の係数を求める。
+    const Normal3D nInTex(normalize(cross(mpBInTex - mpAInTex, mpCInTex - mpAInTex)));
+    const float KInTex = -dot(nInTex, static_cast<Vector3D>(mpAInTex));
+
+    // JP: 正準空間中のマイクロ三角形を含む平面の方程式の係数を求める。
+    const Normal3D nInCan(
+        nInTex.x * (tcB.x - tcA.x) + nInTex.y * (tcB.y - tcA.y),
+        nInTex.x * (tcC.x - tcA.x) + nInTex.y * (tcC.y - tcA.y),
+        nInTex.z);
+    const float KInCan = nInTex.x * tcA.x + nInTex.y * tcA.y + KInTex;
+    const float minHeight = std::fmin(std::fmin(mpAInTex.z, mpBInTex.z), mpCInTex.z);
+    const float maxHeight = std::fmax(std::fmax(mpAInTex.z, mpBInTex.z), mpCInTex.z);
+
+    // JP: テクスチャー空間中のレイとマイクロ三角形を含む平面の交差判定。
+    float hs[3];
+    uint32_t numRoots;
+    {
+        const float coeffs[] = {
+            nInTex.x * tc0.x + nInTex.y * tc0.y + KInTex * denom0,
+            nInTex.x * tc1.x + nInTex.y * tc1.y + nInTex.z * denom0 + KInTex * denom1,
+            nInTex.x * tc2.x + nInTex.y * tc2.y + nInTex.z * denom1 + KInTex * denom2,
+            nInTex.z * denom2
+        };
+        numRoots = solveCubicEquation(coeffs, minHeight, maxHeight, hs);
+    }
+
+    *hitDist = distMax;
+    for (int rootIdx = 0; rootIdx < numRoots; ++rootIdx) {
+        const float h = hs[rootIdx];
+
+        const Point3D SAh = pA + h * nA;
+        const Point3D SBh = pB + h * nB;
+        const Point3D SCh = pC + h * nC;
+
+        // JP: 正準空間の他の座標を求める。
+        float alpha, beta;
+        Matrix3x3 transposedAdjMat;
+        {
+            const Vector3D eSABInObj = SBh - SAh;
+            const Vector3D eSACInObj = SCh - SAh;
+            const Vector3D eSAOInObj = rayOrg - SAh;
+
+            const Vector2D eSAB(dot(eSABInObj, e0), dot(eSABInObj, e1));
+            const Vector2D eSAC(dot(eSACInObj, e0), dot(eSACInObj, e1));
+            const Vector2D eSAO(dot(eSAOInObj, e0), dot(eSAOInObj, e1));
+
+            const float det0 = eSAB.x * eSAC.y - eSAC.x * eSAB.y;
+            float curDet = det0;
+            Matrix2x2 lhsMat(eSAB, eSAC);
+            Vector2D rhsConsts = eSAO;
+            const float det1 = eSAB.x * nInCan.y - eSAC.x * nInCan.x;
+            if (std::fabs(det1) > std::fabs(curDet)) {
+                lhsMat = Matrix2x2(Vector2D(eSAB.x, nInCan.x), Vector2D(eSAC.x, nInCan.y));
+                rhsConsts = Vector2D(eSAO.x, -nInCan.z * h - KInCan);
+                curDet = det1;
+            }
+            const float det2 = eSAB.y * nInCan.y - eSAC.y * nInCan.x;
+            if (std::fabs(det2) > std::fabs(curDet)) {
+                lhsMat = Matrix2x2(Vector2D(eSAB.y, nInCan.x), Vector2D(eSAC.y, nInCan.y));
+                rhsConsts = Vector2D(eSAO.y, -nInCan.z * h - KInCan);
+                curDet = det2;
+            }
+
+            const float recDet = 1.0f / curDet;
+            alpha = recDet * (lhsMat[1][1] * rhsConsts.x - lhsMat[1][0] * rhsConsts.y);
+            beta = recDet * (-lhsMat[0][1] * rhsConsts.x + lhsMat[0][0] * rhsConsts.y);
+
+            // JP: 論文中の余因子行列は「ij成分がij余因子である行列」を指しているが、
+            //     このコードではadjugate()は「ij成分がij余因子である行列の転置行列」を指す。
+            transposedAdjMat = adjugateWithoutTranspose(Matrix3x3(
+                eSABInObj,
+                eSACInObj,
+                static_cast<Vector3D>((1 - alpha - beta) * nA + alpha * nB + beta * nC)));
+        }
+        if (alpha < 0.0f || alpha > 1.0f ||
+            beta < 0.0f || beta > 1.0f ||
+            (alpha + beta) > 1.0f)
+            continue;
+
+        const Point3D hpInCan(alpha, beta, h);
+        const Point3D hpInTex((1 - alpha - beta) * tcA + alpha * tcB + beta * tcC, h);
+
+        // JP: 上で求まったα, βはベース三角形における重心座標に過ぎない。
+        //     求めた交点がマイクロ三角形内にあるかチェックする必要がある。
+        {
+            const Vector2D eAB = mpBInTex.xy() - mpAInTex.xy();
+            const Vector2D eBC = mpCInTex.xy() - mpBInTex.xy();
+            const Vector2D eCA = mpAInTex.xy() - mpCInTex.xy();
+            const Vector2D eAP = hpInTex.xy() - mpAInTex.xy();
+            const Vector2D eBP = hpInTex.xy() - mpBInTex.xy();
+            const Vector2D eCP = hpInTex.xy() - mpCInTex.xy();
+            const float cAB = cross(eAB, eAP);
+            const float cBC = cross(eBC, eBP);
+            const float cCA = cross(eCA, eCP);
+            if ((cAB < 0 || cBC < 0 || cCA < 0) && (cAB >= 0 || cBC >= 0 || cCA >= 0))
+                continue;
+        }
+
+        const float dist = dot(
+            rayDir,
+            (1 - alpha - beta) * SAh + alpha * SBh + beta * SCh - rayOrg);
+        if (dist > distMin && dist < *hitDist) {
+            *hitDist = dist;
+            *hitPointInCan = hpInCan;
+            //*hitPointInTex = hpInTex;
+            *hitNormalInObj = transposedAdjMat * nInCan;
+        }
+    }
+
+    return *hitDist < distMax;
+}
+
+
+
 CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
-#define DEBUG_TRAVERSAL 0
+#define DEBUG_TRAVERSAL 1
 
 #if DEBUG_TRAVERSAL
-    bool isDebugPixel = optixGetLaunchIndex().x == 960 && optixGetLaunchIndex().y == 540;
+    bool isDebugPixel = optixGetLaunchIndex().x == 629 && optixGetLaunchIndex().y == 448;
     //bool isDebugPixel = isCursorPixel();
 #endif
 
@@ -628,13 +863,20 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
             return;
     }
 
+    float hitDist = prismHitDistLeave;
+    float hitBcB, hitBcC;
+    Normal3D hitNormal;
+
+    Vector3D e0, e1;
+    rayDirInObj.makeCoordinateSystem(&e0, &e1);
+
     // JP: 正準空間中のレイの係数を求める。
     // EN: Compute the coefficients of the ray in canonical space.
     float alpha2, alpha1, alpha0;
     float beta2, beta1, beta0;
     float denom2, denom1, denom0;
     computeCanonicalSpaceRayCoeffs(
-        rayOrgInObj, rayDirInObj,
+        rayOrgInObj, rayDirInObj, e0, e1,
         vA.position, vB.position, vC.position,
         vA.normal, vB.normal, vC.normal,
         &alpha2, &alpha1, &alpha0,
@@ -659,9 +901,9 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
         texXfm * vB.texCoord,
         texXfm * vC.texCoord,
     };
-    const float triAreaInTc = cross(tcs[1] - tcs[0], tcs[2] - tcs[0])/* * 0.5f*/;
-    const bool tcFlipped = triAreaInTc < 0;
-    const float recTriAreaInTc = 1.0f / triAreaInTc;
+    const float triAreaInTex = cross(tcs[1] - tcs[0], tcs[2] - tcs[0])/* * 0.5f*/;
+    const bool tcFlipped = triAreaInTex < 0;
+    const float recTriAreaInTex = 1.0f / triAreaInTex;
 
     const Vector2D texTriEdgeNormals[] = {
         Vector2D(tcs[1].y - tcs[0].y, tcs[0].x - tcs[1].x),
@@ -683,25 +925,89 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
     uint32_t numRoots;
     findRoots(texTriAabbMinP, texTriAabbMaxP, maxDepth, targetMipLevel, roots, &numRoots);
     MipMapStack stack;
+#if DEBUG_TRAVERSAL
+    if (isDebugPixel && getDebugPrintEnabled()) {
+        printf(
+            "%u-%u: pA: (%g, %g, %g), pB: (%g, %g, %g), pC: (%g, %g, %g)\n",
+            plp.f->frameIndex, optixGetPrimitiveIndex(),
+            v3print(vA.position), v3print(vB.position), v3print(vC.position));
+        printf(
+            "%u-%u: nA: (%g, %g, %g), nB: (%g, %g, %g), nC: (%g, %g, %g)\n",
+            plp.f->frameIndex, optixGetPrimitiveIndex(),
+            v3print(vA.normal), v3print(vB.normal), v3print(vC.normal));
+        printf(
+            "%u-%u: tcA: (%g, %g), tcB: (%g, %g), tcC: (%g, %g)\n",
+            plp.f->frameIndex, optixGetPrimitiveIndex(),
+            v2print(vA.texCoord), v2print(vB.texCoord), v2print(vC.texCoord));
+        printf(
+            "%u-%u: rayOrg: (%g, %g, %g), rayDir: (%g, %g, %g)\n",
+            plp.f->frameIndex, optixGetPrimitiveIndex(),
+            v3print(rayOrgInObj), v3print(rayDirInObj));
+        printf(
+            "%u-%u: alpha: (%g, %g, %g), beta: (%g, %g, %g), denom: (%g, %g, %g)\n",
+            plp.f->frameIndex, optixGetPrimitiveIndex(),
+            alpha2, alpha1, alpha0,
+            beta2, beta1, beta0,
+            denom2, denom1, denom0);
+        printf(
+            "%u-%u: uCoeffs: (%g, %g, %g), vCoeffs: (%g, %g, %g)\n",
+            plp.f->frameIndex, optixGetPrimitiveIndex(),
+            tc2.x, tc1.x, tc0.x,
+            tc2.y, tc1.y, tc0.y);
+        printf(
+            "%u-%u: TriAABB: (%g, %g) - (%g, %g), %u roots\n",
+            plp.f->frameIndex, optixGetPrimitiveIndex(),
+            v2print(texTriAabbMinP), v2print(texTriAabbMaxP),
+            numRoots);
+    }
+#endif
     for (int rootIdx = 0; rootIdx < lengthof(roots); ++rootIdx) {
         if (rootIdx >= numRoots)
             break;
         Texel curTexel = roots[rootIdx];
         const int16_t initialLod = curTexel.lod;
 
-        MipMapStack::Entry curEntry(0, 0);
-        while (curTexel.lod <= initialLod) {
-#if OUTPUT_TRAVERSAL_STATS
-            ++numIterations;
+#if DEBUG_TRAVERSAL
+        if (isDebugPixel && getDebugPrintEnabled()) {
+            printf(
+                "%u-%u, Root %u: [%d - %d, %d]\n",
+                plp.f->frameIndex, optixGetPrimitiveIndex(), rootIdx,
+                curTexel.lod, curTexel.x, curTexel.y);
+        }
 #endif
+
+        MipMapStack::Entry curEntry(floorMod(curTexel.x, 2), floorMod(curTexel.y, 2));
+        while (curTexel.lod <= initialLod) {
             if (curEntry.asUInt8 == 0xFF) {
                 if (!stack.tryPop(curTexel.lod, &curEntry)) {
+#if DEBUG_TRAVERSAL
+                    if (isDebugPixel && getDebugPrintEnabled()) {
+                        printf(
+                            "%u-%u, Root %u: [%d - %d, %d] up\n",
+                            plp.f->frameIndex, optixGetPrimitiveIndex(), rootIdx,
+                            curTexel.lod, curTexel.x, curTexel.y);
+                    }
+#endif
                     up(curTexel);
                     continue;
                 }
             }
-            curTexel.x = (curTexel.x & ~0b1) + curEntry.offsetX;
-            curTexel.y = (curTexel.y & ~0b1) + curEntry.offsetY;
+            curTexel.x = floorDiv(curTexel.x, 2) * 2 + curEntry.offsetX;
+            curTexel.y = floorDiv(curTexel.y, 2) * 2 + curEntry.offsetY;
+
+#if OUTPUT_TRAVERSAL_STATS
+            ++numIterations;
+#endif
+
+#if DEBUG_TRAVERSAL
+            if (isDebugPixel && getDebugPrintEnabled()) {
+                printf(
+                    "%u-%u, Root %u: Itr: %2u, [%d - %d, %d]\n",
+                    plp.f->frameIndex, optixGetPrimitiveIndex(), rootIdx,
+                    numIterations - 1,
+                    curTexel.lod, curTexel.x, curTexel.y);
+            }
+#endif
 
             const int2 imgSize = make_int2(1 << max(maxDepth - curTexel.lod, 0));
             const float texelScale = std::pow(2.0f, static_cast<float>(curTexel.lod - maxDepth));
@@ -714,6 +1020,14 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
             // JP: テクセルがベース三角形の外にある場合はテクセルをスキップ。
             // EN: Skip the texel if it is outside of the base triangle.
             if (isectResult == TriangleSquareIntersection2DResult::SquareOutsideTriangle) {
+#if DEBUG_TRAVERSAL
+                if (isDebugPixel && getDebugPrintEnabled()) {
+                    printf(
+                        "%u-%u, Root %u: [%d - %d, %d] OutTri\n",
+                        plp.f->frameIndex, optixGetPrimitiveIndex(), rootIdx,
+                        curTexel.lod, curTexel.x, curTexel.y);
+                }
+#endif
                 curEntry.asUInt8 = 0xFF;
                 continue;
             }
@@ -721,77 +1035,93 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
             // JP: 現在のテクセルの4つの子のAABBとレイの交差判定を行う。
             // EN: Test ray vs four AABBs of the current texel's children.
             if (curTexel.lod > targetMipLevel) {
-                // JP: minmaxミップマップから作られるAABBは兄弟と共通の面を持っているため、
-                //     u, v軸それぞれに垂直な面との交差判定は6面で足りる。
                 const float us[3] = {
                     curTexel.x * texelScale,
                     (curTexel.x + 0.5f) * texelScale,
                     (curTexel.x + 1.0f) * texelScale,
                 };
-
-                const auto compute_h_v = [&]
-                (const float u_plane,
-                 float* const h, float* const v) {
-                    // TODO?: 2つ解がある場合どうする？
-                    *h = solveQuadraticEquation(
-                        tc2.x - u_plane * denom2,
-                        tc1.x - u_plane * denom1,
-                        tc0.x - u_plane * denom0, 0.0f, 1.0f);
-                    *v = NAN;
-                    if (stc::isfinite(*h)) {
-                        *v = evaluateQuadraticPolynomial(tc2.y, tc1.y, tc0.y, *h)
-                            / evaluateQuadraticPolynomial(denom2, denom1, denom0, *h);
-                    }
-                };
-
-                float hs_u[3], vs_u[3];
-#pragma unroll
-                for (int i = 0; i < 3; ++i)
-                    compute_h_v(us[i], &hs_u[i], &vs_u[i]);
-
                 const float vs[3] = {
                     curTexel.y * texelScale,
                     (curTexel.y + 0.5f) * texelScale,
                     (curTexel.y + 1.0f) * texelScale,
                 };
 
-                const auto compute_h_u = [&]
-                (const float v_plane,
-                 float* const h, float* const u) {
-                    // TODO?: 2つ解がある場合どうする？
-                    *h = solveQuadraticEquation(
-                        tc2.y - v_plane * denom2,
-                        tc1.y - v_plane * denom1,
-                        tc0.y - v_plane * denom0, 0.0f, 1.0f);
-                    *u = NAN;
-                    if (stc::isfinite(*h)) {
-                        *u = evaluateQuadraticPolynomial(tc2.x, tc1.x, tc0.x, *h)
-                            / evaluateQuadraticPolynomial(denom2, denom1, denom0, *h);
+                const auto solveQuadraticEquation = [](
+                    const float a, const float b, const float c, const float xMin, const float xMax,
+                    float roots[2]) {
+                    const float coeffs[] = { c, b, a };
+                    const uint32_t numRoots = ::solveQuadraticEquation(coeffs, xMin, xMax, roots);
+#pragma unroll
+                    for (uint32_t i = numRoots; i < 2; ++i)
+                        roots[i] = NAN;
+                };
+
+                const auto compute_h_v = [&]
+                (const float u_plane,
+                 float hs[2], float vs[2]) {
+                    solveQuadraticEquation(
+                        tc2.x - u_plane * denom2,
+                        tc1.x - u_plane * denom1,
+                        tc0.x - u_plane * denom0, 0.0f, 1.0f,
+                        hs);
+#pragma unroll
+                    for (int i = 0; i < 2; ++i) {
+                        vs[i] = NAN;
+                        if (stc::isfinite(hs[i])) {
+                            vs[i] = evaluateQuadraticPolynomial(tc2.y, tc1.y, tc0.y, hs[i])
+                                / evaluateQuadraticPolynomial(denom2, denom1, denom0, hs[i]);
+                        }
                     }
                 };
 
-                float hs_v[3], us_v[3];
+                const auto compute_h_u = [&]
+                (const float v_plane,
+                 float hs[2], float us[2]) {
+                    solveQuadraticEquation(
+                        tc2.y - v_plane * denom2,
+                        tc1.y - v_plane * denom1,
+                        tc0.y - v_plane * denom0, 0.0f, 1.0f,
+                        hs);
 #pragma unroll
-                for (int i = 0; i < 3; ++i)
-                    compute_h_u(vs[i], &hs_v[i], &us_v[i]);
+                    for (int i = 0; i < 2; ++i) {
+                        us[i] = NAN;
+                        if (stc::isfinite(hs[i])) {
+                            us[i] = evaluateQuadraticPolynomial(tc2.x, tc1.x, tc0.x, hs[i])
+                                / evaluateQuadraticPolynomial(denom2, denom1, denom0, hs[i]);
+                        }
+                    }
+                };
+
+                // JP: minmaxミップマップから作られるAABBは兄弟と共通の面を持っているため、
+                //     u, v軸それぞれに垂直な面との交差判定は6面で足りる。
+                // EN: 
+                float hs_u[3][2], vs_u[3][2];
+                float hs_v[3][2], us_v[3][2];
+#pragma unroll
+                for (int i = 0; i < 3; ++i) {
+                    compute_h_v(us[i], hs_u[i], vs_u[i]);
+                    compute_h_u(vs[i], hs_v[i], us_v[i]);
+                }
 
                 down(curTexel);
 
+                // JP: AABBの高さ方向の面の位置はそれぞれ異なる。
+                // EN: 
                 const int2 nextImgSize = 2 * imgSize;
-                const auto readMinMax = [&mat, &nextImgSize, &curTexel, &maxDepth]
+                const auto readMinMax = [&mat, &dispParams, &nextImgSize, &curTexel, &maxDepth]
                 (const int32_t xOff, const int32_t yOff,
                  float* const hMin, float* const hMax) {
-                    const int32_t x = curTexelBase.x + xOff;
-                    const int32_t y = curTexelBase.y + yOff;
+                    const int32_t x = curTexel.x + xOff;
+                    const int32_t y = curTexel.y + yOff;
                     const int2 wrapIndex = make_int2(
                         floorDiv(x, nextImgSize.x),
                         floorDiv(y, nextImgSize.y));
-                    const uint2 wrappedTexel = curTexelBase.lod <= maxDepth ?
+                    const uint2 wrappedTexel = curTexel.lod <= maxDepth ?
                         make_uint2(x - wrapIndex.x * nextImgSize.x, y - wrapIndex.y * nextImgSize.y) :
                         make_uint2(0, 0);
-                    const float2 minmax = mat.minMaxMipMap[min(curTexelBase.lod, maxDepth)].read(wrappedTexel);
-                    *hMin = minmax.x;
-                    *hMax = minmax.y;
+                    const float2 minmax = mat.minMaxMipMap[min(curTexel.lod, maxDepth)].read(wrappedTexel);
+                    *hMin = dispParams.hOffset + dispParams.hScale * (minmax.x - dispParams.hBias);
+                    *hMax = dispParams.hOffset + dispParams.hScale * (minmax.y - dispParams.hBias);
                 };
 
                 MipMapStack::Entry entries[4];
@@ -818,11 +1148,22 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
                         hs_v[ivLo], us_v[ivLo], hs_v[ivHi], us_v[ivHi],
                         &distMin, &distMax);
                     float dist = INFINITY;
-                    if (!hit)
+                    if (hit) {
                         dist = 0.5f * (distMin + distMax);
-                    else
                         ++numValidEntries;
+                    }
                     dists[i] = dist;
+
+#if DEBUG_TRAVERSAL
+                    if (isDebugPixel && getDebugPrintEnabled()) {
+                        printf(
+                            "%u-%u, Root %u: [%d - %d, %d] AABB (%g, %g, %g) - (%g, %g, %g): %s, %g - %g\n",
+                            plp.f->frameIndex, optixGetPrimitiveIndex(), rootIdx,
+                            curTexel.lod, curTexel.x + iuLo, curTexel.y + ivLo,
+                            v3print(aabb.minP), v3print(aabb.maxP),
+                            hit ? "Hit" : "Miss", hit ? distMin : NAN, hit ? distMax : NAN);
+                    }
+#endif
                 }
 
                 const auto sort = []
@@ -838,6 +1179,8 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
                     }
                 };
 
+                // JP: 子ノードをレイのヒット距離の近い順にソート。
+                // EN: 
                 sort(dists[0], entries[0], dists[1], entries[1]);
                 sort(dists[2], entries[2], dists[3], entries[3]);
                 sort(dists[0], entries[0], dists[2], entries[2]);
@@ -852,11 +1195,82 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
                 continue;
             }
 
+            const auto sample = [&](float px, float py) {
+                // No need to explicitly consider texture wrapping since the sampler is responsible for it.
+                return tex2DLod<float>(mat.heightMap, px / imgSize.x, py / imgSize.y, curTexel.lod);
+            };
+
+            const float cornerHeightTL =
+                dispParams.hOffset + dispParams.hScale
+                * (sample(curTexel.x - 0.0f, curTexel.y - 0.0f) - dispParams.hBias);
+            const float cornerHeightTR =
+                dispParams.hOffset + dispParams.hScale
+                * (sample(curTexel.x + 1.0f, curTexel.y - 0.0f) - dispParams.hBias);
+            const float cornerHeightBL =
+                dispParams.hOffset + dispParams.hScale
+                * (sample(curTexel.x - 0.0f, curTexel.y + 1.0f) - dispParams.hBias);
+            const float cornerHeightBR =
+                dispParams.hOffset + dispParams.hScale
+                * (sample(curTexel.x + 1.0f, curTexel.y + 1.0f) - dispParams.hBias);
+            const float uLeft = curTexel.x * texelScale;
+            const float vTop = curTexel.y * texelScale;
+            const float uRight = (curTexel.x + 1) * texelScale;
+            const float vBottom = (curTexel.y + 1) * texelScale;
+            const Point3D mpTL(uLeft, vTop, cornerHeightTL);
+            const Point3D mpTR(uRight, vTop, cornerHeightTR);
+            const Point3D mpBL(uLeft, vBottom, cornerHeightBL);
+            const Point3D mpBR(uRight, vBottom, cornerHeightBR);
+
             // JP: レイと現在のテクセルに対応する2つのマイクロ三角形の交差判定を行う。
             // EN: 
-
+            float tt;
+            Normal3D nn;
+            Point3D hpInCan;
+            if (testNonlinearRayVsMicroTriangle(
+                vA.position, vB.position, vC.position,
+                vA.normal, vB.normal, vC.normal,
+                vA.texCoord, vB.texCoord, vC.texCoord,
+                mpTL, mpBL, mpBR,
+                rayOrgInObj, rayDirInObj, prismHitDistEnter, hitDist,
+                e0, e1,
+                tc2, tc1, tc0,
+                denom2, denom1, denom0,
+                &hpInCan, &tt, &nn)) {
+                hitDist = tt;
+                hitBcB = hpInCan.x;
+                hitBcC = hpInCan.y;
+                hitNormal = nn;
+            }
+            if (testNonlinearRayVsMicroTriangle(
+                vA.position, vB.position, vC.position,
+                vA.normal, vB.normal, vC.normal,
+                vA.texCoord, vB.texCoord, vC.texCoord,
+                mpTL, mpBR, mpTR,
+                rayOrgInObj, rayDirInObj, prismHitDistEnter, hitDist,
+                e0, e1,
+                tc2, tc1, tc0,
+                denom2, denom1, denom0,
+                &hpInCan, &tt, &nn)) {
+                hitDist = tt;
+                hitBcB = hpInCan.x;
+                hitBcC = hpInCan.y;
+                hitNormal = nn;
+            }
 
             curEntry.asUInt8 = 0xFF;
         }
     }
+
+    if (hitDist == prismHitDistLeave)
+        return;
+
+    DisplacedSurfaceAttributes attr = {};
+    attr.normalInObj = hitNormal;
+#if OUTPUT_TRAVERSAL_STATS
+    attr.numIterations = numIterations;
+#endif
+    const uint8_t hitKind = dot(rayDirInObj, hitNormal) <= 0 ?
+        CustomHitKind_DisplacedSurfaceFrontFace :
+        CustomHitKind_DisplacedSurfaceBackFace;
+    DisplacedSurfaceAttributeSignature::reportIntersection(hitDist, hitKind, hitBcB, hitBcC, attr);
 }
