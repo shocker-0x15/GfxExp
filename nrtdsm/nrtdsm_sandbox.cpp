@@ -903,68 +903,58 @@ void testComputeCanonicalSpaceRayCoeffs() {
         + alpha0 * test.tcB
         + beta0 * test.tcC;
 
-    const auto selectH = [](const float hs[3]) {
-        float ret = hs[0];
-        if (!std::isfinite(ret) || std::fabs(hs[1]) < std::fabs(ret))
-            ret = hs[1];
-        if (!std::isfinite(ret) || std::fabs(hs[2]) < std::fabs(ret))
-            ret = hs[2];
-        return ret;
-    };
-
     // Canonical-space and Texture-space Ray
-    Point3D prevCurvedRayPInCanonical;
-    Point3D prevCurvedRayPInTexture;
-    float prevH;
-    {
-        float hs[3];
-        findHeight(
-            test.pA, test.pB, test.pC,
-            test.nA, test.nB, test.nC,
-            rayOrg,
-            hs);
-        const float h = selectH(hs);
-        const float h2 = pow2(h);
-        const float denom = denom2 * h2 + denom1 * h + denom0;
-        prevH = h;
-        prevCurvedRayPInCanonical = Point3D(
-            (alpha2 * h2 + alpha1 * h + alpha0) / denom,
-            (beta2 * h2 + beta1 * h + beta0) / denom,
-            h);
-        prevCurvedRayPInTexture = Point3D((tc2 * h2 + tc1 * h + tc0) / denom, h);
-    }
-    setColor(RGB(1.0f));
-    drawCross(globalOffsetForCanonical + prevCurvedRayPInCanonical, 0.05f);
-    drawCross(globalOffsetForTexture + prevCurvedRayPInTexture, 0.05f);
-    for (int i = 1; i <= 500; ++i) {
+    // JP: 非線形レイだからと言ってレイが分岐したり非連続になったりしない。
+    //     ただし解として求まる順番は単純ではなくなる。
+    //     * レイが非連続に変化する可視化がされた場合は可視化するレイの範囲(rayLengthなど)が足りない。
+    std::vector<float> heightValues;
+    std::vector<int32_t> indices;
+    std::vector<Point3D> canPs;
+    std::vector<Point3D> texPs;
+    int32_t heightIdx = 0;
+    for (int i = 0; i <= 500; ++i) {
         const float t = static_cast<float>(i) / 500;
         float hs[3];
-        hpprintf("%u:\n", i);
         findHeight(
             test.pA, test.pB, test.pC,
             test.nA, test.nB, test.nC,
             rayOrg + t * rayLength * rayDir,
             hs);
-        const float h = selectH(hs);
-        const float h2 = pow2(h);
-        const float denom = denom2 * h2 + denom1 * h + denom0;
-        const Point3D p(
-            (alpha2 * h2 + alpha1 * h + alpha0) / denom,
-            (beta2 * h2 + beta1 * h + beta0) / denom,
-            h);
-        Point3D tcp((tc2 * h2 + tc1 * h + tc0) / denom, h);
+        for (int j = 0; j < 3; ++j) {
+            const float h = hs[j];
+            if (!std::isfinite(h))
+                continue;
+            const float h2 = pow2(h);
+            const float denom = denom2 * h2 + denom1 * h + denom0;
+            const Point3D p(
+                (alpha2 * h2 + alpha1 * h + alpha0) / denom,
+                (beta2 * h2 + beta1 * h + beta0) / denom,
+                h);
+            const Point3D tcp((tc2 * h2 + tc1 * h + tc0) / denom, h);
 
-        if (std::fabs(h - prevH) < 0.1f) {
-            drawLine(globalOffsetForCanonical + prevCurvedRayPInCanonical, globalOffsetForCanonical + p);
-            drawLine(globalOffsetForTexture + prevCurvedRayPInTexture, globalOffsetForTexture + tcp);
+            heightValues.push_back(h);
+            indices.push_back(heightIdx++);
+            canPs.push_back(p);
+            texPs.push_back(tcp);
         }
-        prevH = h;
-        prevCurvedRayPInCanonical = p;
-        prevCurvedRayPInTexture = tcp;
-        if (i == 374)
-            printf("");
-        if (i == 375)
-            printf("");
+    }
+
+    std::sort(
+        indices.begin(), indices.end(),
+        [&](int32_t a, int32_t b) { return heightValues[a] < heightValues[b]; });
+
+    Point3D prevRayPInCan = canPs[*indices.cbegin()];
+    Point3D prevRayPInTex = texPs[*indices.cbegin()];
+    setColor(RGB(1.0f));
+    drawCross(globalOffsetForCanonical + canPs[0], 0.05f);
+    drawCross(globalOffsetForTexture + texPs[0], 0.05f);
+    for (auto it = ++indices.cbegin(); it != indices.cend(); ++it) {
+        const Point3D &p = canPs[*it];
+        const Point3D &tcp = texPs[*it];
+        drawLine(globalOffsetForCanonical + prevRayPInCan, globalOffsetForCanonical + p);
+        drawLine(globalOffsetForTexture + prevRayPInTex, globalOffsetForTexture + tcp);
+        prevRayPInCan = p;
+        prevRayPInTex = tcp;
     }
 }
 
@@ -1380,40 +1370,13 @@ void testNonlinearRayVsMicroTriangle() {
             }
         }
 
-        const auto selectH = [](const float hs[3]) {
-            float ret = hs[0];
-            if (!std::isfinite(ret) || std::fabs(hs[1]) < std::fabs(ret))
-                ret = hs[1];
-            if (!std::isfinite(ret) || std::fabs(hs[2]) < std::fabs(ret))
-                ret = hs[2];
-            return ret;
-        };
-
         // Canonical-space and Texture-space Ray
-        Point3D prevCurvedRayPInCanonical;
-        Point3D prevCurvedRayPInTexture;
-        float prevH;
-        {
-            float hs[3];
-            findHeight(
-                test.pA, test.pB, test.pC,
-                test.nA, test.nB, test.nC,
-                rayOrg,
-                hs);
-            const float h = selectH(hs);
-            const float h2 = pow2(h);
-            const float denom = denom2 * h2 + denom1 * h + denom0;
-            prevH = h;
-            prevCurvedRayPInCanonical = Point3D(
-                (alpha2 * h2 + alpha1 * h + alpha0) / denom,
-                (beta2 * h2 + beta1 * h + beta0) / denom,
-                h);
-            prevCurvedRayPInTexture = Point3D((tc2 * h2 + tc1 * h + tc0) / denom, h);
-        }
-        setColor(RGB(1.0f));
-        drawCross(globalOffsetForCanonical + prevCurvedRayPInCanonical, 0.05f);
-        drawCross(globalOffsetForTexture + prevCurvedRayPInTexture, 0.05f);
-        for (int i = 1; i <= 500; ++i) {
+        std::vector<float> heightValues;
+        std::vector<int32_t> indices;
+        std::vector<Point3D> canPs;
+        std::vector<Point3D> texPs;
+        int32_t heightIdx = 0;
+        for (int i = 0; i <= 500; ++i) {
             const float t = static_cast<float>(i) / 500;
             float hs[3];
             findHeight(
@@ -1421,22 +1384,41 @@ void testNonlinearRayVsMicroTriangle() {
                 test.nA, test.nB, test.nC,
                 rayOrg + t * rayLength * rayDir,
                 hs);
-            const float h = selectH(hs);
-            const float h2 = pow2(h);
-            const float denom = denom2 * h2 + denom1 * h + denom0;
-            const Point3D p(
-                (alpha2 * h2 + alpha1 * h + alpha0) / denom,
-                (beta2 * h2 + beta1 * h + beta0) / denom,
-                h);
-            const Point3D tcp((tc2 * h2 + tc1 * h + tc0) / denom, h);
+            for (int j = 0; j < 3; ++j) {
+                const float h = hs[j];
+                if (!std::isfinite(h))
+                    continue;
+                const float h2 = pow2(h);
+                const float denom = denom2 * h2 + denom1 * h + denom0;
+                const Point3D p(
+                    (alpha2 * h2 + alpha1 * h + alpha0) / denom,
+                    (beta2 * h2 + beta1 * h + beta0) / denom,
+                    h);
+                const Point3D tcp((tc2 * h2 + tc1 * h + tc0) / denom, h);
 
-            if (std::fabs(h - prevH) < 0.1f) {
-                drawLine(globalOffsetForCanonical + prevCurvedRayPInCanonical, globalOffsetForCanonical + p);
-                drawLine(globalOffsetForTexture + prevCurvedRayPInTexture, globalOffsetForTexture + tcp);
+                heightValues.push_back(h);
+                indices.push_back(heightIdx++);
+                canPs.push_back(p);
+                texPs.push_back(tcp);
             }
-            prevH = h;
-            prevCurvedRayPInCanonical = p;
-            prevCurvedRayPInTexture = tcp;
+        }
+
+        std::sort(
+            indices.begin(), indices.end(),
+            [&](int32_t a, int32_t b) { return heightValues[a] < heightValues[b]; });
+
+        Point3D prevRayPInCan = canPs[*indices.cbegin()];
+        Point3D prevRayPInTex = texPs[*indices.cbegin()];
+        setColor(RGB(1.0f));
+        drawCross(globalOffsetForCanonical + canPs[0], 0.05f);
+        drawCross(globalOffsetForTexture + texPs[0], 0.05f);
+        for (auto it = ++indices.cbegin(); it != indices.cend(); ++it) {
+            const Point3D &p = canPs[*it];
+            const Point3D &tcp = texPs[*it];
+            drawLine(globalOffsetForCanonical + prevRayPInCan, globalOffsetForCanonical + p);
+            drawLine(globalOffsetForTexture + prevRayPInTex, globalOffsetForTexture + tcp);
+            prevRayPInCan = p;
+            prevRayPInTex = tcp;
         }
 
         // Canonical-space and Texture-space Micro-Triangle
@@ -1887,10 +1869,10 @@ static bool testNonlinearRayVsAabb(
     const float denom2, const float denom1, const float denom0,
     const Point2D &tc2, const Point2D &tc1, const Point2D &tc0,
     // Intermediate intersection results
-    const float h_uLo, const float v_uLo,
-    const float h_uHi, const float v_uHi,
-    const float h_vLo, const float u_vLo,
-    const float h_vHi, const float u_vHi,
+    const float hs_uLo[2], const float vs_uLo[2],
+    const float hs_uHi[2], const float vs_uHi[2],
+    const float hs_vLo[2], const float us_vLo[2],
+    const float hs_vHi[2], const float us_vHi[2],
     // results
     float* const hitDistMin, float* const hitDistMax) {
     *hitDistMin = INFINITY;
@@ -1947,8 +1929,10 @@ static bool testNonlinearRayVsAabb(
     };
 
     // min/max u plane
-    testUPlane(v_uLo, h_uLo);
-    testUPlane(v_uHi, h_uHi);
+    testUPlane(vs_uLo[0], hs_uLo[0]);
+    testUPlane(vs_uLo[1], hs_uLo[1]);
+    testUPlane(vs_uHi[0], hs_uHi[0]);
+    testUPlane(vs_uHi[1], hs_uHi[1]);
 
     const auto testVPlane = [&]
     (const float u, const float h) {
@@ -1968,8 +1952,10 @@ static bool testNonlinearRayVsAabb(
     };
 
     // min/max v plane
-    testVPlane(u_vLo, h_vLo);
-    testVPlane(u_vHi, h_vHi);
+    testVPlane(us_vLo[0], hs_vLo[0]);
+    testVPlane(us_vLo[1], hs_vLo[1]);
+    testVPlane(us_vHi[0], hs_vHi[0]);
+    testVPlane(us_vHi[1], hs_vHi[1]);
 
     *hitDistMin = std::fmax(*hitDistMin, distMin);
     *hitDistMax = std::fmin(*hitDistMax, distMax);
@@ -2101,6 +2087,7 @@ void testNonlinearRayVsAabb() {
                 globalOffsetForTexture + Point3D(test.tcC, 0) + p * Normal3D(0, 0, 1));
         }
 
+        // World-space AABB
         const Matrix2x2 invA = invert(Matrix2x2(test.tcB - test.tcA, test.tcC - test.tcA));
         const auto computePInWorldSpace = [&]
         (const float u, const float v, const float h) {
@@ -2176,68 +2163,38 @@ void testNonlinearRayVsAabb() {
         const Point2D tc1 = computeTcCoeffs(test.tcA, test.tcB, test.tcC, denom1, alpha1, beta1);
         const Point2D tc0 = computeTcCoeffs(test.tcA, test.tcB, test.tcC, denom0, alpha0, beta0);
 
-        const auto selectH = [](const float hs[3]) {
-            float ret = hs[0];
-            if (!std::isfinite(ret) || std::fabs(hs[1]) < std::fabs(ret))
-                ret = hs[1];
-            if (!std::isfinite(ret) || std::fabs(hs[2]) < std::fabs(ret))
-                ret = hs[2];
-            return ret;
-        };
-
         // Texture-space Ray
-        Point3D prevCurvedRayPInTexture;
-        float prevH;
-        {
-            float hs[3];
-            findHeight(
-                test.pA, test.pB, test.pC,
-                test.nA, test.nB, test.nC,
-                rayOrg,
-                hs);
-            const float h = selectH(hs);
-            const float h2 = pow2(h);
-            const float denom = denom2 * h2 + denom1 * h + denom0;
-            prevH = h;
-            prevCurvedRayPInTexture = Point3D((tc2 * h2 + tc1 * h + tc0) / denom, h);
-        }
-        setColor(RGB(1.0f));
-        drawCross(globalOffsetForTexture + prevCurvedRayPInTexture, 0.05f);
-        for (int i = 1; i <= 500; ++i) {
+        std::vector<float> heightValues;
+        std::vector<int32_t> indices;
+        std::vector<Point3D> texPs;
+        int32_t heightIdx = 0;
+        for (int i = 0; i <= 500; ++i) {
             const float t = static_cast<float>(i) / 500;
             float hs[3];
-            hpprintf("%u:\n", i);
             findHeight(
                 test.pA, test.pB, test.pC,
                 test.nA, test.nB, test.nC,
                 rayOrg + t * rayLength * rayDir,
                 hs);
-            const float h = selectH(hs);
-            const float h2 = pow2(h);
-            const float denom = denom2 * h2 + denom1 * h + denom0;
-            const Point3D tcp((tc2 * h2 + tc1 * h + tc0) / denom, h);
+            for (int j = 0; j < 3; ++j) {
+                const float h = hs[j];
+                if (!std::isfinite(h))
+                    continue;
+                const float h2 = pow2(h);
+                const float denom = denom2 * h2 + denom1 * h + denom0;
+                const Point3D p(
+                    (alpha2 * h2 + alpha1 * h + alpha0) / denom,
+                    (beta2 * h2 + beta1 * h + beta0) / denom,
+                    h);
+                const Point3D tcp((tc2 * h2 + tc1 * h + tc0) / denom, h);
 
-            if (std::fabs(h - prevH) < 0.1f)
-                drawLine(globalOffsetForTexture + prevCurvedRayPInTexture, globalOffsetForTexture + tcp);
-            prevH = h;
-            prevCurvedRayPInTexture = tcp;
+                heightValues.push_back(h);
+                indices.push_back(heightIdx++);
+                texPs.push_back(tcp);
+            }
         }
-        // negative
-        {
-            float hs[3];
-            findHeight(
-                test.pA, test.pB, test.pC,
-                test.nA, test.nB, test.nC,
-                rayOrg,
-                hs);
-            const float h = selectH(hs);
-            const float h2 = pow2(h);
-            const float denom = denom2 * h2 + denom1 * h + denom0;
-            prevH = h;
-            prevCurvedRayPInTexture = Point3D((tc2 * h2 + tc1 * h + tc0) / denom, h);
-        }
-        setColor(RGB(0.25f));
-        for (int i = 1; i <= 500; ++i) {
+        std::vector<int32_t> negIndices;
+        for (int i = 0; i <= 500; ++i) {
             const float t = -static_cast<float>(i) / 500;
             float hs[3];
             findHeight(
@@ -2245,66 +2202,99 @@ void testNonlinearRayVsAabb() {
                 test.nA, test.nB, test.nC,
                 rayOrg + t * rayLength * rayDir,
                 hs);
-            const float h = selectH(hs);
-            const float h2 = pow2(h);
-            const float denom = denom2 * h2 + denom1 * h + denom0;
-            const Point3D tcp((tc2 * h2 + tc1 * h + tc0) / denom, h);
+            for (int j = 0; j < 3; ++j) {
+                const float h = hs[j];
+                if (!std::isfinite(h))
+                    continue;
+                const float h2 = pow2(h);
+                const float denom = denom2 * h2 + denom1 * h + denom0;
+                const Point3D p(
+                    (alpha2 * h2 + alpha1 * h + alpha0) / denom,
+                    (beta2 * h2 + beta1 * h + beta0) / denom,
+                    h);
+                const Point3D tcp((tc2 * h2 + tc1 * h + tc0) / denom, h);
 
-            if (std::fabs(h - prevH) < 0.1f)
-                drawLine(globalOffsetForTexture + prevCurvedRayPInTexture, globalOffsetForTexture + tcp);
-            prevH = h;
-            prevCurvedRayPInTexture = tcp;
+                heightValues.push_back(h);
+                negIndices.push_back(heightIdx++);
+                texPs.push_back(tcp);
+            }
+        }
+
+        std::sort(
+            indices.begin(), indices.end(),
+            [&](int32_t a, int32_t b) { return heightValues[a] < heightValues[b]; });
+        std::sort(
+            negIndices.begin(), negIndices.end(),
+            [&](int32_t a, int32_t b) { return heightValues[a] < heightValues[b]; });
+
+        Point3D prevRayPInTex = texPs[*indices.cbegin()];
+        setColor(RGB(1.0f));
+        drawCross(globalOffsetForTexture + texPs[0], 0.05f);
+        for (auto it = ++indices.cbegin(); it != indices.cend(); ++it) {
+            const Point3D &tcp = texPs[*it];
+            drawLine(globalOffsetForTexture + prevRayPInTex, globalOffsetForTexture + tcp);
+            prevRayPInTex = tcp;
+        }
+        prevRayPInTex = texPs[*negIndices.cbegin()];
+        setColor(RGB(0.1f));
+        for (auto it = ++negIndices.cbegin(); it != negIndices.cend(); ++it) {
+            const Point3D &tcp = texPs[*it];
+            drawLine(globalOffsetForTexture + prevRayPInTex, globalOffsetForTexture + tcp);
+            prevRayPInTex = tcp;
         }
 
         const auto solveQuadraticEquation = [](
-            const float a, const float b, const float c, const float xMin, const float xMax) {
+            const float a, const float b, const float c, const float xMin, const float xMax,
+            float roots[2]) {
             const float coeffs[] = { c, b, a };
-            float roots[2];
             const uint32_t numRoots = ::solveQuadraticEquation(coeffs, xMin, xMax, roots);
-            if (numRoots == 0)
-                return NAN;
-            return roots[0];
+            for (int i = numRoots; i < 2; ++i)
+                roots[i] = NAN;
         };
 
         const auto compute_h_v = [&]
         (const float u_plane,
-         float* const h, float* const v) {
-            // TODO?: 2つ解がある場合どうする？
-            *h = solveQuadraticEquation(
+         float hs[2], float vs[2]) {
+            solveQuadraticEquation(
                 tc2.x - u_plane * denom2,
                 tc1.x - u_plane * denom1,
-                tc0.x - u_plane * denom0, 0.0f, 1.0f);
-            *v = NAN;
-            if (stc::isfinite(*h)) {
-                *v = evaluateQuadraticPolynomial(tc2.y, tc1.y, tc0.y, *h)
-                    / evaluateQuadraticPolynomial(denom2, denom1, denom0, *h);
+                tc0.x - u_plane * denom0, 0.0f, 1.0f,
+                hs);
+            for (int i = 0; i < 2; ++i) {
+                vs[i] = NAN;
+                if (stc::isfinite(hs[i])) {
+                    vs[i] = evaluateQuadraticPolynomial(tc2.y, tc1.y, tc0.y, hs[i])
+                        / evaluateQuadraticPolynomial(denom2, denom1, denom0, hs[i]);
+                }
             }
         };
 
-        float h_uMin, v_uMin;
-        compute_h_v(test.aabb.minP.x, &h_uMin, &v_uMin);
-        float h_uMax, v_uMax;
-        compute_h_v(test.aabb.maxP.x, &h_uMax, &v_uMax);
+        float hs_uMin[2], vs_uMin[2];
+        compute_h_v(test.aabb.minP.x, hs_uMin, vs_uMin);
+        float hs_uMax[2], vs_uMax[2];
+        compute_h_v(test.aabb.maxP.x, hs_uMax, vs_uMax);
 
         const auto compute_h_u = [&]
         (const float v_plane,
-         float* const h, float* const u) {
-            // TODO?: 2つ解がある場合どうする？
-            *h = solveQuadraticEquation(
+         float hs[2], float us[2]) {
+            solveQuadraticEquation(
                 tc2.y - v_plane * denom2,
                 tc1.y - v_plane * denom1,
-                tc0.y - v_plane * denom0, 0.0f, 1.0f);
-            *u = NAN;
-            if (stc::isfinite(*h)) {
-                *u = evaluateQuadraticPolynomial(tc2.x, tc1.x, tc0.x, *h)
-                    / evaluateQuadraticPolynomial(denom2, denom1, denom0, *h);
+                tc0.y - v_plane * denom0, 0.0f, 1.0f,
+                hs);
+            for (int i = 0; i < 2; ++i) {
+                us[i] = NAN;
+                if (stc::isfinite(hs[i])) {
+                    us[i] = evaluateQuadraticPolynomial(tc2.x, tc1.x, tc0.x, hs[i])
+                        / evaluateQuadraticPolynomial(denom2, denom1, denom0, hs[i]);
+                }
             }
         };
 
-        float h_vMin, u_vMin;
-        compute_h_u(test.aabb.minP.y, &h_vMin, &u_vMin);
-        float h_vMax, u_vMax;
-        compute_h_u(test.aabb.maxP.y, &h_vMax, &u_vMax);
+        float hs_vMin[2], us_vMin[2];
+        compute_h_u(test.aabb.minP.y, hs_vMin, us_vMin);
+        float hs_vMax[2], us_vMax[2];
+        compute_h_u(test.aabb.maxP.y, hs_vMax, us_vMax);
 
         float hitDistMin, hitDistMax;
         const bool hit = testNonlinearRayVsAabb(
@@ -2313,10 +2303,19 @@ void testNonlinearRayVsAabb() {
             rayOrg, rayDir, 0.0f, rayLength,
             alpha2, alpha1, alpha0, beta2, beta1, beta0, denom2, denom1, denom0,
             tc2, tc1, tc0,
-            h_uMin, v_uMin, h_uMax, v_uMax,
-            h_vMin, u_vMin, h_vMax, u_vMax,
+            hs_uMin, vs_uMin, hs_uMax, vs_uMax,
+            hs_vMin, us_vMin, hs_vMax, us_vMax,
             &hitDistMin, &hitDistMax);
         if (hit) {
+            const auto selectH = [](const float hs[3]) {
+                float ret = hs[0];
+                if (!std::isfinite(ret) || std::fabs(hs[1]) < std::fabs(ret))
+                    ret = hs[1];
+                if (!std::isfinite(ret) || std::fabs(hs[2]) < std::fabs(ret))
+                    ret = hs[2];
+                return ret;
+            };
+
             //hitDistMin = std::fmax(hitDistMin, 0.0f);
             {
                 const Point3D p = rayOrg + hitDistMin * rayDir;
