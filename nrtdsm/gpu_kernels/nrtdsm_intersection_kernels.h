@@ -818,7 +818,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsMicroTriangle(
 
 
 CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
-#define DEBUG_TRAVERSAL 1
+#define DEBUG_TRAVERSAL 0
 
 #if DEBUG_TRAVERSAL
     bool isDebugPixel = optixGetLaunchIndex().x == 629 && optixGetLaunchIndex().y == 448;
