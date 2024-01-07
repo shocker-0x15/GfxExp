@@ -4,6 +4,15 @@
 
 using namespace shared;
 
+#define DEBUG_TRAVERSAL 1
+
+CUDA_DEVICE_FUNCTION CUDA_INLINE bool isDebugPixel() {
+    return optixGetLaunchIndex().x == 784 && optixGetLaunchIndex().y == 596;
+    //return isCursorPixel();
+}
+
+
+
 CUDA_DEVICE_FUNCTION CUDA_INLINE bool testRayVsTriangle(
     const Point3D &rayOrg, const Vector3D &rayDir, const float distMin, const float distMax,
     const Point3D &pA, const Point3D &pB, const Point3D &pC,
@@ -317,6 +326,12 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE uint32_t solveQuadraticEquation(
     const float a = coeffs[2];
     const float b = coeffs[1];
     const float c = coeffs[0];
+    if (a == 0.0f) {
+        if (b == 0.0f)
+            return 0;
+        roots[0] = -c / b;
+        return roots[0] >= xMin && roots[0] <= xMax;
+    }
     const float D = pow2(b) - 4 * a * c;
     if (D < 0)
         return 0;
@@ -713,8 +728,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsMicroTriangle(
         nInTex.x * (tcC.x - tcA.x) + nInTex.y * (tcC.y - tcA.y),
         nInTex.z);
     const float KInCan = nInTex.x * tcA.x + nInTex.y * tcA.y + KInTex;
-    const float minHeight = std::fmin(std::fmin(mpAInTex.z, mpBInTex.z), mpCInTex.z);
-    const float maxHeight = std::fmax(std::fmax(mpAInTex.z, mpBInTex.z), mpCInTex.z);
+    const float minHeight = std::fmin(std::fmin(mpAInTex.z, mpBInTex.z), mpCInTex.z) - 1e-4f;
+    const float maxHeight = std::fmax(std::fmax(mpAInTex.z, mpBInTex.z), mpCInTex.z) + 1e+4f;
 
     // JP: テクスチャー空間中のレイとマイクロ三角形を含む平面の交差判定。
     float hs[3];
@@ -808,7 +823,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsMicroTriangle(
             *hitDist = dist;
             *hitPointInCan = hpInCan;
             //*hitPointInTex = hpInTex;
-            *hitNormalInObj = transposedAdjMat * nInCan;
+            *hitNormalInObj = transposedAdjMat * -nInCan;
         }
     }
 
@@ -818,13 +833,6 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsMicroTriangle(
 
 
 CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
-#define DEBUG_TRAVERSAL 0
-
-#if DEBUG_TRAVERSAL
-    bool isDebugPixel = optixGetLaunchIndex().x == 629 && optixGetLaunchIndex().y == 448;
-    //bool isDebugPixel = isCursorPixel();
-#endif
-
     const auto sbtr = HitGroupSBTRecordData::get();
     const GeometryInstanceData &geomInst = plp.s->geometryInstanceDataBuffer[sbtr.geomInstSlot];
     const GeometryInstanceDataForNRTDSM &nrtdsmGeomInst = plp.s->geomInstNrtdsmDataBuffer[sbtr.geomInstSlot];
@@ -926,7 +934,7 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
     findRoots(texTriAabbMinP, texTriAabbMaxP, maxDepth, targetMipLevel, roots, &numRoots);
     MipMapStack stack;
 #if DEBUG_TRAVERSAL
-    if (isDebugPixel && getDebugPrintEnabled()) {
+    if (isDebugPixel() && getDebugPrintEnabled()) {
         printf(
             "%u-%u: pA: (%g, %g, %g), pB: (%g, %g, %g), pC: (%g, %g, %g)\n",
             plp.f->frameIndex, optixGetPrimitiveIndex(),
@@ -940,9 +948,10 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
             plp.f->frameIndex, optixGetPrimitiveIndex(),
             v2print(vA.texCoord), v2print(vB.texCoord), v2print(vC.texCoord));
         printf(
-            "%u-%u: rayOrg: (%g, %g, %g), rayDir: (%g, %g, %g)\n",
+            "%u-%u: rayOrg: (%g, %g, %g), rayDir: (%g, %g, %g), range: (%g, %g)\n",
             plp.f->frameIndex, optixGetPrimitiveIndex(),
-            v3print(rayOrgInObj), v3print(rayDirInObj));
+            v3print(rayOrgInObj), v3print(rayDirInObj),
+            prismHitDistEnter, prismHitDistLeave);
         printf(
             "%u-%u: alpha: (%g, %g, %g), beta: (%g, %g, %g), denom: (%g, %g, %g)\n",
             plp.f->frameIndex, optixGetPrimitiveIndex(),
@@ -968,7 +977,7 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
         const int16_t initialLod = curTexel.lod;
 
 #if DEBUG_TRAVERSAL
-        if (isDebugPixel && getDebugPrintEnabled()) {
+        if (isDebugPixel() && getDebugPrintEnabled()) {
             printf(
                 "%u-%u, Root %u: [%d - %d, %d]\n",
                 plp.f->frameIndex, optixGetPrimitiveIndex(), rootIdx,
@@ -981,7 +990,7 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
             if (curEntry.asUInt8 == 0xFF) {
                 if (!stack.tryPop(curTexel.lod, &curEntry)) {
 #if DEBUG_TRAVERSAL
-                    if (isDebugPixel && getDebugPrintEnabled()) {
+                    if (isDebugPixel() && getDebugPrintEnabled()) {
                         printf(
                             "%u-%u, Root %u: [%d - %d, %d] up\n",
                             plp.f->frameIndex, optixGetPrimitiveIndex(), rootIdx,
@@ -1000,7 +1009,7 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
 #endif
 
 #if DEBUG_TRAVERSAL
-            if (isDebugPixel && getDebugPrintEnabled()) {
+            if (isDebugPixel() && getDebugPrintEnabled()) {
                 printf(
                     "%u-%u, Root %u: Itr: %2u, [%d - %d, %d]\n",
                     plp.f->frameIndex, optixGetPrimitiveIndex(), rootIdx,
@@ -1021,7 +1030,7 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
             // EN: Skip the texel if it is outside of the base triangle.
             if (isectResult == TriangleSquareIntersection2DResult::SquareOutsideTriangle) {
 #if DEBUG_TRAVERSAL
-                if (isDebugPixel && getDebugPrintEnabled()) {
+                if (isDebugPixel() && getDebugPrintEnabled()) {
                     printf(
                         "%u-%u, Root %u: [%d - %d, %d] OutTri\n",
                         plp.f->frameIndex, optixGetPrimitiveIndex(), rootIdx,
@@ -1141,7 +1150,7 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
                     const bool hit = testNonlinearRayVsAabb(
                         vA.position, vB.position, vC.position, vA.normal, vB.normal, vC.normal,
                         aabb,
-                        rayOrgInObj, rayDirInObj, prismHitDistEnter, prismHitDistLeave,
+                        rayOrgInObj, rayDirInObj, prismHitDistEnter, hitDist,
                         alpha2, alpha1, alpha0, beta2, beta1, beta0, denom2, denom1, denom0,
                         tc2, tc1, tc0,
                         hs_u[iuLo], vs_u[iuLo], hs_u[iuHi], vs_u[iuHi],
@@ -1155,11 +1164,12 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
                     dists[i] = dist;
 
 #if DEBUG_TRAVERSAL
-                    if (isDebugPixel && getDebugPrintEnabled()) {
+                    if (isDebugPixel() && getDebugPrintEnabled()) {
                         printf(
-                            "%u-%u, Root %u: [%d - %d, %d] AABB (%g, %g, %g) - (%g, %g, %g): %s, %g - %g\n",
+                            "%u-%u, Root %u: [%d - %d, %d], tMax: %g, AABB (%g, %g, %g) - (%g, %g, %g): %s, %g - %g\n",
                             plp.f->frameIndex, optixGetPrimitiveIndex(), rootIdx,
                             curTexel.lod, curTexel.x + iuLo, curTexel.y + ivLo,
+                            hitDist,
                             v3print(aabb.minP), v3print(aabb.maxP),
                             hit ? "Hit" : "Miss", hit ? distMin : NAN, hit ? distMax : NAN);
                     }
@@ -1240,7 +1250,30 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
                 hitBcB = hpInCan.x;
                 hitBcC = hpInCan.y;
                 hitNormal = nn;
+
+#if DEBUG_TRAVERSAL
+                if (isDebugPixel() && getDebugPrintEnabled()) {
+                    printf(
+                        "%u-%u, Root %u: [%d - %d, %d], tMax: %g, uTri0 (%g, %g, %g), (%g, %g, %g), (%g, %g, %g) Hit\n",
+                        plp.f->frameIndex, optixGetPrimitiveIndex(), rootIdx,
+                        curTexel.lod, curTexel.x, curTexel.y,
+                        hitDist,
+                        v3print(mpTL), v3print(mpBL), v3print(mpBR));
+                }
+#endif
             }
+#if DEBUG_TRAVERSAL
+            else {
+                if (isDebugPixel() && getDebugPrintEnabled()) {
+                    printf(
+                        "%u-%u, Root %u: [%d - %d, %d], tMax: %g, uTri0 (%g, %g, %g), (%g, %g, %g), (%g, %g, %g) Miss\n",
+                        plp.f->frameIndex, optixGetPrimitiveIndex(), rootIdx,
+                        curTexel.lod, curTexel.x, curTexel.y,
+                        hitDist,
+                        v3print(mpTL), v3print(mpBL), v3print(mpBR));
+                }
+            }
+#endif
             if (testNonlinearRayVsMicroTriangle(
                 vA.position, vB.position, vC.position,
                 vA.normal, vB.normal, vC.normal,
@@ -1255,7 +1288,30 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
                 hitBcB = hpInCan.x;
                 hitBcC = hpInCan.y;
                 hitNormal = nn;
+
+#if DEBUG_TRAVERSAL
+                if (isDebugPixel() && getDebugPrintEnabled()) {
+                    printf(
+                        "%u-%u, Root %u: [%d - %d, %d], tMax: %g, uTri1 (%g, %g, %g), (%g, %g, %g), (%g, %g, %g) Hit\n",
+                        plp.f->frameIndex, optixGetPrimitiveIndex(), rootIdx,
+                        curTexel.lod, curTexel.x, curTexel.y,
+                        hitDist,
+                        v3print(mpTL), v3print(mpBR), v3print(mpTR));
+                }
+#endif
             }
+#if DEBUG_TRAVERSAL
+            else {
+                if (isDebugPixel() && getDebugPrintEnabled()) {
+                    printf(
+                        "%u-%u, Root %u: [%d - %d, %d], tMax: %g, uTri1 (%g, %g, %g), (%g, %g, %g), (%g, %g, %g) Miss\n",
+                        plp.f->frameIndex, optixGetPrimitiveIndex(), rootIdx,
+                        curTexel.lod, curTexel.x, curTexel.y,
+                        hitDist,
+                        v3print(mpTL), v3print(mpBR), v3print(mpTR));
+                }
+            }
+#endif
 
             curEntry.asUInt8 = 0xFF;
         }

@@ -4071,6 +4071,23 @@ struct AABB_T {
         return t0 <= t1 && t1 > 0.0f;
     }
 
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr bool intersect(
+        const Point3D_T<F> &org, const Vector3D_T<F, false> &dir, const F distMin, const F distMax,
+        float* const hitDistMin, float* const hitDistMax) const {
+        if (!isValid())
+            return INFINITY;
+        const Vector3D_T<F, false> invRayDir = 1.0f / dir;
+        const Vector3D_T<F, false> tNear = (minP - org) * invRayDir;
+        const Vector3D_T<F, false> tFar = (maxP - org) * invRayDir;
+        const Vector3D_T<F, false> near = min(tNear, tFar);
+        const Vector3D_T<F, false> far = max(tNear, tFar);
+        *hitDistMin = std::fmax(std::fmax(near.x, near.y), near.z);
+        *hitDistMax = std::fmin(std::fmin(far.x, far.y), far.z);
+        *hitDistMin = std::fmax(*hitDistMin, distMin);
+        *hitDistMax = std::fmin(*hitDistMax, distMax);
+        return *hitDistMin <= *hitDistMax && *hitDistMax > 0.0f;
+    }
+
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr F intersect(
         const Point3D_T<F> &org, const Vector3D_T<F, false> &dir,
         const F distMin, const F distMax,
