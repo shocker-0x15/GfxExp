@@ -4,10 +4,10 @@
 
 using namespace shared;
 
-#define DEBUG_TRAVERSAL 1
+#define DEBUG_TRAVERSAL 0
 
 CUDA_DEVICE_FUNCTION CUDA_INLINE bool isDebugPixel() {
-    return optixGetLaunchIndex().x == 784 && optixGetLaunchIndex().y == 596;
+    return optixGetLaunchIndex().x == 935 && optixGetLaunchIndex().y == 358;
     //return isCursorPixel();
 }
 
@@ -354,7 +354,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE uint32_t solveQuadraticEquation(
     return idx;
 }
 
-CUDA_DEVICE_FUNCTION CUDA_INLINE uint32_t solveCubicEquation(
+CUDA_DEVICE_FUNCTION CUDA_INLINE uint32_t solveCubicEquationAnalytical(
     const float coeffs[4], const float xMin, const float xMax,
     float roots[3]) {
     uint32_t numRoots = 0;
@@ -463,6 +463,295 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE uint32_t solveCubicEquation(
 #endif
 
     return numRoots;
+}
+
+template <uint32_t degree>
+CUDA_DEVICE_FUNCTION CUDA_INLINE float evaluatePolynomial(const float coeffs[degree + 1], const float x) {
+    // a_d * x^d + a_{d-1} * x^{d-1} + ... + a_1 * x + a_0
+    float ret = coeffs[degree];
+    for (int32_t deg = static_cast<int32_t>(degree) - 1; deg >= 0; --deg)
+        ret = ret * x + coeffs[deg];
+    return ret;
+}
+
+template <uint32_t degree>
+CUDA_DEVICE_FUNCTION CUDA_INLINE void deflatePolynomial(
+    const float coeffs[degree + 1], const float root, float defCoeffs[degree]) {
+    defCoeffs[degree - 1] = coeffs[degree];
+    for (int32_t deg = static_cast<int32_t>(degree) - 1; deg > 0; --deg)
+        defCoeffs[deg - 1] = coeffs[deg] + root * defCoeffs[deg];
+}
+
+CUDA_DEVICE_FUNCTION CUDA_INLINE bool testIfDifferentSigns(const float a, const float b) {
+    return std::signbit(a) != std::signbit(b);
+}
+
+template <uint32_t degree, bool boundError>
+CUDA_DEVICE_FUNCTION CUDA_INLINE float findSingleRootClosed(
+    const float coeffs[degree + 1], const float derivCoeffs[degree],
+    const float xMin, const float xMax, const float yMin, const float yMax,
+    const float epsilon) {
+    // JP: 初期値は区間の中点から始める。
+    // EN: The initial guess is the mid point of the interval.
+    float xr = (xMin + xMax) / 2;
+    const float epsDia = 2 * epsilon;
+    if (xMax - xMin <= epsDia)
+        return xr;
+
+    // JP: 収束保証の無いニュートン法を実行する。
+    // EN: Perform Newton iterations without convergence guarantree.
+    if constexpr (degree <= 3) {
+        const float xr0 = xr;
+        for (int32_t itr = 0; itr < 16; ++itr) {
+            const float yr = evaluatePolynomial<degree>(coeffs, xr);
+            const float dyr = evaluatePolynomial<degree - 1>(derivCoeffs, xr);
+            const float xn = xr - yr / dyr;
+            const float xrn = stc::clamp(xn, xMin, xMax);
+            if (std::fabs(xrn - xr) <= epsilon)
+                return xrn;
+            xr = xrn;
+        }
+        if (!stc::isfinite(xr))
+            xr = xr0;
+    }
+
+    // JP: 上記で失敗した場合は収束保証のあるニュートン法と二分法のハイブリッド手法に切り替える。
+    // EN: In case the above fails, move to the hybrid solution of Newton method and bisection
+    //     with guaranteed convergence.
+    float yr = evaluatePolynomial<degree>(coeffs, xr);
+    float xLo = xMin;
+    float xHi = xMax;
+
+    while (true) {
+        const bool isDiffSide = testIfDifferentSigns(yMin, yr);
+        if (isDiffSide)
+            xHi = xr;
+        else
+            xLo = xr;
+
+        const float dyr = evaluatePolynomial<degree - 1>(derivCoeffs, xr);
+        const float delta = yr / dyr;
+        const float xn = xr - delta;
+        if (xn > xLo && xn < xHi) {
+            const float stepsize = std::fabs(xr - xn);
+            xr = xn;
+            if (stepsize > epsilon) {
+                yr = evaluatePolynomial<degree>(coeffs, xr);
+            }
+            else {
+                if constexpr (boundError) {
+                    float xs;
+                    if (epsilon == 0) {
+                        xs = std::nextafter(isDiffSide ? xHi : xLo, isDiffSide ? xLo : xHi);
+                    }
+                    else {
+                        xs = xn - std::copysign(epsilon, static_cast<float>(isDiffSide - 1));
+                        if (xs == xn)
+                            xs = std::nextafter(isDiffSide ? xHi : xLo, isDiffSide ? xLo : xHi);
+                    }
+                    const float ys = evaluatePolynomial<degree>(coeffs, xs);
+                    const bool s = testIfDifferentSigns(yMin, ys);
+                    if (isDiffSide != s)
+                        return xn;
+                    xr = xs;
+                    yr = ys;
+                }
+                else {
+                    break;
+                }
+            }
+        }
+        else {
+            xr = (xLo + xHi) / 2;
+            if (xr == xLo || xr == xHi || xHi - xLo <= epsDia) {
+                if constexpr (boundError) {
+                    if (epsilon == 0) {
+                        const float xm = isDiffSide ? xLo : xHi;
+                        const float ym = evaluatePolynomial<degree>(coeffs, xm);
+                        if (std::fabs(ym) < std::fabs(yr))
+                            xr = xm;
+                    }
+                }
+                break;
+            }
+            yr = evaluatePolynomial<degree>(coeffs, xr);
+        }
+    }
+    return xr;
+}
+
+template <bool boundError>
+CUDA_DEVICE_FUNCTION CUDA_INLINE uint32_t solveCubicEquationNumerical(
+    const float coeffs[4], const float xMin, const float xMax, float epsilon,
+    float roots[3]) {
+    Assert(stc::isfinite(xMin) && stc::isfinite(xMax) && xMin < xMax, "Invalid interval.");
+    constexpr uint32_t degree = 3;
+    const float a = coeffs[3];
+    const float b = coeffs[2];
+    const float c = coeffs[1];
+    const float d = coeffs[0];
+    const float Dq = pow2(2 * b) - 12 * a * c;
+
+    const float yMin = evaluatePolynomial<degree>(coeffs, xMin);
+    const float yMax = evaluatePolynomial<degree>(coeffs, xMax);
+
+    const float derivCoeffs[] = {
+        c, 2 * b, 3 * a
+    };
+
+    // JP: 極値点が2つある場合は考えうる区間が最大で3つある。
+    // EN: If there are two critical points, there are up to three possible intervals.
+    if (Dq > 0) {
+        float cps[2];
+        {
+            const float sqrtDq = std::sqrt(Dq);
+            const float temp = -b + 0.5f * std::copysign(sqrtDq, b);
+            cps[0] = c / temp;
+            cps[1] = temp / (3 * a);
+            if (cps[0] > cps[1])
+                stc::swap(cps[0], cps[1]);
+        }
+
+        // JP: 有効範囲が単調増加/減少区間内に収まっていて、
+        // EN: If the valid range is confined to a monotonic increasing/decreasing interval,
+        if (xMax <= cps[0] ||
+            (xMin >= cps[0] && xMax <= cps[1]) ||
+            xMin >= cps[1]) {
+            if (testIfDifferentSigns(yMin, yMax)) {
+                // JP: かつ端点の符号が異なる場合はひとつだけ有効な解が存在する。
+                // EN: and if the signs of the end point values differ, there is only one valid root.
+                roots[0] = findSingleRootClosed<degree, boundError>(
+                    coeffs, derivCoeffs, xMin, xMax, yMin, yMax, epsilon);
+                return 1;
+            }
+            else {
+                // JP: かつ端点の符号が同じ場合は有効な解は存在しない。
+                // EN: and if the signs of the end point values are the same, there is no valid root.
+                return 0;
+            }
+        }
+
+        uint32_t numRoots = 0;
+        // JP: 考えうる区間は最大で3つ。
+        // EN: There are up to three possible intervals.
+        if (cps[0] > xMin) {
+            const float yCp0 = evaluatePolynomial<degree>(coeffs, cps[0]);
+
+            // JP: 左側の区間を考える。
+            // EN: Consider the left interval.
+            if (testIfDifferentSigns(yMin, yCp0)) {
+                roots[0] = findSingleRootClosed<degree, boundError>(
+                    coeffs, derivCoeffs, xMin, cps[0], yMin, yCp0, epsilon);
+                if constexpr (!boundError) {
+                    // JP: 減次を用いて残りの解を求める。
+                    // EN: Find the remaining roots with deflation.
+                    const float yCp1 = evaluatePolynomial<degree>(coeffs, cps[1]);
+                    if (testIfDifferentSigns(yCp0, yMax) || (cps[1] < xMax && testIfDifferentSigns(yCp0, yCp1))) {
+                        float defCoeffs[3];
+                        deflatePolynomial<degree>(coeffs, roots[0], defCoeffs);
+                        return 1 + solveQuadraticEquation(defCoeffs, cps[0], xMax, roots + 1);
+                    }
+                    else {
+                        return 1;
+                    }
+                }
+                else {
+                    ++numRoots;
+                }
+            }
+
+            if (cps[1] < xMax) {
+                const float yCp1 = evaluatePolynomial<degree>(coeffs, cps[1]);
+
+                // JP: 真ん中の区間を考える。
+                // EN: Consider the middle interval.
+                if (testIfDifferentSigns(yCp0, yCp1)) {
+                    roots[/*!boundError ? 0 : */numRoots++] = findSingleRootClosed<degree, boundError>(
+                        coeffs, derivCoeffs, cps[0], cps[1], yCp0, yCp1, epsilon);
+                    if constexpr (!boundError) {
+                        // JP: 減次を用いて残りの解を求める。
+                        // EN: Find the remaining roots with deflation.
+                        if (testIfDifferentSigns(yCp1, yMax)) {
+                            float defCoeffs[3];
+                            deflatePolynomial<degree>(coeffs, roots[0], defCoeffs);
+                            return 1 + solveQuadraticEquation(defCoeffs, cps[1], xMax, roots + 1);
+                        }
+                        else {
+                            return 1;
+                        }
+                    }
+                }
+
+                // JP: 右側の区間を考える。
+                // EN: Consider the right interval.
+                if (testIfDifferentSigns(yCp1, yMax)) {
+                    roots[/*!boundError ? 0 : */numRoots++] = findSingleRootClosed<degree, boundError>(
+                        coeffs, derivCoeffs, cps[1], xMax, yCp1, yMax, epsilon);
+                    if constexpr (!boundError)
+                        return 1;
+                }
+            }
+            else {
+                // JP: 真ん中の区間を考える。
+                // EN: Consider the middle interval.
+                if (testIfDifferentSigns(yCp0, yMax)) {
+                    roots[/*!boundError ? 0 : */numRoots++] = findSingleRootClosed<degree, boundError>(
+                        coeffs, derivCoeffs, cps[0], xMax, yCp0, yMax, epsilon);
+                    if constexpr (!boundError)
+                        return 1;
+                }
+            }
+        }
+        // JP: 考えうる区間は最大で2つ。
+        // EN: There are up to two possible intervals.
+        else {
+            const float yCp1 = evaluatePolynomial<degree>(coeffs, cps[1]);
+
+            // JP: 真ん中の区間を考える。
+            // EN: Consider the middle interval.
+            if (testIfDifferentSigns(yMin, yCp1)) {
+                roots[/*!boundError ? 0 : */numRoots++] = findSingleRootClosed<degree, boundError>(
+                    coeffs, derivCoeffs, xMin, cps[1], yMin, yCp1, epsilon);
+                if constexpr (!boundError) {
+                    // JP: 減次を用いて残りの解を求める。
+                    // EN: Find the remaining roots with deflation.
+                    if (testIfDifferentSigns(yCp1, yMax)) {
+                        float defCoeffs[3];
+                        deflatePolynomial<degree>(coeffs, roots[0], defCoeffs);
+                        return 1 + solveQuadraticEquation(defCoeffs, cps[1], xMax, roots + 1);
+                    }
+                    else {
+                        return 1;
+                    }
+                }
+                else {
+                    ++numRoots;
+                }
+            }
+
+            // JP: 右側の区間を考える。
+            // EN: Consider the right interval.
+            if (testIfDifferentSigns(yCp1, yMax)) {
+                roots[/*!boundError ? 0 : */numRoots++] = findSingleRootClosed<degree, boundError>(
+                    coeffs, derivCoeffs, cps[1], xMax, yCp1, yMax, epsilon);
+                if constexpr (!boundError)
+                    return 1;
+            }
+        }
+        return numRoots;
+    }
+    // JP: 極値点が一つだけ、もしくはない場合は関数は単調増加・減少である。
+    // EN: If there is only one or zero critical point, the function is monotonically increasing/decreasing.
+    else {
+        // JP: したがって端点の符号が異なる場合はひとつだけ有効な解が存在する。
+        // EN: Therefore, if the signs of the end point values differ, there is only one valid root.
+        if (testIfDifferentSigns(yMin, yMax)) {
+            roots[0] = findSingleRootClosed<degree, boundError>(
+                coeffs, derivCoeffs, xMin, xMax, yMin, yMax, epsilon);
+            return 1;
+        }
+        return 0;
+    }
 }
 
 
@@ -729,7 +1018,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsMicroTriangle(
         nInTex.z);
     const float KInCan = nInTex.x * tcA.x + nInTex.y * tcA.y + KInTex;
     const float minHeight = std::fmin(std::fmin(mpAInTex.z, mpBInTex.z), mpCInTex.z) - 1e-4f;
-    const float maxHeight = std::fmax(std::fmax(mpAInTex.z, mpBInTex.z), mpCInTex.z) + 1e+4f;
+    const float maxHeight = std::fmax(std::fmax(mpAInTex.z, mpBInTex.z), mpCInTex.z) + 1e-4f;
 
     // JP: テクスチャー空間中のレイとマイクロ三角形を含む平面の交差判定。
     float hs[3];
@@ -741,7 +1030,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsMicroTriangle(
             nInTex.x * tc2.x + nInTex.y * tc2.y + nInTex.z * denom1 + KInTex * denom2,
             nInTex.z * denom2
         };
-        numRoots = solveCubicEquation(coeffs, minHeight, maxHeight, hs);
+        //numRoots = solveCubicEquationAnalytical(coeffs, minHeight, maxHeight, hs);
+        numRoots = solveCubicEquationNumerical<false>(coeffs, minHeight, maxHeight, 1e-5f, hs);
     }
 
     *hitDist = distMax;
@@ -803,16 +1093,19 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsMicroTriangle(
         // JP: 上で求まったα, βはベース三角形における重心座標に過ぎない。
         //     求めた交点がマイクロ三角形内にあるかチェックする必要がある。
         {
-            const Vector2D eAB = mpBInTex.xy() - mpAInTex.xy();
-            const Vector2D eBC = mpCInTex.xy() - mpBInTex.xy();
-            const Vector2D eCA = mpAInTex.xy() - mpCInTex.xy();
-            const Vector2D eAP = hpInTex.xy() - mpAInTex.xy();
-            const Vector2D eBP = hpInTex.xy() - mpBInTex.xy();
-            const Vector2D eCP = hpInTex.xy() - mpCInTex.xy();
-            const float cAB = cross(eAB, eAP);
-            const float cBC = cross(eBC, eBP);
-            const float cCA = cross(eCA, eCP);
-            if ((cAB < 0 || cBC < 0 || cCA < 0) && (cAB >= 0 || cBC >= 0 || cCA >= 0))
+            const Vector3D eAB = mpBInTex - mpAInTex;
+            const Vector3D eAC = mpCInTex - mpAInTex;
+            const Vector3D eAP = hpInTex - mpAInTex;
+            const float dotAB_AB = dot(eAB, eAB);
+            const float dotAB_AC = dot(eAB, eAC);
+            const float dotAC_AC = dot(eAC, eAC);
+            const float dotAP_AB = dot(eAP, eAB);
+            const float dotAP_AC = dot(eAP, eAC);
+            const float recDenom = 1.0f / (dotAB_AB * dotAC_AC - pow2(dotAB_AC));
+            const float mBcB = recDenom * (dotAC_AC * dotAP_AB - dotAB_AC * dotAP_AC);
+            const float mBcC = recDenom * (dotAB_AB * dotAP_AC - dotAB_AC * dotAP_AB);
+            const float mBcA = 1.0f - (mBcB + mBcC);
+            if (mBcA <= -1e-5f || mBcB <= -1e-5f || mBcC <= -1e-5f)
                 continue;
         }
 
@@ -871,6 +1164,8 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
             return;
     }
 
+    prismHitDistEnter *= 0.9999f;
+    prismHitDistLeave *= 1.0001f;
     float hitDist = prismHitDistLeave;
     float hitBcB, hitBcC;
     Normal3D hitNormal;
@@ -922,7 +1217,7 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
     const Point2D texTriAabbMaxP = max(tcs[0], max(tcs[1], tcs[2]));
 
     const int32_t maxDepth =
-        prevPowOf2Exponent(max(mat.heightMapSize.x, mat.heightMapSize.y));
+        prevPowOf2Exponent(stc::max(mat.heightMapSize.x, mat.heightMapSize.y));
     constexpr int32_t targetMipLevel = 0;
 
 #if OUTPUT_TRAVERSAL_STATS
@@ -1018,7 +1313,7 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
             }
 #endif
 
-            const int2 imgSize = make_int2(1 << max(maxDepth - curTexel.lod, 0));
+            const int2 imgSize = make_int2(1 << stc::max(maxDepth - curTexel.lod, 0));
             const float texelScale = std::pow(2.0f, static_cast<float>(curTexel.lod - maxDepth));
             const Point2D texelCenter = Point2D(curTexel.x + 0.5f, curTexel.y + 0.5f) * texelScale;
             const TriangleSquareIntersection2DResult isectResult =
@@ -1128,7 +1423,7 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
                     const uint2 wrappedTexel = curTexel.lod <= maxDepth ?
                         make_uint2(x - wrapIndex.x * nextImgSize.x, y - wrapIndex.y * nextImgSize.y) :
                         make_uint2(0, 0);
-                    const float2 minmax = mat.minMaxMipMap[min(curTexel.lod, maxDepth)].read(wrappedTexel);
+                    const float2 minmax = mat.minMaxMipMap[stc::min<int16_t>(curTexel.lod, maxDepth)].read(wrappedTexel);
                     *hMin = dispParams.hOffset + dispParams.hScale * (minmax.x - dispParams.hBias);
                     *hMax = dispParams.hOffset + dispParams.hScale * (minmax.y - dispParams.hBias);
                 };

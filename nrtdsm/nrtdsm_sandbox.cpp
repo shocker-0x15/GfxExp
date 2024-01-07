@@ -1003,8 +1003,8 @@ bool testNonlinearRayVsMicroTriangle(
         nInTex.x * (tcC.x - tcA.x) + nInTex.y * (tcC.y - tcA.y),
         nInTex.z);
     const float KInCan = nInTex.x * tcA.x + nInTex.y * tcA.y + KInTex;
-    const float minHeight = std::fmin(std::fmin(mpAInTex.z, mpBInTex.z), mpCInTex.z);
-    const float maxHeight = std::fmax(std::fmax(mpAInTex.z, mpBInTex.z), mpCInTex.z);
+    const float minHeight = std::fmin(std::fmin(mpAInTex.z, mpBInTex.z), mpCInTex.z) - 1e-4f;
+    const float maxHeight = std::fmax(std::fmax(mpAInTex.z, mpBInTex.z), mpCInTex.z) + 1e-4f;
 
     // JP: テクスチャー空間中のレイとマイクロ三角形を含む平面の交差判定。
     float hs[3];
@@ -2487,31 +2487,25 @@ void testTraversal() {
     };
     using TraversalStep = std::variant<InternalNode, LeafNode>;
 
-    const Point3D pA(-0.0714286, 0.00573736, 0.357143);
-    const Point3D pB(-0.0714286, 0.0433884, 0.5);
-    const Point3D pC(0.0714286, -0.0433884, 0.5);
-    const Normal3D nA(0.452981, 0.800184, -0.393082);
-    const Normal3D nB(0.492636, 0.870235, 9.56029e-08);
-    const Normal3D nC(0.492636, 0.870235, 9.56029e-08);
-    const Point2D tcA(0.428571, 0.857143);
-    const Point2D tcB(0.428571, 1);
-    const Point2D tcC(0.571429, 1);
+    const Point3D pA(-0.0714286, 0.0433884, -0.5);
+    const Point3D pB(-0.0714286, 0.00573733, -0.357143);
+    const Point3D pC(0.0714286, -0.0810394, -0.357143);
+    const Normal3D nA(0.492636, 0.870235, 0);
+    const Normal3D nB(0.452981, 0.800184, 0.393082);
+    const Normal3D nC(0.452981, 0.800184, 0.393082);
+    const Point2D tcA(0.428571, 0);
+    const Point2D tcB(0.428571, 0.142857);
+    const Point2D tcC(0.571429, 0.142857);
 
     const Point3D rayOrg(0, 1.06066, 1.06066);
-    const Vector3D rayDir(-0.0121685, -0.853633, -0.520733);
-    const float prismHitDistEnter = 1.14818;
-    const float prismHitDistLeave = 1.20365;
+    const Vector3D rayDir(-0.0208969, -0.588961, -0.807891);
+    const float prismHitDistEnter = 1.79248;
+    const float prismHitDistLeave = 1.79284;
 
     const float rayLength = 2.0f;
 
     std::vector<TraversalStep> steps = {
-        LeafNode{1.20365, Point3D(0.459961, 0.955078, 0.0531212), Point3D(0.460938, 0.955078, 0.0519448), Point3D(0.459961, 0.956055, 0.0528695), Point3D(0.460938, 0.956055, 0.0517754)},
-        LeafNode{1.20365, Point3D(0.459961, 0.954102, 0.0530449), Point3D(0.460938, 0.954102, 0.0516487), Point3D(0.459961, 0.955078, 0.0531212), Point3D(0.460938, 0.955078, 0.0519448)},
-        LeafNode{1.20365, Point3D(0.459961, 0.953125, 0.0525429), Point3D(0.460938, 0.953125, 0.0507546), Point3D(0.459961, 0.954102, 0.0530449), Point3D(0.460938, 0.954102, 0.0516487)},
-        LeafNode{1.20365, Point3D(0.460938, 0.953125, 0.0507546), Point3D(0.461914, 0.953125, 0.0466712), Point3D(0.460938, 0.954102, 0.0516487), Point3D(0.461914, 0.954102, 0.0480735)},
-        LeafNode{1.20365, Point3D(0.460938, 0.952148, 0.0495171), Point3D(0.461914, 0.952148, 0.045098), Point3D(0.460938, 0.953125, 0.0507546), Point3D(0.461914, 0.953125, 0.0466712)},
-        LeafNode{1.20365, Point3D(0.460938, 0.951172, 0.0483299), Point3D(0.461914, 0.951172, 0.0438285), Point3D(0.460938, 0.952148, 0.0495171), Point3D(0.461914, 0.952148, 0.045098)},
-        LeafNode{1.20365, Point3D(0.463867, 0.946289, 0.0463386), Point3D(0.464844, 0.946289, 0.0460792), Point3D(0.463867, 0.947266, 0.0431342), Point3D(0.464844, 0.947266, 0.0433005)},
+        LeafNode{1.79284, Point3D(0.4375, 0.09375, 0.00996078), Point3D(0.46875, 0.09375, 0.00996078), Point3D(0.4375, 0.125, 0.00996078), Point3D(0.46875, 0.125, 0.00996078)},
     };
 
     Vector3D e0, e1;

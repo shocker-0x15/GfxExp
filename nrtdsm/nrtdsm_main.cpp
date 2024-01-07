@@ -1920,7 +1920,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
                         {
                             "50% Gray",
                             R"()",
-                            R"(50p_gray_64x64.dds)",
+                            R"(50p_gray_32x32.dds)",
                             0.02f,
                         },
                     };

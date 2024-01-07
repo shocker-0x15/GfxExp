@@ -853,7 +853,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void findRoots(
     const Vector2D d = triAabbMaxP - triAabbMinP;
     const uint32_t largerDim = d.y > d.x;
     int32_t startMipLevel = maxDepth - prevPowOf2Exponent(static_cast<uint32_t>(1.0f / d[largerDim])) - 1;
-    startMipLevel = /*std::*/max(startMipLevel, 0);
+    startMipLevel = stc::max(startMipLevel, 0);
     while (true) {
         const float res = std::pow(2.0f, static_cast<float>(maxDepth - startMipLevel));
         const int32_t minTexelX = static_cast<int32_t>(std::floor(res * triAabbMinP.x));
