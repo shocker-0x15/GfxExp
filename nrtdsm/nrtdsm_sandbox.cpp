@@ -743,29 +743,6 @@ void testComputeCanonicalSpaceRayCoeffs() {
         Point2D tcA;
         Point2D tcB;
         Point2D tcC;
-
-        Point3D SA(float h) const {
-            return pA + h * nA;
-        }
-        Point3D SB(float h) const {
-            return pB + h * nB;
-        }
-        Point3D SC(float h) const {
-            return pC + h * nC;
-        }
-        Point3D p(const float alpha, const float beta) const {
-            return (1 - alpha - beta) * pA + alpha * pB + beta * pC;
-        }
-        Normal3D n(const float alpha, const float beta) const {
-            return (1 - alpha - beta) * nA + alpha * nB + beta * nC;
-        }
-        Point2D tc(const float alpha, const float beta) const {
-            return (1 - alpha - beta) * tcA + alpha * tcB + beta * tcC;
-        }
-        Point3D S(const float alpha, const float beta, const float h) const {
-            const Point3D ret = (1 - alpha - beta) * SA(h) + alpha * SB(h) + beta * SC(h);
-            return ret;
-        }
     };
 
     const TestData test = {
@@ -778,6 +755,47 @@ void testComputeCanonicalSpaceRayCoeffs() {
         Point2D(0.4f, 0.7f),
         Point2D(0.2f, 0.2f),
         Point2D(0.7f, 0.4f)
+    };
+
+#if 1
+    const Point3D rayOrg(0.5f, -0.5f, 1.0f);
+    const Vector3D rayDir = normalize(Vector3D(-0.7f, 1.3f, -0.5f));
+
+    const Point3D pA = test.pA;
+    const Point3D pB = test.pB;
+    const Point3D pC = test.pC;
+    const Normal3D nA = test.nA;
+    const Normal3D nB = test.nB;
+    const Normal3D nC = test.nC;
+    const Point2D tcA = test.tcA;
+    const Point2D tcB = test.tcB;
+    const Point2D tcC = test.tcC;
+#else
+    const Point3D rayOrg(0, 1.06066, 1.06066);
+    const Vector3D rayDir(-0.0121685, -0.853633, -0.520733);
+
+    const Point3D pA(-0.0714286, 0.00573736, 0.357143);
+    const Point3D pB(-0.0714286, 0.0433884, 0.5);
+    const Point3D pC(0.0714286, -0.0433884, 0.5);
+    const Normal3D nA(0.452981, 0.800184, -0.393082);
+    const Normal3D nB(0.492636, 0.870235, 9.56029e-08);
+    const Normal3D nC(0.492636, 0.870235, 9.56029e-08);
+    const Point2D tcA(0.428571, 0.857143);
+    const Point2D tcB(0.428571, 1);
+    const Point2D tcC(0.571429, 1);
+#endif
+
+    const auto SA = [&]
+    (const float h) {
+        return pA + h * nA;
+    };
+    const auto SB = [&]
+    (const float h) {
+        return pB + h * nB;
+    };
+    const auto SC = [&]
+    (const float h) {
+        return pC + h * nC;
     };
 
     vdb_frame();
@@ -800,27 +818,25 @@ void testComputeCanonicalSpaceRayCoeffs() {
 
     // World-space Shell
     setColor(RGB(0.25f));
-    drawWiredTriangle(test.pA, test.pB, test.pC);
+    drawWiredTriangle(pA, pB, pC);
     setColor(RGB(0.0f, 0.5f, 1.0f));
-    drawVector(test.pA, test.nA, 1.0f);
-    drawVector(test.pB, test.nB, 1.0f);
-    drawVector(test.pC, test.nC, 1.0f);
+    drawVector(pA, nA, 1.0f);
+    drawVector(pB, nB, 1.0f);
+    drawVector(pC, nC, 1.0f);
     for (int i = 1; i <= 10; ++i) {
         const float p = static_cast<float>(i) / 10;
         setColor(RGB(p));
-        drawWiredDottedTriangle(test.SA(p), test.SB(p), test.SC(p));
+        drawWiredDottedTriangle(SA(p), SB(p), SC(p));
     }
     if constexpr (showNegativeShell) {
         for (int i = 1; i <= 10; ++i) {
             const float p = -static_cast<float>(i) / 10;
             setColor(RGB(-p));
-            drawWiredDottedTriangle(test.SA(p), test.SB(p), test.SC(p));
+            drawWiredDottedTriangle(SA(p), SB(p), SC(p));
         }
     }
 
     // World-space Ray
-    const Point3D rayOrg(0.5f, -0.5f, 1.0f);
-    const Vector3D rayDir = normalize(Vector3D(-0.7f, 1.3f, -0.5f));
     constexpr float rayLength = 2.0f;
     setColor(RGB(1.0f));
     drawCross(rayOrg, 0.05f);
@@ -843,16 +859,16 @@ void testComputeCanonicalSpaceRayCoeffs() {
         globalOffsetForCanonical + Point3D(0, 1, 0));
     setColor(RGB(0.25f));
     drawWiredTriangle(
-        globalOffsetForTexture + Point3D(test.tcA, 0.0f),
-        globalOffsetForTexture + Point3D(test.tcB, 0.0f),
-        globalOffsetForTexture + Point3D(test.tcC, 0.0f));
+        globalOffsetForTexture + Point3D(tcA, 0.0f),
+        globalOffsetForTexture + Point3D(tcB, 0.0f),
+        globalOffsetForTexture + Point3D(tcC, 0.0f));
     setColor(RGB(0.0f, 0.5f, 1.0f));
     drawVector(globalOffsetForCanonical + Point3D(0, 0, 0), Normal3D(0, 0, 1), 1.0f);
     drawVector(globalOffsetForCanonical + Point3D(1, 0, 0), Normal3D(0, 0, 1), 1.0f);
     drawVector(globalOffsetForCanonical + Point3D(0, 1, 0), Normal3D(0, 0, 1), 1.0f);
-    drawVector(globalOffsetForTexture + Point3D(test.tcA, 0), Normal3D(0, 0, 1), 1.0f);
-    drawVector(globalOffsetForTexture + Point3D(test.tcB, 0), Normal3D(0, 0, 1), 1.0f);
-    drawVector(globalOffsetForTexture + Point3D(test.tcC, 0), Normal3D(0, 0, 1), 1.0f);
+    drawVector(globalOffsetForTexture + Point3D(tcA, 0), Normal3D(0, 0, 1), 1.0f);
+    drawVector(globalOffsetForTexture + Point3D(tcB, 0), Normal3D(0, 0, 1), 1.0f);
+    drawVector(globalOffsetForTexture + Point3D(tcC, 0), Normal3D(0, 0, 1), 1.0f);
     for (int i = 1; i <= 10; ++i) {
         const float p = static_cast<float>(i) / 10;
         setColor(RGB(p));
@@ -862,9 +878,9 @@ void testComputeCanonicalSpaceRayCoeffs() {
             globalOffsetForCanonical + Point3D(0, 1, 0) + p * Normal3D(0, 0, 1));
         setColor(RGB(p));
         drawWiredDottedTriangle(
-            globalOffsetForTexture + Point3D(test.tcA, 0) + p * Normal3D(0, 0, 1),
-            globalOffsetForTexture + Point3D(test.tcB, 0) + p * Normal3D(0, 0, 1),
-            globalOffsetForTexture + Point3D(test.tcC, 0) + p * Normal3D(0, 0, 1));
+            globalOffsetForTexture + Point3D(tcA, 0) + p * Normal3D(0, 0, 1),
+            globalOffsetForTexture + Point3D(tcB, 0) + p * Normal3D(0, 0, 1),
+            globalOffsetForTexture + Point3D(tcC, 0) + p * Normal3D(0, 0, 1));
     }
     if constexpr (showNegativeShell) {
         for (int i = 1; i <= 10; ++i) {
@@ -876,9 +892,9 @@ void testComputeCanonicalSpaceRayCoeffs() {
                 globalOffsetForCanonical + Point3D(0, 1, 0) + p * Normal3D(0, 0, 1));
             setColor(RGB(-p));
             drawWiredDottedTriangle(
-                globalOffsetForTexture + Point3D(test.tcA, 0) + p * Normal3D(0, 0, 1),
-                globalOffsetForTexture + Point3D(test.tcB, 0) + p * Normal3D(0, 0, 1),
-                globalOffsetForTexture + Point3D(test.tcC, 0) + p * Normal3D(0, 0, 1));
+                globalOffsetForTexture + Point3D(tcA, 0) + p * Normal3D(0, 0, 1),
+                globalOffsetForTexture + Point3D(tcB, 0) + p * Normal3D(0, 0, 1),
+                globalOffsetForTexture + Point3D(tcC, 0) + p * Normal3D(0, 0, 1));
         }
     }
 
@@ -890,24 +906,24 @@ void testComputeCanonicalSpaceRayCoeffs() {
     float denom2, denom1, denom0;
     computeCanonicalSpaceRayCoeffs(
         rayOrg, rayDir, e0, e1,
-        test.pA, test.pB, test.pC,
-        test.nA, test.nB, test.nC,
+        pA, pB, pC,
+        nA, nB, nC,
         &alpha2, &alpha1, &alpha0,
         &beta2, &beta1, &beta0,
         &denom2, &denom1, &denom0);
 
     const Point2D tc2 =
-        (denom2 - alpha2 - beta2) * test.tcA
-        + alpha2 * test.tcB
-        + beta2 * test.tcC;
+        (denom2 - alpha2 - beta2) * tcA
+        + alpha2 * tcB
+        + beta2 * tcC;
     const Point2D tc1 =
-        (denom1 - alpha1 - beta1) * test.tcA
-        + alpha1 * test.tcB
-        + beta1 * test.tcC;
+        (denom1 - alpha1 - beta1) * tcA
+        + alpha1 * tcB
+        + beta1 * tcC;
     const Point2D tc0 =
-        (denom0 - alpha0 - beta0) * test.tcA
-        + alpha0 * test.tcB
-        + beta0 * test.tcC;
+        (denom0 - alpha0 - beta0) * tcA
+        + alpha0 * tcB
+        + beta0 * tcC;
 
     // Canonical-space and Texture-space Ray
     // JP: 非線形レイだからと言ってレイが分岐したり非連続になったりしない。
@@ -922,8 +938,8 @@ void testComputeCanonicalSpaceRayCoeffs() {
         const float t = static_cast<float>(i) / 500;
         float hs[3];
         findHeight(
-            test.pA, test.pB, test.pC,
-            test.nA, test.nB, test.nC,
+            pA, pB, pC,
+            nA, nB, nC,
             rayOrg + t * rayLength * rayDir,
             hs);
         for (int j = 0; j < 3; ++j) {
@@ -1062,16 +1078,30 @@ bool testNonlinearRayVsMicroTriangle(
         // JP: 上で求まったα, βはベース三角形における重心座標に過ぎない。
         //     求めた交点がマイクロ三角形内にあるかチェックする必要がある。
         {
-            const Vector2D eAB = mpBInTex.xy() - mpAInTex.xy();
-            const Vector2D eBC = mpCInTex.xy() - mpBInTex.xy();
-            const Vector2D eCA = mpAInTex.xy() - mpCInTex.xy();
-            const Vector2D eAP = hpInTex.xy() - mpAInTex.xy();
-            const Vector2D eBP = hpInTex.xy() - mpBInTex.xy();
-            const Vector2D eCP = hpInTex.xy() - mpCInTex.xy();
-            const float cAB = cross(eAB, eAP);
-            const float cBC = cross(eBC, eBP);
-            const float cCA = cross(eCA, eCP);
-            if ((cAB < 0 || cBC < 0 || cCA < 0) && (cAB >= 0 || cBC >= 0 || cCA >= 0))
+            //const Vector2D eAB = mpBInTex.xy() - mpAInTex.xy();
+            //const Vector2D eBC = mpCInTex.xy() - mpBInTex.xy();
+            //const Vector2D eCA = mpAInTex.xy() - mpCInTex.xy();
+            //const Vector2D eAP = hpInTex.xy() - mpAInTex.xy();
+            //const Vector2D eBP = hpInTex.xy() - mpBInTex.xy();
+            //const Vector2D eCP = hpInTex.xy() - mpCInTex.xy();
+            //const float cAB = cross(eAB, eAP);
+            //const float cBC = cross(eBC, eBP);
+            //const float cCA = cross(eCA, eCP);
+            //if ((cAB < 0 || cBC < 0 || cCA < 0) && (cAB >= 0 || cBC >= 0 || cCA >= 0))
+            //    continue;
+            const Vector3D eAB = mpBInTex - mpAInTex;
+            const Vector3D eAC = mpCInTex - mpAInTex;
+            const Vector3D eAP = hpInTex - mpAInTex;
+            const float dotAB_AB = dot(eAB, eAB);
+            const float dotAB_AC = dot(eAB, eAC);
+            const float dotAC_AC = dot(eAC, eAC);
+            const float dotAP_AB = dot(eAP, eAB);
+            const float dotAP_AC = dot(eAP, eAC);
+            const float recDenom = 1.0f / (dotAB_AB * dotAC_AC - pow2(dotAB_AC));
+            const float mBcB = recDenom * (dotAC_AC * dotAP_AB - dotAB_AC * dotAP_AC);
+            const float mBcC = recDenom * (dotAB_AB * dotAP_AC - dotAB_AC * dotAP_AB);
+            const float mBcA = 1.0f - (mBcB + mBcC);
+            if (mBcA <= -1e-5f || mBcB <= -1e-5f || mBcC <= -1e-5f)
                 continue;
         }
 
@@ -2444,44 +2474,6 @@ void testNonlinearRayVsAabb() {
 
 
 void testTraversal() {
-    {
-        Point3D pA(std::bit_cast<float>(0xbf000000), std::bit_cast<float>(0x00000000), std::bit_cast<float>(0xbf000000));
-        Point3D pB(std::bit_cast<float>(0xbf000000), std::bit_cast<float>(0x00000000), std::bit_cast<float>(0x3f000000));
-        Point3D pC(std::bit_cast<float>(0x3f000000), std::bit_cast<float>(0x00000000), std::bit_cast<float>(0x3f000000));
-        Normal3D nA(std::bit_cast<float>(0x00000000), std::bit_cast<float>(0x3f800000), std::bit_cast<float>(0x00000000));
-        Normal3D nB(std::bit_cast<float>(0x00000000), std::bit_cast<float>(0x3f800000), std::bit_cast<float>(0x00000000));
-        Normal3D nC(std::bit_cast<float>(0x00000000), std::bit_cast<float>(0x3f800000), std::bit_cast<float>(0x00000000));
-        Point2D tcA(std::bit_cast<float>(0x00000000), std::bit_cast<float>(0x00000000));
-        Point2D tcB(std::bit_cast<float>(0x00000000), std::bit_cast<float>(0x3f800000));
-        Point2D tcC(std::bit_cast<float>(0x3f800000), std::bit_cast<float>(0x3f800000));
-        Point3D mpTL(std::bit_cast<float>(0x3e968000), std::bit_cast<float>(0x3f258000), std::bit_cast<float>(0x3d58d8da));
-        Point3D mpBL(std::bit_cast<float>(0x3e968000), std::bit_cast<float>(0x3f25c000), std::bit_cast<float>(0x3d58d8da));
-        Point3D mpBR(std::bit_cast<float>(0x3e970000), std::bit_cast<float>(0x3f25c000), std::bit_cast<float>(0x3d58d8da));
-        Point3D rayOrgInObj(std::bit_cast<float>(0x00000000), std::bit_cast<float>(0x3f87c3b6), std::bit_cast<float>(0x3f87c3b6));
-        Vector3D rayDirInObj(std::bit_cast<float>(0xbe1941c6), std::bit_cast<float>(0xbf3b7d64), std::bit_cast<float>(0xbf2a0bba));
-        float distMin = std::bit_cast<float>(0x3fab4149), distMax = std::bit_cast<float>(0x3fb58fc5);
-        Vector3D e0(std::bit_cast<float>(0x3f7c8dee), std::bit_cast<float>(0xbd86e32f), std::bit_cast<float>(0xbe1941c6));
-        Vector3D e1(std::bit_cast<float>(0x3d86e32f), std::bit_cast<float>(0xbf2d7dce), std::bit_cast<float>(0x3f3b7d64));
-        Point2D tc2(std::bit_cast<float>(0x00000000), std::bit_cast<float>(0x00000000));
-        Point2D tc1(std::bit_cast<float>(0xbe1941c6), std::bit_cast<float>(0xbf2a0bbc));
-        Point2D tc0(std::bit_cast<float>(0xbe546d17), std::bit_cast<float>(0xbee07e7c));
-        float denom2 = std::bit_cast<float>(0x00000000), denom1 = std::bit_cast<float>(0x00000000), denom0 = std::bit_cast<float>(0xbf3b7d64);
-
-        Point3D hpInCan;
-        Point3D hpInTex;
-        float hitDist;
-        Normal3D hitNormal;
-        bool hit = testNonlinearRayVsMicroTriangle(
-            pA, pB, pC, nA, nB, nC, tcA, tcB, tcC,
-            mpTL, mpBL, mpBR,
-            rayOrgInObj, rayDirInObj, distMin, distMax,
-            e0, e1,
-            tc2, tc1, tc0,
-            denom2, denom1, denom0,
-            &hpInCan, &hpInTex, &hitDist, &hitNormal);
-        printf("");
-    }
-
     struct InternalNode {
         float distMax;
         AABB aabbs[4];
@@ -2495,36 +2487,31 @@ void testTraversal() {
     };
     using TraversalStep = std::variant<InternalNode, LeafNode>;
 
-    const Point3D pA(-0.5, 0, -0.5);
-    const Point3D pB(-0.5, 0, 0.5);
-    const Point3D pC(0.5, 0, 0.5);
-    const Normal3D nA(0, 1, 0);
-    const Normal3D nB(0, 1, 0);
-    const Normal3D nC(0, 1, 0);
-    const Point2D tcA(0, 0);
-    const Point2D tcB(0, 1);
-    const Point2D tcC(1, 1);
+    const Point3D pA(-0.0714286, 0.00573736, 0.357143);
+    const Point3D pB(-0.0714286, 0.0433884, 0.5);
+    const Point3D pC(0.0714286, -0.0433884, 0.5);
+    const Normal3D nA(0.452981, 0.800184, -0.393082);
+    const Normal3D nB(0.492636, 0.870235, 9.56029e-08);
+    const Normal3D nC(0.492636, 0.870235, 9.56029e-08);
+    const Point2D tcA(0.428571, 0.857143);
+    const Point2D tcB(0.428571, 1);
+    const Point2D tcC(0.571429, 1);
 
     const Point3D rayOrg(0, 1.06066, 1.06066);
-    const Vector3D rayDir(-0.149665, -0.732382, -0.664241);
-    const float prismHitDistEnter = 1.33793;
-    const float prismHitDistLeave = 1.41845;
+    const Vector3D rayDir(-0.0121685, -0.853633, -0.520733);
+    const float prismHitDistEnter = 1.14818;
+    const float prismHitDistLeave = 1.20365;
 
     const float rayLength = 2.0f;
 
     std::vector<TraversalStep> steps = {
-        InternalNode{ 1.41845, { AABB(Point3D(0, 0, 0.0301976), Point3D(0.5, 0.5, 0.0756863)), AABB(Point3D(0.5, 0, 0.0239796), Point3D(1, 0.5, 0.074902)), AABB(Point3D(0, 0.5, 0.0218128), Point3D(0.5, 1, 0.0807843)), AABB(Point3D(0.5, 0.5, 0.0266728), Point3D(1, 1, 0.0768627)) }},
-        InternalNode{ 1.41845, { AABB(Point3D(0, 0.5, 0.0318654), Point3D(0.25, 0.75, 0.0747509)), AABB(Point3D(0.25, 0.5, 0.0218128), Point3D(0.5, 0.75, 0.0717647)), AABB(Point3D(0, 0.75, 0.0286168), Point3D(0.25, 1, 0.0807843)), AABB(Point3D(0.25, 0.75, 0.0272007), Point3D(0.5, 1, 0.0701961)) }},
-        InternalNode{ 1.41845, { AABB(Point3D(0.25, 0.5, 0.0307362), Point3D(0.375, 0.625, 0.0717647)), AABB(Point3D(0.375, 0.5, 0.0290394), Point3D(0.5, 0.625, 0.0705348)), AABB(Point3D(0.25, 0.625, 0.0218128), Point3D(0.375, 0.75, 0.0643137)), AABB(Point3D(0.375, 0.625, 0.0327932), Point3D(0.5, 0.75, 0.0666667)) }},
-        InternalNode{ 1.41845, { AABB(Point3D(0.25, 0.625, 0.0231373), Point3D(0.3125, 0.6875, 0.0643137)), AABB(Point3D(0.3125, 0.625, 0.0290593), Point3D(0.375, 0.6875, 0.0610117)), AABB(Point3D(0.25, 0.6875, 0.0231373), Point3D(0.3125, 0.75, 0.0614862)), AABB(Point3D(0.3125, 0.6875, 0.0218128), Point3D(0.375, 0.75, 0.0580392)) }},
-        InternalNode{ 1.41845, { AABB(Point3D(0.25, 0.625, 0.0424277), Point3D(0.28125, 0.65625, 0.0643137)), AABB(Point3D(0.28125, 0.625, 0.0369787), Point3D(0.3125, 0.65625, 0.0628428)), AABB(Point3D(0.25, 0.65625, 0.033138), Point3D(0.28125, 0.6875, 0.0595529)), AABB(Point3D(0.28125, 0.65625, 0.0231373), Point3D(0.3125, 0.6875, 0.0512001)) }},
-        InternalNode{ 1.41845, { AABB(Point3D(0.28125, 0.625, 0.0369787), Point3D(0.296875, 0.640625, 0.0628428)), AABB(Point3D(0.296875, 0.625, 0.0396246), Point3D(0.3125, 0.640625, 0.0529412)), AABB(Point3D(0.28125, 0.640625, 0.0460945), Point3D(0.296875, 0.65625, 0.061471)), AABB(Point3D(0.296875, 0.640625, 0.0448234), Point3D(0.3125, 0.65625, 0.0529412)) }},
-        InternalNode{ 1.41845, { AABB(Point3D(0.28125, 0.640625, 0.0499748), Point3D(0.289062, 0.648438, 0.061471)), AABB(Point3D(0.289062, 0.640625, 0.0527459), Point3D(0.296875, 0.648438, 0.0535302)), AABB(Point3D(0.28125, 0.648438, 0.0460945), Point3D(0.289062, 0.65625, 0.0535302)), AABB(Point3D(0.289062, 0.648438, 0.0499214), Point3D(0.296875, 0.65625, 0.053431)) }},
-        InternalNode{ 1.41845, { AABB(Point3D(0.289062, 0.640625, 0.0529274), Point3D(0.292969, 0.644531, 0.0534035)), AABB(Point3D(0.292969, 0.640625, 0.0528435), Point3D(0.296875, 0.644531, 0.053138)), AABB(Point3D(0.289062, 0.644531, 0.053138), Point3D(0.292969, 0.648438, 0.0535302)), AABB(Point3D(0.292969, 0.644531, 0.0527459), Point3D(0.296875, 0.648438, 0.053138)) }},
-        InternalNode{ 1.41845, { AABB(Point3D(0.292969, 0.644531, 0.0529412), Point3D(0.294922, 0.646484, 0.053138)), AABB(Point3D(0.294922, 0.644531, 0.0527459), Point3D(0.296875, 0.646484, 0.0529412)), AABB(Point3D(0.292969, 0.646484, 0.0529412), Point3D(0.294922, 0.648438, 0.053138)), AABB(Point3D(0.294922, 0.646484, 0.0527459), Point3D(0.296875, 0.648438, 0.0529412)) }},
-        InternalNode{ 1.41845, { AABB(Point3D(0.292969, 0.646484, 0.0529412), Point3D(0.293945, 0.647461, 0.053138)), AABB(Point3D(0.293945, 0.646484, 0.0529412), Point3D(0.294922, 0.647461, 0.0529412)), AABB(Point3D(0.292969, 0.647461, 0.0529412), Point3D(0.293945, 0.648438, 0.053138)), AABB(Point3D(0.293945, 0.647461, 0.0529412), Point3D(0.294922, 0.648438, 0.0529412)) }},
-        LeafNode{ 1.41845, Point3D(0.293945, 0.646484, 0.0529412), Point3D(0.294922, 0.646484, 0.0529412), Point3D(0.293945, 0.647461, 0.0529412), Point3D(0.294922, 0.647461, 0.0529412) },
-        InternalNode{ 1.41845, { AABB(Point3D(0.28125, 0.625, 0.0369787), Point3D(0.289062, 0.632812, 0.059556)), AABB(Point3D(0.289062, 0.625, 0.0395865), Point3D(0.296875, 0.632812, 0.0514153)), AABB(Point3D(0.28125, 0.632812, 0.0488884), Point3D(0.289062, 0.640625, 0.0628428)), AABB(Point3D(0.289062, 0.632812, 0.0482353), Point3D(0.296875, 0.640625, 0.0531106)) }},
+        LeafNode{1.20365, Point3D(0.459961, 0.955078, 0.0531212), Point3D(0.460938, 0.955078, 0.0519448), Point3D(0.459961, 0.956055, 0.0528695), Point3D(0.460938, 0.956055, 0.0517754)},
+        LeafNode{1.20365, Point3D(0.459961, 0.954102, 0.0530449), Point3D(0.460938, 0.954102, 0.0516487), Point3D(0.459961, 0.955078, 0.0531212), Point3D(0.460938, 0.955078, 0.0519448)},
+        LeafNode{1.20365, Point3D(0.459961, 0.953125, 0.0525429), Point3D(0.460938, 0.953125, 0.0507546), Point3D(0.459961, 0.954102, 0.0530449), Point3D(0.460938, 0.954102, 0.0516487)},
+        LeafNode{1.20365, Point3D(0.460938, 0.953125, 0.0507546), Point3D(0.461914, 0.953125, 0.0466712), Point3D(0.460938, 0.954102, 0.0516487), Point3D(0.461914, 0.954102, 0.0480735)},
+        LeafNode{1.20365, Point3D(0.460938, 0.952148, 0.0495171), Point3D(0.461914, 0.952148, 0.045098), Point3D(0.460938, 0.953125, 0.0507546), Point3D(0.461914, 0.953125, 0.0466712)},
+        LeafNode{1.20365, Point3D(0.460938, 0.951172, 0.0483299), Point3D(0.461914, 0.951172, 0.0438285), Point3D(0.460938, 0.952148, 0.0495171), Point3D(0.461914, 0.952148, 0.045098)},
+        LeafNode{1.20365, Point3D(0.463867, 0.946289, 0.0463386), Point3D(0.464844, 0.946289, 0.0460792), Point3D(0.463867, 0.947266, 0.0431342), Point3D(0.464844, 0.947266, 0.0433005)},
     };
 
     Vector3D e0, e1;
@@ -2566,8 +2553,7 @@ void testTraversal() {
         findHeight(
             pA, pB, pC,
             nA, nB, nC,
-            //rayOrg + t * rayLength * rayDir,
-            rayOrg + (prismHitDistEnter + t * (prismHitDistLeave - prismHitDistEnter)) * rayDir,
+            rayOrg + t * rayLength * rayDir,
             hs);
         for (int j = 0; j < 3; ++j) {
             const float h = hs[j];
@@ -2737,6 +2723,18 @@ void testTraversal() {
                 nA, nB, nC,
                 tcA, tcB, tcC,
                 node.mpTL, node.mpBL, node.mpBR,
+                rayOrg, rayDir, prismHitDistEnter, node.distMax,
+                e0, e1,
+                tc2, tc1, tc0,
+                denom2, denom1, denom0,
+                &hpInCan, &hpInTex, &hitDist, &hitNormal)) {
+                printf("");
+            }
+            if (testNonlinearRayVsMicroTriangle(
+                pA, pB, pC,
+                nA, nB, nC,
+                tcA, tcB, tcC,
+                node.mpTL, node.mpBR, node.mpTR,
                 rayOrg, rayDir, prismHitDistEnter, node.distMax,
                 e0, e1,
                 tc2, tc1, tc0,

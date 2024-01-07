@@ -1917,6 +1917,12 @@ int32_t main(int32_t argc, const char* argv[]) try {
                             R"(gebco_08_rev_elev_4096_4096.dds)",
                             0.02f,
                         },
+                        {
+                            "50% Gray",
+                            R"()",
+                            R"(50p_gray_64x64.dds)",
+                            0.02f,
+                        },
                     };
                     if (ImGui::Combo(
                             "Texture", &textureIndex,
