@@ -589,7 +589,6 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE uint32_t solveCubicEquationNumerical(
     const float a = coeffs[3];
     const float b = coeffs[2];
     const float c = coeffs[1];
-    const float d = coeffs[0];
     const float Dq = pow2(2 * b) - 12 * a * c;
 
     const float yMin = evaluatePolynomial<degree>(coeffs, xMin);
@@ -1206,7 +1205,7 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
     };
     const float triAreaInTex = cross(tcs[1] - tcs[0], tcs[2] - tcs[0])/* * 0.5f*/;
     const bool tcFlipped = triAreaInTex < 0;
-    const float recTriAreaInTex = 1.0f / triAreaInTex;
+    //const float recTriAreaInTex = 1.0f / triAreaInTex;
 
     const Vector2D texTriEdgeNormals[] = {
         Vector2D(tcs[1].y - tcs[0].y, tcs[0].x - tcs[1].x),
