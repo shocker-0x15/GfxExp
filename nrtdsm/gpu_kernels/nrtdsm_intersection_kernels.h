@@ -1394,8 +1394,9 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
                 };
 
                 // JP: minmaxミップマップから作られるAABBは兄弟と共通の面を持っているため、
-                //     u, v軸それぞれに垂直な面との交差判定は6面で足りる。
-                // EN: 
+                //     u, v軸それぞれに垂直な面との交差判定は6回で足りる。
+                // EN: AABBs made from the minmax mipmap shares planes among their siblings,
+                //     so six intersection tests is enough for planes parpendicular to the u and v axes.
                 float hs_u[3][2], vs_u[3][2];
                 float hs_v[3][2], us_v[3][2];
 #pragma unroll
@@ -1407,7 +1408,7 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
                 down(curTexel);
 
                 // JP: AABBの高さ方向の面の位置はそれぞれ異なる。
-                // EN: 
+                // EN: Each AABB has different planes in the height direction.
                 const int2 nextImgSize = 2 * imgSize;
                 const auto readMinMax = [&mat, &dispParams, &nextImgSize, &curTexel, &maxDepth]
                 (const int32_t xOff, const int32_t yOff,
@@ -1485,7 +1486,7 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
                 };
 
                 // JP: 子ノードをレイのヒット距離の近い順にソート。
-                // EN: 
+                // EN: Sort child nodes in the order of closest hit distance of the ray.
                 sort(dists[0], entries[0], dists[1], entries[1]);
                 sort(dists[2], entries[2], dists[3], entries[3]);
                 sort(dists[0], entries[0], dists[2], entries[2]);
@@ -1531,7 +1532,7 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
             const Point3D mpBR(uRight, vBottom, cornerHeightBR);
 
             // JP: レイと現在のテクセルに対応する2つのマイクロ三角形の交差判定を行う。
-            // EN: 
+            // EN: Test the intersection of the ray vs two micro triangles corresponding to the current texel.
             float tt;
             Normal3D nn;
             Point3D hpInCan;
