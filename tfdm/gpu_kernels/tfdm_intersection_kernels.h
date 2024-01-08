@@ -4,6 +4,13 @@
 
 using namespace shared;
 
+#define DEBUG_TRAVERSAL 0
+
+CUDA_DEVICE_FUNCTION CUDA_INLINE bool isDebugPixel() {
+    return optixGetLaunchIndex().x == 960 && optixGetLaunchIndex().y == 540;
+    //return isCursorPixel();
+}
+
 
 
 CUDA_DEVICE_KERNEL void RT_IS_NAME(aabb)() {
@@ -31,13 +38,6 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(aabb)() {
 
 template <LocalIntersectionType intersectionType>
 CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
-#define DEBUG_TRAVERSAL 0
-
-#if DEBUG_TRAVERSAL
-    bool isDebugPixel = optixGetLaunchIndex().x == 960 && optixGetLaunchIndex().y == 540;
-    //bool isDebugPixel = isCursorPixel();
-#endif
-
     const auto sbtr = HitGroupSBTRecordData::get();
     const GeometryInstanceData &geomInst = plp.s->geometryInstanceDataBuffer[sbtr.geomInstSlot];
     const MaterialData &mat = plp.s->materialDataBuffer[geomInst.materialSlot];
@@ -123,7 +123,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
     uint32_t numRoots;
     findRoots(texTriAabbMinP, texTriAabbMaxP, maxDepth, targetMipLevel, roots, &numRoots);
 #if DEBUG_TRAVERSAL
-    if (isDebugPixel && getDebugPrintEnabled()) {
+    if (isDebugPixel() && getDebugPrintEnabled()) {
         printf(
             "%u-%u: TriAABB: (%g, %g) - (%g, %g), %u roots, signs: %c, %c\n",
             plp.f->frameIndex, optixGetPrimitiveIndex(),
@@ -139,7 +139,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
         const int16_t initialLod = curTexel.lod;
         next(endTexel, signX, signY, initialLod);
 #if DEBUG_TRAVERSAL
-        if (isDebugPixel && getDebugPrintEnabled()) {
+        if (isDebugPixel() && getDebugPrintEnabled()) {
             printf(
                 "%u-%u, Root %u: [%d - %d, %d] - [%d - %d, %d]\n",
                 plp.f->frameIndex, optixGetPrimitiveIndex(), rootIdx,
@@ -160,7 +160,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
             // EN: Skip the texel if it is outside of the base triangle.
             if (isectResult == TriangleSquareIntersection2DResult::SquareOutsideTriangle) {
 #if DEBUG_TRAVERSAL
-                if (isDebugPixel && getDebugPrintEnabled()) {
+                if (isDebugPixel() && getDebugPrintEnabled()) {
                     printf(
                         "%u-%u, Root %u: [%d - %d, %d] OutTri\n",
                         plp.f->frameIndex, optixGetPrimitiveIndex(), rootIdx,
@@ -216,7 +216,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
             //     the ray will never hit the surface inside the texel
             if (!texelAabb.intersect(rayOrgInTcTang, rayDirInTcTang, tMin, tMax)) {
 #if DEBUG_TRAVERSAL
-                if (isDebugPixel && getDebugPrintEnabled()) {
+                if (isDebugPixel() && getDebugPrintEnabled()) {
                     printf(
                         "%u-%u, Root %u: [%d - %d, %d] Miss AABB\n",
                         plp.f->frameIndex, optixGetPrimitiveIndex(), rootIdx,
@@ -231,7 +231,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
             // EN: Descend to the lower mip when the ray hit the AABB but does not reach the target mip level.
             if (curTexel.lod > targetMipLevel) {
 #if DEBUG_TRAVERSAL
-                if (isDebugPixel && getDebugPrintEnabled()) {
+                if (isDebugPixel() && getDebugPrintEnabled()) {
                     printf(
                         "%u-%u, Root %u: [%d - %d, %d] Hit AABB, down\n",
                         plp.f->frameIndex, optixGetPrimitiveIndex(), rootIdx,
@@ -243,7 +243,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
             }
 
 #if DEBUG_TRAVERSAL
-            if (isDebugPixel && getDebugPrintEnabled()) {
+            if (isDebugPixel() && getDebugPrintEnabled()) {
                 printf(
                     "%u-%u, Root %u: [%d - %d, %d] Hit, AABB, intersect\n",
                     plp.f->frameIndex, optixGetPrimitiveIndex(), rootIdx,
@@ -282,10 +282,10 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
                 }
             }
             if constexpr (intersectionType == LocalIntersectionType::TwoTriangle) {
-                const float cornerHeightUL =
+                const float cornerHeightTL =
                     dispParams.hOffset + dispParams.hScale
                     * (sample(curTexel.x - 0.0f, curTexel.y - 0.0f) - dispParams.hBias);
-                const float cornerHeightUR =
+                const float cornerHeightTR =
                     dispParams.hOffset + dispParams.hScale
                     * (sample(curTexel.x + 1.0f, curTexel.y - 0.0f) - dispParams.hBias);
                 const float cornerHeightBL =
@@ -295,15 +295,15 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
                     dispParams.hOffset + dispParams.hScale
                     * (sample(curTexel.x + 1.0f, curTexel.y + 1.0f) - dispParams.hBias);
 
-                const Point2D tcUL(texelCenter + texelScale * Vector2D(-0.5f, -0.5f));
-                const Point2D tcUR(texelCenter + texelScale * Vector2D(0.5f, -0.5f));
+                const Point2D tcTL(texelCenter + texelScale * Vector2D(-0.5f, -0.5f));
+                const Point2D tcTR(texelCenter + texelScale * Vector2D(0.5f, -0.5f));
                 const Point2D tcBL(texelCenter + texelScale * Vector2D(-0.5f, 0.5f));
                 const Point2D tcBR(texelCenter + texelScale * Vector2D(0.5f, 0.5f));
 
                 // JP: 法線はオブジェクト空間で正規化する。
                 // EN: Normalize normal vectors in the object space.
-                const Vector3D nULInObj = normalize(matTcToNInObj * Vector3D(tcUL, 1.0f));
-                const Vector3D nURInObj = normalize(matTcToNInObj * Vector3D(tcUR, 1.0f));
+                const Vector3D nTLInObj = normalize(matTcToNInObj * Vector3D(tcTL, 1.0f));
+                const Vector3D nTRInObj = normalize(matTcToNInObj * Vector3D(tcTR, 1.0f));
                 const Vector3D nBLInObj = normalize(matTcToNInObj * Vector3D(tcBL, 1.0f));
                 const Vector3D nBRInObj = normalize(matTcToNInObj * Vector3D(tcBR, 1.0f));
 
@@ -311,8 +311,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
                 // EN: Compute the coordinates of four corners in the tangent space using
                 //     the height values at the corners and the normals.
                 const Matrix3x3 matObjToTcTang3x3 = matObjToTcTang.getUpperLeftMatrix();
-                const Point3D pUL = Point3D(tcUL, 0.0f) + cornerHeightUL * matObjToTcTang3x3 * nULInObj;
-                const Point3D pUR = Point3D(tcUR, 0.0f) + cornerHeightUR * matObjToTcTang3x3 * nURInObj;
+                const Point3D pTL = Point3D(tcTL, 0.0f) + cornerHeightTL * matObjToTcTang3x3 * nTLInObj;
+                const Point3D pTR = Point3D(tcTR, 0.0f) + cornerHeightTR * matObjToTcTang3x3 * nTRInObj;
                 const Point3D pBL = Point3D(tcBL, 0.0f) + cornerHeightBL * matObjToTcTang3x3 * nBLInObj;
                 const Point3D pBR = Point3D(tcBR, 0.0f) + cornerHeightBR * matObjToTcTang3x3 * nBRInObj;
 
@@ -340,9 +340,9 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
                 float mb1, mb2;
                 Vector3D n;
                 if (testRayVsTriangleIntersection(
-                    rayOrgInTcTang, rayDirInTcTang, tMin, tMax, pUL, pUR, pBR, &n, &t, &mb1, &mb2)) {
+                    rayOrgInTcTang, rayDirInTcTang, tMin, tMax, pTL, pTR, pBR, &n, &t, &mb1, &mb2)) {
                     if (t < tMax) {
-                        const Point2D hp((1 - (mb1 + mb2)) * tcUL + mb1 * tcUR + mb2 * tcBR);
+                        const Point2D hp((1 - (mb1 + mb2)) * tcTL + mb1 * tcTR + mb2 * tcBR);
                         const float b1 = cross(tcs[2] - hp, tcs[0] - hp) * recTriAreaInTc;
                         const float b2 = cross(tcs[0] - hp, tcs[1] - hp) * recTriAreaInTc;
                         if (b1 >= 0.0f && b2 >= 0.0f && b1 + b2 <= 1.0f) {
@@ -354,9 +354,9 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
                     }
                 }
                 if (testRayVsTriangleIntersection(
-                    rayOrgInTcTang, rayDirInTcTang, tMin, tMax, pUL, pBR, pBL, &n, &t, &mb1, &mb2)) {
+                    rayOrgInTcTang, rayDirInTcTang, tMin, tMax, pTL, pBR, pBL, &n, &t, &mb1, &mb2)) {
                     if (t < tMax) {
-                        const Point2D hp((1 - (mb1 + mb2)) * tcUL + mb1 * tcBR + mb2 * tcBL);
+                        const Point2D hp((1 - (mb1 + mb2)) * tcTL + mb1 * tcBR + mb2 * tcBL);
                         const float b1 = cross(tcs[2] - hp, tcs[0] - hp) * recTriAreaInTc;
                         const float b2 = cross(tcs[0] - hp, tcs[1] - hp) * recTriAreaInTc;
                         if (b1 >= 0.0f && b2 >= 0.0f && b1 + b2 <= 1.0f) {
@@ -369,10 +369,10 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
                 }
             }
             if constexpr (intersectionType == LocalIntersectionType::Bilinear) {
-                const float cornerHeightUL =
+                const float cornerHeightTL =
                     dispParams.hOffset + dispParams.hScale
                     * (sample(curTexel.x - 0.0f, curTexel.y - 0.0f) - dispParams.hBias);
-                const float cornerHeightUR =
+                const float cornerHeightTR =
                     dispParams.hOffset + dispParams.hScale
                     * (sample(curTexel.x + 1.0f, curTexel.y - 0.0f) - dispParams.hBias);
                 const float cornerHeightBL =
@@ -383,7 +383,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
                     * (sample(curTexel.x + 1.0f, curTexel.y + 1.0f) - dispParams.hBias);
 
 #if DEBUG_TRAVERSAL
-                if (isDebugPixel && getDebugPrintEnabled()) {
+                if (isDebugPixel() && getDebugPrintEnabled()) {
                     printf(
                         "%u-%u: %u-%u-%u\n",
                         plp.f->frameIndex, optixGetPrimitiveIndex(),
@@ -404,7 +404,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
                     printf(
                         "%u-%u: Height: %g, %g, %g, %g\n",
                         plp.f->frameIndex, optixGetPrimitiveIndex(),
-                        cornerHeightUL, cornerHeightUR, cornerHeightBL, cornerHeightBR);
+                        cornerHeightTL, cornerHeightTR, cornerHeightBL, cornerHeightBR);
                     printf(
                         "%u-%u: org: (%g, %g, %g), dir: (%g, %g, %g)\n",
                         plp.f->frameIndex, optixGetPrimitiveIndex(),
@@ -440,8 +440,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
                         const float ut = imgSize.x * curGuess.x - curTexel.x;
                         const float vt = imgSize.y * curGuess.y - curTexel.y;
                         const float h =
-                            (1 - ut) * (1 - vt) * cornerHeightUL
-                            + ut * (1 - vt) * cornerHeightUR
+                            (1 - ut) * (1 - vt) * cornerHeightTL
+                            + ut * (1 - vt) * cornerHeightTR
                             + (1 - ut) * vt * cornerHeightBL
                             + ut * vt * cornerHeightBR;
 
@@ -460,10 +460,10 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
                         hitDist2 = sqDistance(S, rayOrg);
 
                         const float jacobHu = imgSize.x *
-                            (-(1 - vt) * cornerHeightUL + (1 - vt) * cornerHeightUR
+                            (-(1 - vt) * cornerHeightTL + (1 - vt) * cornerHeightTR
                              - vt * cornerHeightBL + vt * cornerHeightBR);
                         const float jacobHv = imgSize.y *
-                            (-(1 - ut) * cornerHeightUL - ut * cornerHeightUR
+                            (-(1 - ut) * cornerHeightTL - ut * cornerHeightTR
                              + (1 - ut) * cornerHeightBL + ut * cornerHeightBR);
 
                         jacobS =
@@ -481,7 +481,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
                             *hitDist = std::sqrt(hitDist2/* / rayDir.sqLength()*/);
                             *hitNormal = static_cast<Normal3D>(normalize(cross(jacobS[1], jacobS[0])));
 #if DEBUG_TRAVERSAL
-                            if (isDebugPixel && getDebugPrintEnabled()) {
+                            if (isDebugPixel() && getDebugPrintEnabled()) {
                                 printf(
                                     "%u-%u-%u: guess: (%g, %g), dist: %g, S: (%g, %g, %g), n: (%g, %g, %g)\n",
                                     plp.f->frameIndex, optixGetPrimitiveIndex(), itr,
