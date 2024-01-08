@@ -1229,6 +1229,7 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
     findRoots(texTriAabbMinP, texTriAabbMaxP, maxDepth, targetMipLevel, roots, &numRoots);
     MipMapStack stack;
 #if DEBUG_TRAVERSAL
+    uint32_t numIterations = 0;
     if (isDebugPixel() && getDebugPrintEnabled()) {
         printf(
             "%u-%u: pA: (%g, %g, %g), pB: (%g, %g, %g), pC: (%g, %g, %g)\n",
@@ -1282,6 +1283,9 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
 
         MipMapStack::Entry curEntry(floorMod(curTexel.x, 2), floorMod(curTexel.y, 2));
         while (curTexel.lod <= initialLod) {
+#if DEBUG_TRAVERSAL
+            ++numIterations;
+#endif
             if (curEntry.asUInt8 == 0xFF) {
                 if (!stack.tryPop(curTexel.lod, &curEntry)) {
 #if DEBUG_TRAVERSAL
