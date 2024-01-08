@@ -1350,6 +1350,10 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
             plp.f->frameIndex, optixGetPrimitiveIndex(),
             v2print(texTriAabbMinP), v2print(texTriAabbMaxP),
             numRoots);
+        printf(
+            "%u-%u: maxDepth: %d\n",
+            plp.f->frameIndex, optixGetPrimitiveIndex(),
+            maxDepth);
     }
 #endif
     for (int rootIdx = 0; rootIdx < lengthof(roots); ++rootIdx) {
