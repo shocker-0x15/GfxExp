@@ -908,32 +908,29 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsAabb(
     *hitDistMin = INFINITY;
     *hitDistMax = -INFINITY;
 
+    const auto computeHitDistance = [&]
+    (const float h, const float recDenom) {
+        const float alpha = evaluateQuadraticPolynomial(alpha2, alpha1, alpha0, h) * recDenom;
+        const float beta = evaluateQuadraticPolynomial(beta2, beta1, beta0, h) * recDenom;
+        const Point3D SAh = pA + h * nA;
+        const Point3D SBh = pB + h * nB;
+        const Point3D SCh = pC + h * nC;
+        const float dist = dot(
+            rayDir,
+            (1 - alpha - beta) * SAh + alpha * SBh + beta * SCh - rayOrg);
+        *hitDistMin = std::fmin(*hitDistMin, dist);
+        *hitDistMax = std::fmax(*hitDistMax, dist);
+    };
+
     const auto testHeightPlane = [&]
     (const float h) {
-        const auto compute_u_v = [&]
-        (const float h_plane, const float recDenom,
-         float* const u, float* const v) {
-            *u = evaluateQuadraticPolynomial(tc2.x, tc1.x, tc0.x, h_plane) * recDenom;
-            *v = evaluateQuadraticPolynomial(tc2.y, tc1.y, tc0.y, h_plane) * recDenom;
-        };
-
         if (const float denom = evaluateQuadraticPolynomial(denom2, denom1, denom0, h);
             denom != 0) {
             const float recDenom = 1.0f / denom;
-            float u, v;
-            compute_u_v(h, recDenom, &u, &v);
-            if (u >= aabb.minP.x && u <= aabb.maxP.x && v >= aabb.minP.y && v <= aabb.maxP.y) {
-                const float alpha = evaluateQuadraticPolynomial(alpha2, alpha1, alpha0, h) * recDenom;
-                const float beta = evaluateQuadraticPolynomial(beta2, beta1, beta0, h) * recDenom;
-                const Point3D SAh = pA + h * nA;
-                const Point3D SBh = pB + h * nB;
-                const Point3D SCh = pC + h * nC;
-                const float dist = dot(
-                    rayDir,
-                    (1 - alpha - beta) * SAh + alpha * SBh + beta * SCh - rayOrg);
-                *hitDistMin = std::fmin(*hitDistMin, dist);
-                *hitDistMax = std::fmax(*hitDistMax, dist);
-            }
+            const float u = evaluateQuadraticPolynomial(tc2.x, tc1.x, tc0.x, h) * recDenom;
+            const float v = evaluateQuadraticPolynomial(tc2.y, tc1.y, tc0.y, h) * recDenom;
+            if (u >= aabb.minP.x && u <= aabb.maxP.x && v >= aabb.minP.y && v <= aabb.maxP.y)
+                computeHitDistance(h, recDenom);
         }
     };
 
@@ -942,50 +939,36 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsAabb(
     testHeightPlane(aabb.maxP.z);
 
     const auto testUPlane = [&]
-    (const float v, const float h) {
-        if (v >= aabb.minP.y && v <= aabb.maxP.y && h >= aabb.minP.z && h <= aabb.maxP.z) {
-            const float recDenom = 1.0f / evaluateQuadraticPolynomial(denom2, denom1, denom0, h);
-            const float alpha = evaluateQuadraticPolynomial(alpha2, alpha1, alpha0, h) * recDenom;
-            const float beta = evaluateQuadraticPolynomial(beta2, beta1, beta0, h) * recDenom;
-            const Point3D SAh = pA + h * nA;
-            const Point3D SBh = pB + h * nB;
-            const Point3D SCh = pC + h * nC;
-            const float dist = dot(
-                rayDir,
-                (1 - alpha - beta) * SAh + alpha * SBh + beta * SCh - rayOrg);
-            *hitDistMin = std::fmin(*hitDistMin, dist);
-            *hitDistMax = std::fmax(*hitDistMax, dist);
+    (const float vs[2], const float hs[2]) {
+        for (uint32_t rIdx = 0; rIdx < 2; ++rIdx) {
+            const float v = vs[rIdx];
+            const float h = hs[rIdx];
+            if (v >= aabb.minP.y && v <= aabb.maxP.y && h >= aabb.minP.z && h <= aabb.maxP.z) {
+                const float recDenom = 1.0f / evaluateQuadraticPolynomial(denom2, denom1, denom0, h);
+                computeHitDistance(h, recDenom);
+            }
         }
     };
 
     // min/max u plane
-    testUPlane(vs_uLo[0], hs_uLo[0]);
-    testUPlane(vs_uLo[1], hs_uLo[1]);
-    testUPlane(vs_uHi[0], hs_uHi[0]);
-    testUPlane(vs_uHi[1], hs_uHi[1]);
+    testUPlane(vs_uLo, hs_uLo);
+    testUPlane(vs_uHi, hs_uHi);
 
     const auto testVPlane = [&]
-    (const float u, const float h) {
-        if (u >= aabb.minP.x && u <= aabb.maxP.x && h >= aabb.minP.z && h <= aabb.maxP.z) {
-            const float recDenom = 1.0f / evaluateQuadraticPolynomial(denom2, denom1, denom0, h);
-            const float alpha = evaluateQuadraticPolynomial(alpha2, alpha1, alpha0, h) * recDenom;
-            const float beta = evaluateQuadraticPolynomial(beta2, beta1, beta0, h) * recDenom;
-            const Point3D SAh = pA + h * nA;
-            const Point3D SBh = pB + h * nB;
-            const Point3D SCh = pC + h * nC;
-            const float dist = dot(
-                rayDir,
-                (1 - alpha - beta) * SAh + alpha * SBh + beta * SCh - rayOrg);
-            *hitDistMin = std::fmin(*hitDistMin, dist);
-            *hitDistMax = std::fmax(*hitDistMax, dist);
+    (const float us[2], const float hs[2]) {
+        for (uint32_t rIdx = 0; rIdx < 2; ++rIdx) {
+            const float u = us[rIdx];
+            const float h = hs[rIdx];
+            if (u >= aabb.minP.x && u <= aabb.maxP.x && h >= aabb.minP.z && h <= aabb.maxP.z) {
+                const float recDenom = 1.0f / evaluateQuadraticPolynomial(denom2, denom1, denom0, h);
+                computeHitDistance(h, recDenom);
+            }
         }
     };
 
     // min/max v plane
-    testVPlane(us_vLo[0], hs_vLo[0]);
-    testVPlane(us_vLo[1], hs_vLo[1]);
-    testVPlane(us_vHi[0], hs_vHi[0]);
-    testVPlane(us_vHi[1], hs_vHi[1]);
+    testVPlane(us_vLo, hs_vLo);
+    testVPlane(us_vHi, hs_vHi);
 
     *hitDistMin = std::fmax(*hitDistMin, distMin);
     *hitDistMax = std::fmin(*hitDistMax, distMax);
