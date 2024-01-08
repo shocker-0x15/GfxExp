@@ -115,7 +115,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
     const int32_t targetMipLevel = dispParams.targetMipLevel;
 
 #if OUTPUT_TRAVERSAL_STATS
-    uint32_t numIterations = 0;
+    uint16_t numAabbTests = 0;
+    uint16_t numLeafTests = 0;
 #endif
 
     Texel roots[4];
@@ -147,9 +148,6 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
         }
 #endif
         while (curTexel != endTexel) {
-#if OUTPUT_TRAVERSAL_STATS
-            ++numIterations;
-#endif
             const int2 imgSize = make_int2(1 << max(maxDepth - curTexel.lod, 0));
             const float texelScale = std::pow(2.0f, static_cast<float>(curTexel.lod - maxDepth));
             const Point2D texelCenter = Point2D(curTexel.x + 0.5f, curTexel.y + 0.5f) * texelScale;
@@ -177,6 +175,9 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
             // EN: Compute the AABB of texel in the tangent space using affine arithmetic.
             AABB texelAabb;
             {
+#if OUTPUT_TRAVERSAL_STATS
+                ++numAabbTests;
+#endif
                 const int2 wrapIndex = make_int2(floorDiv(curTexel.x, imgSize.x), floorDiv(curTexel.y, imgSize.y));
                 const uint2 wrappedTexel = curTexel.lod <= maxDepth ?
                     make_uint2(curTexel.x - wrapIndex.x * imgSize.x, curTexel.y - wrapIndex.y * imgSize.y) :
@@ -248,6 +249,10 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
                     plp.f->frameIndex, optixGetPrimitiveIndex(), rootIdx,
                     curTexel.lod, curTexel.x, curTexel.y);
             }
+#endif
+
+#if OUTPUT_TRAVERSAL_STATS
+            ++numLeafTests;
 #endif
 
             const auto sample = [&](float px, float py) {
@@ -564,7 +569,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
         attr.normalInObj = hitNormal;
     }
 #if OUTPUT_TRAVERSAL_STATS
-    attr.numIterations = numIterations;
+    attr.travStats.numAabbTests = numAabbTests;
+    attr.travStats.numLeafTests = numLeafTests;
 #endif
     const uint8_t hitKind = dot(rayDirInTcTang, hitNormal) <= 0 ?
         CustomHitKind_DisplacedSurfaceFrontFace :

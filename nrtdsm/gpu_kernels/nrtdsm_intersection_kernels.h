@@ -1221,7 +1221,8 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
     constexpr int32_t targetMipLevel = 0;
 
 #if OUTPUT_TRAVERSAL_STATS
-    uint32_t numIterations = 0;
+    uint16_t numAabbTests = 0;
+    uint16_t numLeafTests = 0;
 #endif
 
     Texel roots[4];
@@ -1298,10 +1299,6 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
             }
             curTexel.x = floorDiv(curTexel.x, 2) * 2 + curEntry.offsetX;
             curTexel.y = floorDiv(curTexel.y, 2) * 2 + curEntry.offsetY;
-
-#if OUTPUT_TRAVERSAL_STATS
-            ++numIterations;
-#endif
 
 #if DEBUG_TRAVERSAL
             if (isDebugPixel() && getDebugPrintEnabled()) {
@@ -1433,6 +1430,9 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
                 int32_t numValidEntries = 0;
 #pragma unroll
                 for (int i = 0; i < 4; ++i) {
+#if OUTPUT_TRAVERSAL_STATS
+                    ++numAabbTests;
+#endif
                     const int32_t iuLo = i % 2;
                     const int32_t iuHi = i % 2 + 1;
                     const int32_t ivLo = i / 2;
@@ -1499,6 +1499,10 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
 
                 continue;
             }
+
+#if OUTPUT_TRAVERSAL_STATS
+            ++numLeafTests;
+#endif
 
             const auto sample = [&](float px, float py) {
                 // No need to explicitly consider texture wrapping since the sampler is responsible for it.
@@ -1618,7 +1622,8 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
     DisplacedSurfaceAttributes attr = {};
     attr.normalInObj = hitNormal;
 #if OUTPUT_TRAVERSAL_STATS
-    attr.numIterations = numIterations;
+    attr.travStats.numAabbTests = numAabbTests;
+    attr.travStats.numLeafTests = numLeafTests;
 #endif
     const uint8_t hitKind = dot(rayDirInObj, hitNormal) <= 0 ?
         CustomHitKind_DisplacedSurfaceFrontFace :

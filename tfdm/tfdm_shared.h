@@ -30,10 +30,15 @@ namespace shared {
 
 
 
+    struct TraversalStats {
+        uint16_t numAabbTests;
+        uint16_t numLeafTests;
+    };
+
     struct DisplacedSurfaceAttributes {
         Normal3D normalInObj;
 #if OUTPUT_TRAVERSAL_STATS
-        uint32_t numIterations;
+        TraversalStats travStats;
 #endif
     };
 
@@ -102,7 +107,7 @@ namespace shared {
         uint16_t qbcB;
         uint16_t qbcC;
 #if OUTPUT_TRAVERSAL_STATS
-        uint32_t numTravIterations;
+        TraversalStats travStats;
 #endif
     };
 
@@ -182,7 +187,7 @@ namespace shared {
         optixu::NativeBlockBuffer2D<GBuffer2Elements> GBuffer2[2];
 
 #if OUTPUT_TRAVERSAL_STATS
-        optixu::NativeBlockBuffer2D<uint32_t> numTravItrsBuffer;
+        optixu::NativeBlockBuffer2D<TraversalStats> numTravStatsBuffer;
 #endif
 
         ROBuffer<MaterialData> materialDataBuffer;
@@ -244,7 +249,9 @@ namespace shared {
         Normal,
         TexCoord,
         Flow,
-        TraversalIterations,
+        TotalTraversalTests,
+        AABBTests,
+        LeafTests,
         DenoisedBeauty,
     };
 

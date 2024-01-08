@@ -1138,7 +1138,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
     cudau::Array gBuffer1[2];
     cudau::Array gBuffer2[2];
 #if OUTPUT_TRAVERSAL_STATS
-    cudau::Array numTravItrsBuffer;
+    cudau::Array numTravStatsBuffer;
 #endif
     
     cudau::Array beautyAccumBuffer;
@@ -1170,8 +1170,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
         }
 
 #if OUTPUT_TRAVERSAL_STATS
-        numTravItrsBuffer.initialize2D(
-            gpuEnv.cuContext, cudau::ArrayElementType::UInt32, 1,
+        numTravStatsBuffer.initialize2D(
+            gpuEnv.cuContext, cudau::ArrayElementType::UInt32, (sizeof(shared::TraversalStats) + 3) / 4,
             cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable,
             renderTargetSizeX, renderTargetSizeY, 1);
 #endif
@@ -1231,7 +1231,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         beautyAccumBuffer.finalize();
 
 #if OUTPUT_TRAVERSAL_STATS
-        numTravItrsBuffer.finalize();
+        numTravStatsBuffer.finalize();
 #endif
 
         for (int i = 1; i >= 0; --i) {
@@ -1249,7 +1249,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         }
 
 #if OUTPUT_TRAVERSAL_STATS
-        numTravItrsBuffer.resize(width, height);
+        numTravStatsBuffer.resize(width, height);
 #endif
 
         beautyAccumBuffer.resize(width, height);
@@ -1399,7 +1399,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         staticPlp.GBuffer2[1] = gBuffer2[1].getSurfaceObject(0);
 
 #if OUTPUT_TRAVERSAL_STATS
-        staticPlp.numTravItrsBuffer = numTravItrsBuffer.getSurfaceObject(0);
+        staticPlp.numTravStatsBuffer = numTravStatsBuffer.getSurfaceObject(0);
 #endif
 
         staticPlp.materialDataBuffer =
@@ -1557,7 +1557,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
             staticPlp.GBuffer2[0] = gBuffer2[0].getSurfaceObject(0);
             staticPlp.GBuffer2[1] = gBuffer2[1].getSurfaceObject(0);
 #if OUTPUT_TRAVERSAL_STATS
-            staticPlp.numTravItrsBuffer = numTravItrsBuffer.getSurfaceObject(0);
+            staticPlp.numTravStatsBuffer = numTravStatsBuffer.getSurfaceObject(0);
 #endif
             staticPlp.beautyAccumBuffer = beautyAccumBuffer.getSurfaceObject(0);
             staticPlp.albedoAccumBuffer = albedoAccumBuffer.getSurfaceObject(0);
@@ -2094,8 +2094,14 @@ int32_t main(int32_t argc, const char* argv[]) try {
                     ImGui::RadioButtonE("Motion Vector", &bufferTypeToDisplay, shared::BufferToDisplay::Flow);
 #if OUTPUT_TRAVERSAL_STATS
                     ImGui::RadioButtonE(
-                        "Traversal Iterations", &bufferTypeToDisplay,
-                        shared::BufferToDisplay::TraversalIterations);
+                        "Total Traversal Tests", &bufferTypeToDisplay,
+                        shared::BufferToDisplay::TotalTraversalTests);
+                    ImGui::RadioButtonE(
+                        "AABB Tests", &bufferTypeToDisplay,
+                        shared::BufferToDisplay::AABBTests);
+                    ImGui::RadioButtonE(
+                        "Leaf Tests", &bufferTypeToDisplay,
+                        shared::BufferToDisplay::LeafTests);
 #endif
                     ImGui::RadioButtonE(
                         "Denoised Beauty", &bufferTypeToDisplay, shared::BufferToDisplay::DenoisedBeauty);
@@ -2483,7 +2489,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
         case shared::BufferToDisplay::DenoisedBeauty:
             bufferToDisplay = linearDenoisedBeautyBuffer.getDevicePointer();
             break;
-        case shared::BufferToDisplay::TraversalIterations:
+        case shared::BufferToDisplay::TotalTraversalTests:
+        case shared::BufferToDisplay::AABBTests:
+        case shared::BufferToDisplay::LeafTests:
             break;
         default:
             Assert_ShouldNotBeCalled();

@@ -37,7 +37,8 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(setupGBuffers)() {
     hitPointParams.qbcB = 0;
     hitPointParams.qbcC = 0;
 #if OUTPUT_TRAVERSAL_STATS
-    hitPointParams.numTravIterations = 0;
+    hitPointParams.travStats.numAabbTests = 0;
+    hitPointParams.travStats.numLeafTests = 0;
 #endif
 
     PickInfo pickInfo = {};
@@ -79,7 +80,7 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(setupGBuffers)() {
     plp.s->GBuffer2[bufIdx].write(launchIndex, gb2Elems);
 
 #if OUTPUT_TRAVERSAL_STATS
-    plp.s->numTravItrsBuffer.write(launchIndex, hitPointParams.numTravIterations);
+    plp.s->numTravStatsBuffer.write(launchIndex, hitPointParams.travStats);
 #endif
 
     if (launchIndex.x == plp.f->mousePosition.x &&
@@ -134,7 +135,8 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
     hitPointParams->isDisplacedMesh = !isTriangleHit;
     hitPointParams->primIndex = hp.primIndex;
 #if OUTPUT_TRAVERSAL_STATS
-    hitPointParams->numTravIterations = 0;
+    hitPointParams->travStats.numAabbTests = 0;
+    hitPointParams->travStats.numLeafTests = 0;
 #endif
 
     Point3D positionInWorld;
@@ -171,7 +173,7 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
             geometricNormalInObj = hitAttrs.normalInObj;
             shadingNormalInObj = hitAttrs.normalInObj;
 #if OUTPUT_TRAVERSAL_STATS
-            hitPointParams->numTravIterations = hitAttrs.numIterations;
+            hitPointParams->travStats = hitAttrs.travStats;
 #endif
 
             const GeometryInstanceDataForTFDM &tfdmGeomInst = plp.s->geomInstTfdmDataBuffer[sbtr.geomInstSlot];
