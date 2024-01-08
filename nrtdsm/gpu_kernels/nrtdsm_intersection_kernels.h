@@ -898,6 +898,109 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsAabb(
     const float beta2, const float beta1, const float beta0,
     const float denom2, const float denom1, const float denom0,
     const Point2D &tc2, const Point2D &tc1, const Point2D &tc0,
+    // results
+    float* const hitDistMin, float* const hitDistMax) {
+    *hitDistMin = INFINITY;
+    *hitDistMax = -INFINITY;
+
+    const auto computeHitDistance = [&]
+    (const float h, const float recDenom) {
+        const float alpha = evaluateQuadraticPolynomial(alpha2, alpha1, alpha0, h) * recDenom;
+        const float beta = evaluateQuadraticPolynomial(beta2, beta1, beta0, h) * recDenom;
+        const Point3D SAh = pA + h * nA;
+        const Point3D SBh = pB + h * nB;
+        const Point3D SCh = pC + h * nC;
+        const float dist = dot(
+            rayDir,
+            (1 - alpha - beta) * SAh + alpha * SBh + beta * SCh - rayOrg);
+        *hitDistMin = std::fmin(*hitDistMin, dist);
+        *hitDistMax = std::fmax(*hitDistMax, dist);
+    };
+
+    const auto testHeightPlane = [&]
+    (const float h) {
+        if (const float denom = evaluateQuadraticPolynomial(denom2, denom1, denom0, h);
+            denom != 0) {
+            const float recDenom = 1.0f / denom;
+            const float u = evaluateQuadraticPolynomial(tc2.x, tc1.x, tc0.x, h) * recDenom;
+            const float v = evaluateQuadraticPolynomial(tc2.y, tc1.y, tc0.y, h) * recDenom;
+            if (u >= aabb.minP.x && u <= aabb.maxP.x && v >= aabb.minP.y && v <= aabb.maxP.y)
+                computeHitDistance(h, recDenom);
+        }
+    };
+
+    // min/max height plane
+    testHeightPlane(aabb.minP.z);
+    testHeightPlane(aabb.maxP.z);
+
+    const auto testUPlane = [&]
+    (const float u) {
+        const float coeffs[] = {
+            tc0.x - u * denom0,
+            tc1.x - u * denom1,
+            tc2.x - u * denom2,
+        };
+        float hs[2];
+        const uint32_t numRoots = solveQuadraticEquation(coeffs, aabb.minP.z, aabb.maxP.z, hs);
+#pragma unroll
+        for (uint32_t rIdx = 0; rIdx < 2; ++rIdx) {
+            if (rIdx >= numRoots)
+                break;
+            const float h = hs[rIdx];
+            const float recDenom = 1.0f / evaluateQuadraticPolynomial(denom2, denom1, denom0, h);
+            const float v = evaluateQuadraticPolynomial(tc2.y, tc1.y, tc0.y, h) * recDenom;
+            if (v >= aabb.minP.y && v <= aabb.maxP.y)
+                computeHitDistance(h, recDenom);
+        }
+    };
+
+    // min/max u plane
+    testUPlane(aabb.minP.x);
+    testUPlane(aabb.maxP.x);
+
+    const auto testVPlane = [&]
+    (const float v) {
+        const float coeffs[] = {
+            tc0.y - v * denom0,
+            tc1.y - v * denom1,
+            tc2.y - v * denom2,
+        };
+        float hs[2];
+        const uint32_t numRoots = solveQuadraticEquation(coeffs, aabb.minP.z, aabb.maxP.z, hs);
+#pragma unroll
+        for (uint32_t rIdx = 0; rIdx < 2; ++rIdx) {
+            if (rIdx >= numRoots)
+                break;
+            const float h = hs[rIdx];
+            const float recDenom = 1.0f / evaluateQuadraticPolynomial(denom2, denom1, denom0, h);
+            const float u = evaluateQuadraticPolynomial(tc2.x, tc1.x, tc0.x, h) * recDenom;
+            if (u >= aabb.minP.x && u <= aabb.maxP.x)
+                computeHitDistance(h, recDenom);
+        }
+    };
+
+    // min/max v plane
+    testVPlane(aabb.minP.y);
+    testVPlane(aabb.maxP.y);
+
+    *hitDistMin = std::fmax(*hitDistMin, distMin);
+    *hitDistMax = std::fmin(*hitDistMax, distMax);
+
+    return *hitDistMin <= *hitDistMax && *hitDistMax > 0.0f;
+}
+
+CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsAabb(
+    // Prism
+    const Point3D &pA, const Point3D &pB, const Point3D &pC,
+    const Normal3D &nA, const Normal3D &nB, const Normal3D &nC,
+    // AABB in texture space
+    const AABB &aabb,
+    // Ray
+    const Point3D &rayOrg, const Vector3D &rayDir, const float distMin, const float distMax,
+    const float alpha2, const float alpha1, const float alpha0,
+    const float beta2, const float beta1, const float beta0,
+    const float denom2, const float denom1, const float denom0,
+    const Point2D &tc2, const Point2D &tc1, const Point2D &tc0,
     // Intermediate intersection results
     const float hs_uLo[2], const float vs_uLo[2],
     const float hs_uHi[2], const float vs_uHi[2],
@@ -1397,10 +1500,8 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
                 // EN: Each AABB has different planes in the height direction.
                 const int2 nextImgSize = 2 * imgSize;
                 const auto readMinMax = [&mat, &dispParams, &nextImgSize, &curTexel, &maxDepth]
-                (const int32_t xOff, const int32_t yOff,
+                (const int32_t x, const int32_t y,
                  float* const hMin, float* const hMax) {
-                    const int32_t x = curTexel.x + xOff;
-                    const int32_t y = curTexel.y + yOff;
                     const int2 wrapIndex = make_int2(
                         floorDiv(x, nextImgSize.x),
                         floorDiv(y, nextImgSize.y));
@@ -1420,13 +1521,19 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
 #if OUTPUT_TRAVERSAL_STATS
                     ++numAabbTests;
 #endif
-                    const int32_t iuLo = i % 2;
-                    const int32_t iuHi = i % 2 + 1;
-                    const int32_t ivLo = i / 2;
-                    const int32_t ivHi = i / 2 + 1;
+                    const int32_t uOff = i % 2;
+                    const int32_t vOff = i / 2;
+                    entries[i] = MipMapStack::Entry(uOff, vOff);
+
+                    const int32_t x = curTexel.x + uOff;
+                    const int32_t y = curTexel.y + vOff;
                     float hMin, hMax;
-                    readMinMax(iuLo, ivLo, &hMin, &hMax);
-                    entries[i] = MipMapStack::Entry(iuLo, ivLo);
+                    readMinMax(x, y, &hMin, &hMax);
+
+                    const int32_t iuLo = uOff;
+                    const int32_t iuHi = uOff + 1;
+                    const int32_t ivLo = vOff;
+                    const int32_t ivHi = vOff + 1;
                     const AABB aabb(Point3D(us[iuLo], vs[ivLo], hMin), Point3D(us[iuHi], vs[ivHi], hMax));
                     float distMin, distMax;
                     const bool hit = testNonlinearRayVsAabb(
@@ -1450,7 +1557,7 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
                         printf(
                             "%u-%u, Root %u: [%d - %d, %d], tMax: %g, AABB (%g, %g, %g) - (%g, %g, %g): %s, %g - %g\n",
                             plp.f->frameIndex, optixGetPrimitiveIndex(), rootIdx,
-                            curTexel.lod, curTexel.x + iuLo, curTexel.y + ivLo,
+                            curTexel.lod, x, y,
                             hitDist,
                             v3print(aabb.minP), v3print(aabb.maxP),
                             hit ? "Hit" : "Miss", hit ? distMin : NAN, hit ? distMax : NAN);
