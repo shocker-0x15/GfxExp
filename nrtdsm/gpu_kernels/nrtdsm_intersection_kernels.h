@@ -1220,6 +1220,7 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
     const Vector3D rayDirInObj(optixGetObjectRayDirection());
 
     const uint32_t primIdx = optixGetPrimitiveIndex();
+
     const Triangle &tri = geomInst.triangleBuffer[primIdx];
     const Vertex &vA = geomInst.vertexBuffer[tri.index0];
     const Vertex &vB = geomInst.vertexBuffer[tri.index1];
@@ -1249,6 +1250,20 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
             return;
     }
 
+    const DisplacementParameters &dispParams = nrtdsmGeomInst.params;
+
+    const float baseHeight = dispParams.hOffset - dispParams.hScale * dispParams.hBias;
+    const Point3D pA = vA.position + baseHeight * vA.normal;
+    const Point3D pB = vB.position + baseHeight * vB.normal;
+    const Point3D pC = vC.position + baseHeight * vC.normal;
+    const Normal3D nA = dispParams.hScale * vA.normal;
+    const Normal3D nB = dispParams.hScale * vB.normal;
+    const Normal3D nC = dispParams.hScale * vC.normal;
+    const Matrix3x3 &texXfm = dispParams.textureTransform;
+    const Point2D tcA = texXfm * vA.texCoord;
+    const Point2D tcB = texXfm * vB.texCoord;
+    const Point2D tcC = texXfm * vC.texCoord;
+
     prismHitDistEnter *= 0.9999f;
     prismHitDistLeave *= 1.0001f;
     float hitDist = prismHitDistLeave;
@@ -1265,8 +1280,8 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
     float denom2, denom1, denom0;
     computeCanonicalSpaceRayCoeffs(
         rayOrgInObj, rayDirInObj, e0, e1,
-        vA.position, vB.position, vC.position,
-        vA.normal, vB.normal, vC.normal,
+        pA, pB, pC,
+        nA, nB, nC,
         &alpha2, &alpha1, &alpha0,
         &beta2, &beta1, &beta0,
         &denom2, &denom1, &denom0);
@@ -1275,31 +1290,23 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
     // EN: Compute the coefficients of the ray in texture space.
     Point2D tc2, tc1, tc0;
     computeTextureSpaceRayCoeffs(
-        vA.texCoord, vB.texCoord, vC.texCoord,
+        tcA, tcB, tcC,
         alpha2, alpha1, alpha0,
         beta2, beta1, beta0,
         denom2, denom1, denom0,
         &tc2, &tc1, &tc0);
 
-    const DisplacementParameters &dispParams = nrtdsmGeomInst.params;
-
-    const Matrix3x3 &texXfm = dispParams.textureTransform;
-    const Point2D tcs[] = {
-        texXfm * vA.texCoord,
-        texXfm * vB.texCoord,
-        texXfm * vC.texCoord,
-    };
-    const float triAreaInTex = cross(tcs[1] - tcs[0], tcs[2] - tcs[0])/* * 0.5f*/;
+    const float triAreaInTex = cross(tcB - tcA, tcC - tcA)/* * 0.5f*/;
     const bool tcFlipped = triAreaInTex < 0;
     //const float recTriAreaInTex = 1.0f / triAreaInTex;
 
     const Vector2D texTriEdgeNormals[] = {
-        Vector2D(tcs[1].y - tcs[0].y, tcs[0].x - tcs[1].x),
-        Vector2D(tcs[2].y - tcs[1].y, tcs[1].x - tcs[2].x),
-        Vector2D(tcs[0].y - tcs[2].y, tcs[2].x - tcs[0].x),
+        Vector2D(tcB.y - tcA.y, tcA.x - tcB.x),
+        Vector2D(tcC.y - tcB.y, tcB.x - tcC.x),
+        Vector2D(tcA.y - tcC.y, tcC.x - tcA.x),
     };
-    const Point2D texTriAabbMinP = min(tcs[0], min(tcs[1], tcs[2]));
-    const Point2D texTriAabbMaxP = max(tcs[0], max(tcs[1], tcs[2]));
+    const Point2D texTriAabbMinP = min(tcA, min(tcB, tcC));
+    const Point2D texTriAabbMaxP = max(tcA, max(tcB, tcC));
 
     const int32_t maxDepth =
         prevPowOf2Exponent(stc::max(mat.heightMapSize.x, mat.heightMapSize.y));
@@ -1403,12 +1410,11 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
             }
 #endif
 
-            const int2 imgSize = make_int2(1 << stc::max(maxDepth - curTexel.lod, 0));
             const float texelScale = std::pow(2.0f, static_cast<float>(curTexel.lod - maxDepth));
             const Point2D texelCenter = Point2D(curTexel.x + 0.5f, curTexel.y + 0.5f) * texelScale;
             const TriangleSquareIntersection2DResult isectResult =
                 testTriangleSquareIntersection2D(
-                    tcs, tcFlipped, texTriEdgeNormals, texTriAabbMinP, texTriAabbMaxP,
+                    tcA, tcB, tcC, tcFlipped, texTriEdgeNormals, texTriAabbMinP, texTriAabbMaxP,
                     texelCenter, 0.5f * texelScale);
 
             // JP: テクセルがベース三角形の外にある場合はテクセルをスキップ。
@@ -1502,8 +1508,8 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
 
                 // JP: AABBの高さ方向の面の位置はそれぞれ異なる。
                 // EN: Each AABB has different planes in the height direction.
-                const int2 nextImgSize = 2 * imgSize;
-                const auto readMinMax = [&mat, &dispParams, &nextImgSize, &curTexel, &maxDepth]
+                const int2 nextImgSize = make_int2(1 << stc::max(maxDepth - curTexel.lod, 0));
+                const auto readMinMax = [&mat, &nextImgSize, &curTexel, &maxDepth]
                 (const int32_t x, const int32_t y,
                  float* const hMin, float* const hMax) {
                     const int2 wrapIndex = make_int2(
@@ -1512,9 +1518,10 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
                     const uint2 wrappedTexel = curTexel.lod <= maxDepth ?
                         make_uint2(x - wrapIndex.x * nextImgSize.x, y - wrapIndex.y * nextImgSize.y) :
                         make_uint2(0, 0);
-                    const float2 minmax = mat.minMaxMipMap[stc::min<int16_t>(curTexel.lod, maxDepth)].read(wrappedTexel);
-                    *hMin = dispParams.hOffset + dispParams.hScale * (minmax.x - dispParams.hBias);
-                    *hMax = dispParams.hOffset + dispParams.hScale * (minmax.y - dispParams.hBias);
+                    const float2 minmax =
+                        mat.minMaxMipMap[stc::min<int16_t>(curTexel.lod, maxDepth)].read(wrappedTexel);
+                    *hMin = minmax.x;
+                    *hMax = minmax.y;
                 };
 
                 MipMapStack::Entry entries[4];
@@ -1541,7 +1548,7 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
                     const AABB aabb(Point3D(us[iuLo], vs[ivLo], hMin), Point3D(us[iuHi], vs[ivHi], hMax));
                     float distMin, distMax;
                     const bool hit = testNonlinearRayVsAabb(
-                        vA.position, vB.position, vC.position, vA.normal, vB.normal, vC.normal,
+                        pA, pB, pC, nA, nB, nC,
                         aabb,
                         rayOrgInObj, rayDirInObj, prismHitDistEnter, hitDist,
                         alpha2, alpha1, alpha0, beta2, beta1, beta0, denom2, denom1, denom0,
@@ -1602,23 +1609,16 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
             ++numLeafTests;
 #endif
 
+            const int2 imgSize = make_int2(1 << stc::max(maxDepth - curTexel.lod, 0));
             const auto sample = [&](float px, float py) {
                 // No need to explicitly consider texture wrapping since the sampler is responsible for it.
                 return tex2DLod<float>(mat.heightMap, px / imgSize.x, py / imgSize.y, curTexel.lod);
             };
 
-            const float cornerHeightTL =
-                dispParams.hOffset + dispParams.hScale
-                * (sample(curTexel.x - 0.0f, curTexel.y - 0.0f) - dispParams.hBias);
-            const float cornerHeightTR =
-                dispParams.hOffset + dispParams.hScale
-                * (sample(curTexel.x + 1.0f, curTexel.y - 0.0f) - dispParams.hBias);
-            const float cornerHeightBL =
-                dispParams.hOffset + dispParams.hScale
-                * (sample(curTexel.x - 0.0f, curTexel.y + 1.0f) - dispParams.hBias);
-            const float cornerHeightBR =
-                dispParams.hOffset + dispParams.hScale
-                * (sample(curTexel.x + 1.0f, curTexel.y + 1.0f) - dispParams.hBias);
+            const float cornerHeightTL = sample(curTexel.x - 0.0f, curTexel.y - 0.0f);
+            const float cornerHeightTR = sample(curTexel.x + 1.0f, curTexel.y - 0.0f);
+            const float cornerHeightBL = sample(curTexel.x - 0.0f, curTexel.y + 1.0f);
+            const float cornerHeightBR = sample(curTexel.x + 1.0f, curTexel.y + 1.0f);
             const float uLeft = curTexel.x * texelScale;
             const float vTop = curTexel.y * texelScale;
             const float uRight = (curTexel.x + 1) * texelScale;
@@ -1634,9 +1634,9 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
             Normal3D nn;
             Point3D hpInCan;
             if (testNonlinearRayVsMicroTriangle(
-                vA.position, vB.position, vC.position,
-                vA.normal, vB.normal, vC.normal,
-                vA.texCoord, vB.texCoord, vC.texCoord,
+                pA, pB, pC,
+                nA, nB, nC,
+                tcA, tcB, tcC,
                 mpTL, mpBL, mpBR,
                 rayOrgInObj, rayDirInObj, prismHitDistEnter, hitDist,
                 e0, e1,
@@ -1672,9 +1672,9 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
             }
 #endif
             if (testNonlinearRayVsMicroTriangle(
-                vA.position, vB.position, vC.position,
-                vA.normal, vB.normal, vC.normal,
-                vA.texCoord, vB.texCoord, vC.texCoord,
+                pA, pB, pC,
+                nA, nB, nC,
+                tcA, tcB, tcC,
                 mpTL, mpBR, mpTR,
                 rayOrgInObj, rayDirInObj, prismHitDistEnter, hitDist,
                 e0, e1,

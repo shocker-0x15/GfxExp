@@ -457,7 +457,7 @@ static constexpr Point3D initInstPos(0, 0, 0);
 static constexpr float initHeightOffset = 0.0f;
 static constexpr float initHeightScale = 0.2f;
 static constexpr float initHeightBias = 0.0f;
-static constexpr int32_t initTargetMipLevel = 0;
+//static constexpr int32_t initTargetMipLevel = 0;
 
 static void parseCommandline(int32_t argc, const char* argv[]) {
     std::string name;
