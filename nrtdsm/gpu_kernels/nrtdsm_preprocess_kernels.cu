@@ -114,9 +114,9 @@ CUDA_DEVICE_KERNEL void computeAABBs(
     float maxHeight = -INFINITY;
     {
         const Matrix3x3 &texXfm = nrtdsmGeomInst->params.textureTransform;
-        const Point2D tcA = texXfm * vs[0].texCoord,
-        const Point2D tcB = texXfm * vs[1].texCoord,
-        const Point2D tcC = texXfm * vs[2].texCoord,
+        const Point2D tcA = texXfm * vs[0].texCoord;
+        const Point2D tcB = texXfm * vs[1].texCoord;
+        const Point2D tcC = texXfm * vs[2].texCoord;
         const bool tcFlipped = cross(tcB - tcA, tcC - tcA) < 0;
 #if DEBUG_TRAVERSAL
         if (primIndex == debugPrimIndex) {

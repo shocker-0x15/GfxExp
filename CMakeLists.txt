@@ -326,6 +326,7 @@ add_subdirectory(regir)
 add_subdirectory(neural_radiance_caching)
 add_subdirectory(svgf)
 add_subdirectory(tfdm)
+add_subdirectory(nrtdsm)
 
 # Windowsはsymlink作成に追加の権限が必要。
 # file(CREATE_LINK "${CMAKE_SOURCE_DIR}/data" "${CMAKE_BINARY_DIR}/data" SYMBOLIC)
