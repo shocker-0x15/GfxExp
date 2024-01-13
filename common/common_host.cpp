@@ -1944,15 +1944,12 @@ GeometryInstance* createLinearSegmentsGeometryInstance(
     GeometryInstance* geomInst = new GeometryInstance();
     geomInst->geometryType = optixu::GeometryType::LinearSegments;
 
-    for (int iIdx = 0; iIdx <= indices.size(); ++iIdx) {
-        uint32_t idx;
-        if (iIdx < indices.size())
-            idx = indices[iIdx];
-        else
-            idx = indices[iIdx - 1] + 1;
-
-        const shared::CurveVertex &v = vertices[idx];
-        geomInst->aabb.unify(v.position);
+    for (int iIdx = 0; iIdx < indices.size(); ++iIdx) {
+        uint32_t idx = indices[iIdx];
+        for (uint32_t i = 0; i < 2; ++i) {
+            const shared::CurveVertex &v = vertices[idx++];
+            geomInst->aabb.unify(v.position);
+        }
     }
 
     geomInst->mat = mat;
