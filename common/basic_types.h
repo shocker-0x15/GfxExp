@@ -349,7 +349,8 @@ struct alignas(8) int2 {
 inline constexpr int2 make_int2(const int32_t x, const int32_t y) {
     return int2(x, y);
 }
-struct int3 {
+
+struct alignas(4) int3 {
     int32_t x, y, z;
     constexpr int3(const int32_t v = 0) :
         x(v), y(v), z(v) {}
@@ -359,6 +360,7 @@ struct int3 {
 inline constexpr int3 make_int3(const int32_t x, const int32_t y, const int32_t z) {
     return int3(x, y, z);
 }
+
 struct alignas(16) int4 {
     int32_t x, y, z, w;
     constexpr int4(const int32_t v = 0) :
@@ -369,6 +371,7 @@ struct alignas(16) int4 {
 inline constexpr int4 make_int4(const int32_t x, const int32_t y, const int32_t z, const int32_t w) {
     return int4(x, y, z, w);
 }
+
 struct alignas(8) uint2 {
     uint32_t x, y;
     constexpr uint2(const uint32_t v = 0) : x(v), y(v) {}
@@ -377,7 +380,8 @@ struct alignas(8) uint2 {
 inline constexpr uint2 make_uint2(const uint32_t x, const uint32_t y) {
     return uint2(x, y);
 }
-struct uint3 {
+
+struct alignas(4) uint3 {
     uint32_t x, y, z;
     constexpr uint3(const uint32_t v = 0) :
         x(v), y(v), z(v) {}
@@ -387,7 +391,8 @@ struct uint3 {
 inline constexpr uint3 make_uint3(const uint32_t x, const uint32_t y, const uint32_t z) {
     return uint3(x, y, z);
 }
-struct uint4 {
+
+struct alignas(16) uint4 {
     uint32_t x, y, z, w;
     constexpr uint4(const uint32_t v = 0) :
         x(v), y(v), z(v), w(v) {}
@@ -397,6 +402,7 @@ struct uint4 {
 inline constexpr uint4 make_uint4(const uint32_t x, const uint32_t y, const uint32_t z, const uint32_t w) {
     return uint4(x, y, z, w);
 }
+
 struct alignas(8) float2 {
     float x, y;
     constexpr float2(const float v = 0) :
@@ -404,10 +410,11 @@ struct alignas(8) float2 {
     constexpr float2(const float xx, const float yy) :
         x(xx), y(yy) {}
 };
-inline float2 make_float2(const float x, const float y) {
+inline constexpr float2 make_float2(const float x, const float y) {
     return float2(x, y);
 }
-struct float3 {
+
+struct alignas(4) float3 {
     float x, y, z;
     constexpr float3(const float v = 0) :
         x(v), y(v), z(v) {}
@@ -419,6 +426,7 @@ struct float3 {
 inline constexpr float3 make_float3(const float x, const float y, const float z) {
     return float3(x, y, z);
 }
+
 struct alignas(16) float4 {
     float x, y, z, w;
     constexpr float4(const float v = 0) :
@@ -438,275 +446,1181 @@ inline constexpr float4 make_float4(const float x, const float y, const float z,
 
 
 
-CUDA_COMMON_FUNCTION CUDA_INLINE int2 make_int2(const int32_t v) {
-    return make_int2(v, v);
+// ----------------------------------------------------------------
+// JP: CUDAビルトイン型用の演算子定義。
+// EN: Operator definitions for the CUDA built-in types.
+
+// Concepts for native vectors.
+template <typename T>
+concept NVec2I =
+    //std::is_same_v<T, char2> || std::is_same_v<T, uchar2> ||
+    //std::is_same_v<T, short2> || std::is_same_v<T, ushort2> ||
+    std::is_same_v<T, int2> || std::is_same_v<T, uint2>/* ||
+    std::is_same_v<T, longlong2> || std::is_same_v<T, ulonglong2>*/;
+template <typename T>
+concept NVec2 =
+    NVec2I<T> ||
+    std::is_same_v<T, float2>/* ||
+    std::is_same_v<T, double2>*/;
+template <typename T>
+concept NVec3I =
+    //std::is_same_v<T, char3> || std::is_same_v<T, uchar3> ||
+    //std::is_same_v<T, short3> || std::is_same_v<T, ushort3> ||
+    std::is_same_v<T, int3> || std::is_same_v<T, uint3>/* ||
+    std::is_same_v<T, longlong3> || std::is_same_v<T, ulonglong3>*/;
+template <typename T>
+concept NVec3 =
+    NVec3I<T> ||
+    std::is_same_v<T, float3>/* ||
+    std::is_same_v<T, double3>*/;
+template <typename T>
+concept NVec4I =
+    //std::is_same_v<T, char4> || std::is_same_v<T, uchar4> ||
+    //std::is_same_v<T, short4> || std::is_same_v<T, ushort4> ||
+    std::is_same_v<T, int4> || std::is_same_v<T, uint4>/* ||
+    std::is_same_v<T, longlong4> || std::is_same_v<T, ulonglong4>*/;
+template <typename T>
+concept NVec4 =
+    NVec4I<T> ||
+    std::is_same_v<T, float4>/* ||
+    std::is_same_v<T, double4>*/;
+
+
+
+template <Number N>
+struct GetNVec2;
+template <>
+struct GetNVec2<int32_t> {
+    using Type = int2;
+    CUDA_COMMON_FUNCTION CUDA_INLINE static Type make(
+        const int32_t x, const int32_t y) {
+        return make_int2(x, y);
+    }
+};
+template <>
+struct GetNVec2<uint32_t> {
+    using Type = uint2;
+    CUDA_COMMON_FUNCTION CUDA_INLINE static Type make(
+        const uint32_t x, const uint32_t y) {
+        return make_uint2(x, y);
+    }
+};
+template <>
+struct GetNVec2<float> {
+    using Type = float2;
+    CUDA_COMMON_FUNCTION CUDA_INLINE static Type make(
+        const float x, const float y) {
+        return make_float2(x, y);
+    }
+};
+template <Number N>
+using NVec2_t = typename GetNVec2<N>::Type;
+
+template <Number N>
+struct GetNVec3;
+template <>
+struct GetNVec3<int32_t> {
+    using Type = int3;
+    CUDA_COMMON_FUNCTION CUDA_INLINE static Type make(
+        const int32_t x, const int32_t y, const int32_t z) {
+        return make_int3(x, y, z);
+    }
+};
+template <>
+struct GetNVec3<uint32_t> {
+    using Type = uint3;
+    CUDA_COMMON_FUNCTION CUDA_INLINE static Type make(
+        const uint32_t x, const uint32_t y, const uint32_t z) {
+        return make_uint3(x, y, z);
+    }
+};
+template <>
+struct GetNVec3<float> {
+    using Type = float3;
+    CUDA_COMMON_FUNCTION CUDA_INLINE static Type make(
+        const float x, const float y, const float z) {
+        return make_float3(x, y, z);
+    }
+};
+template <Number N>
+using NVec3_t = typename GetNVec3<N>::Type;
+
+template <Number N>
+struct GetNVec4;
+template <>
+struct GetNVec4<int32_t> {
+    using Type = int4;
+    CUDA_COMMON_FUNCTION CUDA_INLINE static Type make(
+        const int32_t x, const int32_t y, const int32_t z, const int32_t w) {
+        return make_int4(x, y, z, w);
+    }
+};
+template <>
+struct GetNVec4<uint32_t> {
+    using Type = uint4;
+    CUDA_COMMON_FUNCTION CUDA_INLINE static Type make(
+        const uint32_t x, const uint32_t y, const uint32_t z, const uint32_t w) {
+        return make_uint4(x, y, z, w);
+    }
+};
+template <>
+struct GetNVec4<float> {
+    using Type = float4;
+    CUDA_COMMON_FUNCTION CUDA_INLINE static Type make(
+        const float x, const float y, const float z, const float w) {
+        return make_float4(x, y, z, w);
+    }
+};
+template <Number N>
+using NVec4_t = typename GetNVec4<N>::Type;
+
+
+
+template <Number NA, Number NB>
+struct GetBinOpResultType;
+template <>
+struct GetBinOpResultType<int32_t, int32_t> {
+    using Type = int32_t;
+};
+template <>
+struct GetBinOpResultType<int32_t, uint32_t> {
+    using Type = uint32_t;
+};
+template <>
+struct GetBinOpResultType<int32_t, float> {
+    using Type = float;
+};
+template <>
+struct GetBinOpResultType<uint32_t, int32_t> {
+    using Type = uint32_t;
+};
+template <>
+struct GetBinOpResultType<uint32_t, uint32_t> {
+    using Type = uint32_t;
+};
+template <>
+struct GetBinOpResultType<uint32_t, float> {
+    using Type = float;
+};
+template <>
+struct GetBinOpResultType<float, int32_t> {
+    using Type = float;
+};
+template <>
+struct GetBinOpResultType<float, uint32_t> {
+    using Type = float;
+};
+template <>
+struct GetBinOpResultType<float, float> {
+    using Type = float;
+};
+template <Number NA, Number NB>
+using GetBinOpResultType_t = typename GetBinOpResultType<NA, NB>::Type;
+
+
+
+template <NVec2 NV2A, NVec2 NV2B>
+struct Vec2BinaryOpTraits {
+    using UType = GetBinOpResultType_t<decltype(NV2A::x), decltype(NV2B::x)>;
+    using ReturnType = NVec2_t<UType>;
+    CUDA_COMMON_FUNCTION CUDA_INLINE static ReturnType make(
+        const UType x, const UType y) {
+        return GetNVec2<UType>::make(x, y);
+    }
+};
+
+template <NVec3 NV3A, NVec3 NV3B>
+struct Vec3BinaryOpTraits {
+    using UType = GetBinOpResultType_t<decltype(NV3A::x), decltype(NV3B::x)>;
+    using ReturnType = NVec3_t<UType>;
+    CUDA_COMMON_FUNCTION CUDA_INLINE static ReturnType make(
+        const UType x, const UType y, const UType z) {
+        return GetNVec3<UType>::make(x, y, z);
+    }
+};
+
+template <NVec4 NV4A, NVec4 NV4B>
+struct Vec4BinaryOpTraits {
+    using UType = GetBinOpResultType_t<decltype(NV4A::x), decltype(NV4B::x)>;
+    using ReturnType = NVec4_t<UType>;
+    CUDA_COMMON_FUNCTION CUDA_INLINE static ReturnType make(
+        const UType x, const UType y, const UType z, const UType w) {
+        return GetNVec4<UType>::make(x, y, z, w);
+    }
+};
+
+
+
+template <Number N>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr int2 make_int2(const N x) {
+    return ::make_int2(x, x);
 }
-CUDA_COMMON_FUNCTION CUDA_INLINE int2 make_int2(const int3 &v) {
-    return make_int2(v.x, v.y);
+template <Number N, std::enable_if_t<!std::is_same_v<N, int32_t>, int> = 0>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr int2 make_int2(const N x, const N y) {
+    return ::make_int2(
+        static_cast<int32_t>(x),
+        static_cast<int32_t>(y));
 }
-CUDA_COMMON_FUNCTION CUDA_INLINE int2 make_int2(const uint3 &v) {
-    return make_int2(static_cast<int32_t>(v.x), static_cast<int32_t>(v.y));
+template <NVec2 N2>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr int2 make_int2(const N2 &v) {
+    return ::make_int2(v.x, v.y);
 }
-CUDA_COMMON_FUNCTION CUDA_INLINE bool operator==(const int2 &a, const int2 &b) {
+template <NVec3 N3>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr int2 make_int2(const N3 &v) {
+    return ::make_int2(v.x, v.y);
+}
+template <NVec4 N4>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr int2 make_int2(const N4 &v) {
+    return ::make_int2(v.x, v.y);
+}
+
+template <Number N>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr uint2 make_uint2(const N x) {
+    return ::make_uint2(x, x);
+}
+template <Number N, std::enable_if_t<!std::is_same_v<N, uint32_t>, int> = 0>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr uint2 make_uint2(const N x, const N y) {
+    return ::make_uint2(
+        static_cast<uint32_t>(x),
+        static_cast<uint32_t>(y));
+}
+template <NVec2 N2>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr uint2 make_uint2(const N2 &v) {
+    return ::make_uint2(v.x, v.y);
+}
+template <NVec3 N3>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr uint2 make_uint2(const N3 &v) {
+    return ::make_uint2(v.x, v.y);
+}
+template <NVec4 N4>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr uint2 make_uint2(const N4 &v) {
+    return ::make_uint2(v.x, v.y);
+}
+
+template <Number N>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr float2 make_float2(const N x) {
+    return ::make_float2(x, x);
+}
+template <Number N, std::enable_if_t<!std::is_same_v<N, float>, int> = 0>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr float2 make_float2(const N x, const N y) {
+    return ::make_float2(
+        static_cast<float>(x),
+        static_cast<float>(y));
+}
+template <NVec2 N2>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr float2 make_float2(const N2 &v) {
+    return ::make_float2(v.x, v.y);
+}
+template <NVec3 N3>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr float2 make_float2(const N3 &v) {
+    return ::make_float2(v.x, v.y);
+}
+template <NVec4 N4>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr float2 make_float2(const N4 &v) {
+    return ::make_float2(v.x, v.y);
+}
+
+
+
+template <Number N>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr int3 make_int3(const N x) {
+    return ::make_int3(x, x, x);
+}
+template <Number N, std::enable_if_t<!std::is_same_v<N, int32_t>, int> = 0>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr int3 make_int3(const N x, const N y, const N z) {
+    return ::make_int3(
+        static_cast<int32_t>(x),
+        static_cast<int32_t>(y),
+        static_cast<int32_t>(z));
+}
+template <NVec3 N3>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr int3 make_int3(const N3 &v) {
+    return ::make_int3(v.x, v.y, v.z);
+}
+template <NVec4 N4>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr int3 make_int3(const N4 &v) {
+    return ::make_int3(v.x, v.y, v.z);
+}
+
+template <Number N>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr uint3 make_uint3(const N x) {
+    return ::make_uint3(x, x, x);
+}
+template <Number N, std::enable_if_t<!std::is_same_v<N, uint32_t>, int> = 0>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr uint3 make_uint3(const N x, const N y, const N z) {
+    return ::make_uint3(
+        static_cast<uint32_t>(x),
+        static_cast<uint32_t>(y),
+        static_cast<uint32_t>(z));
+}
+template <NVec3 N3>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr uint3 make_uint3(const N3 &v) {
+    return ::make_uint3(v.x, v.y, v.z);
+}
+template <NVec4 N4>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr uint3 make_uint3(const N4 &v) {
+    return ::make_uint3(v.x, v.y, v.z);
+}
+
+template <Number N>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr float3 make_float3(const N x) {
+    return ::make_float3(x, x, x);
+}
+template <Number N, std::enable_if_t<!std::is_same_v<N, float>, int> = 0>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr float3 make_float3(const N x, const N y, const N z) {
+    return ::make_float3(
+        static_cast<float>(x),
+        static_cast<float>(y),
+        static_cast<float>(z));
+}
+template <NVec3 N3>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr float3 make_float3(const N3 &v) {
+    return ::make_float3(v.x, v.y, v.z);
+}
+template <NVec4 N4>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr float3 make_float3(const N4 &v) {
+    return ::make_float3(v.x, v.y, v.z);
+}
+
+
+
+template <Number N>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr int4 make_int4(const N x) {
+    return ::make_int4(x, x, x);
+}
+template <Number N, std::enable_if_t<!std::is_same_v<N, int32_t>, int> = 0>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr int4 make_int4(const N x, const N y, const N z, const N w) {
+    return ::make_int4(
+        static_cast<int32_t>(x),
+        static_cast<int32_t>(y),
+        static_cast<int32_t>(z),
+        static_cast<int32_t>(w));
+}
+template <NVec3 N3, Number N>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr int4 make_int4(const N3 &v, const N w) {
+    return ::make_int4(v.x, v.y, v.z, w);
+}
+template <NVec4 N4>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr int4 make_int4(const N4 &v) {
+    return ::make_int4(v.x, v.y, v.z);
+}
+
+template <Number N>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr uint4 make_uint4(const N x) {
+    return ::make_uint4(x, x, x);
+}
+template <Number N, std::enable_if_t<!std::is_same_v<N, uint32_t>, int> = 0>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr uint4 make_uint4(const N x, const N y, const N z, const N w) {
+    return ::make_uint4(
+        static_cast<uint32_t>(x),
+        static_cast<uint32_t>(y),
+        static_cast<uint32_t>(z),
+        static_cast<uint32_t>(w));
+}
+template <NVec3 N3, Number N>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr uint4 make_uint4(const N3 &v, const N w) {
+    return ::make_uint4(v.x, v.y, v.z, w);
+}
+template <NVec4 N4>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr uint4 make_uint4(const N4 &v) {
+    return ::make_uint4(v.x, v.y, v.z);
+}
+
+template <Number N>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr float4 make_float4(const N x) {
+    return ::make_float4(x, x, x);
+}
+template <Number N, std::enable_if_t<!std::is_same_v<N, float>, int> = 0>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr float4 make_float4(const N x, const N y, const N z, const N w) {
+    return ::make_float4(
+        static_cast<float>(x),
+        static_cast<float>(y),
+        static_cast<float>(z),
+        static_cast<float>(w));
+}
+template <NVec3 N3, Number N>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr float4 make_float4(const N3 &v, const N w) {
+    return ::make_float4(v.x, v.y, v.z, w);
+}
+template <NVec4 N4>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr float4 make_float4(const N4 &v) {
+    return ::make_float4(v.x, v.y, v.z);
+}
+
+
+
+template <NVec2 N2>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr N2 operator+(const N2 &v) {
+    return v;
+}
+
+template <NVec2 N2>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr N2 operator-(const N2 &v) {
+    return GetNVec2<decltype(N2::x)>::make(-v.x, -v.y);
+}
+
+template <NVec2 N2A, NVec2 N2B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr bool operator==(
+    const N2A &a, const N2B &b) {
     return a.x == b.x && a.y == b.y;
 }
-CUDA_COMMON_FUNCTION CUDA_INLINE bool operator!=(const int2 &a, const int2 &b) {
-    return a.x != b.x || a.y != b.y;
-}
-CUDA_COMMON_FUNCTION CUDA_INLINE bool operator==(const int2 &a, const uint2 &b) {
-    return a.x == b.x && a.y == b.y;
-}
-CUDA_COMMON_FUNCTION CUDA_INLINE bool operator!=(const int2 &a, const uint2 &b) {
+
+template <NVec2 N2A, NVec2 N2B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr bool operator!=(
+    const N2A &a, const N2B &b) {
     return a.x != b.x || a.y != b.y;
 }
 
-CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator+(const int2 &a, const uint2 &b) {
-    return make_uint2(a.x + b.x, a.y + b.y);
+template <Number NA, NVec2 N2B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec2BinaryOpTraits<NVec2_t<NA>, N2B>::ReturnType operator+(
+    const NA a, const N2B &b) {
+    return Vec2BinaryOpTraits<NVec2_t<NA>, N2B>::make(a + b.x, a + b.y);
 }
-CUDA_COMMON_FUNCTION CUDA_INLINE int2 operator+(const int2 &a, const int2 &b) {
-    return make_int2(a.x + b.x, a.y + b.y);
+template <NVec2 N2A, Number NB>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec2BinaryOpTraits<N2A, NVec2_t<NB>>::ReturnType operator+(
+    const N2A &a, const NB b) {
+    return Vec2BinaryOpTraits<N2A, NVec2_t<NB>>::make(a.x + b, a.y + b);
 }
-
-CUDA_COMMON_FUNCTION CUDA_INLINE int2 operator*(const int2 &a, const int2 &b) {
-    return make_int2(a.x * b.x, a.y * b.y);
-}
-CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator*(const int2 &a, const uint2 &b) {
-    return make_uint2(a.x * b.x, a.y * b.y);
-}
-CUDA_COMMON_FUNCTION CUDA_INLINE int2 operator*(const int32_t a, const int2 &b) {
-    return make_int2(a * b.x, a * b.y);
-}
-CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator*(const uint32_t a, const int2 &b) {
-    return make_uint2(a * b.x, a * b.y);
-}
-CUDA_COMMON_FUNCTION CUDA_INLINE int2 operator*(const int2 &a, const int32_t b) {
-    return make_int2(a.x * b, a.y * b);
-}
-CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator*(const int2 &a, const uint32_t b) {
-    return make_uint2(a.x * b, a.y * b);
-}
-CUDA_COMMON_FUNCTION CUDA_INLINE int2 &operator*=(int2 &a, const int2 &b) {
-    a.x *= b.x;
-    a.y *= b.y;
-    return a;
-}
-CUDA_COMMON_FUNCTION CUDA_INLINE int2 &operator*=(int2 &a, const uint2 &b) {
-    a.x *= b.x;
-    a.y *= b.y;
-    return a;
-}
-CUDA_COMMON_FUNCTION CUDA_INLINE int2 &operator*=(int2 &a, const int32_t b) {
-    a.x *= b;
-    a.y *= b;
-    return a;
-}
-CUDA_COMMON_FUNCTION CUDA_INLINE int2 &operator*=(int2 &a, const uint32_t b) {
-    a.x *= b;
-    a.y *= b;
-    return a;
+template <NVec2 N2A, NVec2 N2B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec2BinaryOpTraits<N2A, N2B>::ReturnType operator+(
+    const N2A &a, const N2B &b) {
+    return Vec2BinaryOpTraits<N2A, N2B>::make(a.x + b.x, a.y + b.y);
 }
 
-CUDA_COMMON_FUNCTION CUDA_INLINE int2 operator/(const int2 &a, const int2 &b) {
-    return make_int2(a.x / b.x, a.y / b.y);
+template <Number NA, NVec2 N2B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec2BinaryOpTraits<NVec2_t<NA>, N2B>::ReturnType operator-(
+    const NA a, const N2B &b) {
+    return Vec2BinaryOpTraits<NVec2_t<NA>, N2B>::make(a - b.x, a - b.y);
 }
-CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator/(const int2 &a, const uint2 &b) {
-    return make_uint2(a.x / b.x, a.y / b.y);
+template <NVec2 N2A, Number NB>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec2BinaryOpTraits<N2A, NVec2_t<NB>>::ReturnType operator-(
+    const N2A &a, const NB b) {
+    return Vec2BinaryOpTraits<N2A, NVec2_t<NB>>::make(a.x - b, a.y - b);
 }
-CUDA_COMMON_FUNCTION CUDA_INLINE int2 operator/(const int2 &a, const int32_t b) {
-    return make_int2(a.x / b, a.y / b);
+template <NVec2 N2A, NVec2 N2B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec2BinaryOpTraits<N2A, N2B>::ReturnType operator-(
+    const N2A &a, const N2B &b) {
+    return Vec2BinaryOpTraits<N2A, N2B>::make(a.x - b.x, a.y - b.y);
 }
-CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator/(const int2 &a, const uint32_t b) {
-    return make_uint2(a.x / b, a.y / b);
+
+template <Number NA, NVec2 N2B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec2BinaryOpTraits<NVec2_t<NA>, N2B>::ReturnType operator*(
+    const NA a, const N2B &b) {
+    return Vec2BinaryOpTraits<NVec2_t<NA>, N2B>::make(a * b.x, a * b.y);
 }
-CUDA_COMMON_FUNCTION CUDA_INLINE int2 operator/=(int2 &a, const int2 &b) {
+template <NVec2 N2A, Number NB>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec2BinaryOpTraits<N2A, NVec2_t<NB>>::ReturnType operator*(
+    const N2A &a, const NB b) {
+    return Vec2BinaryOpTraits<N2A, NVec2_t<NB>>::make(a.x * b, a.y * b);
+}
+template <NVec2 N2A, NVec2 N2B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec2BinaryOpTraits<N2A, N2B>::ReturnType operator*(
+    const N2A &a, const N2B &b) {
+    return Vec2BinaryOpTraits<N2A, N2B>::make(a.x * b.x, a.y * b.y);
+}
+
+template <NVec2 N2A, Number NB>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec2BinaryOpTraits<N2A, NVec2_t<NB>>::ReturnType operator/(
+    const N2A &a, const NB b) {
+    if constexpr (std::is_floating_point_v<NB>) {
+        const NB rb = static_cast<NB>(1) / b;
+        return Vec2BinaryOpTraits<N2A, NVec2_t<NB>>::make(a.x * rb, a.y * rb);
+    }
+    else {
+        return Vec2BinaryOpTraits<N2A, NVec2_t<NB>>::make(a.x / b, a.y / b);
+    }
+}
+template <NVec2 N2A, NVec2 N2B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec2BinaryOpTraits<N2A, N2B>::ReturnType operator/(
+    const N2A &a, const N2B &b) {
+    return Vec2BinaryOpTraits<N2A, N2B>::make(a.x / b.x, a.y / b.y);
+}
+
+template <NVec2I N2A, std::integral NB>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec2BinaryOpTraits<N2A, NVec2_t<NB>>::ReturnType operator%(
+    const N2A &a, const NB b) {
+    return Vec2BinaryOpTraits<N2A, NVec2_t<NB>>::make(a.x % b, a.y % b);
+}
+template <NVec2I N2A, NVec2I N2B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec2BinaryOpTraits<N2A, N2B>::ReturnType operator%(
+    const N2A &a, const N2B &b) {
+    return Vec2BinaryOpTraits<N2A, N2B>::make(a.x % b.x, a.y % b.y);
+}
+
+template <std::integral NA, NVec2I N2B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec2BinaryOpTraits<NVec2_t<NA>, N2B>::ReturnType operator<<(
+    const NA a, const N2B &b) {
+    return Vec2BinaryOpTraits<NVec2_t<NA>, N2B>::make(a << b.x, a << b.y);
+}
+template <NVec2I N2A, std::integral NB>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec2BinaryOpTraits<N2A, NVec2_t<NB>>::ReturnType operator<<(
+    const N2A &a, const NB b) {
+    return Vec2BinaryOpTraits<N2A, NVec2_t<NB>>::make(a.x << b, a.y << b);
+}
+template <NVec2I N2A, NVec2I N2B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec2BinaryOpTraits<N2A, N2B>::ReturnType operator<<(
+    const N2A &a, const N2B &b) {
+    return Vec2BinaryOpTraits<N2A, N2B>::make(a.x << b.x, a.y << b.y);
+}
+
+template <std::integral NA, NVec2I N2B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec2BinaryOpTraits<NVec2_t<NA>, N2B>::ReturnType operator>>(
+    const NA a, const N2B &b) {
+    return Vec2BinaryOpTraits<NVec2_t<NA>, N2B>::make(a >> b.x, a >> b.y);
+}
+template <NVec2I N2A, std::integral NB>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec2BinaryOpTraits<N2A, NVec2_t<NB>>::ReturnType operator>>(
+    const N2A &a, const NB b) {
+    return Vec2BinaryOpTraits<N2A, NVec2_t<NB>>::make(a.x >> b, a.y >> b);
+}
+template <NVec2I N2A, NVec2I N2B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec2BinaryOpTraits<N2A, N2B>::ReturnType operator>>(
+    const N2A &a, const N2B &b) {
+    return Vec2BinaryOpTraits<N2A, N2B>::make(a.x >> b.x, a.y >> b.y);
+}
+
+template <NVec2 N2A, NVec2 N2B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr void operator+=(
+    N2A &a, const N2B &b) {
+    a.x += b.x;
+    a.y += b.y;
+}
+
+template <NVec2 N2A, NVec2 N2B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr void operator-=(
+    N2A &a, const N2B &b) {
+    a.x -= b.x;
+    a.y -= b.y;
+}
+
+template <NVec2 N2A, Number NB>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr void operator*=(
+    N2A &a, const NB &b) {
+    a.x *= b;
+    a.y *= b;
+}
+template <NVec2 N2A, NVec2 N2B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr void operator*=(
+    N2A &a, const N2B &b) {
+    a.x *= b.x;
+    a.y *= b.y;
+}
+
+template <NVec2 N2A, Number NB>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr void operator/=(
+    N2A &a, const NB &b) {
+    if constexpr (std::is_floating_point_v<NB>) {
+        const NB rb = static_cast<NB>(1) / b;
+        a.x *= rb;
+        a.y *= rb;
+    }
+    else {
+        a.x /= b;
+        a.y /= b;
+    }
+}
+template <NVec2 N2A, NVec2 N2B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr void operator/=(
+    N2A &a, const N2B &b) {
     a.x /= b.x;
     a.y /= b.y;
-    return a;
-}
-CUDA_COMMON_FUNCTION CUDA_INLINE int2 operator/=(int2 &a, const uint2 &b) {
-    a.x /= b.x;
-    a.y /= b.y;
-    return a;
-}
-CUDA_COMMON_FUNCTION CUDA_INLINE int2 &operator/=(int2 &a, const int32_t b) {
-    a.x /= b;
-    a.y /= b;
-    return a;
-}
-CUDA_COMMON_FUNCTION CUDA_INLINE int2 &operator/=(int2 &a, const uint32_t b) {
-    a.x /= b;
-    a.y /= b;
-    return a;
 }
 
-CUDA_COMMON_FUNCTION CUDA_INLINE int2 operator%(const int2 &a, const int2 &b) {
-    return make_int2(a.x % b.x, a.y % b.y);
+template <NVec2I N2A, std::integral NB>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr void operator%=(
+    N2A &a, const NB &b) {
+    a.x %= b;
+    a.y %= b;
+}
+template <NVec2I N2A, NVec2I N2B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr void operator%=(
+    N2A &a, const N2B &b) {
+    a.x %= b.x;
+    a.y %= b.y;
 }
 
-CUDA_COMMON_FUNCTION CUDA_INLINE int2 operator<<(const int2 &a, const int32_t b) {
-    return make_int2(a.x << b, a.y << b);
+template <NVec2I N2A, std::integral NB>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr void operator<<=(
+    N2A &a, const NB &b) {
+    a.x <<= b;
+    a.y <<= b;
 }
-CUDA_COMMON_FUNCTION CUDA_INLINE int2 operator<<(const int2 &a, const uint32_t b) {
-    return make_int2(a.x << b, a.y << b);
-}
-CUDA_COMMON_FUNCTION CUDA_INLINE int2 &operator<<=(int2 &a, const int32_t b) {
-    a = a << b;
-    return a;
-}
-CUDA_COMMON_FUNCTION CUDA_INLINE int2 &operator<<=(int2 &a, const uint32_t b) {
-    a = a << b;
-    return a;
-}
-CUDA_COMMON_FUNCTION CUDA_INLINE int2 operator>>(const int2 &a, const int32_t b) {
-    return make_int2(a.x >> b, a.y >> b);
-}
-CUDA_COMMON_FUNCTION CUDA_INLINE int2 operator>>(const int2 &a, const uint32_t b) {
-    return make_int2(a.x >> b, a.y >> b);
-}
-CUDA_COMMON_FUNCTION CUDA_INLINE int2 &operator>>=(int2 &a, const int32_t b) {
-    a = a >> b;
-    return a;
-}
-CUDA_COMMON_FUNCTION CUDA_INLINE int2 &operator>>=(int2 &a, const uint32_t b) {
-    a = a >> b;
-    return a;
+template <NVec2I N2A, NVec2I N2B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr void operator<<=(
+    N2A &a, const N2B &b) {
+    a.x <<= b.x;
+    a.y <<= b.y;
 }
 
-CUDA_COMMON_FUNCTION CUDA_INLINE uint2 make_uint2(const int3 &v) {
-    return make_uint2(static_cast<uint32_t>(v.x), static_cast<uint32_t>(v.y));
+template <NVec2I N2A, std::integral NB>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr void operator>>=(
+    N2A &a, const NB &b) {
+    a.x >>= b;
+    a.y >>= b;
 }
-CUDA_COMMON_FUNCTION CUDA_INLINE uint2 make_uint2(const uint3 &v) {
-    return make_uint2(v.x, v.y);
-}
-CUDA_COMMON_FUNCTION CUDA_INLINE bool operator==(const uint2 &a, const uint2 &b) {
-    return a.x == b.x && a.y == b.y;
-}
-CUDA_COMMON_FUNCTION CUDA_INLINE bool operator!=(const uint2 &a, const uint2 &b) {
-    return a.x != b.x || a.y != b.y;
-}
-CUDA_COMMON_FUNCTION CUDA_INLINE bool operator==(const uint2 &a, const int2 &b) {
-    return a.x == b.x && a.y == b.y;
-}
-CUDA_COMMON_FUNCTION CUDA_INLINE bool operator!=(const uint2 &a, const int2 &b) {
-    return a.x != b.x || a.y != b.y;
+template <NVec2I N2A, NVec2I N2B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr void operator>>=(
+    N2A &a, const N2B &b) {
+    a.x >>= b.x;
+    a.y >>= b.y;
 }
 
-CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator+(const uint2 &a, const uint2 &b) {
-    return make_uint2(a.x + b.x, a.y + b.y);
-}
-CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator+(const uint2 &a, const int2 &b) {
-    return make_uint2(a.x + b.x, a.y + b.y);
+template <NVec2 N2>
+CUDA_COMMON_FUNCTION CUDA_INLINE decltype(N2::x) length(const N2 &v) {
+    return std::sqrt(pow2(v.x) + pow2(v.y));
 }
 
-CUDA_COMMON_FUNCTION CUDA_INLINE uint2 &operator+=(uint2 &a, const uint32_t b) {
-    a.x += b;
-    a.y += b;
-    return a;
+template <NVec2 N2A, NVec2 N2B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec2BinaryOpTraits<N2A, N2B>::ReturnType min(
+    const N2A &a, const N2B &b) {
+    using UType = GetBinOpResultType_t<decltype(N2A::x), decltype(N2B::x)>;
+    return Vec2BinaryOpTraits<N2A, N2B>::make(stc::min<UType>(a.x, b.x), stc::min<UType>(a.y, b.y));
 }
-CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator-(const uint2 &a, const uint32_t b) {
-    return make_uint2(a.x - b, a.y - b);
+
+template <NVec2 N2A, NVec2 N2B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec2BinaryOpTraits<N2A, N2B>::ReturnType max(
+    const N2A &a, const N2B &b) {
+    using UType = GetBinOpResultType_t<decltype(N2A::x), decltype(N2B::x)>;
+    return Vec2BinaryOpTraits<N2A, N2B>::make(stc::max<UType>(a.x, b.x), stc::max<UType>(a.y, b.y));
 }
-CUDA_COMMON_FUNCTION CUDA_INLINE uint2 &operator-=(uint2 &a, const uint32_t b) {
-    a.x -= b;
-    a.y -= b;
-    return a;
+
+template <NVec2 N2A, NVec2 N2B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr GetBinOpResultType_t<decltype(N2A::x), decltype(N2B::x)> dot(
+    const N2A &a, const N2B &b) {
+    return a.x * b.x + a.y * b.y;
 }
-CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator*(const uint32_t a, const uint2 &b) {
-    return make_uint2(a * b.x, a * b.y);
+
+
+
+template <NVec3 N3>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr N3 operator+(const N3 &v) {
+    return v;
 }
-CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator*(const uint2 &a, const uint2 &b) {
-    return make_uint2(a.x * b.x, a.y * b.y);
+
+template <NVec3 N3>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr N3 operator-(const N3 &v) {
+    return GetNVec3<decltype(N3::x)>::make(-v.x, -v.y, -v.z);
 }
-CUDA_COMMON_FUNCTION CUDA_INLINE uint2 &operator*=(uint2 &a, const uint2 &b) {
-    a.x *= b.x;
-    a.y *= b.y;
-    return a;
+
+template <NVec3 N3A, NVec3 N3B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr bool operator==(
+    const N3A &a, const N3B &b) {
+    return a.x == b.x && a.y == b.y && a.z == b.z;
 }
-CUDA_COMMON_FUNCTION CUDA_INLINE uint2 &operator*=(uint2 &a, const uint32_t b) {
+
+template <NVec3 N3A, NVec3 N3B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr bool operator!=(
+    const N3A &a, const N3B &b) {
+    return a.x != b.x || a.y != b.y || a.z != b.z;
+}
+
+template <Number NA, NVec3 N3B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec3BinaryOpTraits<NVec3_t<NA>, N3B>::ReturnType operator+(
+    const NA a, const N3B &b) {
+    return Vec3BinaryOpTraits<NVec3_t<NA>, N3B>::make(a + b.x, a + b.y, a + b.z);
+}
+template <NVec3 N3A, Number NB>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec3BinaryOpTraits<N3A, NVec3_t<NB>>::ReturnType operator+(
+    const N3A &a, const NB b) {
+    return Vec3BinaryOpTraits<N3A, NVec3_t<NB>>::make(a.x + b, a.y + b, a.z + b);
+}
+template <NVec3 N3A, NVec3 N3B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec3BinaryOpTraits<N3A, N3B>::ReturnType operator+(
+    const N3A &a, const N3B &b) {
+    return Vec3BinaryOpTraits<N3A, N3B>::make(a.x + b.x, a.y + b.y, a.z + b.z);
+}
+
+template <Number NA, NVec3 N3B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec3BinaryOpTraits<NVec3_t<NA>, N3B>::ReturnType operator-(
+    const NA a, const N3B &b) {
+    return Vec3BinaryOpTraits<NVec3_t<NA>, N3B>::make(a - b.x, a - b.y, a - b.z);
+}
+template <NVec3 N3A, Number NB>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec3BinaryOpTraits<N3A, NVec3_t<NB>>::ReturnType operator-(
+    const N3A &a, const NB b) {
+    return Vec3BinaryOpTraits<N3A, NVec3_t<NB>>::make(a.x - b, a.y - b, a.z - b);
+}
+template <NVec3 N3A, NVec3 N3B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec3BinaryOpTraits<N3A, N3B>::ReturnType operator-(
+    const N3A &a, const N3B &b) {
+    return Vec3BinaryOpTraits<N3A, N3B>::make(a.x - b.x, a.y - b.y, a.z - b.z);
+}
+
+template <Number NA, NVec3 N3B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec3BinaryOpTraits<NVec3_t<NA>, N3B>::ReturnType operator*(
+    const NA a, const N3B &b) {
+    return Vec3BinaryOpTraits<NVec3_t<NA>, N3B>::make(a * b.x, a * b.y, a * b.z);
+}
+template <NVec3 N3A, Number NB>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec3BinaryOpTraits<N3A, NVec3_t<NB>>::ReturnType operator*(
+    const N3A &a, const NB b) {
+    return Vec3BinaryOpTraits<N3A, NVec3_t<NB>>::make(a.x * b, a.y * b, a.z * b);
+}
+template <NVec3 N3A, NVec3 N3B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec3BinaryOpTraits<N3A, N3B>::ReturnType operator*(
+    const N3A &a, const N3B &b) {
+    return Vec3BinaryOpTraits<N3A, N3B>::make(a.x * b.x, a.y * b.y, a.z * b.z);
+}
+
+template <NVec3 N3A, Number NB>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec3BinaryOpTraits<N3A, NVec3_t<NB>>::ReturnType operator/(
+    const N3A &a, const NB b) {
+    if constexpr (std::is_floating_point_v<NB>) {
+        const NB rb = static_cast<NB>(1) / b;
+        return Vec3BinaryOpTraits<N3A, NVec3_t<NB>>::make(a.x * rb, a.y * rb, a.z * rb);
+    }
+    else {
+        return Vec3BinaryOpTraits<N3A, NVec3_t<NB>>::make(a.x / b, a.y / b, a.z / b);
+    }
+}
+template <NVec3 N3A, NVec3 N3B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec3BinaryOpTraits<N3A, N3B>::ReturnType operator/(
+    const N3A &a, const N3B &b) {
+    return Vec3BinaryOpTraits<N3A, N3B>::make(a.x / b.x, a.y / b.y, a.z / b.z);
+}
+
+template <NVec3I N3A, std::integral NB>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec3BinaryOpTraits<N3A, NVec3_t<NB>>::ReturnType operator%(
+    const N3A &a, const NB b) {
+    return Vec3BinaryOpTraits<N3A, NVec3_t<NB>>::make(a.x % b, a.y % b, a.z % b);
+}
+template <NVec3I N3A, NVec3I N3B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec3BinaryOpTraits<N3A, N3B>::ReturnType operator%(
+    const N3A &a, const N3B &b) {
+    return Vec3BinaryOpTraits<N3A, N3B>::make(a.x % b.x, a.y % b.y, a.z % b.z);
+}
+
+template <std::integral NA, NVec3I N3B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec3BinaryOpTraits<NVec3_t<NA>, N3B>::ReturnType operator<<(
+    const NA a, const N3B &b) {
+    return Vec3BinaryOpTraits<NVec3_t<NA>, N3B>::make(a << b.x, a << b.y, a << b.z);
+}
+template <NVec3I N3A, std::integral NB>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec3BinaryOpTraits<N3A, NVec3_t<NB>>::ReturnType operator<<(
+    const N3A &a, const NB b) {
+    return Vec3BinaryOpTraits<N3A, NVec3_t<NB>>::make(a.x << b, a.y << b, a.z << b);
+}
+template <NVec3I N3A, NVec3I N3B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec3BinaryOpTraits<N3A, N3B>::ReturnType operator<<(
+    const N3A &a, const N3B &b) {
+    return Vec3BinaryOpTraits<N3A, N3B>::make(a.x << b.x, a.y << b.y, a.z << b.z);
+}
+
+template <std::integral NA, NVec3I N3B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec3BinaryOpTraits<NVec3_t<NA>, N3B>::ReturnType operator>>(
+    const NA a, const N3B &b) {
+    return Vec3BinaryOpTraits<NVec3_t<NA>, N3B>::make(a >> b.x, a >> b.y, a >> b.z);
+}
+template <NVec3I N3A, std::integral NB>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec3BinaryOpTraits<N3A, NVec3_t<NB>>::ReturnType operator>>(
+    const N3A &a, const NB b) {
+    return Vec3BinaryOpTraits<N3A, NVec3_t<NB>>::make(a.x >> b, a.y >> b, a.z >> b);
+}
+template <NVec3I N3A, NVec3I N3B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec3BinaryOpTraits<N3A, N3B>::ReturnType operator>>(
+    const N3A &a, const N3B &b) {
+    return Vec3BinaryOpTraits<N3A, N3B>::make(a.x >> b.x, a.y >> b.y, a.z >> b.z);
+}
+
+template <NVec3 N3A, NVec3 N3B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr void operator+=(
+    N3A &a, const N3B &b) {
+    a.x += b.x;
+    a.y += b.y;
+    a.z += b.z;
+}
+
+template <NVec3 N3A, NVec3 N3B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr void operator-=(
+    N3A &a, const N3B &b) {
+    a.x -= b.x;
+    a.y -= b.y;
+    a.z -= b.z;
+}
+
+template <NVec3 N3A, Number NB>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr void operator*=(
+    N3A &a, const NB &b) {
     a.x *= b;
     a.y *= b;
-    return a;
+    a.z *= b;
 }
-CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator/(const uint2 &a, const uint2 &b) {
-    return make_uint2(a.x / b.x, a.y / b.y);
-}
-CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator/(const uint2 &a, const int2 &b) {
-    return make_uint2(a.x / b.x, a.y / b.y);
-}
-CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator/(const uint2 &a, const uint32_t b) {
-    return make_uint2(a.x / b, a.y / b);
-}
-CUDA_COMMON_FUNCTION CUDA_INLINE uint2 &operator/=(uint2 &a, const uint32_t b) {
-    a.x /= b;
-    a.y /= b;
-    return a;
-}
-CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator%(const uint2 &a, const uint2 &b) {
-    return make_uint2(a.x % b.x, a.y % b.y);
-}
-CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator<<(const uint2 &a, const int32_t b) {
-    return make_uint2(a.x << b, a.y << b);
-}
-CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator<<(const uint2 &a, const uint32_t b) {
-    return make_uint2(a.x << b, a.y << b);
-}
-CUDA_COMMON_FUNCTION CUDA_INLINE uint2 &operator<<=(uint2 &a, const int32_t b) {
-    a = a << b;
-    return a;
-}
-CUDA_COMMON_FUNCTION CUDA_INLINE uint2 &operator<<=(uint2 &a, const uint32_t b) {
-    a = a << b;
-    return a;
-}
-CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator>>(const uint2 &a, const int32_t b) {
-    return make_uint2(a.x >> b, a.y >> b);
-}
-CUDA_COMMON_FUNCTION CUDA_INLINE uint2 operator>>(const uint2 &a, const uint32_t b) {
-    return make_uint2(a.x >> b, a.y >> b);
-}
-CUDA_COMMON_FUNCTION CUDA_INLINE uint2 &operator>>=(uint2 &a, const int32_t b) {
-    a = a >> b;
-    return a;
-}
-CUDA_COMMON_FUNCTION CUDA_INLINE uint2 &operator>>=(uint2 &a, const uint32_t b) {
-    a = a >> b;
-    return a;
+template <NVec3 N3A, NVec3 N3B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr void operator*=(
+    N3A &a, const N3B &b) {
+    a.x *= b.x;
+    a.y *= b.y;
+    a.z *= b.z;
 }
 
-CUDA_COMMON_FUNCTION CUDA_INLINE uint2 min(const uint2 &a, const uint2 &b) {
-#if !defined(__CUDA_ARCH__)
-    using std::min;
-#endif
-    return make_uint2(min(a.x, b.x), min(a.y, b.y));
+template <NVec3 N3A, Number NB>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr void operator/=(
+    N3A &a, const NB &b) {
+    if constexpr (std::is_floating_point_v<NB>) {
+        const NB rb = static_cast<NB>(1) / b;
+        a.x *= rb;
+        a.y *= rb;
+        a.z *= rb;
+    }
+    else {
+        a.x /= b;
+        a.y /= b;
+        a.z /= b;
+    }
 }
-CUDA_COMMON_FUNCTION CUDA_INLINE uint2 max(const uint2 &a, const uint2 &b) {
-#if !defined(__CUDA_ARCH__)
-    using std::max;
-#endif
-    return make_uint2(max(a.x, b.x), max(a.y, b.y));
+template <NVec3 N3A, NVec3 N3B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr void operator/=(
+    N3A &a, const N3B &b) {
+    a.x /= b.x;
+    a.y /= b.y;
+    a.z /= b.z;
 }
 
-CUDA_COMMON_FUNCTION CUDA_INLINE float2 min(const float2 &a, const float2 &b) {
-    return make_float2(std::fmin(a.x, b.x), std::fmin(a.y, b.y));
+template <NVec3I N3A, std::integral NB>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr void operator%=(
+    N3A &a, const NB &b) {
+    a.x %= b;
+    a.y %= b;
+    a.z %= b;
+}
+template <NVec3I N3A, NVec3I N3B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr void operator%=(
+    N3A &a, const N3B &b) {
+    a.x %= b.x;
+    a.y %= b.y;
+    a.z %= b.z;
 }
 
-CUDA_COMMON_FUNCTION CUDA_INLINE float3 make_float3(const float v) {
-    return make_float3(v, v, v);
+template <NVec3I N3A, std::integral NB>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr void operator<<=(
+    N3A &a, const NB &b) {
+    a.x <<= b;
+    a.y <<= b;
+    a.z <<= b;
+}
+template <NVec3I N3A, NVec3I N3B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr void operator<<=(
+    N3A &a, const N3B &b) {
+    a.x <<= b.x;
+    a.y <<= b.y;
+    a.z <<= b.z;
 }
 
-CUDA_COMMON_FUNCTION CUDA_INLINE float4 make_float4(const float3 &xyz, const float w) {
-    return make_float4(xyz.x, xyz.y, xyz.z, w);
+template <NVec3I N3A, std::integral NB>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr void operator>>=(
+    N3A &a, const NB &b) {
+    a.x >>= b;
+    a.y >>= b;
+    a.z >>= b;
 }
-CUDA_COMMON_FUNCTION CUDA_INLINE float4 &operator*=(float4 &a, const float4 &b) {
+template <NVec3I N3A, NVec3I N3B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr void operator>>=(
+    N3A &a, const N3B &b) {
+    a.x >>= b.x;
+    a.y >>= b.y;
+    a.z >>= b.z;
+}
+
+template <NVec3 N3>
+CUDA_COMMON_FUNCTION CUDA_INLINE decltype(N3::x) length(const N3 &v) {
+    return std::sqrt(pow2(v.x) + pow2(v.y) + pow2(v.z));
+}
+
+template <NVec3 N3A, NVec3 N3B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec3BinaryOpTraits<N3A, N3B>::ReturnType min(
+    const N3A &a, const N3B &b) {
+    using UType = GetBinOpResultType_t<decltype(N3A::x), decltype(N3B::x)>;
+    return Vec3BinaryOpTraits<N3A, N3B>::make(
+        stc::min<UType>(a.x, b.x), stc::min<UType>(a.y, b.y), stc::min<UType>(a.z, b.z));
+}
+
+template <NVec3 N3A, NVec3 N3B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec3BinaryOpTraits<N3A, N3B>::ReturnType max(
+    const N3A &a, const N3B &b) {
+    using UType = GetBinOpResultType_t<decltype(N3A::x), decltype(N3B::x)>;
+    return Vec3BinaryOpTraits<N3A, N3B>::make(
+        stc::max<UType>(a.x, b.x), stc::max<UType>(a.y, b.y), stc::max<UType>(a.z, b.z));
+}
+
+template <NVec3 N3A, NVec3 N3B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr GetBinOpResultType_t<decltype(N3A::x), decltype(N3B::x)> dot(
+    const N3A &a, const N3B &b) {
+    return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
+
+
+template <NVec4 N4>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr N4 operator+(const N4 &v) {
+    return v;
+}
+
+template <NVec4 N4>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr N4 operator-(const N4 &v) {
+    return GetNVec4<decltype(N4::x)>::make(-v.x, -v.y, -v.z, -v.w);
+}
+
+template <NVec4 N4A, NVec4 N4B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr bool operator==(
+    const N4A &a, const N4B &b) {
+    return a.x == b.x && a.y == b.y && a.z == b.z && a.w == b.w;
+}
+
+template <NVec4 N4A, NVec4 N4B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr bool operator!=(
+    const N4A &a, const N4B &b) {
+    return a.x != b.x || a.y != b.y || a.z != b.z || a.w != b.w;
+}
+
+template <Number NA, NVec4 N4B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec4BinaryOpTraits<NVec4_t<NA>, N4B>::ReturnType operator+(
+    const NA a, const N4B &b) {
+    return Vec4BinaryOpTraits<NVec4_t<NA>, N4B>::make(a + b.x, a + b.y, a + b.z, a + b.w);
+}
+template <NVec4 N4A, Number NB>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec4BinaryOpTraits<N4A, NVec4_t<NB>>::ReturnType operator+(
+    const N4A &a, const NB b) {
+    return Vec4BinaryOpTraits<N4A, NVec4_t<NB>>::make(a.x + b, a.y + b, a.z + b, a.w + b);
+}
+template <NVec4 N4A, NVec4 N4B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec4BinaryOpTraits<N4A, N4B>::ReturnType operator+(
+    const N4A &a, const N4B &b) {
+    return Vec4BinaryOpTraits<N4A, N4B>::make(a.x + b.x, a.y + b.y, a.z + b.z, a.w + b.w);
+}
+
+template <Number NA, NVec4 N4B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec4BinaryOpTraits<NVec4_t<NA>, N4B>::ReturnType operator-(
+    const NA a, const N4B &b) {
+    return Vec4BinaryOpTraits<NVec4_t<NA>, N4B>::make(a - b.x, a - b.y, a - b.z, a - b.w);
+}
+template <NVec4 N4A, Number NB>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec4BinaryOpTraits<N4A, NVec4_t<NB>>::ReturnType operator-(
+    const N4A &a, const NB b) {
+    return Vec4BinaryOpTraits<N4A, NVec4_t<NB>>::make(a.x - b, a.y - b, a.z - b, a.w - b);
+}
+template <NVec4 N4A, NVec4 N4B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec4BinaryOpTraits<N4A, N4B>::ReturnType operator-(
+    const N4A &a, const N4B &b) {
+    return Vec4BinaryOpTraits<N4A, N4B>::make(a.x - b.x, a.y - b.y, a.z - b.z, a.w - b.w);
+}
+
+template <Number NA, NVec4 N4B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec4BinaryOpTraits<NVec4_t<NA>, N4B>::ReturnType operator*(
+    const NA a, const N4B &b) {
+    return Vec4BinaryOpTraits<NVec4_t<NA>, N4B>::make(a * b.x, a * b.y, a * b.z, a * b.w);
+}
+template <NVec4 N4A, Number NB>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec4BinaryOpTraits<N4A, NVec4_t<NB>>::ReturnType operator*(
+    const N4A &a, const NB b) {
+    return Vec4BinaryOpTraits<N4A, NVec4_t<NB>>::make(a.x * b, a.y * b, a.z * b, a.w * b);
+}
+template <NVec4 N4A, NVec4 N4B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec4BinaryOpTraits<N4A, N4B>::ReturnType operator*(
+    const N4A &a, const N4B &b) {
+    return Vec4BinaryOpTraits<N4A, N4B>::make(a.x * b.x, a.y * b.y, a.z * b.z, a.w * b.w);
+}
+
+template <NVec4 N4A, Number NB>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec4BinaryOpTraits<N4A, NVec4_t<NB>>::ReturnType operator/(
+    const N4A &a, const NB b) {
+    if constexpr (std::is_floating_point_v<NB>) {
+        const NB rb = static_cast<NB>(1) / b;
+        return Vec4BinaryOpTraits<N4A, NVec4_t<NB>>::make(a.x * rb, a.y * rb, a.z * rb, a.w * rb);
+    }
+    else {
+        return Vec4BinaryOpTraits<N4A, NVec4_t<NB>>::make(a.x / b, a.y / b, a.z / b, a.w / b);
+    }
+}
+template <NVec4 N4A, NVec4 N4B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec4BinaryOpTraits<N4A, N4B>::ReturnType operator/(
+    const N4A &a, const N4B &b) {
+    return Vec4BinaryOpTraits<N4A, N4B>::make(a.x / b.x, a.y / b.y, a.z / b.z, a.w / b.w);
+}
+
+template <NVec4I N4A, std::integral NB>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec4BinaryOpTraits<N4A, NVec4_t<NB>>::ReturnType operator%(
+    const N4A &a, const NB b) {
+    return Vec4BinaryOpTraits<N4A, NVec4_t<NB>>::make(a.x % b, a.y % b, a.z % b, a.w % b);
+}
+template <NVec4I N4A, NVec4I N4B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec4BinaryOpTraits<N4A, N4B>::ReturnType operator%(
+    const N4A &a, const N4B &b) {
+    return Vec4BinaryOpTraits<N4A, N4B>::make(a.x % b.x, a.y % b.y, a.z % b.z, a.w % b.w);
+}
+
+template <std::integral NA, NVec4I N4B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec4BinaryOpTraits<NVec4_t<NA>, N4B>::ReturnType operator<<(
+    const NA a, const N4B &b) {
+    return Vec4BinaryOpTraits<NVec4_t<NA>, N4B>::make(a << b.x, a << b.y, a << b.z, a << b.w);
+}
+template <NVec4I N4A, std::integral NB>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec4BinaryOpTraits<N4A, NVec4_t<NB>>::ReturnType operator<<(
+    const N4A &a, const NB b) {
+    return Vec4BinaryOpTraits<N4A, NVec4_t<NB>>::make(a.x << b, a.y << b, a.z << b, a.w << b);
+}
+template <NVec4I N4A, NVec4I N4B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec4BinaryOpTraits<N4A, N4B>::ReturnType operator<<(
+    const N4A &a, const N4B &b) {
+    return Vec4BinaryOpTraits<N4A, N4B>::make(a.x << b.x, a.y << b.y, a.z << b.z, a.w << b.w);
+}
+
+template <std::integral NA, NVec4I N4B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec4BinaryOpTraits<NVec4_t<NA>, N4B>::ReturnType operator>>(
+    const NA a, const N4B &b) {
+    return Vec4BinaryOpTraits<NVec4_t<NA>, N4B>::make(a >> b.x, a >> b.y, a >> b.z, a >> b.w);
+}
+template <NVec4I N4A, std::integral NB>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec4BinaryOpTraits<N4A, NVec4_t<NB>>::ReturnType operator>>(
+    const N4A &a, const NB b) {
+    return Vec4BinaryOpTraits<N4A, NVec4_t<NB>>::make(a.x >> b, a.y >> b, a.z >> b, a.w >> b);
+}
+template <NVec4I N4A, NVec4I N4B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec4BinaryOpTraits<N4A, N4B>::ReturnType operator>>(
+    const N4A &a, const N4B &b) {
+    return Vec4BinaryOpTraits<N4A, N4B>::make(a.x >> b.x, a.y >> b.y, a.z >> b.z, a.w >> b.w);
+}
+
+template <NVec4 N4A, NVec4 N4B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr void operator+=(
+    N4A &a, const N4B &b) {
+    a.x += b.x;
+    a.y += b.y;
+    a.z += b.z;
+    a.w += b.w;
+}
+
+template <NVec4 N4A, NVec4 N4B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr void operator-=(
+    N4A &a, const N4B &b) {
+    a.x -= b.x;
+    a.y -= b.y;
+    a.z -= b.z;
+    a.w -= b.w;
+}
+
+template <NVec4 N4A, Number NB>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr void operator*=(
+    N4A &a, const NB &b) {
+    a.x *= b;
+    a.y *= b;
+    a.z *= b;
+    a.w *= b;
+}
+template <NVec4 N4A, NVec4 N4B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr void operator*=(
+    N4A &a, const N4B &b) {
     a.x *= b.x;
     a.y *= b.y;
     a.z *= b.z;
     a.w *= b.w;
-    return a;
 }
-CUDA_COMMON_FUNCTION CUDA_INLINE float3 getXYZ(const float4 &v) {
-    return make_float3(v.x, v.y, v.z);
+
+template <NVec4 N4A, Number NB>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr void operator/=(
+    N4A &a, const NB &b) {
+    if constexpr (std::is_floating_point_v<NB>) {
+        const NB rb = static_cast<NB>(1) / b;
+        a.x *= rb;
+        a.y *= rb;
+        a.z *= rb;
+        a.w *= rb;
+    }
+    else {
+        a.x /= b;
+        a.y /= b;
+        a.z /= b;
+        a.w /= b;
+    }
 }
+template <NVec4 N4A, NVec4 N4B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr void operator/=(
+    N4A &a, const N4B &b) {
+    a.x /= b.x;
+    a.y /= b.y;
+    a.z /= b.z;
+    a.w /= b.w;
+}
+
+template <NVec4I N4A, std::integral NB>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr void operator%=(
+    N4A &a, const NB &b) {
+    a.x %= b;
+    a.y %= b;
+    a.z %= b;
+    a.w %= b;
+}
+template <NVec4I N4A, NVec4I N4B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr void operator%=(
+    N4A &a, const N4B &b) {
+    a.x %= b.x;
+    a.y %= b.y;
+    a.z %= b.z;
+    a.w %= b.w;
+}
+
+template <NVec4I N4A, std::integral NB>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr void operator<<=(
+    N4A &a, const NB &b) {
+    a.x <<= b;
+    a.y <<= b;
+    a.z <<= b;
+    a.w <<= b;
+}
+template <NVec4I N4A, NVec4I N4B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr void operator<<=(
+    N4A &a, const N4B &b) {
+    a.x <<= b.x;
+    a.y <<= b.y;
+    a.z <<= b.z;
+    a.w <<= b.w;
+}
+
+template <NVec4I N4A, std::integral NB>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr void operator>>=(
+    N4A &a, const NB &b) {
+    a.x >>= b;
+    a.y >>= b;
+    a.z >>= b;
+    a.w >>= b;
+}
+template <NVec4I N4A, NVec4I N4B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr void operator>>=(
+    N4A &a, const N4B &b) {
+    a.x >>= b.x;
+    a.y >>= b.y;
+    a.z >>= b.z;
+    a.w >>= b.w;
+}
+
+template <NVec4 N4>
+CUDA_COMMON_FUNCTION CUDA_INLINE NVec3_t<decltype(N4::x)> getXYZ(const N4 &v) {
+    return GetNVec3<decltype(N4::x)>::make(v.x, v.y, v.z);
+}
+
+template <NVec4 N4A, NVec4 N4B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec4BinaryOpTraits<N4A, N4B>::ReturnType min(
+    const N4A &a, const N4B &b) {
+    using UType = GetBinOpResultType_t<decltype(N4A::x), decltype(N4B::x)>;
+    return Vec4BinaryOpTraits<N4A, N4B>::make(
+        stc::min<UType>(a.x, b.x), stc::min<UType>(a.y, b.y), stc::min<UType>(a.z, b.z), stc::min<UType>(a.w, b.w));
+}
+
+template <NVec4 N4A, NVec4 N4B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec4BinaryOpTraits<N4A, N4B>::ReturnType max(
+    const N4A &a, const N4B &b) {
+    using UType = GetBinOpResultType_t<decltype(N4A::x), decltype(N4B::x)>;
+    return Vec4BinaryOpTraits<N4A, N4B>::make(
+        stc::max<UType>(a.x, b.x), stc::max<UType>(a.y, b.y), stc::max<UType>(a.z, b.z), stc::max<UType>(a.w, b.w));
+}
+
+template <NVec4 N4A, NVec4 N4B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr GetBinOpResultType_t<decltype(N4A::x), decltype(N4B::x)> dot(
+    const N4A &a, const N4B &b) {
+    return a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w;
+}
+
+// END: Operator definitions for the CUDA built-in types.
+// ----------------------------------------------------------------
 
 
 

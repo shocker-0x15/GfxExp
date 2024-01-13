@@ -80,7 +80,7 @@ CUDA_DEVICE_FUNCTION void generateMinMaxMipMap_generic(
     const int2 dstPixIdx(
         blockDim.x * blockIdx.x + threadIdx.x,
         blockDim.y * blockIdx.y + threadIdx.y);
-    const int2 srcImageSize = material->heightMapSize >> srcMipLevel;
+    const int2 srcImageSize = material->heightMapSize >> static_cast<int32_t>(srcMipLevel);
     const int2 dstImageSize = srcImageSize / 2;
     if (dstPixIdx.x >= dstImageSize.x || dstPixIdx.y >= dstImageSize.y)
         return;
