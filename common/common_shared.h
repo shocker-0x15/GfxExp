@@ -768,6 +768,11 @@ namespace shared {
         Point2D texCoord;
     };
 
+    struct CurveVertex {
+        Point3D position;
+        float width;
+    };
+
     struct Triangle {
         uint32_t index0, index1, index2;
     };
@@ -832,8 +837,16 @@ namespace shared {
     };
 
     struct GeometryInstanceData {
-        ROBuffer<Vertex> vertexBuffer;
-        ROBuffer<Triangle> triangleBuffer;
+        union {
+            struct {
+                ROBuffer<Vertex> vertexBuffer;
+                ROBuffer<Triangle> triangleBuffer;
+            };
+            struct {
+                ROBuffer<CurveVertex> curveVertexBuffer;
+                ROBuffer<uint32_t> segmentIndexBuffer;
+            };
+        };
         LightDistribution emitterPrimDist;
         uint32_t materialSlot;
         uint32_t geomInstSlot;

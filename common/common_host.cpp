@@ -1926,8 +1926,60 @@ GeometryInstance* createTFDMGeometryInstance(
     geomInstData.geomInstSlot = geomInst->geomInstSlot;
     geomInstDataOnHost[geomInst->geomInstSlot] = geomInstData;
 
-    geomInst->optixGeomInst = scene->optixScene.createGeometryInstance(optixu::GeometryType::CustomPrimitives);
+    geomInst->optixGeomInst = scene->optixScene.createGeometryInstance(geomInst->geometryType);
     geomInst->optixGeomInst.setNumMaterials(1, optixu::BufferView());
+    geomInst->optixGeomInst.setMaterial(0, 0, optixMat);
+    geomInst->optixGeomInst.setUserData(geomInst->geomInstSlot);
+
+    return geomInst;
+}
+
+GeometryInstance* createLinearSegmentsGeometryInstance(
+    CUcontext cuContext, Scene* scene,
+    const std::vector<shared::CurveVertex> &vertices,
+    const std::vector<uint32_t> &indices,
+    const Material* mat, optixu::Material optixMat) {
+    shared::GeometryInstanceData* geomInstDataOnHost = scene->geomInstDataBuffer.getMappedPointer();
+
+    GeometryInstance* geomInst = new GeometryInstance();
+    geomInst->geometryType = optixu::GeometryType::LinearSegments;
+
+    for (int iIdx = 0; iIdx <= indices.size(); ++iIdx) {
+        uint32_t idx;
+        if (iIdx < indices.size())
+            idx = indices[iIdx];
+        else
+            idx = indices[iIdx - 1] + 1;
+
+        const shared::CurveVertex &v = vertices[idx];
+        geomInst->aabb.unify(v.position);
+    }
+
+    geomInst->mat = mat;
+    geomInst->curveVertexBuffer.initialize(cuContext, Scene::bufferType, vertices);
+    geomInst->segmentIndexBuffer.initialize(cuContext, Scene::bufferType, indices);
+    geomInst->geomInstSlot = scene->geomInstSlotFinder.getFirstAvailableSlot();
+    scene->geomInstSlotFinder.setInUse(geomInst->geomInstSlot);
+
+    shared::GeometryInstanceData geomInstData = {};
+    geomInstData.curveVertexBuffer = geomInst->curveVertexBuffer.getROBuffer<shared::enableBufferOobCheck>();
+    geomInstData.segmentIndexBuffer = geomInst->segmentIndexBuffer.getROBuffer<shared::enableBufferOobCheck>();
+    geomInst->emitterPrimDist.getDeviceType(&geomInstData.emitterPrimDist);
+    geomInstData.materialSlot = mat->materialSlot;
+    geomInstData.geomInstSlot = geomInst->geomInstSlot;
+    geomInstDataOnHost[geomInst->geomInstSlot] = geomInstData;
+
+    geomInst->optixGeomInst = scene->optixScene.createGeometryInstance(geomInst->geometryType);
+    geomInst->optixGeomInst.setVertexBuffer(
+        optixu::BufferView(
+            geomInst->curveVertexBuffer.getCUdeviceptr() + offsetof(shared::CurveVertex, position),
+            geomInst->curveVertexBuffer.numElements(), geomInst->curveVertexBuffer.stride()));
+    geomInst->optixGeomInst.setWidthBuffer(
+        optixu::BufferView(
+            geomInst->curveVertexBuffer.getCUdeviceptr() + offsetof(shared::CurveVertex, width),
+            geomInst->curveVertexBuffer.numElements(), geomInst->curveVertexBuffer.stride()));
+    geomInst->optixGeomInst.setSegmentIndexBuffer(geomInst->segmentIndexBuffer);
+    geomInst->optixGeomInst.setCurveEndcapFlags(OPTIX_CURVE_ENDCAP_ON);
     geomInst->optixGeomInst.setMaterial(0, 0, optixMat);
     geomInst->optixGeomInst.setUserData(geomInst->geomInstSlot);
 

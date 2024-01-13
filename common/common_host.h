@@ -642,6 +642,9 @@ struct GeometryInstance {
     optixu::GeometryInstance optixGeomInst;
     AABB aabb;
     optixu::GeometryType geometryType;
+    // for curves
+    cudau::TypedBuffer<shared::CurveVertex> curveVertexBuffer;
+    cudau::TypedBuffer<uint32_t> segmentIndexBuffer;
     // for TFDM
     cudau::TypedBuffer<shared::TFDMTriangleAuxInfo> tfdmTriAuxInfoBuffer;
     // for NRTDSM
@@ -1360,6 +1363,12 @@ GeometryInstance* createTFDMGeometryInstance(
     CUcontext cuContext, Scene* scene,
     const std::vector<shared::Vertex> &vertices,
     const std::vector<shared::Triangle> &triangles,
+    const Material* mat, optixu::Material optixMat);
+
+GeometryInstance* createLinearSegmentsGeometryInstance(
+    CUcontext cuContext, Scene* scene,
+    const std::vector<shared::CurveVertex> &vertices,
+    const std::vector<uint32_t> &indices,
     const Material* mat, optixu::Material optixMat);
 
 GeometryGroup* createGeometryGroup(

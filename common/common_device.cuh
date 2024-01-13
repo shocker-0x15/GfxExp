@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include "common_shared.h"
+#include "curve_evaluator.h"
 
 static constexpr float RayEpsilon = 1e-4;
 
@@ -231,6 +232,46 @@ RT_CALLABLE_PROGRAM Normal3D RT_DC_NAME(readModifiedNormalFromHeightMap)
     return modLocalNormal;
 }
 CUDA_DECLARE_CALLABLE_PROGRAM_POINTER(readModifiedNormalFromHeightMap);
+
+
+
+static constexpr bool useEmbeddedVertexData = true;
+
+template <OptixPrimitiveType curveType>
+CUDA_DEVICE_FUNCTION CUDA_INLINE Normal3D calcCurveSurfaceNormal(
+    const shared::GeometryInstanceData &geom, uint32_t primIndex, float curveParam, const Point3D &hp) {
+    using namespace shared;
+
+    constexpr uint32_t numControlPoints = curve::getNumControlPoints<curveType>();
+    float4 controlPoints[numControlPoints];
+    if constexpr (useEmbeddedVertexData) {
+        OptixTraversableHandle gasHandle = optixGetGASTraversableHandle();
+        uint32_t sbtGasIndex = optixGetSbtGASIndex();
+        if constexpr (curveType == OPTIX_PRIMITIVE_TYPE_ROUND_LINEAR)
+            optixGetLinearCurveVertexData(gasHandle, primIndex, sbtGasIndex, 0.0f, controlPoints);
+        else if constexpr (curveType == OPTIX_PRIMITIVE_TYPE_ROUND_QUADRATIC_BSPLINE)
+            optixGetQuadraticBSplineVertexData(gasHandle, primIndex, sbtGasIndex, 0.0f, controlPoints);
+        else if constexpr (curveType == OPTIX_PRIMITIVE_TYPE_ROUND_CUBIC_BSPLINE)
+            optixGetCubicBSplineVertexData(gasHandle, primIndex, sbtGasIndex, 0.0f, controlPoints);
+        else if constexpr (curveType == OPTIX_PRIMITIVE_TYPE_ROUND_CATMULLROM)
+            optixGetCatmullRomVertexData(gasHandle, primIndex, sbtGasIndex, 0.0f, controlPoints);
+        else if constexpr (curveType == OPTIX_PRIMITIVE_TYPE_ROUND_CUBIC_BEZIER)
+            optixGetCubicBezierVertexData(gasHandle, primIndex, sbtGasIndex, 0.0f, controlPoints);
+    }
+    else {
+        uint32_t baseIndex = geom.segmentIndexBuffer[primIndex];
+#pragma unroll
+        for (int i = 0; i < numControlPoints; ++i) {
+            const CurveVertex &v = geom.curveVertexBuffer[baseIndex + i];
+            controlPoints[i] = make_float4(v.position.toNative(), v.width);
+        }
+    }
+
+    curve::Evaluator<curveType> ce(controlPoints);
+    float3 sn = ce.calcNormal(curveParam, hp.toNative());
+
+    return Normal3D(sn);
+}
 
 
 
