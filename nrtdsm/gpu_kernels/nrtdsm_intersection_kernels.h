@@ -1327,15 +1327,15 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
         printf(
             "%u-%u: pA: (%g, %g, %g), pB: (%g, %g, %g), pC: (%g, %g, %g)\n",
             plp.f->frameIndex, optixGetPrimitiveIndex(),
-            v3print(vA.position), v3print(vB.position), v3print(vC.position));
+            v3print(pA), v3print(pB), v3print(pC));
         printf(
             "%u-%u: nA: (%g, %g, %g), nB: (%g, %g, %g), nC: (%g, %g, %g)\n",
             plp.f->frameIndex, optixGetPrimitiveIndex(),
-            v3print(vA.normal), v3print(vB.normal), v3print(vC.normal));
+            v3print(nA), v3print(nB), v3print(nC));
         printf(
             "%u-%u: tcA: (%g, %g), tcB: (%g, %g), tcC: (%g, %g)\n",
             plp.f->frameIndex, optixGetPrimitiveIndex(),
-            v2print(vA.texCoord), v2print(vB.texCoord), v2print(vC.texCoord));
+            v2print(tcA), v2print(tcB), v2print(tcC));
         printf(
             "%u-%u: rayOrg: (%g, %g, %g), rayDir: (%g, %g, %g), range: (%g, %g)\n",
             plp.f->frameIndex, optixGetPrimitiveIndex(),
