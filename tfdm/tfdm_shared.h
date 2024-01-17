@@ -813,14 +813,14 @@ enum class TriangleSquareIntersection2DResult {
 };
 
 CUDA_DEVICE_FUNCTION CUDA_INLINE TriangleSquareIntersection2DResult testTriangleSquareIntersection2D(
-    const Point2D triPs[3], bool tcFlipped, const Vector2D triEdgeNormals[3],
+    const Point2D &pA, const Point2D &pB, const Point2D &pC, bool tcFlipped, const Vector2D triEdgeNormals[3],
     const Point2D &triAabbMinP, const Point2D &triAabbMaxP,
     const Point2D &squareCenter, float squareHalfWidth) {
     const Vector2D vSquareCenter = static_cast<Vector2D>(squareCenter);
     const Point2D relTriPs[] = {
-        triPs[0] - vSquareCenter,
-        triPs[1] - vSquareCenter,
-        triPs[2] - vSquareCenter,
+        pA - vSquareCenter,
+        pB - vSquareCenter,
+        pC - vSquareCenter,
     };
 
     // JP: テクセルのAABBと三角形のAABBのIntersectionを計算する。

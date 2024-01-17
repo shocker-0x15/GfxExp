@@ -40,45 +40,45 @@ template <LocalIntersectionType intersectionType>
 CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
     const auto sbtr = HitGroupSBTRecordData::get();
     const GeometryInstanceData &geomInst = plp.s->geometryInstanceDataBuffer[sbtr.geomInstSlot];
+    const GeometryInstanceDataForTFDM &tfdmGeomInst = plp.s->geomInstTfdmDataBuffer[sbtr.geomInstSlot];
     const MaterialData &mat = plp.s->materialDataBuffer[geomInst.materialSlot];
 
-    const Triangle &tri = geomInst.triangleBuffer[optixGetPrimitiveIndex()];
-    const Vertex (&vs)[] = {
-        geomInst.vertexBuffer[tri.index0],
-        geomInst.vertexBuffer[tri.index1],
-        geomInst.vertexBuffer[tri.index2]
-    };
+    const uint32_t primIdx = optixGetPrimitiveIndex();
 
-    const GeometryInstanceDataForTFDM &tfdm = plp.s->geomInstTfdmDataBuffer[sbtr.geomInstSlot];
-    const DisplacementParameters &dispParams = tfdm.params;
+    const Triangle &tri = geomInst.triangleBuffer[primIdx];
+    const Vertex &vA = geomInst.vertexBuffer[tri.index0];
+    const Vertex &vB = geomInst.vertexBuffer[tri.index1];
+    const Vertex &vC = geomInst.vertexBuffer[tri.index2];
+
+    const DisplacementParameters &dispParams = tfdmGeomInst.params;
+    const float baseHeight = dispParams.hOffset - dispParams.hScale * dispParams.hBias;
+    const float heightScale = dispParams.hScale;
 
     const Matrix3x3 &texXfm = dispParams.textureTransform;
-    const Point2D tcs[] = {
-        texXfm * vs[0].texCoord,
-        texXfm * vs[1].texCoord,
-        texXfm * vs[2].texCoord,
-    };
-    const float triAreaInTc = cross(tcs[1] - tcs[0], tcs[2] - tcs[0])/* * 0.5f*/;
+    const Point2D tcA = texXfm * vA.texCoord;
+    const Point2D tcB = texXfm * vB.texCoord;
+    const Point2D tcC = texXfm * vC.texCoord;
+    const float triAreaInTc = cross(tcB - tcA, tcC - tcA)/* * 0.5f*/;
     const bool tcFlipped = triAreaInTc < 0;
     const float recTriAreaInTc = 1.0f / triAreaInTc;
 
     const Vector2D texTriEdgeNormals[] = {
-        Vector2D(tcs[1].y - tcs[0].y, tcs[0].x - tcs[1].x),
-        Vector2D(tcs[2].y - tcs[1].y, tcs[1].x - tcs[2].x),
-        Vector2D(tcs[0].y - tcs[2].y, tcs[2].x - tcs[0].x),
+        Vector2D(tcB.y - tcA.y, tcA.x - tcB.x),
+        Vector2D(tcC.y - tcB.y, tcB.x - tcC.x),
+        Vector2D(tcA.y - tcC.y, tcC.x - tcA.x),
     };
-    const Point2D texTriAabbMinP = min(tcs[0], min(tcs[1], tcs[2]));
-    const Point2D texTriAabbMaxP = max(tcs[0], max(tcs[1], tcs[2]));
+    const Point2D texTriAabbMinP = min(tcA, min(tcB, tcC));
+    const Point2D texTriAabbMaxP = max(tcA, max(tcB, tcC));
 
     // JP: 位置や法線などをテクスチャー座標の関数として表すための行列を用意する。
     //     ここでのテクスチャー座標とはテクスチャートランスフォーム前のオリジナルのテクスチャー座標。
     // EN: Prepare matrices to express a position and a normal and so on as functions of the texture coordinate.
     //     Texure coordinate here is the original one before applying the texture transform.
-    const TFDMTriangleAuxInfo &dispTriAuxInfo = tfdm.dispTriAuxInfoBuffer[optixGetPrimitiveIndex()];
+    const TFDMTriangleAuxInfo &dispTriAuxInfo = tfdmGeomInst.dispTriAuxInfoBuffer[primIdx];
     const Matrix3x3 invTexXfm = invert(texXfm);
     const Matrix3x3 matTcToBc = dispTriAuxInfo.matTcToBc * invTexXfm;
     const Matrix3x3 matTcToPInObj =
-        Matrix3x3(vs[0].position, vs[1].position, vs[2].position) * matTcToBc;
+        Matrix3x3(vA.position, vB.position, vC.position) * matTcToBc;
     const Matrix3x3 matTcToNInObj = dispTriAuxInfo.matTcToNInObj * invTexXfm;
 
     // JP: オブジェクト空間から(テクスチャートランスフォーム後の)UVに沿った接空間に変換する行列。
@@ -88,7 +88,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
         * dispTriAuxInfo.matObjToTcTang;
 
     Normal3D hitNormal;
-    float hitBc1, hitBc2;
+    float hitBcB, hitBcC;
     float tMax = optixGetRayTmax();
     const float tMin = optixGetRayTmin();
 
@@ -126,7 +126,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
     if (isDebugPixel() && getDebugPrintEnabled()) {
         printf(
             "%u-%u: TriAABB: (%g, %g) - (%g, %g), %u roots, signs: %c, %c\n",
-            plp.f->frameIndex, optixGetPrimitiveIndex(),
+            plp.f->frameIndex, primIdx,
             v2print(texTriAabbMinP), v2print(texTriAabbMaxP),
             numRoots, signX ? '-' : '+', signY ? '-' : '+');
     }
@@ -142,7 +142,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
         if (isDebugPixel() && getDebugPrintEnabled()) {
             printf(
                 "%u-%u, Root %u: [%d - %d, %d] - [%d - %d, %d]\n",
-                plp.f->frameIndex, optixGetPrimitiveIndex(), rootIdx,
+                plp.f->frameIndex, primIdx, rootIdx,
                 curTexel.lod, curTexel.x, curTexel.y,
                 endTexel.lod, endTexel.x, endTexel.y);
         }
@@ -153,7 +153,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
             const Point2D texelCenter = Point2D(curTexel.x + 0.5f, curTexel.y + 0.5f) * texelScale;
             const TriangleSquareIntersection2DResult isectResult =
                 testTriangleSquareIntersection2D(
-                    tcs, tcFlipped, texTriEdgeNormals, texTriAabbMinP, texTriAabbMaxP,
+                    tcA, tcB, tcC, tcFlipped, texTriEdgeNormals, texTriAabbMinP, texTriAabbMaxP,
                     texelCenter, 0.5f * texelScale);
 
             // JP: テクセルがベース三角形の外にある場合はテクセルをスキップ。
@@ -163,7 +163,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
                 if (isDebugPixel() && getDebugPrintEnabled()) {
                     printf(
                         "%u-%u, Root %u: [%d - %d, %d] OutTri\n",
-                        plp.f->frameIndex, optixGetPrimitiveIndex(), rootIdx,
+                        plp.f->frameIndex, primIdx, rootIdx,
                         curTexel.lod, curTexel.x, curTexel.y);
                 }
 #endif
@@ -183,8 +183,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
                     make_uint2(curTexel.x - wrapIndex.x * imgSize.x, curTexel.y - wrapIndex.y * imgSize.y) :
                     make_uint2(0, 0);
                 const float2 minmax = mat.minMaxMipMap[min(curTexel.lod, maxDepth)].read(wrappedTexel);
-                const float amplitude = dispParams.hScale * (minmax.y - minmax.x);
-                const float minHeight = dispParams.hOffset + dispParams.hScale * (minmax.x - dispParams.hBias);
+                const float amplitude = heightScale * (minmax.y - minmax.x);
+                const float minHeight = baseHeight + heightScale * minmax.x;
                 const AAFloatOn2D hBound(minHeight + 0.5f * amplitude, 0, 0, 0.5f * amplitude);
 
                 const Point2D clippedTcMinP = max(texelCenter - Vector2D(0.5f) * texelScale, texTriAabbMinP);
@@ -219,7 +219,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
                 if (isDebugPixel() && getDebugPrintEnabled()) {
                     printf(
                         "%u-%u, Root %u: [%d - %d, %d] Miss AABB\n",
-                        plp.f->frameIndex, optixGetPrimitiveIndex(), rootIdx,
+                        plp.f->frameIndex, primIdx, rootIdx,
                         curTexel.lod, curTexel.x, curTexel.y);
                 }
 #endif
@@ -234,7 +234,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
                 if (isDebugPixel() && getDebugPrintEnabled()) {
                     printf(
                         "%u-%u, Root %u: [%d - %d, %d] Hit AABB, down\n",
-                        plp.f->frameIndex, optixGetPrimitiveIndex(), rootIdx,
+                        plp.f->frameIndex, primIdx, rootIdx,
                         curTexel.lod, curTexel.x, curTexel.y);
                 }
 #endif
@@ -246,7 +246,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
             if (isDebugPixel() && getDebugPrintEnabled()) {
                 printf(
                     "%u-%u, Root %u: [%d - %d, %d] Hit, AABB, intersect\n",
-                    plp.f->frameIndex, optixGetPrimitiveIndex(), rootIdx,
+                    plp.f->frameIndex, primIdx, rootIdx,
                     curTexel.lod, curTexel.x, curTexel.y);
             }
 #endif
@@ -273,27 +273,23 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
                 if (t < tMax) {
                     Normal3D n;
                     const Point2D hp(texelAabb.restoreHitPoint(param0, param1, &n));
-                    const float b1 = cross(tcs[2] - hp, tcs[0] - hp) * recTriAreaInTc;
-                    const float b2 = cross(tcs[0] - hp, tcs[1] - hp) * recTriAreaInTc;
+                    const float bcB = cross(tcC - hp, tcA - hp) * recTriAreaInTc;
+                    const float bcC = cross(tcA - hp, tcB - hp) * recTriAreaInTc;
                     tMax = t;
-                    hitBc1 = b1;
-                    hitBc2 = b2;
+                    hitBcB = bcB;
+                    hitBcC = bcC;
                     hitNormal = static_cast<Normal3D>(n);
                 }
             }
             if constexpr (intersectionType == LocalIntersectionType::TwoTriangle) {
                 const float cornerHeightTL =
-                    dispParams.hOffset + dispParams.hScale
-                    * (sample(curTexel.x - 0.0f, curTexel.y - 0.0f) - dispParams.hBias);
+                    baseHeight + heightScale * sample(curTexel.x - 0.0f, curTexel.y - 0.0f);
                 const float cornerHeightTR =
-                    dispParams.hOffset + dispParams.hScale
-                    * (sample(curTexel.x + 1.0f, curTexel.y - 0.0f) - dispParams.hBias);
+                    baseHeight + heightScale * sample(curTexel.x + 1.0f, curTexel.y - 0.0f);
                 const float cornerHeightBL =
-                    dispParams.hOffset + dispParams.hScale
-                    * (sample(curTexel.x - 0.0f, curTexel.y + 1.0f) - dispParams.hBias);
+                    baseHeight + heightScale * sample(curTexel.x - 0.0f, curTexel.y + 1.0f);
                 const float cornerHeightBR =
-                    dispParams.hOffset + dispParams.hScale
-                    * (sample(curTexel.x + 1.0f, curTexel.y + 1.0f) - dispParams.hBias);
+                    baseHeight + heightScale * sample(curTexel.x + 1.0f, curTexel.y + 1.0f);
 
                 const Point2D tcTL(texelCenter + texelScale * Vector2D(-0.5f, -0.5f));
                 const Point2D tcTR(texelCenter + texelScale * Vector2D(0.5f, -0.5f));
@@ -311,15 +307,15 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
                 // EN: Compute the coordinates of four corners in the tangent space using
                 //     the height values at the corners and the normals.
                 const Matrix3x3 matObjToTcTang3x3 = matObjToTcTang.getUpperLeftMatrix();
-                const Point3D pTL = Point3D(tcTL, 0.0f) + cornerHeightTL * matObjToTcTang3x3 * nTLInObj;
-                const Point3D pTR = Point3D(tcTR, 0.0f) + cornerHeightTR * matObjToTcTang3x3 * nTRInObj;
-                const Point3D pBL = Point3D(tcBL, 0.0f) + cornerHeightBL * matObjToTcTang3x3 * nBLInObj;
-                const Point3D pBR = Point3D(tcBR, 0.0f) + cornerHeightBR * matObjToTcTang3x3 * nBRInObj;
+                const Point3D pTL = Point3D(tcTL, 0.0f) + cornerHeightTL * (matObjToTcTang3x3 * nTLInObj);
+                const Point3D pTR = Point3D(tcTR, 0.0f) + cornerHeightTR * (matObjToTcTang3x3 * nTRInObj);
+                const Point3D pBL = Point3D(tcBL, 0.0f) + cornerHeightBL * (matObjToTcTang3x3 * nBLInObj);
+                const Point3D pBR = Point3D(tcBR, 0.0f) + cornerHeightBR * (matObjToTcTang3x3 * nBRInObj);
 
                 const auto testRayVsTriangleIntersection = []
-                (const Point3D &org, const Vector3D &dir, float distMin, float distMax,
+                (const Point3D &org, const Vector3D &dir, const float distMin, const float distMax,
                  const Point3D &pA, const Point3D &pB, const Point3D &pC,
-                 Vector3D* n, float* t, float* beta, float* gamma) {
+                 Vector3D* const n, float* const t, float* const bcB, float* const bcC) {
                     const Vector3D eAB = pB - pA;
                     const Vector3D eCA = pA - pC;
                     *n = cross(eCA, eAB);
@@ -327,42 +323,42 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
                     const Vector3D e2 = (1.0f / dot(*n, dir)) * (pA - org);
                     const Vector3D i = cross(dir, e2);
 
-                    *beta = dot(i, eCA);
-                    *gamma = dot(i, eAB);
+                    *bcB = dot(i, eCA);
+                    *bcC = dot(i, eAB);
                     *t = dot(*n, e2);
 
                     return (
                         (*t < distMax) & (*t > distMin)
-                        & (*beta >= 0.0f) & (*gamma >= 0.0f) & (*beta + *gamma <= 1));
+                        & (*bcB >= 0.0f) & (*bcC >= 0.0f) & (*bcB + *bcC <= 1));
                 };
 
                 float t = INFINITY;
-                float mb1, mb2;
+                float mbcB, mbcC;
                 Vector3D n;
                 if (testRayVsTriangleIntersection(
-                    rayOrgInTcTang, rayDirInTcTang, tMin, tMax, pTL, pTR, pBR, &n, &t, &mb1, &mb2)) {
+                    rayOrgInTcTang, rayDirInTcTang, tMin, tMax, pTL, pTR, pBR, &n, &t, &mbcB, &mbcC)) {
                     if (t < tMax) {
-                        const Point2D hp((1 - (mb1 + mb2)) * tcTL + mb1 * tcTR + mb2 * tcBR);
-                        const float b1 = cross(tcs[2] - hp, tcs[0] - hp) * recTriAreaInTc;
-                        const float b2 = cross(tcs[0] - hp, tcs[1] - hp) * recTriAreaInTc;
-                        if (b1 >= 0.0f && b2 >= 0.0f && b1 + b2 <= 1.0f) {
+                        const Point2D hp((1 - (mbcB + mbcC)) * tcTL + mbcB * tcTR + mbcC * tcBR);
+                        const float bcB = cross(tcC - hp, tcA - hp) * recTriAreaInTc;
+                        const float bcC = cross(tcA - hp, tcB - hp) * recTriAreaInTc;
+                        if (bcB >= 0.0f && bcC >= 0.0f && bcB + bcC <= 1.0f) {
                             tMax = t;
-                            hitBc1 = b1;
-                            hitBc2 = b2;
+                            hitBcB = bcB;
+                            hitBcC = bcC;
                             hitNormal = static_cast<Normal3D>(n);
                         }
                     }
                 }
                 if (testRayVsTriangleIntersection(
-                    rayOrgInTcTang, rayDirInTcTang, tMin, tMax, pTL, pBR, pBL, &n, &t, &mb1, &mb2)) {
+                    rayOrgInTcTang, rayDirInTcTang, tMin, tMax, pTL, pBR, pBL, &n, &t, &mbcB, &mbcC)) {
                     if (t < tMax) {
-                        const Point2D hp((1 - (mb1 + mb2)) * tcTL + mb1 * tcBR + mb2 * tcBL);
-                        const float b1 = cross(tcs[2] - hp, tcs[0] - hp) * recTriAreaInTc;
-                        const float b2 = cross(tcs[0] - hp, tcs[1] - hp) * recTriAreaInTc;
-                        if (b1 >= 0.0f && b2 >= 0.0f && b1 + b2 <= 1.0f) {
+                        const Point2D hp((1 - (mbcB + mbcC)) * tcTL + mbcB * tcBR + mbcC * tcBL);
+                        const float bcB = cross(tcC - hp, tcA - hp) * recTriAreaInTc;
+                        const float bcC = cross(tcA - hp, tcB - hp) * recTriAreaInTc;
+                        if (bcB >= 0.0f && bcC >= 0.0f && bcB + bcC <= 1.0f) {
                             tMax = t;
-                            hitBc1 = b1;
-                            hitBc2 = b2;
+                            hitBcB = bcB;
+                            hitBcC = bcC;
                             hitNormal = static_cast<Normal3D>(n);
                         }
                     }
@@ -370,44 +366,40 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
             }
             if constexpr (intersectionType == LocalIntersectionType::Bilinear) {
                 const float cornerHeightTL =
-                    dispParams.hOffset + dispParams.hScale
-                    * (sample(curTexel.x - 0.0f, curTexel.y - 0.0f) - dispParams.hBias);
+                    baseHeight + heightScale * sample(curTexel.x - 0.0f, curTexel.y - 0.0f);
                 const float cornerHeightTR =
-                    dispParams.hOffset + dispParams.hScale
-                    * (sample(curTexel.x + 1.0f, curTexel.y - 0.0f) - dispParams.hBias);
+                    baseHeight + heightScale * sample(curTexel.x + 1.0f, curTexel.y - 0.0f);
                 const float cornerHeightBL =
-                    dispParams.hOffset + dispParams.hScale
-                    * (sample(curTexel.x - 0.0f, curTexel.y + 1.0f) - dispParams.hBias);
+                    baseHeight + heightScale * sample(curTexel.x - 0.0f, curTexel.y + 1.0f);
                 const float cornerHeightBR =
-                    dispParams.hOffset + dispParams.hScale
-                    * (sample(curTexel.x + 1.0f, curTexel.y + 1.0f) - dispParams.hBias);
+                    baseHeight + heightScale * sample(curTexel.x + 1.0f, curTexel.y + 1.0f);
 
 #if DEBUG_TRAVERSAL
                 if (isDebugPixel() && getDebugPrintEnabled()) {
                     printf(
                         "%u-%u: %u-%u-%u\n",
-                        plp.f->frameIndex, optixGetPrimitiveIndex(),
+                        plp.f->frameIndex, primIdx,
                         curTexel.lod, curTexel.x, curTexel.y);
                     printf(
                         "%u-%u: v0 (%g, %g, %g, %g, %g, %g, %g, %g)\n",
-                        plp.f->frameIndex, optixGetPrimitiveIndex(),
-                        v3print(vs[0].position), v3print(vs[0].normal), v2print(vs[0].texCoord));
+                        plp.f->frameIndex, primIdx,
+                        v3print(vA.position), v3print(vA.normal), v2print(vA.texCoord));
                     printf(
                         "%u-%u: v1 (%g, %g, %g, %g, %g, %g, %g, %g)\n",
-                        plp.f->frameIndex, optixGetPrimitiveIndex(),
-                        v3print(vs[1].position), v3print(vs[1].normal), v2print(vs[1].texCoord));
+                        plp.f->frameIndex, primIdx,
+                        v3print(vB.position), v3print(vB.normal), v2print(vB.texCoord));
                     printf(
                         "%u-%u: v2 (%g, %g, %g, %g, %g, %g, %g, %g)\n",
-                        plp.f->frameIndex, optixGetPrimitiveIndex(),
-                        v3print(vs[2].position), v3print(vs[2].normal), v2print(vs[2].texCoord));
+                        plp.f->frameIndex, primIdx,
+                        v3print(vC.position), v3print(vC.normal), v2print(vC.texCoord));
 
                     printf(
                         "%u-%u: Height: %g, %g, %g, %g\n",
-                        plp.f->frameIndex, optixGetPrimitiveIndex(),
+                        plp.f->frameIndex, primIdx,
                         cornerHeightTL, cornerHeightTR, cornerHeightBL, cornerHeightBR);
                     printf(
                         "%u-%u: org: (%g, %g, %g), dir: (%g, %g, %g)\n",
-                        plp.f->frameIndex, optixGetPrimitiveIndex(),
+                        plp.f->frameIndex, primIdx,
                         v3print(optixGetObjectRayOrigin()), v3print(rayDirInObj));
                 }
 #endif
@@ -418,7 +410,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
                 (const Point2D &avgTc,
                  const Matrix3x3 &matTcToP, const Matrix3x3 &matTcToN, const Matrix3x3 &matTcToBc,
                  const Point3D &rayOrg, const Vector3D &rayDir,
-                 float* hitDist, float* b1, float* b2, Normal3D* hitNormal) {
+                 float* hitDist, float* bcB, float* bcC, Normal3D* hitNormal) {
                     const Matrix3x2 jacobP(matTcToP[0], matTcToP[1]);
                     const Matrix3x2 jacobN(matTcToN[0], matTcToN[1]);
                     Point2D curGuess = avgTc;
@@ -471,7 +463,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
                             + (h / nLength) * (jacobN - Matrix3x2(dot(jacobN[0], n) * n, dot(jacobN[1], n) * n));
 
                         if (errDist2 < pow2(1e-5f)) {
-                            Point3D bc(1 - *b1 - *b2, *b1, *b2);
+                            Point3D bc(1 - *bcB - *bcC, *bcB, *bcC);
                             if (bc[0] < 0.0f || bc[1] < 0.0f || bc[2] < 0.0f
                                 || bc[0] > 1.0f || bc[1] > 1.0f || bc[2] > 1.0f
                                 || dotDirDelta < 0) {
@@ -484,7 +476,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
                             if (isDebugPixel() && getDebugPrintEnabled()) {
                                 printf(
                                     "%u-%u-%u: guess: (%g, %g), dist: %g, S: (%g, %g, %g), n: (%g, %g, %g)\n",
-                                    plp.f->frameIndex, optixGetPrimitiveIndex(), itr,
+                                    plp.f->frameIndex, primIdx, itr,
                                     curGuess.x, curGuess.y, *hitDist,
                                     v3print(S), v3print(*hitNormal));
                             }
@@ -515,8 +507,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
                             else {
                                 invalidRegionStreak = 0;
                             }
-                            *b1 = bc[1];
-                            *b2 = bc[2];
+                            *bcB = bc[1];
+                            *bcC = bc[2];
                         }
                     }
 
@@ -525,16 +517,16 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
 
                 Normal3D n;
                 float t;
-                float b1, b2;
+                float bcB, bcC;
                 if (testRayVsBilinearPatchIntersection(
                     texelCenter,
                     matTcToPInObj, matTcToNInObj, matTcToBc,
                     Point3D(optixGetObjectRayOrigin()), rayDirInObj,
-                    &t, &b1, &b2, &n)) {
+                    &t, &bcB, &bcC, &n)) {
                     if (t < tMax) {
                         tMax = t;
-                        hitBc1 = b1;
-                        hitBc2 = b2;
+                        hitBcB = bcB;
+                        hitBcC = bcC;
                         hitNormal = n;
                     }
                 }
@@ -575,7 +567,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
     const uint8_t hitKind = dot(rayDirInTcTang, hitNormal) <= 0 ?
         CustomHitKind_DisplacedSurfaceFrontFace :
         CustomHitKind_DisplacedSurfaceBackFace;
-    DisplacedSurfaceAttributeSignature::reportIntersection(tMax, hitKind, hitBc1, hitBc2, attr);
+    DisplacedSurfaceAttributeSignature::reportIntersection(tMax, hitKind, hitBcB, hitBcC, attr);
 }
 
 CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface_Box)() {

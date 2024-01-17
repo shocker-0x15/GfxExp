@@ -176,27 +176,25 @@ CUDA_DEVICE_KERNEL void computeAABBs(
     float maxHeight = -INFINITY;
     {
         const Matrix3x3 &texXfm = tfdmGeomInst->params.textureTransform;
-        const Point2D tcs[] = {
-            texXfm * vs[0].texCoord,
-            texXfm * vs[1].texCoord,
-            texXfm * vs[2].texCoord,
-        };
-        const bool tcFlipped = cross(tcs[1] - tcs[0], tcs[2] - tcs[0]) < 0;
+        const Point2D tcA = texXfm * vs[0].texCoord;
+        const Point2D tcB = texXfm * vs[1].texCoord;
+        const Point2D tcC = texXfm * vs[2].texCoord;
+        const bool tcFlipped = cross(tcB - tcA, tcC - tcA) < 0;
 #if DEBUG_TRAVERSAL
         if (primIndex == debugPrimIndex) {
             printf("prim %u: (" V2FMT "), (" V2FMT "), (" V2FMT ")\n",
                    primIndex,
-                   v2print(tcs[0]), v2print(tcs[1]), v2print(tcs[2]));
+                   v2print(tcA), v2print(tcB), v2print(tcC));
         }
 #endif
 
         const Vector2D texTriEdgeNormals[] = {
-            Vector2D(tcs[1].y - tcs[0].y, tcs[0].x - tcs[1].x),
-            Vector2D(tcs[2].y - tcs[1].y, tcs[1].x - tcs[2].x),
-            Vector2D(tcs[0].y - tcs[2].y, tcs[2].x - tcs[0].x),
+            Vector2D(tcB.y - tcA.y, tcA.x - tcB.x),
+            Vector2D(tcC.y - tcB.y, tcB.x - tcC.x),
+            Vector2D(tcA.y - tcC.y, tcC.x - tcA.x),
         };
-        const Point2D texTriAabbMinP = min(tcs[0], min(tcs[1], tcs[2]));
-        const Point2D texTriAabbMaxP = max(tcs[0], max(tcs[1], tcs[2]));
+        const Point2D texTriAabbMinP = min(tcA, min(tcB, tcC));
+        const Point2D texTriAabbMaxP = max(tcA, max(tcB, tcC));
 #if DEBUG_TRAVERSAL
         if (primIndex == debugPrimIndex) {
             printf("prim %u: (" V2FMT "), (" V2FMT ")\n",
@@ -243,7 +241,7 @@ CUDA_DEVICE_KERNEL void computeAABBs(
                 const float texelScale = 1.0f / (1 << (maxDepth - curTexel.lod));
                 const TriangleSquareIntersection2DResult isectResult =
                     testTriangleSquareIntersection2D(
-                        tcs, tcFlipped, texTriEdgeNormals, texTriAabbMinP, texTriAabbMaxP,
+                        tcA, tcB, tcC, tcFlipped, texTriEdgeNormals, texTriAabbMinP, texTriAabbMaxP,
                         Point2D((curTexel.x + 0.5f) * texelScale, (curTexel.y + 0.5f) * texelScale),
                         0.5f * texelScale);
 #if DEBUG_TRAVERSAL
