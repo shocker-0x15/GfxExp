@@ -321,7 +321,7 @@ target_link_libraries(
 )
 
 add_subdirectory(path_tracing)
-add_subdirectory(restir)
+add_subdirectory(restir_di)
 add_subdirectory(regir)
 add_subdirectory(neural_radiance_caching)
 add_subdirectory(svgf)

@@ -12,13 +12,13 @@ You need to install [Git LFS](https://git-lfs.github.com/) to correctly clone th
 
 ## 実装 / Implementations
 
-### ReSTIR: Reservoir-based Spatiotemporal Importance Resampling
+### ReSTIR DI: Reservoir-based Spatiotemporal Importance Resampling (for Direct Illumination)
 Spatiotemporal reservoir resampling for real-time ray tracing with dynamic direct lighting\
 https://research.nvidia.com/publication/2020-07_Spatiotemporal-reservoir-resampling
 
-ReSTIRでは、Resampled Importance Sampling (RIS), Weighted Reservoir Sampling (WRS)、そして複数のReservoirを結合する際の特性を利用することで、プライマリーヒットにおいて大量の発光プリミティブからの効率的なサンプリングが可能となります。
+ReSTIR DIでは、Resampled Importance Sampling (RIS), Weighted Reservoir Sampling (WRS)、そして複数のReservoirを結合する際の特性を利用することで、プライマリーヒットにおいて大量の発光プリミティブからの効率的なサンプリングが可能となります。
 
-ReSTIR enables efficient sampling from a massive amount of emitter primitives at primary hit by Resampled Importance Sampling (RIS), Weighted Reservoir Sampling (WRS) and utilizing the property of combining multiple reservoirs.
+ReSTIR DI enables efficient sampling from a massive amount of emitter primitives at primary hit by Resampled Importance Sampling (RIS), Weighted Reservoir Sampling (WRS) and utilizing the property of combining multiple reservoirs.
 
 - [x] Basic Implementation (Biased RIS Estimator, Spatio-temporal Reuse)
 - [x] Advanced Items
@@ -29,16 +29,16 @@ ReSTIR enables efficient sampling from a massive amount of emitter primitives at
         "Rearchitecting Spatiotemporal Resampling for Production"\
         https://research.nvidia.com/publication/2021-07_Rearchitecting-Spatiotemporal-Resampling
 
-![example](restir/comparison.jpg)
+![example](restir_di/comparison.jpg)
 Amazon Lumberyard Bistro (Exterior) from Morgan McGuire's [Computer Graphics Archive](https://casual-effects.com/data)
 
 ### ReGIR: Reservoir-based Grid Importance Resampling
 Chapter 23. "Rendering Many Lights with Grid-based Reservoirs", Ray Tracing Gems II\
 https://www.realtimerendering.com/raytracinggems/rtg2/index.html
 
-ReGIRでは、ReSTIRと同様にStreaming RISを用いて大量の発光プリミティブからの効率的なサンプリングが可能となります。ReSTIRとは異なり、セカンダリー以降の光源サンプリングにも対応するため、Reservoirをワールド空間のグリッドに記録し、2段階のStreaming RISを行います。
+ReGIRでは、ReSTIRと同様にStreaming RISを用いて大量の発光プリミティブからの効率的なサンプリングが可能となります。ReSTIR DIとは異なり、セカンダリー以降の光源サンプリングにも対応するため、Reservoirをワールド空間のグリッドに記録し、2段階のStreaming RISを行います。
 
-ReGIR enables efficient sampling from a massive amount of emitter primitives by using streaming RIS similar to ReSTIR. Unlike ReSTIR, ReGIR stores reservoirs in a world space grid and performs two-stage streaming RIS to support light sampling after secondary visibility.
+ReGIR enables efficient sampling from a massive amount of emitter primitives by using streaming RIS similar to ReSTIR. Unlike ReSTIR DI, ReGIR stores reservoirs in a world space grid and performs two-stage streaming RIS to support light sampling after secondary visibility.
 
 - [x] Basic Implementation (Uniform Grid, Temporal Reuse)
 - [ ] Advanced Items
