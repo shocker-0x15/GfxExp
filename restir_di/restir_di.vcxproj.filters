@@ -39,7 +39,7 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="restir_main.cpp" />
+    <ClCompile Include="restir_di_main.cpp" />
     <ClCompile Include="..\common\dds_loader.cpp">
       <Filter>non-essentials</Filter>
     </ClCompile>
@@ -87,7 +87,7 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="restir_shared.h" />
+    <ClInclude Include="restir_di_shared.h" />
     <ClInclude Include="..\common\common_shared.h">
       <Filter>non-essentials</Filter>
     </ClInclude>
@@ -183,10 +183,10 @@
     <CudaCompile Include="gpu_kernels\optix_gbuffer_kernels.cu">
       <Filter>GPU kernels</Filter>
     </CudaCompile>
-    <CudaCompile Include="gpu_kernels\optix_restir_kernels.cu">
+    <CudaCompile Include="gpu_kernels\optix_restir_di_kernels.cu">
       <Filter>GPU kernels</Filter>
     </CudaCompile>
-    <CudaCompile Include="gpu_kernels\optix_restir_rearch_kernels.cu">
+    <CudaCompile Include="gpu_kernels\optix_restir_di_rearch_kernels.cu">
       <Filter>GPU kernels</Filter>
     </CudaCompile>
     <CudaCompile Include="gpu_kernels\per_pixel_ris.cu">

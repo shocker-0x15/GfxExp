@@ -1,4 +1,4 @@
-set(TARGET_NAME "restir")
+set(TARGET_NAME "restir_di")
 
 file(
     GLOB_RECURSE SOURCES
@@ -13,8 +13,8 @@ set(
 set(
     OPTIX_KERNELS
     "gpu_kernels/optix_gbuffer_kernels.cu"
-    "gpu_kernels/optix_restir_kernels.cu"
-    "gpu_kernels/optix_restir_rearch_kernels.cu"
+    "gpu_kernels/optix_restir_di_kernels.cu"
+    "gpu_kernels/optix_restir_di_rearch_kernels.cu"
 )
 
 set(
