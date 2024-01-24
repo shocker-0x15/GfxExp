@@ -1072,7 +1072,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         displacedMeshGeomInst = createGeometryInstance(
             gpuEnv.cuContext, &scene, vertices, triangles, displacedMeshMaterial, gpuEnv.optixDefaultMaterial, false);
 #else
-        displacedMeshGeomInst = createTFDMGeometryInstance(
+        displacedMeshGeomInst = createNRTDSMGeometryInstance(
             gpuEnv.cuContext, &scene, vertices, triangles, displacedMeshMaterial, gpuEnv.optixDisplacedMeshMaterial);
 #endif
         scene.geomInsts.push_back(displacedMeshGeomInst);
@@ -1759,7 +1759,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
         {
             ImGui::Begin("Debug", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
 
-            ImGui::SameLine();
             if (ImGui::Button("Reset Accum"))
                 resetAccumulation = true;
             ImGui::Checkbox("Enable Accumulation", &enableAccumulation);
@@ -1823,47 +1822,47 @@ int32_t main(int32_t argc, const char* argv[]) try {
                         else if (baseSurfaceIndex == 2)
                             createSphere(&vertices, &triangles);
 
-                        displacedMeshGeomInst->vertexBuffer.finalize();
-                        displacedMeshGeomInst->vertexBuffer.initialize(gpuEnv.cuContext, Scene::bufferType, vertices);
-                        displacedMeshGeomInst->triangleBuffer.finalize();
-                        displacedMeshGeomInst->triangleBuffer.initialize(gpuEnv.cuContext, Scene::bufferType, triangles);
+                        auto &geom = std::get<NRTDSMGeometry>(displacedMeshGeomInst->geometry);
 
+                        geom.vertexBuffer.finalize();
+                        geom.vertexBuffer.initialize(gpuEnv.cuContext, Scene::bufferType, vertices);
+                        geom.triangleBuffer.finalize();
+                        geom.triangleBuffer.initialize(gpuEnv.cuContext, Scene::bufferType, triangles);
+
+                        const CUdeviceptr geomInstDataAddrOnDevice =
+                            scene.geomInstDataBuffer.getCUdeviceptrAt(displacedMeshGeomInst->geomInstSlot);
                         shared::GeometryInstanceData geomInstData = {};
+                        CUDADRV_CHECK(cuMemcpyDtoH(&geomInstData, geomInstDataAddrOnDevice, sizeof(geomInstData)));
                         geomInstData.vertexBuffer =
-                            displacedMeshGeomInst->vertexBuffer.getROBuffer<shared::enableBufferOobCheck>();
+                            geom.vertexBuffer.getROBuffer<shared::enableBufferOobCheck>();
                         geomInstData.triangleBuffer =
-                            displacedMeshGeomInst->triangleBuffer.getROBuffer<shared::enableBufferOobCheck>();
-                        displacedMeshGeomInst->emitterPrimDist.getDeviceType(&geomInstData.emitterPrimDist);
-                        geomInstData.materialSlot = displacedMeshMaterial->materialSlot;
-                        geomInstData.geomInstSlot = displacedMeshGeomInst->geomInstSlot;
+                            geom.triangleBuffer.getROBuffer<shared::enableBufferOobCheck>();
                         CUDADRV_CHECK(cuMemcpyHtoDAsync(
-                            scene.geomInstDataBuffer.getCUdeviceptrAt(displacedMeshGeomInst->geomInstSlot),
-                            &geomInstData, sizeof(geomInstData),
-                            curCuStream));
+                            geomInstDataAddrOnDevice, &geomInstData, sizeof(geomInstData), curCuStream));
 
 #if SHOW_BASE_MESH
                         displacedMeshGeomInst->optixGeomInst.setVertexBuffer(displacedMeshGeomInst->vertexBuffer);
                         displacedMeshGeomInst->optixGeomInst.setTriangleBuffer(displacedMeshGeomInst->triangleBuffer);
 #else
-                        displacedMeshGeomInst->nrtdsmTriAuxInfoBuffer.finalize();
-                        displacedMeshGeomInst->nrtdsmTriAuxInfoBuffer.initialize(
+                        geom.nrtdsmTriAuxInfoBuffer.finalize();
+                        geom.nrtdsmTriAuxInfoBuffer.initialize(
                             gpuEnv.cuContext, cudau::BufferType::Device, triangles.size());
-                        displacedMeshGeomInst->aabbBuffer.finalize();
-                        displacedMeshGeomInst->aabbBuffer.initialize(
+                        geom.aabbBuffer.finalize();
+                        geom.aabbBuffer.initialize(
                             gpuEnv.cuContext, cudau::BufferType::Device, triangles.size());
 
+                        const CUdeviceptr nrtdsmDataAddrOnDevice =
+                            geomInstNrtdsmDataBuffer.getCUdeviceptrAt(displacedMeshGeomInst->geomInstSlot);
                         shared::GeometryInstanceDataForNRTDSM nrtdsmData = {};
+                        CUDADRV_CHECK(cuMemcpyDtoH(&nrtdsmData, nrtdsmDataAddrOnDevice, sizeof(nrtdsmData)));
                         nrtdsmData.dispTriAuxInfoBuffer =
-                            displacedMeshGeomInst->nrtdsmTriAuxInfoBuffer.getROBuffer<shared::enableBufferOobCheck>();
+                            geom.nrtdsmTriAuxInfoBuffer.getROBuffer<shared::enableBufferOobCheck>();
                         nrtdsmData.aabbBuffer =
-                            displacedMeshGeomInst->aabbBuffer.getROBuffer<shared::enableBufferOobCheck>();
+                            geom.aabbBuffer.getROBuffer<shared::enableBufferOobCheck>();
                         CUDADRV_CHECK(cuMemcpyHtoDAsync(
-                            geomInstNrtdsmDataBuffer.getCUdeviceptrAt(displacedMeshGeomInst->geomInstSlot),
-                            &nrtdsmData, sizeof(nrtdsmData),
-                            curCuStream));
+                            nrtdsmDataAddrOnDevice, &nrtdsmData, sizeof(nrtdsmData), curCuStream));
 
-                        displacedMeshGeomInst->optixGeomInst.setCustomPrimitiveAABBBuffer(
-                            displacedMeshGeomInst->aabbBuffer);
+                        displacedMeshGeomInst->optixGeomInst.setCustomPrimitiveAABBBuffer(geom.aabbBuffer);
 #endif
 
                         geomChanged = true;
@@ -1940,21 +1939,23 @@ int32_t main(int32_t argc, const char* argv[]) try {
                         heightScale = asset.defaultHeightScale;
                         heightParamChanged = true;
 
+                        auto &geom = std::get<NRTDSMGeometry>(displacedMeshGeomInst->geometry);
+
                         //auto &body = std::get<Material::Lambert>(displacedMeshMaterial->body);
                         //if (body.texReflectance.texObj)
                         //    CUDADRV_CHECK(cuTexObjectDestroy(body.texReflectance.texObj));
                         //body.texReflectance.cudaArray->finalize();
 
-                        CUDADRV_CHECK(cuTexObjectDestroy(displacedMeshMaterial->texHeight.texObj));
-                        //displacedMeshMaterial->texHeight.cudaArray->finalize();
-                        displacedMeshMaterial->minMaxMipMap.finalize();
-                        displacedMeshMaterial->minMaxMipMapSurfs.finalize();
+                        CUDADRV_CHECK(cuTexObjectDestroy(geom.texHeight.texObj));
+                        //geom.texHeight.cudaArray->finalize();
+                        geom.minMaxMipMap.finalize();
+                        geom.minMaxMipMapSurfs.finalize();
 
-                        const CUdeviceptr matAddrOnDevice =
-                            scene.materialDataBuffer.getCUdeviceptrAt(displacedMeshMaterial->materialSlot);
+                        const CUdeviceptr addrOnDevice =
+                            geomInstNrtdsmDataBuffer.getCUdeviceptrAt(displacedMeshGeomInst->geomInstSlot);
 
-                        shared::MaterialData matData = {};
-                        CUDADRV_CHECK(cuMemcpyDtoH(&matData, matAddrOnDevice, sizeof(matData)));
+                        shared::GeometryInstanceDataForNRTDSM nrtdsmData = {};
+                        CUDADRV_CHECK(cuMemcpyDtoH(&nrtdsmData, addrOnDevice, sizeof(nrtdsmData)));
 
                         bool needsDegamma;
                         //loadTexture(
@@ -1989,7 +1990,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
                         loadTexture<float, false>(
                             dataDir / asset.height, 0.0f, gpuEnv.cuContext,
-                            &displacedMeshMaterial->texHeight.cudaArray, &needsDegamma);
+                            &geom.texHeight.cudaArray, &needsDegamma);
 
                         cudau::TextureSampler heightSampler = {};
                         heightSampler.setXyFilterMode(cudau::TextureFilterMode::Linear);
@@ -1997,35 +1998,35 @@ int32_t main(int32_t argc, const char* argv[]) try {
                         heightSampler.setWrapMode(1, cudau::TextureWrapMode::Repeat);
                         heightSampler.setMipMapFilterMode(cudau::TextureFilterMode::Point);
                         heightSampler.setReadMode(cudau::TextureReadMode::NormalizedFloat);
-                        displacedMeshMaterial->texHeight.texObj =
-                            heightSampler.createTextureObject(*displacedMeshMaterial->texHeight.cudaArray);
+                        geom.texHeight.texObj =
+                            heightSampler.createTextureObject(*geom.texHeight.cudaArray);
 
-                        matData.heightMapSize = int2(
-                            displacedMeshMaterial->texHeight.cudaArray->getWidth(),
-                            displacedMeshMaterial->texHeight.cudaArray->getHeight());
-                        matData.heightMap = displacedMeshMaterial->texHeight.texObj;
+                        nrtdsmData.heightMapSize = int2(
+                            geom.texHeight.cudaArray->getWidth(),
+                            geom.texHeight.cudaArray->getHeight());
+                        nrtdsmData.heightMap = geom.texHeight.texObj;
 
-                        if (matData.heightMapSize.x != matData.heightMapSize.y)
+                        if (nrtdsmData.heightMapSize.x != nrtdsmData.heightMapSize.y)
                             throw std::runtime_error("Non-square height map is not supported.");
-                        if (popcnt(matData.heightMapSize.x) != 1)
+                        if (popcnt(nrtdsmData.heightMapSize.x) != 1)
                             throw std::runtime_error("Non-power-of-two height map is not supported.");
 
-                        const uint32_t numMinMaxMipMapLevels = nextPowOf2Exponent(matData.heightMapSize.x) + 1;
-                        displacedMeshMaterial->minMaxMipMap.initialize2D(
+                        const uint32_t numMinMaxMipMapLevels = nextPowOf2Exponent(nrtdsmData.heightMapSize.x) + 1;
+                        geom.minMaxMipMap.initialize2D(
                             gpuEnv.cuContext,
                             cudau::ArrayElementType::Float32, 2,
                             cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable,
-                            matData.heightMapSize.x, matData.heightMapSize.y,
+                            nrtdsmData.heightMapSize.x, nrtdsmData.heightMapSize.y,
                             numMinMaxMipMapLevels);
 
                         std::vector<optixu::NativeBlockBuffer2D<float2>> surfObjs(numMinMaxMipMapLevels);
                         for (int mipLevel = 0; mipLevel < numMinMaxMipMapLevels; ++mipLevel)
-                            surfObjs[mipLevel] = displacedMeshMaterial->minMaxMipMap.getSurfaceObject(mipLevel);
+                            surfObjs[mipLevel] = geom.minMaxMipMap.getSurfaceObject(mipLevel);
 
-                        displacedMeshMaterial->minMaxMipMapSurfs.initialize(
+                        geom.minMaxMipMapSurfs.initialize(
                             gpuEnv.cuContext, cudau::BufferType::Device, surfObjs);
-                        matData.minMaxMipMap = displacedMeshMaterial->minMaxMipMapSurfs.getDevicePointer();
-                        CUDADRV_CHECK(cuMemcpyHtoD(matAddrOnDevice, &matData, sizeof(matData)));
+                        nrtdsmData.minMaxMipMap = geom.minMaxMipMapSurfs.getROBuffer<shared::enableBufferOobCheck>();
+                        CUDADRV_CHECK(cuMemcpyHtoD(addrOnDevice, &nrtdsmData, sizeof(nrtdsmData)));
 
                         textureChanged = true;
                         resetAccumulation = true;
@@ -2246,31 +2247,30 @@ int32_t main(int32_t argc, const char* argv[]) try {
         // EN: Compute the minmax mipmap.
         curGPUTimer.prepareDisplacedMesh.start(curCuStream);
         if (textureChanged) {
-            const Material* mat = displacedMeshMaterial;
+            const auto &geom = std::get<NRTDSMGeometry>(displacedMeshGeomInst->geometry);
+            const shared::GeometryInstanceDataForNRTDSM* nrtdsmGeomInst =
+                geomInstNrtdsmDataBuffer.getDevicePointerAt(displacedMeshGeomInst->geomInstSlot);
 
-            const shared::MaterialData* const matData =
-                scene.materialDataBuffer.getDevicePointerAt(mat->materialSlot);
-
-            int2 dstImageSize(mat->texHeight.cudaArray->getWidth(), mat->texHeight.cudaArray->getHeight());
+            int2 dstImageSize(geom.texHeight.cudaArray->getWidth(), geom.texHeight.cudaArray->getHeight());
             gpuEnv.kernelGenerateFirstMinMaxMipMap.launchWithThreadDim(
                 curCuStream, cudau::dim3(dstImageSize.x, dstImageSize.y),
-                matData);
+                nrtdsmGeomInst);
             //{
             //    CUDADRV_CHECK(cuStreamSynchronize(curCuStream));
             //    std::vector<float2> minMaxValues(dstImageSize.x * dstImageSize.y);
-            //    mat->minMaxMipMap.read(minMaxValues, 0);
+            //    geom.minMaxMipMap.read(minMaxValues, 0);
             //    hpprintf("");
             //}
             dstImageSize /= 2;
-            const uint32_t numMinMaxMipMapLevels = nextPowOf2Exponent(mat->texHeight.cudaArray->getWidth()) + 1;
+            const uint32_t numMinMaxMipMapLevels = nextPowOf2Exponent(geom.texHeight.cudaArray->getWidth()) + 1;
             for (int srcLevel = 0; srcLevel < numMinMaxMipMapLevels - 1; ++srcLevel) {
                 gpuEnv.kernelGenerateMinMaxMipMap.launchWithThreadDim(
                     curCuStream, cudau::dim3(dstImageSize.x, dstImageSize.y),
-                    matData, srcLevel);
+                    nrtdsmGeomInst, srcLevel);
 
                 /*CUDADRV_CHECK(cuStreamSynchronize(curCuStream));
                 std::vector<float2> minMaxValues(dstImageSize.x * dstImageSize.y);
-                mat->minMaxMipMap.read(minMaxValues, srcLevel + 1);
+                geom.minMaxMipMap.read(minMaxValues, srcLevel + 1);
 
                 bool saveImg = false;
                 if (saveImg) {
@@ -2302,14 +2302,12 @@ int32_t main(int32_t argc, const char* argv[]) try {
         // EN: Compute the AABB of each displacement-enabled primitive.
         if (textureChanged || heightParamChanged || geomChanged) {
             const GeometryInstance* geomInst = displacedMeshGeomInst;
-            const Material* mat = displacedMeshMaterial;
+            const auto &geom = std::get<NRTDSMGeometry>(geomInst->geometry);
 
             const shared::GeometryInstanceData* const geomInstData =
                 scene.geomInstDataBuffer.getDevicePointerAt(geomInst->geomInstSlot);
             const shared::GeometryInstanceDataForNRTDSM* const nrtdsmData =
                 geomInstNrtdsmDataBuffer.getDevicePointerAt(geomInst->geomInstSlot);
-            const shared::MaterialData* const matData =
-                scene.materialDataBuffer.getDevicePointerAt(mat->materialSlot);
 
             shared::DisplacementParameters dispParams = {};
             Matrix3x3 texXfm =
@@ -2325,11 +2323,11 @@ int32_t main(int32_t argc, const char* argv[]) try {
                 curCuStream));
 
             gpuEnv.kernelComputeAABBs.launchWithThreadDim(
-                curCuStream, cudau::dim3(geomInst->aabbBuffer.numElements()),
-                geomInstData, nrtdsmData, matData);
+                curCuStream, cudau::dim3(geom.aabbBuffer.numElements()),
+                geomInstData, nrtdsmData);
 
             //CUDADRV_CHECK(cuStreamSynchronize(curCuStream));
-            //std::vector<AABB> aabbs = geomInst->aabbBuffer;
+            //std::vector<AABB> aabbs = geom.aabbBuffer;
 
             displacedMeshGeomGroup->needsRebuild = true;
         }

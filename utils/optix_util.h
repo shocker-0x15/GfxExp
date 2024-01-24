@@ -1651,6 +1651,7 @@ namespace optixu {
             setUserData(&data, sizeof(T), alignof(T));
         }
 
+        GeometryType getGeometryType() const;
         uint32_t getNumMotionSteps() const;
         OptixVertexFormat getVertexFormat() const;
         BufferView getVertexBuffer(uint32_t motionStep = 0);
@@ -1768,6 +1769,7 @@ namespace optixu {
         bool isReady() const;
         OptixTraversableHandle getHandle() const;
 
+        GeometryType getGeometryType() const;
         void getConfiguration(
             ASTradeoff* tradeOff, AllowUpdate* allowUpdate, AllowCompaction* allowCompaction,
             AllowRandomVertexAccess* allowRandomVertexAccess,

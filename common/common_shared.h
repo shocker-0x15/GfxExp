@@ -197,7 +197,14 @@ namespace shared {
             m_weights(weights), m_CDF(CDF), m_integral(integral), m_numValues(numValues) {}
 #endif
 
-        CUDA_COMMON_FUNCTION DiscreteDistribution1DTemplate() {}
+        CUDA_COMMON_FUNCTION DiscreteDistribution1DTemplate() :
+            m_weights(nullptr),
+#if defined(USE_WALKER_ALIAS_METHOD)
+            m_aliasTable(nullptr), m_valueMaps(nullptr),
+#else
+            m_CDF(nullptr),
+#endif
+            m_integral(0.0f), m_numValues(0) {}
 
         CUDA_COMMON_FUNCTION uint32_t sample(RealType u, RealType* prob, RealType* remapped = nullptr) const {
             Assert(u >= 0 && u < 1, "\"u\": %g must be in range [0, 1).", u);
@@ -297,7 +304,14 @@ namespace shared {
             m_PDF(PDF), m_CDF(CDF), m_integral(integral), m_numValues(numValues) {}
 #endif
 
-        CUDA_COMMON_FUNCTION RegularConstantContinuousDistribution1DTemplate() {}
+        CUDA_COMMON_FUNCTION RegularConstantContinuousDistribution1DTemplate() :
+            m_PDF(nullptr),
+#if defined(USE_WALKER_ALIAS_METHOD)
+            m_aliasTable(nullptr), m_valueMaps(nullptr),
+#else
+            m_CDF(nullptr),
+#endif
+            m_integral(0.0f), m_numValues(0) {}
 
         CUDA_COMMON_FUNCTION RealType sample(RealType u, RealType* probDensity) const {
             Assert(u >= 0 && u < 1, "\"u\": %g must be in range [0, 1).", u);
@@ -352,7 +366,8 @@ namespace shared {
             const RegularConstantContinuousDistribution1DTemplate<RealType> &top1DDist) :
             m_1DDists(_1DDists), m_top1DDist(top1DDist) {}
 
-        CUDA_COMMON_FUNCTION RegularConstantContinuousDistribution2DTemplate() {}
+        CUDA_COMMON_FUNCTION RegularConstantContinuousDistribution2DTemplate() :
+            m_1DDists(nullptr) {}
 
         CUDA_COMMON_FUNCTION void sample(
             RealType u0, RealType u1, RealType* d0, RealType* d1, RealType* probDensity) const {
@@ -829,11 +844,6 @@ namespace shared {
         BSDFEvaluate bsdfEvaluate;
         BSDFEvaluatePDF bsdfEvaluatePDF;
         BSDFEvaluateDHReflectanceEstimate bsdfEvaluateDHReflectanceEstimate;
-
-        // for TFDM
-        int2 heightMapSize;
-        CUtexObject heightMap;
-        optixu::NativeBlockBuffer2D<float2>* minMaxMipMap;
     };
 
     struct GeometryInstanceData {
@@ -852,18 +862,6 @@ namespace shared {
         uint32_t geomInstSlot;
     };
 
-    // for TFDM
-    struct TFDMTriangleAuxInfo {
-        Matrix4x4 matObjToTcTang;
-        Matrix3x3 matTcToBc;
-        Matrix3x3 matTcToNInObj;
-    };
-
-    struct NRTDSMTriangleAuxInfo {
-        float minHeight;
-        float amplitude;
-    };
-
     // for TFDM, NRTDSM
     struct DisplacementParameters {
         Matrix3x3 textureTransform;
@@ -875,14 +873,30 @@ namespace shared {
         uint32_t localIntersectionType : 2;
     };
 
-    // for TFDM
+    struct TFDMTriangleAuxInfo {
+        Matrix4x4 matObjToTcTang;
+        Matrix3x3 matTcToBc;
+        Matrix3x3 matTcToNInObj;
+    };
+
     struct GeometryInstanceDataForTFDM {
+        int2 heightMapSize;
+        CUtexObject heightMap;
+        ROBuffer<optixu::NativeBlockBuffer2D<float2>> minMaxMipMap;
         ROBuffer<TFDMTriangleAuxInfo> dispTriAuxInfoBuffer;
         ROBuffer<AABB> aabbBuffer;
         DisplacementParameters params;
     };
 
+    struct NRTDSMTriangleAuxInfo {
+        float minHeight;
+        float amplitude;
+    };
+
     struct GeometryInstanceDataForNRTDSM {
+        int2 heightMapSize;
+        CUtexObject heightMap;
+        ROBuffer<optixu::NativeBlockBuffer2D<float2>> minMaxMipMap;
         ROBuffer<NRTDSMTriangleAuxInfo> dispTriAuxInfoBuffer;
         ROBuffer<AABB> aabbBuffer;
         DisplacementParameters params;

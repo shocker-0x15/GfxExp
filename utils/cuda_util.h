@@ -500,10 +500,8 @@ namespace cudau {
         uint32_t m_GLBufferID;
         CUgraphicsResource m_cudaGfxResource;
 
-        struct {
-            unsigned int m_persistentMappedMemory : 1;
-            unsigned int m_initialized : 1;
-        };
+        uint32_t m_persistentMappedMemory : 1;
+        uint32_t m_initialized : 1;
 
         Buffer(const Buffer &) = delete;
         Buffer &operator=(const Buffer &) = delete;
@@ -888,13 +886,11 @@ namespace cudau {
         uint32_t m_GLTexID;
         CUgraphicsResource m_cudaGfxResource;
 
-        struct {
-            unsigned int m_surfaceLoadStore : 1;
-            unsigned int m_useTextureGather : 1;
-            unsigned int m_cubemap : 1;
-            unsigned int m_layered : 1;
-            unsigned int m_initialized : 1;
-        };
+        uint32_t m_surfaceLoadStore : 1;
+        uint32_t m_useTextureGather : 1;
+        uint32_t m_cubemap : 1;
+        uint32_t m_layered : 1;
+        uint32_t m_initialized : 1;
 
         Array(const Array &) = delete;
         Array &operator=(const Array &) = delete;

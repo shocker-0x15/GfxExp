@@ -1512,6 +1512,10 @@ namespace optixu {
         std::memcpy(m->userData.data(), data, size);
     }
 
+    GeometryType GeometryInstance::getGeometryType() const {
+        return m->geomType;
+    }
+
     uint32_t GeometryInstance::getNumMotionSteps() const {
         return m->numMotionSteps;
     }
@@ -2161,6 +2165,10 @@ namespace optixu {
 
     OptixTraversableHandle GeometryAccelerationStructure::getHandle() const {
         return m->getHandle();
+    }
+
+    GeometryType GeometryAccelerationStructure::getGeometryType() const {
+        return m->geomType;
     }
 
     void GeometryAccelerationStructure::getConfiguration(

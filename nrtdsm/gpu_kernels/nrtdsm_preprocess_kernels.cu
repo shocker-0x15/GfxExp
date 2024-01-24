@@ -25,27 +25,28 @@ CUDA_DEVICE_FUNCTION float2 computeTexelMinMax(
 
 
 
-CUDA_DEVICE_KERNEL void generateFirstMinMaxMipMap(const MaterialData* const material) {
+CUDA_DEVICE_KERNEL void generateFirstMinMaxMipMap(
+    const GeometryInstanceDataForNRTDSM* const nrtdsmGeomInst) {
     const int2 pixIdx(
         blockDim.x * blockIdx.x + threadIdx.x,
         blockDim.y * blockIdx.y + threadIdx.y);
-    const int2 imgSize = material->heightMapSize;
+    const int2 imgSize = nrtdsmGeomInst->heightMapSize;
     if (pixIdx.x >= imgSize.x || pixIdx.y >= imgSize.y)
         return;
 
-    material->minMaxMipMap[0].write(
+    nrtdsmGeomInst->minMaxMipMap[0].write(
         pixIdx, 
-        computeTexelMinMax(material->heightMap, 0, imgSize, pixIdx));
+        computeTexelMinMax(nrtdsmGeomInst->heightMap, 0, imgSize, pixIdx));
 }
 
 
 
 CUDA_DEVICE_KERNEL void generateMinMaxMipMap(
-    const MaterialData* material, const uint32_t srcMipLevel) {
+    const GeometryInstanceDataForNRTDSM* const nrtdsmGeomInst, const uint32_t srcMipLevel) {
     const int2 dstPixIdx(
         blockDim.x * blockIdx.x + threadIdx.x,
         blockDim.y * blockIdx.y + threadIdx.y);
-    const int2 srcImageSize = material->heightMapSize >> static_cast<int32_t>(srcMipLevel);
+    const int2 srcImageSize = nrtdsmGeomInst->heightMapSize >> static_cast<int32_t>(srcMipLevel);
     const int2 dstImageSize = srcImageSize / 2;
     if (dstPixIdx.x >= dstImageSize.x || dstPixIdx.y >= dstImageSize.y)
         return;
@@ -55,7 +56,7 @@ CUDA_DEVICE_KERNEL void generateMinMaxMipMap(
     float maxHeight = -INFINITY;
     float2 minMax;
 
-    const optixu::NativeBlockBuffer2D<float2> &prevMinMaxMip = material->minMaxMipMap[srcMipLevel];
+    const optixu::NativeBlockBuffer2D<float2> &prevMinMaxMip = nrtdsmGeomInst->minMaxMipMap[srcMipLevel];
 
     minMax = prevMinMaxMip.read(basePixIdx + int2(0, 0));
     minHeight = std::fmin(minMax.x, minHeight);
@@ -73,14 +74,13 @@ CUDA_DEVICE_KERNEL void generateMinMaxMipMap(
     minHeight = std::fmin(minMax.x, minHeight);
     maxHeight = std::fmax(minMax.y, maxHeight);
 
-    material->minMaxMipMap[srcMipLevel + 1].write(dstPixIdx, make_float2(minHeight, maxHeight));
+    nrtdsmGeomInst->minMaxMipMap[srcMipLevel + 1].write(dstPixIdx, make_float2(minHeight, maxHeight));
 }
 
 
 
 CUDA_DEVICE_KERNEL void computeAABBs(
-    const GeometryInstanceData* const geomInst, const GeometryInstanceDataForNRTDSM* const nrtdsmGeomInst,
-    const MaterialData* const material) {
+    const GeometryInstanceData* const geomInst, const GeometryInstanceDataForNRTDSM* const nrtdsmGeomInst) {
     const uint32_t primIndex = blockDim.x * blockIdx.x + threadIdx.x;
     if (primIndex >= geomInst->triangleBuffer.getNumElements())
         return;
@@ -141,7 +141,7 @@ CUDA_DEVICE_KERNEL void computeAABBs(
         }
 #endif
 
-        const int32_t maxDepth = prevPowOf2Exponent(material->heightMapSize.x);
+        const int32_t maxDepth = prevPowOf2Exponent(nrtdsmGeomInst->heightMapSize.x);
         const int32_t targetMipLevel = nrtdsmGeomInst->params.targetMipLevel;
         Texel roots[4];
         uint32_t numRoots;
@@ -167,7 +167,7 @@ CUDA_DEVICE_KERNEL void computeAABBs(
             // EN: Imediately finish with reading the min/max from the maximum mip level
             //     when the texture coordinate range of the triangle is fairly large.
             if (curTexel.lod >= maxDepth) {
-                const float2 minmax = material->minMaxMipMap[maxDepth].read(make_int2(0, 0));
+                const float2 minmax = nrtdsmGeomInst->minMaxMipMap[maxDepth].read(make_int2(0, 0));
                 minHeight = minmax.x;
                 maxHeight = minmax.y;
                 break;
@@ -198,7 +198,7 @@ CUDA_DEVICE_KERNEL void computeAABBs(
                     const int2 wrapIndex = make_int2(floorDiv(curTexel.x, imgSize.x), floorDiv(curTexel.y, imgSize.y));
                     const uint2 wrappedTexel =
                         make_uint2(curTexel.x - wrapIndex.x * imgSize.x, curTexel.y - wrapIndex.y * imgSize.y);
-                    const float2 minmax = material->minMaxMipMap[curTexel.lod].read(wrappedTexel);
+                    const float2 minmax = nrtdsmGeomInst->minMaxMipMap[curTexel.lod].read(wrappedTexel);
                     minHeight = std::fmin(minHeight, minmax.x);
                     maxHeight = std::fmax(maxHeight, minmax.y);
                     next(curTexel, initialLod);

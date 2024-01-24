@@ -41,7 +41,6 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
     const auto sbtr = HitGroupSBTRecordData::get();
     const GeometryInstanceData &geomInst = plp.s->geometryInstanceDataBuffer[sbtr.geomInstSlot];
     const GeometryInstanceDataForTFDM &tfdmGeomInst = plp.s->geomInstTfdmDataBuffer[sbtr.geomInstSlot];
-    const MaterialData &mat = plp.s->materialDataBuffer[geomInst.materialSlot];
 
     const uint32_t primIdx = optixGetPrimitiveIndex();
 
@@ -111,7 +110,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
     }
 
     const int32_t maxDepth =
-        prevPowOf2Exponent(max(mat.heightMapSize.x, mat.heightMapSize.y));
+        prevPowOf2Exponent(max(tfdmGeomInst.heightMapSize.x, tfdmGeomInst.heightMapSize.y));
     const int32_t targetMipLevel = dispParams.targetMipLevel;
 
 #if OUTPUT_TRAVERSAL_STATS
@@ -182,7 +181,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
                 const uint2 wrappedTexel = curTexel.lod <= maxDepth ?
                     make_uint2(curTexel.x - wrapIndex.x * imgSize.x, curTexel.y - wrapIndex.y * imgSize.y) :
                     make_uint2(0, 0);
-                const float2 minmax = mat.minMaxMipMap[min(curTexel.lod, maxDepth)].read(wrappedTexel);
+                const float2 minmax = tfdmGeomInst.minMaxMipMap[min(curTexel.lod, maxDepth)].read(wrappedTexel);
                 const float amplitude = heightScale * (minmax.y - minmax.x);
                 const float minHeight = baseHeight + heightScale * minmax.x;
                 const AAFloatOn2D hBound(minHeight + 0.5f * amplitude, 0, 0, 0.5f * amplitude);
@@ -257,7 +256,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
 
             const auto sample = [&](float px, float py) {
                 // No need to explicitly consider texture wrapping since the sampler is responsible for it.
-                return tex2DLod<float>(mat.heightMap, px / imgSize.x, py / imgSize.y, curTexel.lod);
+                return tex2DLod<float>(tfdmGeomInst.heightMap, px / imgSize.x, py / imgSize.y, curTexel.lod);
             };
 
             // JP: レイと変位を加えたサーフェスとの交叉判定を行う。

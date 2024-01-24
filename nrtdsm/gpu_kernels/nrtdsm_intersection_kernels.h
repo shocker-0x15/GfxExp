@@ -1214,7 +1214,6 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
     const auto sbtr = HitGroupSBTRecordData::get();
     const GeometryInstanceData &geomInst = plp.s->geometryInstanceDataBuffer[sbtr.geomInstSlot];
     const GeometryInstanceDataForNRTDSM &nrtdsmGeomInst = plp.s->geomInstNrtdsmDataBuffer[sbtr.geomInstSlot];
-    const MaterialData &mat = plp.s->materialDataBuffer[geomInst.materialSlot];
 
     const Point3D rayOrgInObj(optixGetObjectRayOrigin());
     const Vector3D rayDirInObj(optixGetObjectRayDirection());
@@ -1309,7 +1308,7 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
     const Point2D texTriAabbMaxP = max(tcA, max(tcB, tcC));
 
     const int32_t maxDepth =
-        prevPowOf2Exponent(stc::max(mat.heightMapSize.x, mat.heightMapSize.y));
+        prevPowOf2Exponent(stc::max(nrtdsmGeomInst.heightMapSize.x, nrtdsmGeomInst.heightMapSize.y));
     constexpr int32_t targetMipLevel = 0;
 
 #if OUTPUT_TRAVERSAL_STATS
@@ -1509,7 +1508,7 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
                 // JP: AABBの高さ方向の面の位置はそれぞれ異なる。
                 // EN: Each AABB has different planes in the height direction.
                 const int2 nextImgSize = make_int2(1 << stc::max(maxDepth - curTexel.lod, 0));
-                const auto readMinMax = [&mat, &nextImgSize, &curTexel, &maxDepth]
+                const auto readMinMax = [&nrtdsmGeomInst, &nextImgSize, &curTexel, &maxDepth]
                 (const int32_t x, const int32_t y,
                  float* const hMin, float* const hMax) {
                     const int2 wrapIndex = make_int2(
@@ -1519,7 +1518,7 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
                         make_uint2(x - wrapIndex.x * nextImgSize.x, y - wrapIndex.y * nextImgSize.y) :
                         make_uint2(0, 0);
                     const float2 minmax =
-                        mat.minMaxMipMap[stc::min<int16_t>(curTexel.lod, maxDepth)].read(wrappedTexel);
+                        nrtdsmGeomInst.minMaxMipMap[stc::min<int16_t>(curTexel.lod, maxDepth)].read(wrappedTexel);
                     *hMin = minmax.x;
                     *hMax = minmax.y;
                 };
@@ -1612,7 +1611,7 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface)() {
             const int2 imgSize = make_int2(1 << stc::max(maxDepth - curTexel.lod, 0));
             const auto sample = [&](float px, float py) {
                 // No need to explicitly consider texture wrapping since the sampler is responsible for it.
-                return tex2DLod<float>(mat.heightMap, px / imgSize.x, py / imgSize.y, curTexel.lod);
+                return tex2DLod<float>(nrtdsmGeomInst.heightMap, px / imgSize.x, py / imgSize.y, curTexel.lod);
             };
 
             const float cornerHeightTL = sample(curTexel.x - 0.0f, curTexel.y - 0.0f);

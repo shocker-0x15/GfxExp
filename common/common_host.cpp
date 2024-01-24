@@ -1810,7 +1810,8 @@ GeometryInstance* createGeometryInstance(
     shared::GeometryInstanceData* geomInstDataOnHost = scene->geomInstDataBuffer.getMappedPointer();
 
     GeometryInstance* geomInst = new GeometryInstance();
-    geomInst->geometryType = optixu::GeometryType::Triangles;
+    geomInst->geometry = TriangleGeometry();
+    auto &geom = std::get<TriangleGeometry>(geomInst->geometry);
 
     for (int triIdx = 0; triIdx < triangles.size(); ++triIdx) {
         const shared::Triangle &tri = triangles[triIdx];
@@ -1827,19 +1828,19 @@ GeometryInstance* createGeometryInstance(
 
     geomInst->mat = mat;
     if (allocateGfxResource) {
-        geomInst->gfxVertexBuffer.initialize(
+        geom.gfxVertexBuffer.initialize(
             sizeof(shared::Vertex), vertices.size(), glu::Buffer::Usage::StaticDraw);
-        geomInst->gfxVertexBuffer.write(vertices);
-        geomInst->gfxTriangleBuffer.initialize(
+        geom.gfxVertexBuffer.write(vertices);
+        geom.gfxTriangleBuffer.initialize(
             sizeof(shared::Triangle), triangles.size(), glu::Buffer::Usage::StaticDraw);
-        geomInst->gfxTriangleBuffer.write(triangles);
+        geom.gfxTriangleBuffer.write(triangles);
 
-        geomInst->gfxVertexArray.initialize();
+        geom.gfxVertexArray.initialize();
         {
-            GLuint vaoHandle = geomInst->gfxVertexArray.getHandle();
+            GLuint vaoHandle = geom.gfxVertexArray.getHandle();
             glVertexArrayVertexBuffer(
                 vaoHandle,
-                0, geomInst->gfxVertexBuffer.getHandle(),
+                0, geom.gfxVertexBuffer.getHandle(),
                 0, sizeof(shared::Vertex));
             glVertexArrayAttribBinding(vaoHandle, 0, 0);
             glVertexArrayAttribBinding(vaoHandle, 1, 0);
@@ -1854,17 +1855,17 @@ GeometryInstance* createGeometryInstance(
             glEnableVertexArrayAttrib(vaoHandle, 1);
             glEnableVertexArrayAttrib(vaoHandle, 2);
             glEnableVertexArrayAttrib(vaoHandle, 3);
-            glVertexArrayElementBuffer(vaoHandle, geomInst->gfxTriangleBuffer.getHandle());
+            glVertexArrayElementBuffer(vaoHandle, geom.gfxTriangleBuffer.getHandle());
         }
     }
-    geomInst->vertexBuffer.initialize(cuContext, Scene::bufferType, vertices);
-    geomInst->triangleBuffer.initialize(cuContext, Scene::bufferType, triangles);
+    geom.vertexBuffer.initialize(cuContext, Scene::bufferType, vertices);
+    geom.triangleBuffer.initialize(cuContext, Scene::bufferType, triangles);
     if (mat->texEmittance.cudaArray) {
 #if USE_PROBABILITY_TEXTURE
-        geomInst->emitterPrimDist.initialize(
+        geom.emitterPrimDist.initialize(
             cuContext, static_cast<uint32_t>(triangles.size()));
 #else
-        geomInst->emitterPrimDist.initialize(
+        geom.emitterPrimDist.initialize(
             cuContext, Scene::bufferType, nullptr, static_cast<uint32_t>(triangles.size()));
 #endif
     }
@@ -1872,16 +1873,16 @@ GeometryInstance* createGeometryInstance(
     scene->geomInstSlotFinder.setInUse(geomInst->geomInstSlot);
 
     shared::GeometryInstanceData geomInstData = {};
-    geomInstData.vertexBuffer = geomInst->vertexBuffer.getROBuffer<shared::enableBufferOobCheck>();
-    geomInstData.triangleBuffer = geomInst->triangleBuffer.getROBuffer<shared::enableBufferOobCheck>();
-    geomInst->emitterPrimDist.getDeviceType(&geomInstData.emitterPrimDist);
+    geomInstData.vertexBuffer = geom.vertexBuffer.getROBuffer<shared::enableBufferOobCheck>();
+    geomInstData.triangleBuffer = geom.triangleBuffer.getROBuffer<shared::enableBufferOobCheck>();
+    geom.emitterPrimDist.getDeviceType(&geomInstData.emitterPrimDist);
     geomInstData.materialSlot = mat->materialSlot;
     geomInstData.geomInstSlot = geomInst->geomInstSlot;
     geomInstDataOnHost[geomInst->geomInstSlot] = geomInstData;
 
     geomInst->optixGeomInst = scene->optixScene.createGeometryInstance();
-    geomInst->optixGeomInst.setVertexBuffer(geomInst->vertexBuffer);
-    geomInst->optixGeomInst.setTriangleBuffer(geomInst->triangleBuffer);
+    geomInst->optixGeomInst.setVertexBuffer(geom.vertexBuffer);
+    geomInst->optixGeomInst.setTriangleBuffer(geom.triangleBuffer);
     geomInst->optixGeomInst.setNumMaterials(1, optixu::BufferView());
     geomInst->optixGeomInst.setMaterial(0, 0, optixMat);
     geomInst->optixGeomInst.setUserData(geomInst->geomInstSlot);
@@ -1897,7 +1898,8 @@ GeometryInstance* createTFDMGeometryInstance(
     shared::GeometryInstanceData* geomInstDataOnHost = scene->geomInstDataBuffer.getMappedPointer();
 
     GeometryInstance* geomInst = new GeometryInstance();
-    geomInst->geometryType = optixu::GeometryType::CustomPrimitives;
+    geomInst->geometry = TFDMGeometry();
+    auto &geom = std::get<TFDMGeometry>(geomInst->geometry);
 
     for (int triIdx = 0; triIdx < triangles.size(); ++triIdx) {
         const shared::Triangle &tri = triangles[triIdx];
@@ -1913,20 +1915,64 @@ GeometryInstance* createTFDMGeometryInstance(
     }
 
     geomInst->mat = mat;
-    geomInst->vertexBuffer.initialize(cuContext, Scene::bufferType, vertices);
-    geomInst->triangleBuffer.initialize(cuContext, Scene::bufferType, triangles);
+    geom.vertexBuffer.initialize(cuContext, Scene::bufferType, vertices);
+    geom.triangleBuffer.initialize(cuContext, Scene::bufferType, triangles);
     geomInst->geomInstSlot = scene->geomInstSlotFinder.getFirstAvailableSlot();
     scene->geomInstSlotFinder.setInUse(geomInst->geomInstSlot);
 
     shared::GeometryInstanceData geomInstData = {};
-    geomInstData.vertexBuffer = geomInst->vertexBuffer.getROBuffer<shared::enableBufferOobCheck>();
-    geomInstData.triangleBuffer = geomInst->triangleBuffer.getROBuffer<shared::enableBufferOobCheck>();
-    geomInst->emitterPrimDist.getDeviceType(&geomInstData.emitterPrimDist);
+    geomInstData.vertexBuffer = geom.vertexBuffer.getROBuffer<shared::enableBufferOobCheck>();
+    geomInstData.triangleBuffer = geom.triangleBuffer.getROBuffer<shared::enableBufferOobCheck>();
     geomInstData.materialSlot = mat->materialSlot;
     geomInstData.geomInstSlot = geomInst->geomInstSlot;
     geomInstDataOnHost[geomInst->geomInstSlot] = geomInstData;
 
-    geomInst->optixGeomInst = scene->optixScene.createGeometryInstance(geomInst->geometryType);
+    geomInst->optixGeomInst = scene->optixScene.createGeometryInstance(optixu::GeometryType::CustomPrimitives);
+    geomInst->optixGeomInst.setNumMaterials(1, optixu::BufferView());
+    geomInst->optixGeomInst.setMaterial(0, 0, optixMat);
+    geomInst->optixGeomInst.setUserData(geomInst->geomInstSlot);
+
+    return geomInst;
+}
+
+GeometryInstance* createNRTDSMGeometryInstance(
+    CUcontext cuContext, Scene* scene,
+    const std::vector<shared::Vertex> &vertices,
+    const std::vector<shared::Triangle> &triangles,
+    const Material* mat, optixu::Material optixMat) {
+    shared::GeometryInstanceData* geomInstDataOnHost = scene->geomInstDataBuffer.getMappedPointer();
+
+    GeometryInstance* geomInst = new GeometryInstance();
+    geomInst->geometry = NRTDSMGeometry();
+    auto &geom = std::get<NRTDSMGeometry>(geomInst->geometry);
+
+    for (int triIdx = 0; triIdx < triangles.size(); ++triIdx) {
+        const shared::Triangle &tri = triangles[triIdx];
+        const shared::Vertex(&vs)[3] = {
+            vertices[tri.index0],
+            vertices[tri.index1],
+            vertices[tri.index2],
+        };
+        geomInst->aabb
+            .unify(vs[0].position)
+            .unify(vs[1].position)
+            .unify(vs[2].position);
+    }
+
+    geomInst->mat = mat;
+    geom.vertexBuffer.initialize(cuContext, Scene::bufferType, vertices);
+    geom.triangleBuffer.initialize(cuContext, Scene::bufferType, triangles);
+    geomInst->geomInstSlot = scene->geomInstSlotFinder.getFirstAvailableSlot();
+    scene->geomInstSlotFinder.setInUse(geomInst->geomInstSlot);
+
+    shared::GeometryInstanceData geomInstData = {};
+    geomInstData.vertexBuffer = geom.vertexBuffer.getROBuffer<shared::enableBufferOobCheck>();
+    geomInstData.triangleBuffer = geom.triangleBuffer.getROBuffer<shared::enableBufferOobCheck>();
+    geomInstData.materialSlot = mat->materialSlot;
+    geomInstData.geomInstSlot = geomInst->geomInstSlot;
+    geomInstDataOnHost[geomInst->geomInstSlot] = geomInstData;
+
+    geomInst->optixGeomInst = scene->optixScene.createGeometryInstance(optixu::GeometryType::CustomPrimitives);
     geomInst->optixGeomInst.setNumMaterials(1, optixu::BufferView());
     geomInst->optixGeomInst.setMaterial(0, 0, optixMat);
     geomInst->optixGeomInst.setUserData(geomInst->geomInstSlot);
@@ -1942,7 +1988,8 @@ GeometryInstance* createLinearSegmentsGeometryInstance(
     shared::GeometryInstanceData* geomInstDataOnHost = scene->geomInstDataBuffer.getMappedPointer();
 
     GeometryInstance* geomInst = new GeometryInstance();
-    geomInst->geometryType = optixu::GeometryType::LinearSegments;
+    geomInst->geometry = CurveGeometry();
+    auto &geom = std::get<CurveGeometry>(geomInst->geometry);
 
     for (int iIdx = 0; iIdx < indices.size(); ++iIdx) {
         uint32_t idx = indices[iIdx];
@@ -1953,29 +2000,28 @@ GeometryInstance* createLinearSegmentsGeometryInstance(
     }
 
     geomInst->mat = mat;
-    geomInst->curveVertexBuffer.initialize(cuContext, Scene::bufferType, vertices);
-    geomInst->segmentIndexBuffer.initialize(cuContext, Scene::bufferType, indices);
+    geom.curveVertexBuffer.initialize(cuContext, Scene::bufferType, vertices);
+    geom.segmentIndexBuffer.initialize(cuContext, Scene::bufferType, indices);
     geomInst->geomInstSlot = scene->geomInstSlotFinder.getFirstAvailableSlot();
     scene->geomInstSlotFinder.setInUse(geomInst->geomInstSlot);
 
     shared::GeometryInstanceData geomInstData = {};
-    geomInstData.curveVertexBuffer = geomInst->curveVertexBuffer.getROBuffer<shared::enableBufferOobCheck>();
-    geomInstData.segmentIndexBuffer = geomInst->segmentIndexBuffer.getROBuffer<shared::enableBufferOobCheck>();
-    geomInst->emitterPrimDist.getDeviceType(&geomInstData.emitterPrimDist);
+    geomInstData.curveVertexBuffer = geom.curveVertexBuffer.getROBuffer<shared::enableBufferOobCheck>();
+    geomInstData.segmentIndexBuffer = geom.segmentIndexBuffer.getROBuffer<shared::enableBufferOobCheck>();
     geomInstData.materialSlot = mat->materialSlot;
     geomInstData.geomInstSlot = geomInst->geomInstSlot;
     geomInstDataOnHost[geomInst->geomInstSlot] = geomInstData;
 
-    geomInst->optixGeomInst = scene->optixScene.createGeometryInstance(geomInst->geometryType);
+    geomInst->optixGeomInst = scene->optixScene.createGeometryInstance(optixu::GeometryType::LinearSegments);
     geomInst->optixGeomInst.setVertexBuffer(
         optixu::BufferView(
-            geomInst->curveVertexBuffer.getCUdeviceptr() + offsetof(shared::CurveVertex, position),
-            geomInst->curveVertexBuffer.numElements(), geomInst->curveVertexBuffer.stride()));
+            geom.curveVertexBuffer.getCUdeviceptr() + offsetof(shared::CurveVertex, position),
+            geom.curveVertexBuffer.numElements(), geom.curveVertexBuffer.stride()));
     geomInst->optixGeomInst.setWidthBuffer(
         optixu::BufferView(
-            geomInst->curveVertexBuffer.getCUdeviceptr() + offsetof(shared::CurveVertex, width),
-            geomInst->curveVertexBuffer.numElements(), geomInst->curveVertexBuffer.stride()));
-    geomInst->optixGeomInst.setSegmentIndexBuffer(geomInst->segmentIndexBuffer);
+            geom.curveVertexBuffer.getCUdeviceptr() + offsetof(shared::CurveVertex, width),
+            geom.curveVertexBuffer.numElements(), geom.curveVertexBuffer.stride()));
+    geomInst->optixGeomInst.setSegmentIndexBuffer(geom.segmentIndexBuffer);
     geomInst->optixGeomInst.setCurveEndcapFlags(OPTIX_CURVE_ENDCAP_ON);
     geomInst->optixGeomInst.setMaterial(0, 0, optixMat);
     geomInst->optixGeomInst.setUserData(geomInst->geomInstSlot);
@@ -1990,13 +2036,16 @@ GeometryGroup* createGeometryGroup(
     geomGroup->geomInsts = geomInsts;
     geomGroup->numEmitterPrimitives = 0;
 
-    optixu::GeometryType geomType = (*geomInsts.cbegin())->geometryType;
+    optixu::GeometryType geomType = (*geomInsts.cbegin())->optixGeomInst.getGeometryType();
     geomGroup->optixGas = scene->optixScene.createGeometryAccelerationStructure(geomType);
     for (auto it = geomInsts.cbegin(); it != geomInsts.cend(); ++it) {
         const GeometryInstance* geomInst = *it;
         geomGroup->optixGas.addChild(geomInst->optixGeomInst);
-        if (geomInst->mat->texEmittance.cudaArray)
-            geomGroup->numEmitterPrimitives += static_cast<uint32_t>(geomInst->triangleBuffer.numElements());
+        if (geomInst->mat->texEmittance.cudaArray &&
+            std::holds_alternative<TriangleGeometry>(geomInst->geometry)) {
+            auto &geom = std::get<TriangleGeometry>(geomInst->geometry);
+            geomGroup->numEmitterPrimitives += static_cast<uint32_t>(geom.triangleBuffer.numElements());
+        }
         geomGroup->aabb.unify(geomInst->aabb);
     }
     geomGroup->optixGas.setNumMaterialSets(1);
