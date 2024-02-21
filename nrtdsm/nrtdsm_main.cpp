@@ -51,6 +51,7 @@ EN: This program is an example implementation of "Nonlinear Ray Tracing for Disp
 
 #include "nrtdsm_shared.h"
 #include "../common/common_host.h"
+#include "../common/bvh_builder.h"
 
 // Include glfw3.h after our OpenGL definitions
 #include "../utils/gl_util.h"

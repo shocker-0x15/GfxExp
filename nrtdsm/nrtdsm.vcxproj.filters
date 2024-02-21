@@ -92,6 +92,9 @@
     <ClCompile Include="..\common\vdb.cpp">
       <Filter>non-essentials\ext\vdb</Filter>
     </ClCompile>
+    <ClCompile Include="..\common\bvh_builder.cpp">
+      <Filter>non-essentials</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="nrtdsm_shared.h" />
@@ -187,6 +190,9 @@
     </ClInclude>
     <ClInclude Include="gpu_kernels\nrtdsm_intersection_kernels.h">
       <Filter>GPU kernels</Filter>
+    </ClInclude>
+    <ClInclude Include="..\common\bvh_builder.h">
+      <Filter>non-essentials</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

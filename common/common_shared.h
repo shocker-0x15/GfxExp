@@ -911,4 +911,70 @@ namespace shared {
         ROBuffer<uint32_t> geomInstSlots;
         LightDistribution lightGeomInstDist;
     };
+
+
+
+    static constexpr uint32_t invalidNodeIndex = 0xFFFFFFFF;
+
+    template <uint32_t arity>
+    struct InternalNode_T {
+        Point3D quantBoxMinP;
+        Vector3D quantBoxSizeCoeff;
+        uint32_t intNodeChildBaseIndex;
+        uint32_t leafBaseIndex;
+        struct Child {
+            uint8_t minX;
+            uint8_t minY;
+            uint8_t minZ;
+            uint8_t maxX;
+            uint8_t maxY;
+            uint8_t maxZ;
+        } children[arity];
+        uint8_t leafMask;
+        static constexpr uint32_t __paddingSize =
+            arity == 4 ? 7 :
+            arity == 2 ? 3 :
+            1;
+        uint8_t __padding[__paddingSize];
+
+        CUDA_COMMON_FUNCTION CUDA_INLINE bool getChildIsValid(uint32_t slot) const {
+            const Child child = children[slot];
+            return child.minX != 255 || child.maxX != 0;
+        }
+
+        CUDA_COMMON_FUNCTION CUDA_INLINE AABB getChildAabb(uint32_t slot) const {
+            const Child child = children[slot];
+            AABB ret;
+            ret.minP = quantBoxMinP + Vector3D(child.minX, child.minY, child.minZ) * quantBoxSizeCoeff;
+            ret.maxP = quantBoxMinP + Vector3D(child.maxX, child.maxY, child.maxZ) * quantBoxSizeCoeff;
+            return ret;
+        }
+    };
+    static_assert(sizeof(InternalNode_T<2>) == 48, "Unexpected sizeof(InternalNode_T<2>)");
+    static_assert(sizeof(InternalNode_T<4>) == 64, "Unexpected sizeof(InternalNode_T<4>)");
+
+    struct PrimitiveReference {
+        uint32_t storageIndex : 31;
+        uint32_t isLeafEnd : 1;
+    };
+
+    struct TriangleStorage {
+        Point3D pA;
+        Point3D pB;
+        Point3D pC;
+        uint32_t geomIndex;
+        uint32_t primIndex;
+        uint32_t __padding;
+    };
+    static_assert(sizeof(TriangleStorage) == 48, "Unexpected sizeof(TriangleStorage)");
+
+    template <uint32_t arity>
+    struct GeometryBVH_T {
+        const InternalNode_T<arity>* intNodes;
+        const PrimitiveReference* primRefs;
+        const TriangleStorage* triStorages;
+        uint32_t numIntNodes;
+        uint32_t numPrimRefs;
+        uint32_t numTriStorages;
+    };
 }

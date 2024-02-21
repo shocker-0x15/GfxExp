@@ -10,6 +10,11 @@ EN: This source code is just a sand box, where the author try different things.
 #include "nrtdsm_shared.h"
 #include "../common/common_host.h"
 
+#include <assimp/scene.h>
+#include <assimp/Importer.hpp>
+#include <assimp/postprocess.h>
+#include "../common/bvh_builder.h"
+
 #if ENABLE_VDB
 
 static Vector3D uniformSampleSphere(float u0, float u1) {
@@ -2869,6 +2874,237 @@ LeafNode{0.69874, Point3D(0.708984, 0.00683594, 0.486168), Point3D(0.709961, 0.0
             }
         }
         printf("");
+    }
+
+    printf("");
+}
+
+
+
+struct TriangleMesh {
+    std::vector<shared::Vertex> vertices;
+    std::vector<shared::Triangle> triangles;
+};
+
+struct FlattenedNode {
+    Matrix4x4 transform;
+    std::vector<uint32_t> meshIndices;
+};
+
+static void computeFlattenedNodes(
+    const aiScene* scene, const Matrix4x4 &parentXfm, const aiNode* curNode,
+    std::vector<FlattenedNode> &flattenedNodes) {
+    aiMatrix4x4 curAiXfm = curNode->mTransformation;
+    Matrix4x4 curXfm = Matrix4x4(
+        Vector4D(curAiXfm.a1, curAiXfm.a2, curAiXfm.a3, curAiXfm.a4),
+        Vector4D(curAiXfm.b1, curAiXfm.b2, curAiXfm.b3, curAiXfm.b4),
+        Vector4D(curAiXfm.c1, curAiXfm.c2, curAiXfm.c3, curAiXfm.c4),
+        Vector4D(curAiXfm.d1, curAiXfm.d2, curAiXfm.d3, curAiXfm.d4));
+    FlattenedNode flattenedNode;
+    flattenedNode.transform = parentXfm * transpose(curXfm);
+    flattenedNode.meshIndices.resize(curNode->mNumMeshes);
+    if (curNode->mNumMeshes > 0) {
+        std::copy_n(curNode->mMeshes, curNode->mNumMeshes, flattenedNode.meshIndices.data());
+        flattenedNodes.push_back(flattenedNode);
+    }
+
+    for (uint32_t cIdx = 0; cIdx < curNode->mNumChildren; ++cIdx)
+        computeFlattenedNodes(scene, flattenedNode.transform, curNode->mChildren[cIdx], flattenedNodes);
+}
+
+void testBvhBuilder() {
+    const std::filesystem::path filePath =
+        //R"(../data/stanford_bunny_309_faces.obj)";
+        R"(E:/assets/McguireCGArchive/conference/conference.obj)";
+    //R"(E:/assets/McguireCGArchive/breakfast_room/breakfast_room.obj)";
+    hpprintf("Reading: %s ... ", filePath.string().c_str());
+    fflush(stdout);
+    Assimp::Importer importer;
+    const aiScene* aiscene = importer.ReadFile(
+        filePath.string(),
+        aiProcess_Triangulate |
+        aiProcess_GenNormals |
+        aiProcess_CalcTangentSpace |
+        aiProcess_FlipUVs);
+    if (!aiscene) {
+        hpprintf("Failed to load %s.\n", filePath.string().c_str());
+        return;
+    }
+    hpprintf("done.\n");
+
+    std::vector<TriangleMesh> meshes;
+    for (uint32_t meshIdx = 0; meshIdx < aiscene->mNumMeshes; ++meshIdx) {
+        const aiMesh* aiMesh = aiscene->mMeshes[meshIdx];
+
+        std::vector<shared::Vertex> vertices(aiMesh->mNumVertices);
+        for (int vIdx = 0; vIdx < vertices.size(); ++vIdx) {
+            const aiVector3D &aip = aiMesh->mVertices[vIdx];
+            const aiVector3D &ain = aiMesh->mNormals[vIdx];
+            aiVector3D aitc0dir;
+            if (aiMesh->mTangents)
+                aitc0dir = aiMesh->mTangents[vIdx];
+            if (!aiMesh->mTangents || !std::isfinite(aitc0dir.x)) {
+                const auto makeCoordinateSystem = []
+                (const Normal3D &normal, Vector3D* tangent, Vector3D* bitangent) {
+                    float sign = normal.z >= 0 ? 1.0f : -1.0f;
+                    const float a = -1 / (sign + normal.z);
+                    const float b = normal.x * normal.y * a;
+                    *tangent = Vector3D(1 + sign * normal.x * normal.x * a, sign * b, -sign * normal.x);
+                    *bitangent = Vector3D(b, sign + normal.y * normal.y * a, -normal.y);
+                };
+                Vector3D tangent, bitangent;
+                makeCoordinateSystem(Normal3D(ain.x, ain.y, ain.z), &tangent, &bitangent);
+                aitc0dir = aiVector3D(tangent.x, tangent.y, tangent.z);
+            }
+            const aiVector3D ait = aiMesh->mTextureCoords[0] ?
+                aiMesh->mTextureCoords[0][vIdx] :
+                aiVector3D(0.0f, 0.0f, 0.0f);
+
+            shared::Vertex v;
+            v.position = Point3D(aip.x, aip.y, aip.z);
+            v.normal = normalize(Normal3D(ain.x, ain.y, ain.z));
+            v.texCoord0Dir = normalize(Vector3D(aitc0dir.x, aitc0dir.y, aitc0dir.z));
+            v.texCoord = Point2D(ait.x, ait.y);
+            vertices[vIdx] = v;
+        }
+
+        std::vector<shared::Triangle> triangles(aiMesh->mNumFaces);
+        for (int fIdx = 0; fIdx < triangles.size(); ++fIdx) {
+            const aiFace &aif = aiMesh->mFaces[fIdx];
+            Assert(aif.mNumIndices == 3, "Number of face vertices must be 3 here.");
+            shared::Triangle tri;
+            tri.index0 = aif.mIndices[0];
+            tri.index1 = aif.mIndices[1];
+            tri.index2 = aif.mIndices[2];
+            triangles[fIdx] = tri;
+        }
+
+        TriangleMesh mesh;
+        mesh.vertices = std::move(vertices);
+        mesh.triangles = std::move(triangles);
+        meshes.push_back(std::move(mesh));
+    }
+
+    std::vector<FlattenedNode> flattenedNodes;
+    computeFlattenedNodes(aiscene, Matrix4x4(), aiscene->mRootNode, flattenedNodes);
+
+    std::vector<bvh::Geometry> bvhGeoms;
+    uint32_t numGlobalPrimitives = 0;
+    for (uint32_t i = 0; i < flattenedNodes.size(); ++i) {
+        const FlattenedNode &fNode = flattenedNodes[i];
+        for (uint32_t mIdx = 0; mIdx < fNode.meshIndices.size(); ++mIdx) {
+            const TriangleMesh &triMesh = meshes[fNode.meshIndices[mIdx]];
+
+            bvh::Geometry geom = {};
+            geom.vertices = reinterpret_cast<const uint8_t*>(triMesh.vertices.data());
+            geom.vertexStride = sizeof(triMesh.vertices[0]);
+            geom.numVertices = triMesh.vertices.size();
+            geom.triangles = reinterpret_cast<const uint8_t*>(triMesh.triangles.data());
+            geom.triangleStride = sizeof(triMesh.triangles[0]);
+            geom.numTriangles = triMesh.triangles.size();
+            geom.preTransform = fNode.transform;
+            bvhGeoms.push_back(geom);
+
+            numGlobalPrimitives += geom.numTriangles;
+        }
+    }
+
+    constexpr uint32_t arity = 4;
+
+    bvh::GeometryBVHBuildConfig config = {};
+    config.splittingBudget = 0.3f;
+    config.intNodeTravCost = 1.2f;
+    config.primIntersectCost = 1.0f;
+    config.minNumPrimsPerLeaf = 1;
+    config.maxNumPrimsPerLeaf = 128;
+
+    bvh::GeometryBVH<arity> bvh;
+    bvh::buildGeometryBVH(
+        bvhGeoms.data(), bvhGeoms.size(),
+        config, &bvh);
+
+    struct StackEntry {
+        uint32_t nodeIndex;
+        uint32_t depth;
+    };
+    std::vector<StackEntry> stack;
+    constexpr uint32_t maxDepth = 12;
+
+    struct NodeChildAddress {
+        uint32_t nodeIndex;
+        uint32_t slot;
+    };
+    std::vector<std::vector<NodeChildAddress>> triToNodeChildMap(numGlobalPrimitives);
+
+    vdb_frame();
+    drawAxes(10.0f);
+    setColor(1.0f, 1.0f, 1.0f);
+
+    stack.push_back(StackEntry{ 0, 0 });
+    while (!stack.empty()) {
+        const StackEntry entry = stack.back();
+        stack.pop_back();
+
+        const shared::InternalNode_T<arity> &intNode = bvh.intNodes[entry.nodeIndex];
+        uint32_t leafOffset = intNode.leafBaseIndex;
+        for (int32_t slot = 0; slot < arity; ++slot) {
+            if (!intNode.getChildIsValid(slot))
+                break;
+
+            const bool isLeaf = ((intNode.leafMask >> slot) & 0b1) != 0;
+            const uint32_t lowerMask = (1 << slot) - 1;
+            if (isLeaf) {
+                setColor(0.1f, 0.1f, 0.1f);
+                drawAabb(intNode.getChildAabb(slot));
+                uint32_t chainLength = 0;
+                while (true) {
+                    //hpprintf("%3u\n", leafOffset);
+                    const shared::PrimitiveReference &primRef = bvh.primRefs[leafOffset++];
+                    const shared::TriangleStorage &triStorage = bvh.triStorages[primRef.storageIndex];
+                    ++chainLength;
+                    setColor(1.0f, 1.0f, 1.0f);
+                    drawWiredTriangle(triStorage.pA, triStorage.pB, triStorage.pC);
+                    triToNodeChildMap[primRef.storageIndex].push_back(
+                        NodeChildAddress{ entry.nodeIndex, static_cast<uint32_t>(slot) });
+                    if (primRef.isLeafEnd)
+                        break;
+                }
+            }
+            else {
+                //setColor(0.0f, 0.3f * (entry.depth + 1) / maxDepth, 0.0f);
+                //drawAabb(intNode.getChildAabb(slot));
+                if (entry.depth < maxDepth) {
+                    const uint32_t childIdx = intNode.intNodeChildBaseIndex
+                        + popcnt(~intNode.leafMask & lowerMask);
+                    stack.push_back(StackEntry{ childIdx, entry.depth + 1 });
+                }
+                else {
+                    printf("");
+                }
+            }
+        }
+    }
+
+    if (false) {
+        // Triangle to Node Children
+        for (uint32_t globalPrimIdx = 0; globalPrimIdx < numGlobalPrimitives; ++globalPrimIdx) {
+            const std::vector<NodeChildAddress> &refs = triToNodeChildMap[globalPrimIdx];
+
+            vdb_frame();
+            drawAxes(10.0f);
+
+            const shared::TriangleStorage &triStorage = bvh.triStorages[globalPrimIdx];
+            setColor(1.0f, 1.0f, 1.0f);
+            drawWiredTriangle(triStorage.pA, triStorage.pB, triStorage.pC);
+
+            for (uint32_t refIdx = 0; refIdx < refs.size(); ++refIdx) {
+                const NodeChildAddress &ref = refs[refIdx];
+                const shared::InternalNode_T<arity> &intNode = bvh.intNodes[ref.nodeIndex];
+                setColor(0.1f, 0.1f, 0.1f);
+                drawAabb(intNode.getChildAabb(ref.slot));
+            }
+            printf("");
+        }
     }
 
     printf("");

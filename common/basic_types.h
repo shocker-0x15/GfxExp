@@ -376,6 +376,12 @@ struct alignas(8) uint2 {
     uint32_t x, y;
     constexpr uint2(const uint32_t v = 0) : x(v), y(v) {}
     constexpr uint2(const uint32_t xx, const uint32_t yy) : x(xx), y(yy) {}
+    uint32_t &operator[](uint32_t idx) {
+        return *(&x + idx);
+    }
+    const uint32_t &operator[](uint32_t idx) const {
+        return *(&x + idx);
+    }
 };
 inline constexpr uint2 make_uint2(const uint32_t x, const uint32_t y) {
     return uint2(x, y);
@@ -387,6 +393,12 @@ struct alignas(4) uint3 {
         x(v), y(v), z(v) {}
     constexpr uint3(const uint32_t xx, const uint32_t yy, const uint32_t zz) :
         x(xx), y(yy), z(zz) {}
+    uint32_t &operator[](uint32_t idx) {
+        return *(&x + idx);
+    }
+    const uint32_t &operator[](uint32_t idx) const {
+        return *(&x + idx);
+    }
 };
 inline constexpr uint3 make_uint3(const uint32_t x, const uint32_t y, const uint32_t z) {
     return uint3(x, y, z);
@@ -398,6 +410,12 @@ struct alignas(16) uint4 {
         x(v), y(v), z(v), w(v) {}
     constexpr uint4(const uint32_t xx, const uint32_t yy, const uint32_t zz, const uint32_t ww) :
         x(xx), y(yy), z(zz), w(ww) {}
+    uint32_t &operator[](uint32_t idx) {
+        return *(&x + idx);
+    }
+    const uint32_t &operator[](uint32_t idx) const {
+        return *(&x + idx);
+    }
 };
 inline constexpr uint4 make_uint4(const uint32_t x, const uint32_t y, const uint32_t z, const uint32_t w) {
     return uint4(x, y, z, w);
@@ -1070,6 +1088,20 @@ CUDA_COMMON_FUNCTION CUDA_INLINE decltype(N2::x) length(const N2 &v) {
     return std::sqrt(pow2(v.x) + pow2(v.y));
 }
 
+template <Number NA, NVec4 N2B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec2BinaryOpTraits<NVec2_t<NA>, N2B>::ReturnType min(
+    const NA a, const N2B &b) {
+    using UType = GetBinOpResultType_t<NA, decltype(N2B::x)>;
+    return Vec2BinaryOpTraits<NVec2_t<NA>, N2B>::make(
+        stc::min<UType>(a, b.x), stc::min<UType>(a, b.y));
+}
+template <NVec2 N2A, Number NB>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec2BinaryOpTraits<N2A, NVec2_t<NB>>::ReturnType min(
+    const N2A &a, const NB b) {
+    using UType = GetBinOpResultType_t<decltype(N2A::x), NB>;
+    return Vec2BinaryOpTraits<N2A, NVec2_t<NB>>::make(
+        stc::min<UType>(a.x, b), stc::min<UType>(a.y, b));
+}
 template <NVec2 N2A, NVec2 N2B>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec2BinaryOpTraits<N2A, N2B>::ReturnType min(
     const N2A &a, const N2B &b) {
@@ -1077,6 +1109,20 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec2BinaryOpTraits<N2A, N2B>
     return Vec2BinaryOpTraits<N2A, N2B>::make(stc::min<UType>(a.x, b.x), stc::min<UType>(a.y, b.y));
 }
 
+template <Number NA, NVec4 N2B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec2BinaryOpTraits<NVec2_t<NA>, N2B>::ReturnType max(
+    const NA a, const N2B &b) {
+    using UType = GetBinOpResultType_t<NA, decltype(N2B::x)>;
+    return Vec2BinaryOpTraits<NVec2_t<NA>, N2B>::make(
+        stc::max<UType>(a, b.x), stc::max<UType>(a, b.y));
+}
+template <NVec2 N2A, Number NB>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec2BinaryOpTraits<N2A, NVec2_t<NB>>::ReturnType max(
+    const N2A &a, const NB b) {
+    using UType = GetBinOpResultType_t<decltype(N2A::x), NB>;
+    return Vec2BinaryOpTraits<N2A, NVec2_t<NB>>::make(
+        stc::max<UType>(a.x, b), stc::max<UType>(a.y, b));
+}
 template <NVec2 N2A, NVec2 N2B>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec2BinaryOpTraits<N2A, N2B>::ReturnType max(
     const N2A &a, const N2B &b) {
@@ -1326,6 +1372,20 @@ CUDA_COMMON_FUNCTION CUDA_INLINE decltype(N3::x) length(const N3 &v) {
     return std::sqrt(pow2(v.x) + pow2(v.y) + pow2(v.z));
 }
 
+template <Number NA, NVec4 N3B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec3BinaryOpTraits<NVec3_t<NA>, N3B>::ReturnType min(
+    const NA a, const N3B &b) {
+    using UType = GetBinOpResultType_t<NA, decltype(N3B::x)>;
+    return Vec3BinaryOpTraits<NVec3_t<NA>, N3B>::make(
+        stc::min<UType>(a, b.x), stc::min<UType>(a, b.y), stc::min<UType>(a, b.z));
+}
+template <NVec3 N3A, Number NB>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec3BinaryOpTraits<N3A, NVec3_t<NB>>::ReturnType min(
+    const N3A &a, const NB b) {
+    using UType = GetBinOpResultType_t<decltype(N3A::x), NB>;
+    return Vec3BinaryOpTraits<N3A, NVec3_t<NB>>::make(
+        stc::min<UType>(a.x, b), stc::min<UType>(a.y, b), stc::min<UType>(a.z, b));
+}
 template <NVec3 N3A, NVec3 N3B>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec3BinaryOpTraits<N3A, N3B>::ReturnType min(
     const N3A &a, const N3B &b) {
@@ -1334,6 +1394,20 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec3BinaryOpTraits<N3A, N3B>
         stc::min<UType>(a.x, b.x), stc::min<UType>(a.y, b.y), stc::min<UType>(a.z, b.z));
 }
 
+template <Number NA, NVec4 N3B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec3BinaryOpTraits<NVec3_t<NA>, N3B>::ReturnType max(
+    const NA a, const N3B &b) {
+    using UType = GetBinOpResultType_t<NA, decltype(N3B::x)>;
+    return Vec3BinaryOpTraits<NVec3_t<NA>, N3B>::make(
+        stc::max<UType>(a, b.x), stc::max<UType>(a, b.y), stc::max<UType>(a, b.z));
+}
+template <NVec3 N3A, Number NB>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec3BinaryOpTraits<N3A, NVec3_t<NB>>::ReturnType max(
+    const N3A &a, const NB b) {
+    using UType = GetBinOpResultType_t<decltype(N3A::x), NB>;
+    return Vec3BinaryOpTraits<N3A, NVec3_t<NB>>::make(
+        stc::max<UType>(a.x, b), stc::max<UType>(a.y, b), stc::max<UType>(a.z, b));
+}
 template <NVec3 N3A, NVec3 N3B>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec3BinaryOpTraits<N3A, N3B>::ReturnType max(
     const N3A &a, const N3B &b) {
@@ -1597,6 +1671,20 @@ CUDA_COMMON_FUNCTION CUDA_INLINE NVec3_t<decltype(N4::x)> getXYZ(const N4 &v) {
     return GetNVec3<decltype(N4::x)>::make(v.x, v.y, v.z);
 }
 
+template <Number NA, NVec4 N4B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec4BinaryOpTraits<NVec4_t<NA>, N4B>::ReturnType min(
+    const NA a, const N4B &b) {
+    using UType = GetBinOpResultType_t<NA, decltype(N4B::x)>;
+    return Vec4BinaryOpTraits<NVec4_t<NA>, N4B>::make(
+        stc::min<UType>(a, b.x), stc::min<UType>(a, b.y), stc::min<UType>(a, b.z), stc::min<UType>(a, b.w));
+}
+template <NVec4 N4A, Number NB>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec4BinaryOpTraits<N4A, NVec4_t<NB>>::ReturnType min(
+    const N4A &a, const NB b) {
+    using UType = GetBinOpResultType_t<decltype(N4A::x), NB>;
+    return Vec4BinaryOpTraits<N4A, NVec4_t<NB>>::make(
+        stc::min<UType>(a.x, b), stc::min<UType>(a.y, b), stc::min<UType>(a.z, b), stc::min<UType>(a.w, b));
+}
 template <NVec4 N4A, NVec4 N4B>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec4BinaryOpTraits<N4A, N4B>::ReturnType min(
     const N4A &a, const N4B &b) {
@@ -1605,6 +1693,20 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec4BinaryOpTraits<N4A, N4B>
         stc::min<UType>(a.x, b.x), stc::min<UType>(a.y, b.y), stc::min<UType>(a.z, b.z), stc::min<UType>(a.w, b.w));
 }
 
+template <Number NA, NVec4 N4B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec4BinaryOpTraits<NVec4_t<NA>, N4B>::ReturnType max(
+    const NA a, const N4B &b) {
+    using UType = GetBinOpResultType_t<NA, decltype(N4B::x)>;
+    return Vec4BinaryOpTraits<NVec4_t<NA>, N4B>::make(
+        stc::max<UType>(a, b.x), stc::max<UType>(a, b.y), stc::max<UType>(a, b.z), stc::max<UType>(a, b.w));
+}
+template <NVec4 N4A, Number NB>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec4BinaryOpTraits<N4A, NVec4_t<NB>>::ReturnType max(
+    const N4A &a, const NB b) {
+    using UType = GetBinOpResultType_t<decltype(N4A::x), NB>;
+    return Vec4BinaryOpTraits<N4A, NVec4_t<NB>>::make(
+        stc::max<UType>(a.x, b), stc::max<UType>(a.y, b), stc::max<UType>(a.z, b), stc::max<UType>(a.w, b));
+}
 template <NVec4 N4A, NVec4 N4B>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec4BinaryOpTraits<N4A, N4B>::ReturnType max(
     const N4A &a, const N4B &b) {
@@ -4953,11 +5055,26 @@ struct AABB_T {
         return *this;
     }
 
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr AABB_T &intersect(const AABB_T &bb) {
+        minP = max(minP, bb.minP);
+        maxP = min(maxP, bb.maxP);
+        return *this;
+    }
+
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr AABB_T &dilate(const F scale) {
         Vector3D_T<F, false> d = maxP - minP;
         minP -= 0.5f * (scale - 1) * d;
         maxP += 0.5f * (scale - 1) * d;
         return *this;
+    }
+
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Point3D_T<F> getCenter() const {
+        return 0.5f * (minP + maxP);
+    }
+
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr F calcHalfSurfaceArea() const {
+        const Vector3D_T<F, false> d = maxP - minP;
+        return d.x * d.y + d.y * d.z + d.z * d.x;
     }
 
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Point3D_T<F> normalize(const Point3D_T<F> &p) const {
@@ -5089,6 +5206,31 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr AABB_T<F> operator*(
         .unify(mat * Point3D_T<F>(aabb.maxP.x, aabb.maxP.y, aabb.maxP.z));
     return ret;
 }
+
+template <std::floating_point F>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr AABB_T<F> unify(
+    const AABB_T<F> &bb, const Point3D_T<F> &p) {
+    AABB_T<F> ret = bb;
+    ret.unify(p);
+    return ret;
+}
+template <std::floating_point F>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr AABB_T<F> unify(
+    const AABB_T<F> &bbA, const AABB_T<F> &bbB) {
+    AABB_T<F> ret = bbA;
+    ret.unify(bbB);
+    return ret;
+}
+
+template <std::floating_point F>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr AABB_T<F> intersect(
+    const AABB_T<F> &bbA, const AABB_T<F> &bbB) {
+    AABB_T<F> ret = bbA;
+    ret.intersect(bbB);
+    return ret;
+}
+
+
 
 
 

@@ -7,6 +7,7 @@
 #include <sstream>
 #include <array>
 #include <vector>
+#include <span>
 #include <set>
 #include <map>
 #include <unordered_set>
@@ -23,7 +24,7 @@
 #define ENABLE_VDB 0
 
 #if ENABLE_VDB
-#include "../common/vdb_interface.h"
+#include "vdb_interface.h"
 
 inline void setColor(float r, float g, float b) {
     vdb_color(r, g, b);
