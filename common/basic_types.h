@@ -3234,6 +3234,211 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr F dot(
 
 
 template <std::floating_point F>
+struct AABB_T {
+    Point3D_T<F> minP;
+    Point3D_T<F> maxP;
+
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr AABB_T() :
+        minP(Point3D_T<F>(INFINITY)), maxP(Point3D_T<F>(-INFINITY)) {}
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr AABB_T(
+        const Point3D_T<F> &_minP, const Point3D_T<F> &_maxP) :
+        minP(_minP), maxP(_maxP) {}
+
+    template <typename F2 = F, std::enable_if_t<(sizeof(F2) <= sizeof(F)), int> = 0>
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr AABB_T(const AABB_T<F2> &v) :
+        minP(v.minP), maxP(v.maxP) {}
+    template <typename F2 = F, std::enable_if_t<(sizeof(F2) > sizeof(F)), int> = 0>
+    CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr AABB_T(const AABB_T<F2> &v) :
+        minP(static_cast<Point3D_T<F>>(v.minP)), maxP(static_cast<Point3D_T<F>>(v.maxP)) {}
+
+    template <bool isNormal>
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr AABB_T &operator+=(const Vector3D_T<F, isNormal> &r) {
+        minP += r;
+        maxP += r;
+        return *this;
+    }
+
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr AABB_T &unify(const Point3D_T<F> &p) {
+        minP = min(minP, p);
+        maxP = max(maxP, p);
+        return *this;
+    }
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr AABB_T &unify(const AABB_T &bb) {
+        minP = min(minP, bb.minP);
+        maxP = max(maxP, bb.maxP);
+        return *this;
+    }
+
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr AABB_T &intersect(const AABB_T &bb) {
+        minP = max(minP, bb.minP);
+        maxP = min(maxP, bb.maxP);
+        return *this;
+    }
+
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr AABB_T &dilate(const F scale) {
+        Vector3D_T<F, false> d = maxP - minP;
+        minP -= 0.5f * (scale - 1) * d;
+        maxP += 0.5f * (scale - 1) * d;
+        return *this;
+    }
+
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Point3D_T<F> getCenter() const {
+        return 0.5f * (minP + maxP);
+    }
+
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr F calcHalfSurfaceArea() const {
+        const Vector3D_T<F, false> d = maxP - minP;
+        return d.x * d.y + d.y * d.z + d.z * d.x;
+    }
+
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Point3D_T<F> normalize(const Point3D_T<F> &p) const {
+        return static_cast<Point3D_T<F>>(safeDivide(p - minP, maxP - minP));
+    }
+
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr bool isValid() const {
+        Vector3D_T<F, false> d = maxP - minP;
+        return all(d >= Vector3D_T<F, false>(0.0f));
+    }
+
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr bool intersect(
+        const Point3D_T<F> &org, const Vector3D_T<F, false> &dir, const F distMin, const F distMax) const {
+        if (!isValid())
+            return INFINITY;
+        const Vector3D_T<F, false> invRayDir = 1.0f / dir;
+        const Vector3D_T<F, false> tNear = (minP - org) * invRayDir;
+        const Vector3D_T<F, false> tFar = (maxP - org) * invRayDir;
+        const Vector3D_T<F, false> near = min(tNear, tFar);
+        const Vector3D_T<F, false> far = max(tNear, tFar);
+        F t0 = std::fmax(std::fmax(near.x, near.y), near.z);
+        F t1 = std::fmin(std::fmin(far.x, far.y), far.z);
+        t0 = std::fmax(t0, distMin);
+        t1 = std::fmin(t1, distMax);
+        return t0 <= t1 && t1 > 0.0f;
+    }
+
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr bool intersect(
+        const Point3D_T<F> &org, const Vector3D_T<F, false> &dir, const F distMin, const F distMax,
+        float* const hitDistMin, float* const hitDistMax) const {
+        if (!isValid())
+            return INFINITY;
+        const Vector3D_T<F, false> invRayDir = 1.0f / dir;
+        const Vector3D_T<F, false> tNear = (minP - org) * invRayDir;
+        const Vector3D_T<F, false> tFar = (maxP - org) * invRayDir;
+        const Vector3D_T<F, false> near = min(tNear, tFar);
+        const Vector3D_T<F, false> far = max(tNear, tFar);
+        *hitDistMin = std::fmax(std::fmax(near.x, near.y), near.z);
+        *hitDistMax = std::fmin(std::fmin(far.x, far.y), far.z);
+        *hitDistMin = std::fmax(*hitDistMin, distMin);
+        *hitDistMax = std::fmin(*hitDistMax, distMax);
+        return *hitDistMin <= *hitDistMax && *hitDistMax > 0.0f;
+    }
+
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr F intersect(
+        const Point3D_T<F> &org, const Vector3D_T<F, false> &dir,
+        const F distMin, const F distMax,
+        F* const u, F* const v, bool* const isFrontHit) const {
+        if (!isValid())
+            return INFINITY;
+        const Vector3D_T<F, false> invRayDir = 1.0f / dir;
+        const Vector3D_T<F, false> tNear = (minP - org) * invRayDir;
+        const Vector3D_T<F, false> tFar = (maxP - org) * invRayDir;
+        const Vector3D_T<F, false> near = min(tNear, tFar);
+        const Vector3D_T<F, false> far = max(tNear, tFar);
+        F t0 = std::fmax(std::fmax(near.x, near.y), near.z);
+        F t1 = std::fmin(std::fmin(far.x, far.y), far.z);
+        *isFrontHit = t0 >= 0.0f;
+        t0 = std::fmax(t0, distMin);
+        t1 = std::fmin(t1, distMax);
+        if (!(t0 <= t1 && t1 > 0.0f))
+            return INFINITY;
+
+        const F t = *isFrontHit ? t0 : t1;
+        Vector3D_T<F, false> n = -sign(dir) * step(near.yzx(), near) * step(near.zxy(), near);
+        if (!*isFrontHit)
+            n = -n;
+
+        int32_t faceID = static_cast<int32_t>(dot(abs(n), Vector3D_T<F, false>(2, 4, 8)));
+        faceID ^= static_cast<int32_t>(any(n > Vector3D_T<F, false>(0.0f)));
+
+        const int32_t faceDim = tzcnt(faceID & ~0b1) - 1;
+        const int32_t dim0 = (faceDim + 1) % 3;
+        const int32_t dim1 = (faceDim + 2) % 3;
+        const Point3D_T<F> p = org + t * dir;
+        const F min0 = minP[dim0];
+        const F max0 = maxP[dim0];
+        const F min1 = minP[dim1];
+        const F max1 = maxP[dim1];
+        *u = std::fmin(std::fmax((p[dim0] - min0) / (max0 - min0), 0.0f), 1.0f)
+            + static_cast<F>(faceID);
+        *v = std::fmin(std::fmax((p[dim1] - min1) / (max1 - min1), 0.0f), 1.0f);
+
+        return t;
+    }
+
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Point3D_T<F> restoreHitPoint(
+        F u, const F v, Vector3D_T<F, true>* const normal) const {
+        const auto faceID = static_cast<uint32_t>(u);
+        u = std::fmod(u, 1.0f);
+
+        const int32_t faceDim = tzcnt(faceID & ~0b1) - 1;
+        const bool isPosSide = faceID & 0b1;
+        *normal = Vector3D_T<F, true>(0.0f);
+        (*normal)[faceDim] = isPosSide ? 1 : -1;
+
+        const int32_t dim0 = (faceDim + 1) % 3;
+        const int32_t dim1 = (faceDim + 2) % 3;
+        Point3D_T<F> p;
+        p[faceDim] = isPosSide ? maxP[faceDim] : minP[faceDim];
+        p[dim0] = lerp(minP[dim0], maxP[dim0], u);
+        p[dim1] = lerp(minP[dim1], maxP[dim1], v);
+
+        return p;
+    }
+
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector3D_T<F, true> restoreNormal(const F u, const F v) const {
+        const auto faceID = static_cast<uint32_t>(u);
+        const int32_t faceDim = tzcnt(faceID & ~0b1) - 1;
+        const bool isPosSide = faceID & 0b1;
+        auto normal = Vector3D_T<F, true>(0.0f);
+        normal[faceDim] = isPosSide ? 1 : -1;
+        return normal;
+    }
+};
+
+template <std::floating_point F, bool isNormal>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr AABB_T<F> operator+(
+    const AABB_T<F> &a, const Vector3D_T<F, isNormal> &b) {
+    AABB_T<F> ret = a;
+    ret += b;
+    return ret;
+}
+
+template <std::floating_point F>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr AABB_T<F> unify(
+    const AABB_T<F> &bb, const Point3D_T<F> &p) {
+    AABB_T<F> ret = bb;
+    ret.unify(p);
+    return ret;
+}
+template <std::floating_point F>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr AABB_T<F> unify(
+    const AABB_T<F> &bbA, const AABB_T<F> &bbB) {
+    AABB_T<F> ret = bbA;
+    ret.unify(bbB);
+    return ret;
+}
+
+template <std::floating_point F>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr AABB_T<F> intersect(
+    const AABB_T<F> &bbA, const AABB_T<F> &bbB) {
+    AABB_T<F> ret = bbA;
+    ret.intersect(bbB);
+    return ret;
+}
+
+
+
+template <std::floating_point F>
 struct Matrix2x2_T {
     union {
         Vector2D_T<F> c0;
@@ -3914,6 +4119,22 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Point3D_T<F> operator*(
 }
 
 template <std::floating_point F>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr AABB_T<F> operator*(
+    const Matrix3x3_T<F> &a, const AABB_T<F> &b) {
+    AABB_T<F> ret;
+    ret
+        .unify(a * Point3D_T<F>(b.minP.x, b.minP.y, b.minP.z))
+        .unify(a * Point3D_T<F>(b.maxP.x, b.minP.y, b.minP.z))
+        .unify(a * Point3D_T<F>(b.minP.x, b.maxP.y, b.minP.z))
+        .unify(a * Point3D_T<F>(b.maxP.x, b.maxP.y, b.minP.z))
+        .unify(a * Point3D_T<F>(b.minP.x, b.minP.y, b.maxP.z))
+        .unify(a * Point3D_T<F>(b.maxP.x, b.minP.y, b.maxP.z))
+        .unify(a * Point3D_T<F>(b.minP.x, b.maxP.y, b.maxP.z))
+        .unify(a * Point3D_T<F>(b.maxP.x, b.maxP.y, b.maxP.z));
+    return ret;
+}
+
+template <std::floating_point F>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix3x3_T<F> transpose(
     const Matrix3x3_T<F> &m) {
     Matrix3x3_T<F> ret = m;
@@ -4393,6 +4614,22 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector4D_T<F> operator*(
         dot(a.row(1), b),
         dot(a.row(2), b),
         dot(a.row(3), b));
+}
+
+template <std::floating_point F>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr AABB_T<F> operator*(
+    const Matrix4x4_T<F> &a, const AABB_T<F> &b) {
+    AABB_T<F> ret;
+    ret
+        .unify(a * Point3D_T<F>(b.minP.x, b.minP.y, b.minP.z))
+        .unify(a * Point3D_T<F>(b.maxP.x, b.minP.y, b.minP.z))
+        .unify(a * Point3D_T<F>(b.minP.x, b.maxP.y, b.minP.z))
+        .unify(a * Point3D_T<F>(b.maxP.x, b.maxP.y, b.minP.z))
+        .unify(a * Point3D_T<F>(b.minP.x, b.minP.y, b.maxP.z))
+        .unify(a * Point3D_T<F>(b.maxP.x, b.minP.y, b.maxP.z))
+        .unify(a * Point3D_T<F>(b.minP.x, b.maxP.y, b.maxP.z))
+        .unify(a * Point3D_T<F>(b.maxP.x, b.maxP.y, b.maxP.z));
+    return ret;
 }
 
 template <std::floating_point F>
@@ -5026,214 +5263,6 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr F sRGB_calcLuminance(const RGB_T<F> &
 
 
 
-template <std::floating_point F>
-struct AABB_T {
-    Point3D_T<F> minP;
-    Point3D_T<F> maxP;
-
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr AABB_T() :
-        minP(Point3D_T<F>(INFINITY)), maxP(Point3D_T<F>(-INFINITY)) {}
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr AABB_T(
-        const Point3D_T<F> &_minP, const Point3D_T<F> &_maxP) :
-        minP(_minP), maxP(_maxP) {}
-
-    template <typename F2 = F, std::enable_if_t<(sizeof(F2) <= sizeof(F)), int> = 0>
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr AABB_T(const AABB_T<F2> &v) :
-        minP(v.minP), maxP(v.maxP) {}
-    template <typename F2 = F, std::enable_if_t<(sizeof(F2) > sizeof(F)), int> = 0>
-    CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr AABB_T(const AABB_T<F2> &v) :
-        minP(static_cast<Point3D_T<F>>(v.minP)), maxP(static_cast<Point3D_T<F>>(v.maxP)) {}
-
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr AABB_T &unify(const Point3D_T<F> &p) {
-        minP = min(minP, p);
-        maxP = max(maxP, p);
-        return *this;
-    }
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr AABB_T &unify(const AABB_T &bb) {
-        minP = min(minP, bb.minP);
-        maxP = max(maxP, bb.maxP);
-        return *this;
-    }
-
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr AABB_T &intersect(const AABB_T &bb) {
-        minP = max(minP, bb.minP);
-        maxP = min(maxP, bb.maxP);
-        return *this;
-    }
-
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr AABB_T &dilate(const F scale) {
-        Vector3D_T<F, false> d = maxP - minP;
-        minP -= 0.5f * (scale - 1) * d;
-        maxP += 0.5f * (scale - 1) * d;
-        return *this;
-    }
-
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Point3D_T<F> getCenter() const {
-        return 0.5f * (minP + maxP);
-    }
-
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr F calcHalfSurfaceArea() const {
-        const Vector3D_T<F, false> d = maxP - minP;
-        return d.x * d.y + d.y * d.z + d.z * d.x;
-    }
-
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Point3D_T<F> normalize(const Point3D_T<F> &p) const {
-        return static_cast<Point3D_T<F>>(safeDivide(p - minP, maxP - minP));
-    }
-
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr bool isValid() const {
-        Vector3D_T<F, false> d = maxP - minP;
-        return all(d >= Vector3D_T<F, false>(0.0f));
-    }
-
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr bool intersect(
-        const Point3D_T<F> &org, const Vector3D_T<F, false> &dir, const F distMin, const F distMax) const {
-        if (!isValid())
-            return INFINITY;
-        const Vector3D_T<F, false> invRayDir = 1.0f / dir;
-        const Vector3D_T<F, false> tNear = (minP - org) * invRayDir;
-        const Vector3D_T<F, false> tFar = (maxP - org) * invRayDir;
-        const Vector3D_T<F, false> near = min(tNear, tFar);
-        const Vector3D_T<F, false> far = max(tNear, tFar);
-        F t0 = std::fmax(std::fmax(near.x, near.y), near.z);
-        F t1 = std::fmin(std::fmin(far.x, far.y), far.z);
-        t0 = std::fmax(t0, distMin);
-        t1 = std::fmin(t1, distMax);
-        return t0 <= t1 && t1 > 0.0f;
-    }
-
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr bool intersect(
-        const Point3D_T<F> &org, const Vector3D_T<F, false> &dir, const F distMin, const F distMax,
-        float* const hitDistMin, float* const hitDistMax) const {
-        if (!isValid())
-            return INFINITY;
-        const Vector3D_T<F, false> invRayDir = 1.0f / dir;
-        const Vector3D_T<F, false> tNear = (minP - org) * invRayDir;
-        const Vector3D_T<F, false> tFar = (maxP - org) * invRayDir;
-        const Vector3D_T<F, false> near = min(tNear, tFar);
-        const Vector3D_T<F, false> far = max(tNear, tFar);
-        *hitDistMin = std::fmax(std::fmax(near.x, near.y), near.z);
-        *hitDistMax = std::fmin(std::fmin(far.x, far.y), far.z);
-        *hitDistMin = std::fmax(*hitDistMin, distMin);
-        *hitDistMax = std::fmin(*hitDistMax, distMax);
-        return *hitDistMin <= *hitDistMax && *hitDistMax > 0.0f;
-    }
-
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr F intersect(
-        const Point3D_T<F> &org, const Vector3D_T<F, false> &dir,
-        const F distMin, const F distMax,
-        F* const u, F* const v, bool* const isFrontHit) const {
-        if (!isValid())
-            return INFINITY;
-        const Vector3D_T<F, false> invRayDir = 1.0f / dir;
-        const Vector3D_T<F, false> tNear = (minP - org) * invRayDir;
-        const Vector3D_T<F, false> tFar = (maxP - org) * invRayDir;
-        const Vector3D_T<F, false> near = min(tNear, tFar);
-        const Vector3D_T<F, false> far = max(tNear, tFar);
-        F t0 = std::fmax(std::fmax(near.x, near.y), near.z);
-        F t1 = std::fmin(std::fmin(far.x, far.y), far.z);
-        *isFrontHit = t0 >= 0.0f;
-        t0 = std::fmax(t0, distMin);
-        t1 = std::fmin(t1, distMax);
-        if (!(t0 <= t1 && t1 > 0.0f))
-            return INFINITY;
-
-        const F t = *isFrontHit ? t0 : t1;
-        Vector3D_T<F, false> n = -sign(dir) * step(near.yzx(), near) * step(near.zxy(), near);
-        if (!*isFrontHit)
-            n = -n;
-
-        int32_t faceID = static_cast<int32_t>(dot(abs(n), Vector3D_T<F, false>(2, 4, 8)));
-        faceID ^= static_cast<int32_t>(any(n > Vector3D_T<F, false>(0.0f)));
-
-        const int32_t faceDim = tzcnt(faceID & ~0b1) - 1;
-        const int32_t dim0 = (faceDim + 1) % 3;
-        const int32_t dim1 = (faceDim + 2) % 3;
-        const Point3D_T<F> p = org + t * dir;
-        const F min0 = minP[dim0];
-        const F max0 = maxP[dim0];
-        const F min1 = minP[dim1];
-        const F max1 = maxP[dim1];
-        *u = std::fmin(std::fmax((p[dim0] - min0) / (max0 - min0), 0.0f), 1.0f)
-            + static_cast<F>(faceID);
-        *v = std::fmin(std::fmax((p[dim1] - min1) / (max1 - min1), 0.0f), 1.0f);
-
-        return t;
-    }
-
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Point3D_T<F> restoreHitPoint(
-        F u, const F v, Vector3D_T<F, true>* const normal) const {
-        const auto faceID = static_cast<uint32_t>(u);
-        u = std::fmod(u, 1.0f);
-
-        const int32_t faceDim = tzcnt(faceID & ~0b1) - 1;
-        const bool isPosSide = faceID & 0b1;
-        *normal = Vector3D_T<F, true>(0.0f);
-        (*normal)[faceDim] = isPosSide ? 1 : -1;
-
-        const int32_t dim0 = (faceDim + 1) % 3;
-        const int32_t dim1 = (faceDim + 2) % 3;
-        Point3D_T<F> p;
-        p[faceDim] = isPosSide ? maxP[faceDim] : minP[faceDim];
-        p[dim0] = lerp(minP[dim0], maxP[dim0], u);
-        p[dim1] = lerp(minP[dim1], maxP[dim1], v);
-
-        return p;
-    }
-
-    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector3D_T<F, true> restoreNormal(const F u, const F v) const {
-        const auto faceID = static_cast<uint32_t>(u);
-        const int32_t faceDim = tzcnt(faceID & ~0b1) - 1;
-        const bool isPosSide = faceID & 0b1;
-        auto normal = Vector3D_T<F, true>(0.0f);
-        normal[faceDim] = isPosSide ? 1 : -1;
-        return normal;
-    }
-};
-
-template <std::floating_point F>
-CUDA_COMMON_FUNCTION CUDA_INLINE constexpr AABB_T<F> operator*(
-    const Matrix4x4_T<F> &mat, const AABB_T<F> &aabb) {
-    AABB_T<F> ret;
-    ret
-        .unify(mat * Point3D_T<F>(aabb.minP.x, aabb.minP.y, aabb.minP.z))
-        .unify(mat * Point3D_T<F>(aabb.maxP.x, aabb.minP.y, aabb.minP.z))
-        .unify(mat * Point3D_T<F>(aabb.minP.x, aabb.maxP.y, aabb.minP.z))
-        .unify(mat * Point3D_T<F>(aabb.maxP.x, aabb.maxP.y, aabb.minP.z))
-        .unify(mat * Point3D_T<F>(aabb.minP.x, aabb.minP.y, aabb.maxP.z))
-        .unify(mat * Point3D_T<F>(aabb.maxP.x, aabb.minP.y, aabb.maxP.z))
-        .unify(mat * Point3D_T<F>(aabb.minP.x, aabb.maxP.y, aabb.maxP.z))
-        .unify(mat * Point3D_T<F>(aabb.maxP.x, aabb.maxP.y, aabb.maxP.z));
-    return ret;
-}
-
-template <std::floating_point F>
-CUDA_COMMON_FUNCTION CUDA_INLINE constexpr AABB_T<F> unify(
-    const AABB_T<F> &bb, const Point3D_T<F> &p) {
-    AABB_T<F> ret = bb;
-    ret.unify(p);
-    return ret;
-}
-template <std::floating_point F>
-CUDA_COMMON_FUNCTION CUDA_INLINE constexpr AABB_T<F> unify(
-    const AABB_T<F> &bbA, const AABB_T<F> &bbB) {
-    AABB_T<F> ret = bbA;
-    ret.unify(bbB);
-    return ret;
-}
-
-template <std::floating_point F>
-CUDA_COMMON_FUNCTION CUDA_INLINE constexpr AABB_T<F> intersect(
-    const AABB_T<F> &bbA, const AABB_T<F> &bbB) {
-    AABB_T<F> ret = bbA;
-    ret.intersect(bbB);
-    return ret;
-}
-
-
-
-
-
 template <typename RealType>
 struct CompensatedSum_T {
     RealType result;
@@ -5269,13 +5298,13 @@ using Vector3D = Vector3D_T<float, false>;
 using Normal3D = Vector3D_T<float, true>;
 using Point3D = Point3D_T<float>;
 using Vector4D = Vector4D_T<float>;
+using AABB = AABB_T<float>;
 using Matrix2x2 = Matrix2x2_T<float>;
 using Matrix3x2 = Matrix3x2_T<float>;
 using Matrix3x3 = Matrix3x3_T<float>;
 using Matrix4x4 = Matrix4x4_T<float>;
 using Quaternion = Quaternion_T<float>;
 using RGB = RGB_T<float>;
-using AABB = AABB_T<float>;
 using FloatSum = CompensatedSum_T<float>;
 
 

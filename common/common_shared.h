@@ -937,6 +937,13 @@ namespace shared {
             1;
         uint8_t __padding[__paddingSize];
 
+        CUDA_COMMON_FUNCTION CUDA_INLINE AABB getAabb() const {
+            AABB ret;
+            ret.minP = quantBoxMinP;
+            ret.maxP = quantBoxMinP + 255 * quantBoxSizeCoeff;
+            return ret;
+        }
+
         CUDA_COMMON_FUNCTION CUDA_INLINE bool getChildIsValid(uint32_t slot) const {
             const Child child = children[slot];
             return child.minX != 255 || child.maxX != 0;
@@ -976,5 +983,25 @@ namespace shared {
         uint32_t numIntNodes;
         uint32_t numPrimRefs;
         uint32_t numTriStorages;
+    };
+
+    struct InstanceReference {
+        Matrix3x3 rotToObj;
+        Vector3D transToObj;
+        Matrix3x3 rotFromObj;
+        Vector3D transFromObj;
+        uintptr_t bvhAddress;
+        uint32_t nodeIndex;
+        uint32_t instanceIndex;
+        uint32_t userData;
+        uint32_t __padding[3];
+    };
+
+    template <uint32_t arity>
+    struct InstanceBVH_T {
+        const InternalNode_T<arity>* intNodes;
+        const InstanceReference* instRefs;
+        uint32_t numIntNodes;
+        uint32_t numInstRefs;
     };
 }

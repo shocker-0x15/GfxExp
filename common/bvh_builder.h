@@ -9,6 +9,8 @@ struct GeometryBVH {
     std::vector<shared::InternalNode_T<arity>> intNodes;
     std::vector<shared::PrimitiveReference> primRefs;
     std::vector<shared::TriangleStorage> triStorages;
+    uint32_t numGeoms;
+    uint32_t totalNumPrims;
 };
 
 struct Geometry {
@@ -33,5 +35,30 @@ template <uint32_t arity>
 void buildGeometryBVH(
     const Geometry* const geoms, const uint32_t numGeoms,
     const GeometryBVHBuildConfig &config, GeometryBVH<arity>* const bvh);
+
+
+
+template <uint32_t arity>
+struct InstanceBVH {
+    std::vector<shared::InternalNode_T<arity>> intNodes;
+    std::vector<shared::InstanceReference> instRefs;
+    uint32_t numInsts;
+};
+
+struct Instance {
+    Matrix3x3 rotFromObj;
+    Vector3D transFromObj;
+    uintptr_t bvhAddress;
+    uint32_t userData;
+};
+
+struct InstanceBVHBuildConfig {
+    float rebraidingBudget;
+};
+
+template <uint32_t arity>
+void buildInstanceBVH(
+    const Instance* const insts, const uint32_t numInsts,
+    const InstanceBVHBuildConfig &config, InstanceBVH<arity>* const bvh);
 
 }

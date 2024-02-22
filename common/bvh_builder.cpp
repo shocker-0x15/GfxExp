@@ -4,7 +4,8 @@
 namespace bvh {
 
 enum class PrimitiveType {
-    Triangle = 0,
+    Geometric = 0,
+    Instance,
 };
 
 
@@ -13,7 +14,7 @@ template <PrimitiveType primType>
 struct BuilderInput;
 
 template <>
-struct BuilderInput<PrimitiveType::Triangle> {
+struct BuilderInput<PrimitiveType::Geometric> {
     const Geometry* geometries;
     uint32_t numGeometries;
     float splittingBudget;
@@ -23,10 +24,27 @@ struct BuilderInput<PrimitiveType::Triangle> {
     uint32_t maxNumPrimsPerLeaf : 16;
 };
 
+template <>
+struct BuilderInput<PrimitiveType::Instance> {
+    const Instance* instances;
+    uint32_t numInstances;
+    float rebraidingBudget;
+    uint32_t minNumPrimsPerLeaf : 16;
+    uint32_t maxNumPrimsPerLeaf : 16;
+};
+
 
 
 template <uint32_t arity, PrimitiveType primType>
-using BVH = GeometryBVH<arity>;
+struct BVHAlias;
+template <uint32_t arity>
+struct BVHAlias<arity, PrimitiveType::Geometric> {
+    using type = GeometryBVH<arity>;
+};
+template <uint32_t arity>
+struct BVHAlias<arity, PrimitiveType::Instance> {
+    using type = InstanceBVH<arity>;
+};
 
 
 
@@ -47,7 +65,13 @@ struct PrimitiveReference {
             uint32_t geomIndex;
             uint32_t primIndex;
         };
+        struct {
+            uint32_t instIndex;
+            uint32_t nodeIndex;
+        };
     };
+
+    PrimitiveReference() : geomIndex(0), primIndex(0) {}
 };
 
 union PrimSplitInfo {
@@ -154,7 +178,8 @@ struct TempInternalNode {
 void findBestObjectSplit(
     const std::span<PrimitiveReference> primRefs, const std::span<PrimSplitInfo> primSplitInfos,
     const uint32_t numPrimRefs, const AABB &centAabb,
-    SplitInfo* const splitInfo) {
+    SplitInfo* const splitInfo)
+{
     AABB binAabbs[numObjBins][3];
     uint32_t binPrimCounts[numObjBins][3];
 
@@ -253,7 +278,8 @@ void findBestObjectSplit(
 void findBestSpatialSplit(
     const std::span<PrimitiveReference> primRefs,
     const uint32_t numPrims, const AABB &geomAabb,
-    SplitInfo* const splitInfo) {
+    SplitInfo* const splitInfo)
+{
     AABB binAabbs[numSpaBins][3];
     uint32_t binPrimEntryCounts[numSpaBins][3];
     uint32_t binPrimExitCounts[numSpaBins][3];
@@ -278,7 +304,7 @@ void findBestSpatialSplit(
         for (int32_t dim = 0; dim < 3; ++dim) {
             const uint32_t entryBinIdx = entryBinIdx3D[dim];
             const uint32_t exitBinIdx = exitBinIdx3D[dim];
-            for (int32_t binIdx = entryBinIdx; binIdx <= exitBinIdx; ++binIdx)
+            for (int32_t binIdx = entryBinIdx; binIdx <= static_cast<int32_t>(exitBinIdx); ++binIdx)
                 binAabbs[binIdx][dim].unify(primRef.box);
             ++binPrimEntryCounts[entryBinIdx][dim];
             ++binPrimExitCounts[exitBinIdx][dim];
@@ -359,7 +385,8 @@ void performPartition(
     const SplitTask &splitTask, const std::function<bool(uint32_t)> &pred,
     const uint32_t minNumPrimsPerLeaf,
     const uint32_t leftPrimCount, const uint32_t rightPrimCount,
-    SplitTask* const leftTask, SplitTask* const rightTask) {
+    SplitTask* const leftTask, SplitTask* const rightTask)
+{
     *leftTask = {};
     *rightTask = {};
 
@@ -425,7 +452,8 @@ void performPartition(
 
 void performObjectSplit(
     const SplitTask &splitTask, const SplitInfo &splitInfo, const uint32_t minNumPrimsPerLeaf,
-    SplitTask* const leftTask, SplitTask* const rightTask) {
+    SplitTask* const leftTask, SplitTask* const rightTask)
+{
     const uint32_t splitDim = splitInfo.dim;
     const auto pred = [&splitTask, &splitInfo, splitDim]
     (uint32_t idx) {
@@ -443,7 +471,8 @@ void performObjectSplit(
 void splitTriangle(
     Point3D pA, Point3D pB, Point3D pC,
     const float splitPlane, const uint32_t splitAxis,
-    AABB* const bbA, AABB* const bbB) {
+    AABB* const bbA, AABB* const bbB)
+{
     uint32_t mask = (((pC[splitAxis] >= splitPlane) << 2) |
                      ((pB[splitAxis] >= splitPlane) << 1) |
                      ((pA[splitAxis] >= splitPlane) << 0));
@@ -473,9 +502,10 @@ void splitTriangle(
 }
 
 void performSpatialSplit(
-    const BuilderInput<PrimitiveType::Triangle> &buildInput,
+    const BuilderInput<PrimitiveType::Geometric> &buildInput,
     const SplitTask &splitTask, const SplitInfo &splitInfo,
-    SplitTask* const leftTask, SplitTask* const rightTask) {
+    SplitTask* const leftTask, SplitTask* const rightTask)
+{
     const uint32_t splitDim = splitInfo.dim;
     const uint32_t splitPlaneIdx = splitInfo.planeIndex;
     const float binCoeff = (splitTask.geomAabb.maxP[splitDim] - splitTask.geomAabb.minP[splitDim]) / numSpaBins;
@@ -556,48 +586,64 @@ void performSpatialSplit(
 template <uint32_t arity, PrimitiveType primType>
 static void buildBVH(
     const BuilderInput<primType> &buildInput,
-    BVH<arity, primType>* const bvh)
+    typename BVHAlias<arity, primType>::type* const bvh)
 {
-    uint32_t numGlobalPrimitives = 0;
-    std::vector<uint32_t> globalPrimOffsets;
-    if constexpr (primType == PrimitiveType::Triangle) {
-        globalPrimOffsets.resize(buildInput.numGeometries);
+    uint32_t numInputPrimitives = 0;
+    std::vector<uint32_t> inputPrimOffsets;
+    if constexpr (primType == PrimitiveType::Geometric) {
+        inputPrimOffsets.resize(buildInput.numGeometries);
         for (uint32_t geomIdx = 0; geomIdx < buildInput.numGeometries; ++geomIdx) {
             const Geometry &geom = buildInput.geometries[geomIdx];
-            globalPrimOffsets[geomIdx] = numGlobalPrimitives;
-            numGlobalPrimitives += geom.numTriangles;
+            inputPrimOffsets[geomIdx] = numInputPrimitives;
+            numInputPrimitives += geom.numTriangles;
         }
     }
-    else {
-        (void)globalPrimOffsets;
+    else /*if constexpr (primType == PrimitiveType::Instance)*/ {
+        (void)inputPrimOffsets;
+        numInputPrimitives = buildInput.numInstances;
     }
 
-    const auto extractGeomAndPrimIndex = [&globalPrimOffsets]
-    (const uint32_t globalPrimIdx,
+    const auto extractGeomAndPrimIndex = [&inputPrimOffsets]
+    (const uint32_t inputPrimIdx,
      uint32_t* const geomIdx, uint32_t* const primIdx) {
-        const uint32_t numGeoms = static_cast<uint32_t>(globalPrimOffsets.size());
+        const uint32_t numGeoms = static_cast<uint32_t>(inputPrimOffsets.size());
         *geomIdx = 0;
         for (int d = nextPowerOf2(numGeoms) >> 1; d >= 1; d >>= 1) {
             if (*geomIdx + d >= numGeoms)
                 continue;
-            if (globalPrimOffsets[*geomIdx + d] <= globalPrimIdx)
+            if (inputPrimOffsets[*geomIdx + d] <= inputPrimIdx)
                 *geomIdx += d;
         }
-        *primIdx = globalPrimIdx - globalPrimOffsets[*geomIdx];
+        *primIdx = inputPrimIdx - inputPrimOffsets[*geomIdx];
     };
 
-    const bool allowPrimRefIncrease = buildInput.splittingBudget > 0.0f;
-    const uint32_t numGlobalPrimsAllocated = std::max(
-        numGlobalPrimitives,
-        static_cast<uint32_t>((1.0f + buildInput.splittingBudget) * numGlobalPrimitives));
-    std::vector<PrimitiveReference> primRefsMem(numGlobalPrimsAllocated);
-    std::vector<PrimSplitInfo> primSplitInfosMem(numGlobalPrimsAllocated);
+    uint32_t numPrimRefsAllocated;
+    float intTravCost;
+    float primIsectCost;
+    if constexpr (primType == PrimitiveType::Geometric) {
+        numPrimRefsAllocated = std::max(
+            numInputPrimitives,
+            static_cast<uint32_t>((1.0f + buildInput.splittingBudget) * numInputPrimitives));
+        intTravCost = buildInput.intNodeTravCost;
+        primIsectCost = buildInput.primIntersectCost;
+    }
+    else /*if constexpr (primType == PrimitiveType::Instance)*/ {
+        numPrimRefsAllocated = std::max(
+            numInputPrimitives,
+            static_cast<uint32_t>((1.0f + buildInput.rebraidingBudget) * numInputPrimitives));
+        intTravCost = 1.0f;
+        primIsectCost = 100.0f;
+    }
+
+    // EN: Initialize primitive references.
+    std::vector<PrimitiveReference> primRefsMem(numPrimRefsAllocated);
+    std::vector<PrimSplitInfo> primSplitInfosMem(numPrimRefsAllocated);
     std::span<PrimitiveReference> primRefs = primRefsMem;
     std::span<PrimSplitInfo> primSplitInfos = primSplitInfosMem;
-    if constexpr (primType == PrimitiveType::Triangle) {
-        for (uint32_t globalPrimIdx = 0; globalPrimIdx < numGlobalPrimitives; ++globalPrimIdx) {
+    if constexpr (primType == PrimitiveType::Geometric) {
+        for (uint32_t inputPrimIdx = 0; inputPrimIdx < numInputPrimitives; ++inputPrimIdx) {
             uint32_t geomIdx, primIdx;
-            extractGeomAndPrimIndex(globalPrimIdx, &geomIdx, &primIdx);
+            extractGeomAndPrimIndex(inputPrimIdx, &geomIdx, &primIdx);
             const Geometry &geom = buildInput.geometries[geomIdx];
             const auto tri = reinterpret_cast<const uint32_t*>(
                 geom.triangles + geom.triangleStride * primIdx);
@@ -613,47 +659,60 @@ static void buildBVH(
             primRef.box.unify(pA).unify(pB).unify(pC);
             primRef.geomIndex = geomIdx;
             primRef.primIndex = primIdx;
-            primRefs[globalPrimIdx] = primRef;
+            primRefs[inputPrimIdx] = primRef;
         }
     }
-    else {
-        Assert_NotImplemented();
+    else /*if constexpr (primType == PrimitiveType::Instance)*/ {
+        (void)extractGeomAndPrimIndex;
+        for (uint32_t instIdx = 0; instIdx < numInputPrimitives; ++instIdx) {
+            const Instance &inst = buildInput.instances[instIdx];
+            auto &blas = reinterpret_cast<const GeometryBVH<arity> &>(inst.bvhAddress);
+            const shared::InternalNode_T<arity> &rootNode = blas.intNodes[0];
+
+            PrimitiveReference primRef = {};
+            primRef.box = inst.rotFromObj * rootNode.getAabb() + inst.transFromObj;
+            primRef.instIndex = instIdx;
+            primRef.nodeIndex = 0;
+            primRefs[instIdx] = primRef;
+        }
     }
 
-    const float intTravCost = buildInput.intNodeTravCost;
-    const float primIsectCost = buildInput.primIntersectCost;
-
-    std::vector<TempInternalNode<arity>> tempIntNodes;
-
     std::vector<SplitTask> stack;
+
+    // EN: Set up the root task to initialize the top-down build.
     {
         SplitTask rootTask = {};
         rootTask.geomAabb = AABB();
         rootTask.centAabb = AABB();
-        for (uint32_t globalPrimIdx = 0; globalPrimIdx < numGlobalPrimitives; ++globalPrimIdx) {
+        for (uint32_t globalPrimIdx = 0; globalPrimIdx < numInputPrimitives; ++globalPrimIdx) {
             const PrimitiveReference &primRef = primRefs[globalPrimIdx];
             rootTask.geomAabb.unify(primRef.box);
             rootTask.centAabb.unify(primRef.box.getCenter());
         }
         rootTask.primRefs = primRefs;
         rootTask.primSplitInfos = primSplitInfos;
-        rootTask.numActualElems = numGlobalPrimitives;
+        rootTask.numActualElems = numInputPrimitives;
         rootTask.parentIndex = UINT32_MAX;
         rootTask.slotInParent = 0;
-        rootTask.isSplittable = numGlobalPrimitives > 1;
+        rootTask.isSplittable = numInputPrimitives > 1;
         stack.push_back(rootTask);
     }
 
+    const bool allowPrimRefIncrease = numPrimRefsAllocated > numInputPrimitives;
     const float rootSA = stack.back().geomAabb.calcHalfSurfaceArea();
+    std::vector<TempInternalNode<arity>> tempIntNodes;
 
+    // EN: Build a temporary BVH using the top-down approach.
     while (!stack.empty()) {
         const SplitTask task = stack.back();
         stack.pop_back();
 
+        // EN: Try to split the current segment until we get the full arity.
         SplitTask children[arity];
         children[0] = task;
         uint32_t numChildren = 1;
         while (numChildren < arity) {
+            // EN: Choose a child with the maximum surface area to split.
             float maxArea = -INFINITY;
             uint32_t slotToSplit = UINT32_MAX;
             for (uint32_t slot = 0; slot < numChildren; ++slot) {
@@ -671,29 +730,31 @@ static void buildBVH(
 
             SplitTask taskToSplit = children[slotToSplit];
 
-            const uint32_t numPrimRefs = taskToSplit.numActualElems;
+            const uint32_t numPrimRefsInSubSeg = taskToSplit.numActualElems;
             const float geomSA = taskToSplit.geomAabb.calcHalfSurfaceArea();
-            const float leafCost = geomSA * numPrimRefs * primIsectCost;
+            const float leafCost = geomSA * numPrimRefsInSubSeg * primIsectCost;
 
+            // EN: Evaluate an object split cost.
             SplitInfo splitInfo;
             findBestObjectSplit(
                 taskToSplit.primRefs, taskToSplit.primSplitInfos,
-                numPrimRefs, taskToSplit.centAabb,
+                numPrimRefsInSubSeg, taskToSplit.centAabb,
                 &splitInfo);
             float splitCost = geomSA * intTravCost + splitInfo.cost * primIsectCost;
             const bool objSplitSuccess = !std::isinf(splitInfo.cost);
 
-            if constexpr (primType == PrimitiveType::Triangle) {
+            if constexpr (primType == PrimitiveType::Geometric) {
                 if (allowPrimRefIncrease && objSplitSuccess) {
                     const AABB overlappedAabb = intersect(splitInfo.leftAabb, splitInfo.rightAabb);
                     const float overlappedSA = overlappedAabb.isValid() ?
                         overlappedAabb.calcHalfSurfaceArea() : 0.0f;
                     constexpr float splittingThreshold = 1e-5f;
                     if (overlappedSA / rootSA > splittingThreshold) {
+                        // EN: Evaluate a spatial split cost.
                         SplitInfo spaSplitInfo;
                         findBestSpatialSplit(
                             taskToSplit.primRefs,
-                            numPrimRefs, taskToSplit.geomAabb,
+                            numPrimRefsInSubSeg, taskToSplit.geomAabb,
                             &spaSplitInfo);
                         const float spaSplitCost = geomSA * intTravCost + spaSplitInfo.cost * primIsectCost;
                         if (spaSplitCost < splitCost) {
@@ -703,26 +764,28 @@ static void buildBVH(
                     }
                 }
             }
-            else {
+            else /*if constexpr (primType == PrimitiveType::Instance)*/ {
                 Assert_NotImplemented();
             }
 
+            // EN: When the leaf cost is less than the split cost, mark this sub-segment as non-splittable.
             if (leafCost < splitCost &&
-                numPrimRefs <= buildInput.maxNumPrimsPerLeaf) {
+                numPrimRefsInSubSeg <= buildInput.maxNumPrimsPerLeaf) {
                 children[slotToSplit].isSplittable = false;
                 continue;
             }
 
+            // EN: Perform actual splitting on the current sub-segment based on the best split we found.
             SplitTask leftTask, rightTask;
             if (objSplitSuccess) {
                 if (splitInfo.isSpecialSplit) {
-                    if constexpr (primType == PrimitiveType::Triangle) {
+                    if constexpr (primType == PrimitiveType::Geometric) {
                         performSpatialSplit(
                             buildInput,
                             taskToSplit, splitInfo,
                             &leftTask, &rightTask);
                     }
-                    else {
+                    else /*if constexpr (primType == PrimitiveType::Instance)*/ {
                         Assert_NotImplemented();
                     }
                 }
@@ -733,12 +796,13 @@ static void buildBVH(
                 }
             }
             else {
-                const auto pred = [&numPrimRefs]
+                // EN: When splitting failed, fall back to a simple equal split.
+                const auto pred = [&numPrimRefsInSubSeg]
                 (uint32_t idx) {
-                    return idx < numPrimRefs;
+                    return idx < numPrimRefsInSubSeg;
                 };
-                const uint32_t leftPrimCount = numPrimRefs / 2;
-                const uint32_t rightPrimCount = numPrimRefs - leftPrimCount;
+                const uint32_t leftPrimCount = numPrimRefsInSubSeg / 2;
+                const uint32_t rightPrimCount = numPrimRefsInSubSeg - leftPrimCount;
                 performPartition(
                     taskToSplit, pred,
                     buildInput.minNumPrimsPerLeaf,
@@ -751,6 +815,7 @@ static void buildBVH(
             ++numChildren;
         }
 
+        // EN: When the current segment ended with no splitting, make a leaf node.
         if (numChildren == 1 && task.parentIndex != UINT32_MAX) {
             TempInternalNode<arity> &parentNode = tempIntNodes[task.parentIndex];
             typename TempInternalNode<arity>::Child &selfSlot = parentNode.children[task.slotInParent];
@@ -766,16 +831,17 @@ static void buildBVH(
             return a.numActualElems > b.numActualElems;
         });
 
+        // EN: Allocate an internal node and set the index to the parent.
         const uint32_t intNodeIdx = static_cast<uint32_t>(tempIntNodes.size());
         if (task.parentIndex != UINT32_MAX) {
             TempInternalNode<arity> &parentNode = tempIntNodes[task.parentIndex];
             typename TempInternalNode<arity>::Child &selfSlot = parentNode.children[task.slotInParent];
             selfSlot.index = intNodeIdx;
         }
-
         tempIntNodes.resize(tempIntNodes.size() + 1);
-        TempInternalNode<arity> &intNode = tempIntNodes[intNodeIdx];
 
+        // EN: Make the internal node.
+        TempInternalNode<arity> &intNode = tempIntNodes[intNodeIdx];
         for (uint32_t slot = 0; slot < numChildren; ++slot) {
             SplitTask &childTask = children[slot];
             typename TempInternalNode<arity>::Child &child = intNode.children[slot];
@@ -804,34 +870,41 @@ static void buildBVH(
 
     // EN: Finished to build the temporary BVH, now we convert it to the final BVH.
 
-    // EN: Create triangle storages.
-    std::vector<shared::TriangleStorage> triStorages(numGlobalPrimitives);
-    for (uint32_t globalPrimIdx = 0; globalPrimIdx < numGlobalPrimitives; ++globalPrimIdx) {
-        uint32_t geomIdx, primIdx;
-        extractGeomAndPrimIndex(globalPrimIdx, &geomIdx, &primIdx);
-        const Geometry &geom = buildInput.geometries[geomIdx];
-        const auto tri = reinterpret_cast<const uint32_t*>(
-            geom.triangles + geom.triangleStride * primIdx);
+    std::vector<shared::TriangleStorage> triStorages;
+    if constexpr (primType == PrimitiveType::Geometric) {
+        // EN: Create triangle storages.
+        triStorages.resize(numInputPrimitives);
+        for (uint32_t inputPrimIdx = 0; inputPrimIdx < numInputPrimitives; ++inputPrimIdx) {
+            uint32_t geomIdx, primIdx;
+            extractGeomAndPrimIndex(inputPrimIdx, &geomIdx, &primIdx);
+            const Geometry &geom = buildInput.geometries[geomIdx];
+            const auto tri = reinterpret_cast<const uint32_t*>(
+                geom.triangles + geom.triangleStride * primIdx);
 
-        const Point3D pA = geom.preTransform *
-            *reinterpret_cast<const Point3D*>(geom.vertices + geom.vertexStride * tri[0]);
-        const Point3D pB = geom.preTransform *
-            *reinterpret_cast<const Point3D*>(geom.vertices + geom.vertexStride * tri[1]);
-        const Point3D pC = geom.preTransform *
-            *reinterpret_cast<const Point3D*>(geom.vertices + geom.vertexStride * tri[2]);
+            const Point3D pA = geom.preTransform *
+                *reinterpret_cast<const Point3D*>(geom.vertices + geom.vertexStride * tri[0]);
+            const Point3D pB = geom.preTransform *
+                *reinterpret_cast<const Point3D*>(geom.vertices + geom.vertexStride * tri[1]);
+            const Point3D pC = geom.preTransform *
+                *reinterpret_cast<const Point3D*>(geom.vertices + geom.vertexStride * tri[2]);
 
-        shared::TriangleStorage &triStorage = triStorages[globalPrimIdx];
-        triStorage = {};
-        triStorage.pA = pA;
-        triStorage.pB = pB;
-        triStorage.pC = pC;
-        triStorage.geomIndex = geomIdx;
-        triStorage.primIndex = primIdx;
+            shared::TriangleStorage &triStorage = triStorages[inputPrimIdx];
+            triStorage = {};
+            triStorage.pA = pA;
+            triStorage.pB = pB;
+            triStorage.pC = pC;
+            triStorage.geomIndex = geomIdx;
+            triStorage.primIndex = primIdx;
+        }
+    }
+    else /*if constexpr (primType == PrimitiveType::Instance)*/ {
+        (void)triStorages;
+        Assert_NotImplemented();
     }
 
     const uint32_t numIntNodes = static_cast<uint32_t>(tempIntNodes.size());
 
-    // Compute mapping from the source tree to the destination tree.
+    // EN: Compute mapping from the temporary BVH to the final BVH.
     std::vector<uint32_t> dstIntNodeIndices(numIntNodes);
     std::vector<uint32_t> leafChildBlockIndices(numIntNodes);
     dstIntNodeIndices[0] = 0;
@@ -857,13 +930,13 @@ static void buildBVH(
     }
 
 #if defined(_DEBUG)
-    std::vector<std::vector<uint32_t>> triToPrimRefMap(numGlobalPrimitives);
+    std::vector<std::vector<uint32_t>> primToPrimRefMap(numInputPrimitives);
 #endif
 
     // EN: Create internal nodes and primitive references.
-    const uint32_t numPrimRefs = leafChildBlockIdx;
+    const uint32_t numFinalPrimRefs = leafChildBlockIdx;
     std::vector<shared::InternalNode_T<arity>> dstIntNodes(numIntNodes);
-    std::vector<shared::PrimitiveReference> dstPrimRefs(numPrimRefs);
+    std::vector<shared::PrimitiveReference> dstPrimRefs(numFinalPrimRefs);
     for (uint32_t srcIntNodeIdx = 0; srcIntNodeIdx < numIntNodes; ++srcIntNodeIdx) {
         const uint32_t dstIntNodeIdx = dstIntNodeIndices[srcIntNodeIdx];
         const TempInternalNode<arity> &srcIntNode = tempIntNodes[srcIntNodeIdx];
@@ -884,11 +957,11 @@ static void buildBVH(
                 for (uint32_t primRefIdx = 0; primRefIdx < srcChild.numLeaves; ++primRefIdx) {
                     const PrimitiveReference &srcPrimRef = primRefs[srcChild.index + primRefIdx];
                     shared::PrimitiveReference &dstPrimRef = dstPrimRefs[primRefOffset + primRefIdx];
-                    dstPrimRef.storageIndex = globalPrimOffsets[srcPrimRef.geomIndex] + srcPrimRef.primIndex;
+                    dstPrimRef.storageIndex = inputPrimOffsets[srcPrimRef.geomIndex] + srcPrimRef.primIndex;
                     dstPrimRef.isLeafEnd = primRefIdx == srcChild.numLeaves - 1;
 
 #if defined(_DEBUG)
-                    triToPrimRefMap[dstPrimRef.storageIndex].push_back(srcChild.index + primRefIdx);
+                    primToPrimRefMap[dstPrimRef.storageIndex].push_back(srcChild.index + primRefIdx);
 #endif
                 }
                 primRefOffset += srcChild.numLeaves;
@@ -937,33 +1010,46 @@ static void buildBVH(
 
     // Debug Visualization
 #if ENABLE_VDB && defined(_DEBUG)
-    // Triangle to Primitive References
     if (false) {
-        for (uint32_t globalPrimIdx = 0; globalPrimIdx < numGlobalPrimitives; ++globalPrimIdx) {
-            const std::vector<uint32_t> &refs = triToPrimRefMap[globalPrimIdx];
+        if constexpr (primType == PrimitiveType::Geometric) {
+            // Triangle to Primitive References
+            for (uint32_t inputPrimIdx = 0; inputPrimIdx < numInputPrimitives; ++inputPrimIdx) {
+                const std::vector<uint32_t> &refs = primToPrimRefMap[inputPrimIdx];
 
-            vdb_frame();
-            drawAxes(10.0f);
+                vdb_frame();
+                drawAxes(10.0f);
 
-            const shared::TriangleStorage &triStorage = triStorages[globalPrimIdx];
-            setColor(1.0f, 1.0f, 1.0f);
-            drawWiredTriangle(triStorage.pA, triStorage.pB, triStorage.pC);
+                const shared::TriangleStorage &triStorage = triStorages[inputPrimIdx];
+                setColor(1.0f, 1.0f, 1.0f);
+                drawWiredTriangle(triStorage.pA, triStorage.pB, triStorage.pC);
 
-            for (uint32_t i = 0; i < refs.size(); ++i) {
-                const PrimitiveReference &primRef = primRefs[refs[i]];
-                setColor(0.1f, 0.1f, 0.1f);
-                drawAabb(primRef.box);
-            }
-            if (refs.size() > 1)
+                for (uint32_t i = 0; i < refs.size(); ++i) {
+                    const PrimitiveReference &primRef = primRefs[refs[i]];
+                    setColor(0.1f, 0.1f, 0.1f);
+                    drawAabb(primRef.box);
+                }
+                if (refs.size() > 1)
+                    printf("");
                 printf("");
-            printf("");
+            }
+        }
+        else /*if constexpr (primType == PrimitiveType::Instance)*/ {
+
         }
     }
 #endif
 
     bvh->intNodes = std::move(dstIntNodes);
-    bvh->primRefs = std::move(dstPrimRefs);
-    bvh->triStorages = std::move(triStorages);
+    if constexpr (primType == PrimitiveType::Geometric) {
+        bvh->primRefs = std::move(dstPrimRefs);
+        bvh->triStorages = std::move(triStorages);
+        bvh->numGeoms = buildInput.numGeometries;
+        bvh->totalNumPrims = numInputPrimitives;
+    } 
+    else /*if constexpr (primType == PrimitiveType::Instance)*/ {
+        Assert_NotImplemented();
+        bvh->numInsts = numInputPrimitives;
+    }
 }
 
 
@@ -971,8 +1057,9 @@ static void buildBVH(
 template <uint32_t arity>
 void buildGeometryBVH(
     const Geometry* const geoms, const uint32_t numGeoms,
-    const GeometryBVHBuildConfig &config, GeometryBVH<arity>* const bvh) {
-    BuilderInput<PrimitiveType::Triangle> input = {};
+    const GeometryBVHBuildConfig &config, GeometryBVH<arity>* const bvh)
+{
+    BuilderInput<PrimitiveType::Geometric> input = {};
     input.geometries = geoms;
     input.numGeometries = numGeoms;
     input.splittingBudget = config.splittingBudget;
@@ -980,7 +1067,7 @@ void buildGeometryBVH(
     input.primIntersectCost = config.primIntersectCost;
     input.minNumPrimsPerLeaf = config.minNumPrimsPerLeaf;
     input.maxNumPrimsPerLeaf = config.maxNumPrimsPerLeaf;
-    buildBVH(input, bvh);
+    buildBVH<arity, PrimitiveType::Geometric>(input, bvh);
 }
 
 template void buildGeometryBVH<2>(
@@ -992,5 +1079,31 @@ template void buildGeometryBVH<4>(
 template void buildGeometryBVH<8>(
     const Geometry* const geoms, const uint32_t numGeoms,
     const GeometryBVHBuildConfig &config, GeometryBVH<8>* const bvh);
+
+
+
+template <uint32_t arity>
+void buildInstanceBVH(
+    const Instance* const insts, const uint32_t numInsts,
+    const InstanceBVHBuildConfig &config, InstanceBVH<arity>* const bvh)
+{
+    BuilderInput<PrimitiveType::Instance> input = {};
+    input.instances = insts;
+    input.numInstances = numInsts;
+    input.rebraidingBudget = config.rebraidingBudget;
+    input.minNumPrimsPerLeaf = 1;
+    input.maxNumPrimsPerLeaf = 1;
+    buildBVH<arity, PrimitiveType::Instance>(input, bvh);
+}
+
+template void buildInstanceBVH<2>(
+    const Instance* const insts, const uint32_t numInsts,
+    const InstanceBVHBuildConfig &config, InstanceBVH<2>* const bvh);
+template void buildInstanceBVH<4>(
+    const Instance* const insts, const uint32_t numInsts,
+    const InstanceBVHBuildConfig &config, InstanceBVH<4>* const bvh);
+template void buildInstanceBVH<8>(
+    const Instance* const insts, const uint32_t numInsts,
+    const InstanceBVHBuildConfig &config, InstanceBVH<8>* const bvh);
 
 }
