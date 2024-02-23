@@ -149,7 +149,7 @@ struct SplitTask {
     std::span<PrimSplitInfo> primSplitInfos;
     uint32_t numActualElems;
     uint32_t parentIndex;
-    uint32_t slotInParent;
+    uint32_t slotInParent : 4;
     uint32_t isSplittable : 1;
 };
 
@@ -161,7 +161,7 @@ struct SplitInfo {
     float cost;
     uint32_t dim : 2;
     uint32_t planeIndex : planeIdxBitWidth;
-    uint32_t isSpecialSplit;
+    uint32_t isSpecialSplit : 1;
 };
 
 template <uint32_t arity>
@@ -796,13 +796,13 @@ static void buildBVH(
                 }
             }
             else {
-                // EN: When splitting failed, fall back to a simple equal split.
-                const auto pred = [&numPrimRefsInSubSeg]
-                (uint32_t idx) {
-                    return idx < numPrimRefsInSubSeg;
-                };
+                // EN: When splitting failed, fall back to simple equal splitting.
                 const uint32_t leftPrimCount = numPrimRefsInSubSeg / 2;
                 const uint32_t rightPrimCount = numPrimRefsInSubSeg - leftPrimCount;
+                const auto pred = [&leftPrimCount]
+                (uint32_t idx) {
+                    return idx < leftPrimCount;
+                };
                 performPartition(
                     taskToSplit, pred,
                     buildInput.minNumPrimsPerLeaf,

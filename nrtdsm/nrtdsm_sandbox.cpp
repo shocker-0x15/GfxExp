@@ -2915,8 +2915,8 @@ static void computeFlattenedNodes(
 void testBvhBuilder() {
     const std::filesystem::path filePath =
         //R"(../data/stanford_bunny_309_faces.obj)";
-        R"(E:/assets/McguireCGArchive/conference/conference.obj)";
-    //R"(E:/assets/McguireCGArchive/breakfast_room/breakfast_room.obj)";
+        //R"(E:/assets/McguireCGArchive/conference/conference.obj)";
+        R"(E:/assets/McguireCGArchive/breakfast_room/breakfast_room.obj)";
     hpprintf("Reading: %s ... ", filePath.string().c_str());
     fflush(stdout);
     Assimp::Importer importer;
