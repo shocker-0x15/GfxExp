@@ -3089,8 +3089,10 @@ void testBvhBuilder() {
         },
     };
 
-    const TestScene &scene = scenes.at("conference");
+    const TestScene &scene = scenes.at("lowpoly_bunny");
     constexpr uint32_t maxNumIntersections = 128;
+    constexpr uint32_t singleCamIdx = 0;
+    constexpr bool visStats = false;
 
     constexpr uint32_t arity = 4;
 
@@ -3295,7 +3297,7 @@ void testBvhBuilder() {
         const float fovY = 45 * pi_v<float> / 180;
 
         for (uint32_t camIdx = 0; camIdx < 30; ++camIdx) {
-            if (camIdx != 0)
+            if (camIdx != singleCamIdx && singleCamIdx != -1)
                 continue;
             const Matrix4x4 camXfm =
                 rotate3DY_4x4<float>(static_cast<float>(camIdx) / 30 * 2 * pi_v<float>) *
@@ -3317,7 +3319,16 @@ void testBvhBuilder() {
                     const shared::HitObject hitObj = bvh::traverse(bvh, rayOrg, rayDir, 0.0f, 1e+10f, &stats);
 
                     RGB color;
-                    if (false) {
+                    if (visStats) {
+                        const float t = static_cast<float>(
+                            stc::min(stats.numAabbTests + stats.numTriTests, maxNumIntersections)) /
+                            maxNumIntersections;
+                        const RGB Red(1, 0, 0);
+                        const RGB Green(0, 1, 0);
+                        const RGB Blue(0, 0, 1);
+                        color = t < 0.5f ? lerp(Blue, Green, 2.0f * t) : lerp(Green, Red, 2.0f * t - 1.0);
+                    }
+                    else {
                         if (hitObj.isHit()) {
                             const bvh::Geometry &geom = bvhGeoms[hitObj.geomIndex];
                             const auto tri = reinterpret_cast<const uint32_t*>(
@@ -3333,15 +3344,6 @@ void testBvhBuilder() {
                             color.g = 0.5f + 0.5f * geomNormal.y;
                             color.b = 0.5f + 0.5f * geomNormal.z;
                         }
-                    }
-                    else {
-                        const float t = static_cast<float>(
-                            stc::min(stats.numAabbTests + stats.numTriTests, maxNumIntersections)) /
-                            maxNumIntersections;
-                        const RGB Red(1, 0, 0);
-                        const RGB Green(0, 1, 0);
-                        const RGB Blue(0, 0, 1);
-                        color = t < 0.5f ? lerp(Blue, Green, 2.0f * t) : lerp(Green, Red, 2.0f * t - 1.0);
                     }
 
                     image[width * ipy + ipx] = float4(color.toNative(), 1.0f);
