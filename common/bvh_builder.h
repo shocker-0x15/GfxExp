@@ -63,9 +63,15 @@ void buildInstanceBVH(
 
 
 
+struct TraversalStatistics {
+    uint32_t numAabbTests;
+    uint32_t numTriTests;
+};
+
 template <uint32_t arity>
 shared::HitObject traverse(
     const GeometryBVH<arity> &bvh,
-    const Point3D &rayOrg, const Vector3D &rayDir, const float distMin, const float distMax);
+    const Point3D &rayOrg, const Vector3D &rayDir, const float distMin, const float distMax,
+    TraversalStatistics* const stats = nullptr);
 
 }

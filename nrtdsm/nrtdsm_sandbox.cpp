@@ -3089,7 +3089,17 @@ void testBvhBuilder() {
         },
     };
 
-    const TestScene &scene = scenes.at("lowpoly_bunny");
+    const TestScene &scene = scenes.at("conference");
+    constexpr uint32_t maxNumIntersections = 128;
+
+    constexpr uint32_t arity = 4;
+
+    bvh::GeometryBVHBuildConfig config = {};
+    config.splittingBudget = 0.3f;
+    config.intNodeTravCost = 1.2f;
+    config.primIntersectCost = 1.0f;
+    config.minNumPrimsPerLeaf = 1;
+    config.maxNumPrimsPerLeaf = 128;
 
     hpprintf("Reading: %s ... ", scene.filePath.string().c_str());
     fflush(stdout);
@@ -3183,15 +3193,6 @@ void testBvhBuilder() {
         }
     }
 
-    constexpr uint32_t arity = 4;
-
-    bvh::GeometryBVHBuildConfig config = {};
-    config.splittingBudget = 0.3f;
-    config.intNodeTravCost = 1.2f;
-    config.primIntersectCost = 1.0f;
-    config.minNumPrimsPerLeaf = 1;
-    config.maxNumPrimsPerLeaf = 128;
-
     bvh::GeometryBVH<arity> bvh;
     bvh::buildGeometryBVH(
         bvhGeoms.data(), static_cast<uint32_t>(bvhGeoms.size()),
@@ -3248,8 +3249,8 @@ void testBvhBuilder() {
                     }
                 }
                 else {
-                    //setColor(0.0f, 0.3f * (entry.depth + 1) / maxDepth, 0.0f);
-                    //drawAabb(intNode.getChildAabb(slot));
+                    setColor(0.0f, 0.3f * (entry.depth + 1) / maxDepth, 0.0f);
+                    drawAabb(intNode.getChildAabb(slot));
                     if (entry.depth < maxDepth) {
                         const uint32_t childIdx = intNode.intNodeChildBaseIndex + intNode.getChildOffset(slot);
                         stack.push_back(StackEntry{ childIdx, entry.depth + 1 });
@@ -3294,7 +3295,7 @@ void testBvhBuilder() {
         const float fovY = 45 * pi_v<float> / 180;
 
         for (uint32_t camIdx = 0; camIdx < 30; ++camIdx) {
-            if (camIdx != 27)
+            if (camIdx != 0)
                 continue;
             const Matrix4x4 camXfm =
                 rotate3DY_4x4<float>(static_cast<float>(camIdx) / 30 * 2 * pi_v<float>) *
@@ -3312,23 +3313,35 @@ void testBvhBuilder() {
                         1);
                     const Point3D rayOrg = camXfm * Point3D(0, 0, 0);
                     const Vector3D rayDir = camXfm * rayDirInLocal;
-                    const shared::HitObject hitObj = bvh::traverse(bvh, rayOrg, rayDir, 0.0f, 1e+10f);
+                    bvh::TraversalStatistics stats;
+                    const shared::HitObject hitObj = bvh::traverse(bvh, rayOrg, rayDir, 0.0f, 1e+10f, &stats);
 
                     RGB color;
-                    if (hitObj.isHit()) {
-                        const bvh::Geometry &geom = bvhGeoms[hitObj.geomIndex];
-                        const auto tri = reinterpret_cast<const uint32_t*>(
-                            geom.triangles + geom.triangleStride * hitObj.primIndex);
-                        const Point3D pA = geom.preTransform *
-                            *reinterpret_cast<const Point3D*>(geom.vertices + geom.vertexStride * tri[0]);
-                        const Point3D pB = geom.preTransform *
-                            *reinterpret_cast<const Point3D*>(geom.vertices + geom.vertexStride * tri[1]);
-                        const Point3D pC = geom.preTransform *
-                            *reinterpret_cast<const Point3D*>(geom.vertices + geom.vertexStride * tri[2]);
-                        const Vector3D geomNormal = normalize(cross(pB - pA, pC - pA));
-                        color.r = 0.5f + 0.5f * geomNormal.x;
-                        color.g = 0.5f + 0.5f * geomNormal.y;
-                        color.b = 0.5f + 0.5f * geomNormal.z;
+                    if (false) {
+                        if (hitObj.isHit()) {
+                            const bvh::Geometry &geom = bvhGeoms[hitObj.geomIndex];
+                            const auto tri = reinterpret_cast<const uint32_t*>(
+                                geom.triangles + geom.triangleStride * hitObj.primIndex);
+                            const Point3D pA = geom.preTransform *
+                                *reinterpret_cast<const Point3D*>(geom.vertices + geom.vertexStride * tri[0]);
+                            const Point3D pB = geom.preTransform *
+                                *reinterpret_cast<const Point3D*>(geom.vertices + geom.vertexStride * tri[1]);
+                            const Point3D pC = geom.preTransform *
+                                *reinterpret_cast<const Point3D*>(geom.vertices + geom.vertexStride * tri[2]);
+                            const Vector3D geomNormal = normalize(cross(pB - pA, pC - pA));
+                            color.r = 0.5f + 0.5f * geomNormal.x;
+                            color.g = 0.5f + 0.5f * geomNormal.y;
+                            color.b = 0.5f + 0.5f * geomNormal.z;
+                        }
+                    }
+                    else {
+                        const float t = static_cast<float>(
+                            stc::min(stats.numAabbTests + stats.numTriTests, maxNumIntersections)) /
+                            maxNumIntersections;
+                        const RGB Red(1, 0, 0);
+                        const RGB Green(0, 1, 0);
+                        const RGB Blue(0, 0, 1);
+                        color = t < 0.5f ? lerp(Blue, Green, 2.0f * t) : lerp(Green, Red, 2.0f * t - 1.0);
                     }
 
                     image[width * ipy + ipx] = float4(color.toNative(), 1.0f);

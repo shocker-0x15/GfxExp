@@ -468,11 +468,15 @@ static void splitTriangle(
     Point3D pA, Point3D pB, Point3D pC,
     const float splitPlane, const uint32_t splitAxis,
     AABB* const bbA, AABB* const bbB) {
-    uint32_t mask = (((pC[splitAxis] >= splitPlane) << 2) |
-                     ((pB[splitAxis] >= splitPlane) << 1) |
-                     ((pA[splitAxis] >= splitPlane) << 0));
-    if (pA[splitAxis] >= splitPlane)
+    uint32_t mask =
+        (((pC[splitAxis] >= splitPlane) << 2) |
+         ((pB[splitAxis] >= splitPlane) << 1) |
+         ((pA[splitAxis] >= splitPlane) << 0));
+    bool lrSwap = false;
+    if (pA[splitAxis] >= splitPlane) {
         mask = ~mask & 0b111;
+        lrSwap = true;
+    }
     if (popcnt(mask) == 1) {
         Point3D temp = pA;
         if (mask == 0b010) {
@@ -483,17 +487,21 @@ static void splitTriangle(
             pA = pC;
             pC = temp;
         }
+        lrSwap ^= true;
     }
 
-    float tAB = (splitPlane - pA[splitAxis]) / (pB[splitAxis] - pA[splitAxis]);
-    Point3D pAB = pA + tAB * (pB - pA);
-    float tAC = (splitPlane - pA[splitAxis]) / (pC[splitAxis] - pA[splitAxis]);
-    Point3D pAC = pA + tAC * (pC - pA);
+    const float tAB = (splitPlane - pA[splitAxis]) / (pB[splitAxis] - pA[splitAxis]);
+    const Point3D pAB = pA + tAB * (pB - pA);
+    const float tAC = (splitPlane - pA[splitAxis]) / (pC[splitAxis] - pA[splitAxis]);
+    const Point3D pAC = pA + tAC * (pC - pA);
 
     AABB aabb;
     aabb.unify(pAB).unify(pAC);
     *bbA = unify(aabb, pA);
     *bbB = unify(aabb, pB).unify(pC);
+
+    if (lrSwap)
+        stc::swap(*bbA, *bbB);
 }
 
 static void performSpatialSplit(
@@ -556,7 +564,14 @@ static void performSpatialSplit(
             ++curNumPrims;
         }
         else {
-            if (entryBinIdx > splitPlaneIdx) {
+            const float center = 0.5f * (primRef.box.minP[splitDim] + primRef.box.maxP[splitDim]);
+            const float fCenterBinIdx =
+                (center - splitTask.geomAabb.minP[splitDim]) / binCoeff;
+            const uint32_t centerBinIdx = std::min(
+                static_cast<uint32_t>(fCenterBinIdx),
+                static_cast<uint32_t>(numSpaBins - 1));
+
+            if (centerBinIdx > splitPlaneIdx) {
                 primSplitInfo.isRight = true;
                 ++rightPrimCount;
             }
@@ -748,7 +763,8 @@ static void buildBVH(
             const bool objSplitSuccess = !std::isinf(splitInfo.cost);
 
             if constexpr (primType == PrimitiveType::Geometric) {
-                if (allowPrimRefIncrease && objSplitSuccess) {
+                if (allowPrimRefIncrease && objSplitSuccess &&
+                    numPrimRefsInSubSeg < taskToSplit.primRefs.size()) {
                     const AABB overlappedAabb = intersect(splitInfo.leftAabb, splitInfo.rightAabb);
                     const float overlappedSA = overlappedAabb.isValid() ?
                         overlappedAabb.calcHalfSurfaceArea() : 0.0f;
@@ -1160,7 +1176,8 @@ static bool testRayVsTriangle(
 template <uint32_t arity>
 inline shared::HitObject __traverse(
     const GeometryBVH<arity> &bvh,
-    const Point3D &rayOrg, const Vector3D &rayDir, const float distMin, const float distMax) {
+    const Point3D &rayOrg, const Vector3D &rayDir, const float distMin, const float distMax,
+    TraversalStatistics* const stats) {
     using namespace shared;
     using InternalNode = InternalNode_T<arity>;
 
@@ -1173,6 +1190,11 @@ inline shared::HitObject __traverse(
     ret.bcA = NAN;
     ret.bcB = NAN;
     ret.bcC = NAN;
+
+    if (stats) {
+        stats->numAabbTests = 0;
+        stats->numTriTests = 0;
+    }
 
     union Entry {
         struct {
@@ -1195,6 +1217,8 @@ inline shared::HitObject __traverse(
         if (curEntry.isLeaf) {
             uint32_t primRefIdx = curEntry.index;
             while (true) {
+                if (stats)
+                    ++stats->numTriTests;
                 const shared::PrimitiveReference primRef = bvh.primRefs[primRefIdx++];
                 const TriangleStorage &triStorage = bvh.triStorages[primRef.storageIndex];
                 float hitDist;
@@ -1230,6 +1254,8 @@ inline shared::HitObject __traverse(
                 break;
             }
 
+            if (stats)
+                ++stats->numAabbTests;
             const AABB &aabb = intNode.getChildAabb(slot);
             float hitDistMin, hitDistMax;
             if (aabb.intersect(rayOrg, rayDir, distMin, ret.dist, &hitDistMin, &hitDistMax)) {
@@ -1263,20 +1289,25 @@ inline shared::HitObject __traverse(
 template <uint32_t arity>
 shared::HitObject traverse(
     const GeometryBVH<arity> &bvh,
-    const Point3D &rayOrg, const Vector3D &rayDir, const float distMin, const float distMax) {
+    const Point3D &rayOrg, const Vector3D &rayDir, const float distMin, const float distMax,
+    TraversalStatistics* const stats) {
     return __traverse(
         bvh,
-        rayOrg, rayDir, distMin, distMax);
+        rayOrg, rayDir, distMin, distMax,
+        stats);
 }
 
 template shared::HitObject traverse<2>(
     const GeometryBVH<2> &bvh,
-    const Point3D &rayOrg, const Vector3D &rayDir, const float distMin, const float distMax);
+    const Point3D &rayOrg, const Vector3D &rayDir, const float distMin, const float distMax,
+    TraversalStatistics* const stats);
 template shared::HitObject traverse<4>(
     const GeometryBVH<4> &bvh,
-    const Point3D &rayOrg, const Vector3D &rayDir, const float distMin, const float distMax);
+    const Point3D &rayOrg, const Vector3D &rayDir, const float distMin, const float distMax,
+    TraversalStatistics* const stats);
 template shared::HitObject traverse<8>(
     const GeometryBVH<8> &bvh,
-    const Point3D &rayOrg, const Vector3D &rayDir, const float distMin, const float distMax);
+    const Point3D &rayOrg, const Vector3D &rayDir, const float distMin, const float distMax,
+    TraversalStatistics* const stats);
 
 }
