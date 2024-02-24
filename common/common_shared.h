@@ -916,49 +916,252 @@ namespace shared {
 
     static constexpr uint32_t invalidNodeIndex = 0xFFFFFFFF;
 
+    // Reference: Efficient Incoherent Ray Traversal on GPUs Through Wide BVHs
+    // Similar to the data layout in this paper, but not the same.
     template <uint32_t arity>
-    struct InternalNode_T {
-        Point3D quantBoxMinP;
-        Vector3D quantBoxSizeCoeff;
+    struct CompressedInternalNode_T {
+        static constexpr uint32_t maxNumPrimsPerLeaf = 3;
+
+        union ChildMeta {
+            struct {
+                uint8_t leafOffset;
+            };
+            uint8_t asUInt;
+
+            CUDA_COMMON_FUNCTION CUDA_INLINE ChildMeta() : asUInt(0) {}
+
+            CUDA_COMMON_FUNCTION CUDA_INLINE void setLeafOffset(uint32_t _leafOffset) {
+                leafOffset = _leafOffset;
+            }
+            CUDA_COMMON_FUNCTION CUDA_INLINE uint32_t getLeafOffset() const {
+                return leafOffset;
+            }
+        };
+
+        Point3D quantBoxOrigin;
+        uint8_t quantBoxExpScaleX;
+        uint8_t quantBoxExpScaleY;
+        uint8_t quantBoxExpScaleZ;
+        uint8_t internalMask;
         uint32_t intNodeChildBaseIndex;
         uint32_t leafBaseIndex;
-        struct Child {
-            uint8_t minX;
-            uint8_t minY;
-            uint8_t minZ;
-            uint8_t maxX;
-            uint8_t maxY;
-            uint8_t maxZ;
-        } children[arity];
-        uint8_t leafMask;
+        ChildMeta childMetas[arity];
+        uint8_t childQMinXs[arity];
+        uint8_t childQMinYs[arity];
+        uint8_t childQMinZs[arity];
+        uint8_t childQMaxXs[arity];
+        uint8_t childQMaxYs[arity];
+        uint8_t childQMaxZs[arity];
         static constexpr uint32_t __paddingSize =
-            arity == 4 ? 7 :
-            arity == 2 ? 3 :
+            arity == 8 ? 0 :
+            arity == 4 ? 12 :
+            arity == 2 ? 8 :
             1;
         uint8_t __padding[__paddingSize];
 
-        CUDA_COMMON_FUNCTION CUDA_INLINE AABB getAabb() const {
-            AABB ret;
-            ret.minP = quantBoxMinP;
-            ret.maxP = quantBoxMinP + 255 * quantBoxSizeCoeff;
+        CUDA_COMMON_FUNCTION CUDA_INLINE Vector3D __decodeQuantBoxScale() const {
+            const Vector3D d(
+                std::bit_cast<float>(quantBoxExpScaleX << 23),
+                std::bit_cast<float>(quantBoxExpScaleY << 23),
+                std::bit_cast<float>(quantBoxExpScaleZ << 23));
+            return d;
+        }
+        CUDA_COMMON_FUNCTION CUDA_INLINE AABB __decodeAabb(
+            const uint8_t qMinX, const uint8_t qMinY, const uint8_t qMinZ,
+            const uint8_t qMaxX, const uint8_t qMaxY, const uint8_t qMaxZ) const {
+            const Vector3D d = __decodeQuantBoxScale();
+            const Vector3D qMinPf = Vector3D(qMinX, qMinY, qMinZ);
+            const Vector3D qMaxPf = Vector3D(qMaxX, qMaxY, qMaxZ);
+            const AABB ret(
+                quantBoxOrigin + qMinPf * d,
+                quantBoxOrigin + qMaxPf * d);
             return ret;
+        }
+
+        CUDA_COMMON_FUNCTION CUDA_INLINE void setQuantizationAabb(const AABB &box) {
+            quantBoxOrigin = box.minP;
+            const Vector3D d = (box.maxP - box.minP) / 255;
+            const auto calcExpScale = []
+            (float s) {
+                const uint32_t us = std::bit_cast<uint32_t>(s);
+                return (us >> 23) + ((us & 0x7F'FFFF) ? 1 : 0);
+            };
+            quantBoxExpScaleX = calcExpScale(d.x);
+            quantBoxExpScaleY = calcExpScale(d.y);
+            quantBoxExpScaleZ = calcExpScale(d.z);
+        }
+        CUDA_COMMON_FUNCTION CUDA_INLINE AABB getQuantizationAabb() const {
+            const Vector3D d = __decodeQuantBoxScale();
+            const AABB ret(
+                quantBoxOrigin,
+                quantBoxOrigin + 255 * d);
+            return ret;
+        }
+
+        CUDA_COMMON_FUNCTION CUDA_INLINE void setChildAabb(uint32_t slot, const AABB &box) {
+            const Vector3D recD = safeDivide(Vector3D(1.0f), __decodeQuantBoxScale());
+            const auto qMinPf = static_cast<Point3D>((box.minP - quantBoxOrigin) * recD);
+            const auto qMaxPf = static_cast<Point3D>((box.maxP - quantBoxOrigin) * recD);
+            const uint3 qMinP = make_uint3(qMinPf.toNative());
+            const uint3 qMaxP = min(make_uint3(qMaxPf.toNative()) + 1, 255);
+            childQMinXs[slot] = static_cast<uint8_t>(qMinP.x);
+            childQMinYs[slot] = static_cast<uint8_t>(qMinP.y);
+            childQMinZs[slot] = static_cast<uint8_t>(qMinP.z);
+            childQMaxXs[slot] = static_cast<uint8_t>(qMaxP.x);
+            childQMaxYs[slot] = static_cast<uint8_t>(qMaxP.y);
+            childQMaxZs[slot] = static_cast<uint8_t>(qMaxP.z);
+        }
+        CUDA_COMMON_FUNCTION CUDA_INLINE void setInvalidChildBox(uint32_t slot) {
+            childQMinXs[slot] = 255;
+            childQMinYs[slot] = 255;
+            childQMinZs[slot] = 255;
+            childQMaxXs[slot] = 0;
+            childQMaxYs[slot] = 0;
+            childQMaxZs[slot] = 0;
+        }
+        CUDA_COMMON_FUNCTION CUDA_INLINE void setChildMeta(uint32_t slot, const ChildMeta &meta) {
+            childMetas[slot] = meta;
         }
 
         CUDA_COMMON_FUNCTION CUDA_INLINE bool getChildIsValid(uint32_t slot) const {
-            const Child child = children[slot];
-            return child.minX != 255 || child.maxX != 0;
+            return childQMinXs[slot] != 255 || childQMaxXs[slot] != 0;
+        }
+        CUDA_COMMON_FUNCTION CUDA_INLINE AABB getChildAabb(uint32_t slot) const {
+            return __decodeAabb(
+                childQMinXs[slot], childQMinYs[slot], childQMinZs[slot],
+                childQMaxXs[slot], childQMaxYs[slot], childQMaxZs[slot]);
+        }
+        CUDA_COMMON_FUNCTION CUDA_INLINE bool getChildIsLeaf(uint32_t slot) const {
+            return ((internalMask >> slot) & 0b1) == 0;
+        }
+        CUDA_COMMON_FUNCTION CUDA_INLINE uint32_t getChildOffset(uint32_t slot) const {
+            Assert(!getChildIsLeaf(slot), "Child offset is only valid for an internal node child.");
+            const uint32_t lowerMask = (1 << slot) - 1;
+            return popcnt(internalMask & lowerMask);
+        }
+        CUDA_COMMON_FUNCTION CUDA_INLINE uint32_t getLeafOffset(uint32_t slot) const {
+            Assert(getChildIsLeaf(slot), "Child offset is only valid for a leaf child.");
+            return childMetas[slot].leafOffset;
         }
 
-        CUDA_COMMON_FUNCTION CUDA_INLINE AABB getChildAabb(uint32_t slot) const {
-            const Child child = children[slot];
-            AABB ret;
-            ret.minP = quantBoxMinP + Vector3D(child.minX, child.minY, child.minZ) * quantBoxSizeCoeff;
-            ret.maxP = quantBoxMinP + Vector3D(child.maxX, child.maxY, child.maxZ) * quantBoxSizeCoeff;
-            return ret;
+        CUDA_COMMON_FUNCTION CUDA_INLINE AABB getAabb() const {
+            uint8_t qMinX = 255, qMinY = 255, qMinZ = 255;
+            uint8_t qMaxX = 0, qMaxY = 0, qMaxZ = 0;
+            for (uint32_t slot = 0; slot < arity; ++slot) {
+                if (!getChildIsValid(slot))
+                    break;
+                qMinX = std::min(childQMinXs[slot], qMinX);
+                qMinY = std::min(childQMinYs[slot], qMinY);
+                qMinZ = std::min(childQMinZs[slot], qMinZ);
+                qMaxX = std::max(childQMaxXs[slot], qMaxX);
+                qMaxY = std::max(childQMaxYs[slot], qMaxY);
+                qMaxZ = std::max(childQMaxZs[slot], qMaxZ);
+            }
+            return __decodeAabb(
+                qMinX, qMinY, qMinZ,
+                qMaxX, qMaxY, qMaxZ);
+        }
+
+        CUDA_COMMON_FUNCTION CUDA_INLINE bool hasInternalChild(uint32_t index) const {
+            if (intNodeChildBaseIndex == UINT32_MAX)
+                return false;
+            return index >= intNodeChildBaseIndex &&
+                index < (intNodeChildBaseIndex + popcnt(internalMask));
         }
     };
-    static_assert(sizeof(InternalNode_T<2>) == 48, "Unexpected sizeof(InternalNode_T<2>)");
-    static_assert(sizeof(InternalNode_T<4>) == 64, "Unexpected sizeof(InternalNode_T<4>)");
+    static_assert(sizeof(CompressedInternalNode_T<2>) == 48, "Unexpected sizeof(CompressedInternalNode_T<2>)");
+    static_assert(sizeof(CompressedInternalNode_T<4>) == 64, "Unexpected sizeof(CompressedInternalNode_T<4>)");
+    static_assert(sizeof(CompressedInternalNode_T<8>) == 80, "Unexpected sizeof(CompressedInternalNode_T<8>)");
+
+    template <uint32_t arity>
+    struct UncompressedInternalNode_T {
+        static constexpr uint32_t maxNumPrimsPerLeaf = 3;
+
+        union ChildMeta {
+            struct {
+                uint8_t leafOffset;
+            };
+            uint8_t asUInt;
+
+            CUDA_COMMON_FUNCTION CUDA_INLINE ChildMeta() : asUInt(0) {}
+
+            CUDA_COMMON_FUNCTION CUDA_INLINE void setLeafOffset(uint32_t _leafOffset) {
+                leafOffset = _leafOffset;
+            }
+            CUDA_COMMON_FUNCTION CUDA_INLINE uint32_t getLeafOffset() const {
+                return leafOffset;
+            }
+        };
+
+        uint32_t intNodeChildBaseIndex;
+        uint32_t leafBaseIndex;
+        AABB childAabbs[arity];
+        ChildMeta childMetas[arity];
+        uint8_t internalMask;
+        static constexpr uint32_t __paddingSize =
+            arity == 8 ? 15 :
+            arity == 4 ? 3 :
+            arity == 2 ? 5 :
+            1;
+        uint8_t __padding[__paddingSize];
+
+        CUDA_COMMON_FUNCTION CUDA_INLINE void setQuantizationAabb(const AABB &box) {}
+        CUDA_COMMON_FUNCTION CUDA_INLINE AABB getQuantizationAabb() const {
+            AABB ret;
+            for (uint32_t slot = 0; slot < arity; ++slot) {
+                if (!getChildIsValid(slot))
+                    break;
+                ret.unify(childAabbs[slot]);
+            }
+            return ret;
+        }
+
+        CUDA_COMMON_FUNCTION CUDA_INLINE void setChildAabb(uint32_t slot, const AABB &box) {
+            childAabbs[slot] = box;
+        }
+        CUDA_COMMON_FUNCTION CUDA_INLINE void setInvalidChildBox(uint32_t slot) {
+            childAabbs[slot] = AABB();
+        }
+        CUDA_COMMON_FUNCTION CUDA_INLINE void setChildMeta(uint32_t slot, const ChildMeta &meta) {
+            childMetas[slot] = meta;
+        }
+
+        CUDA_COMMON_FUNCTION CUDA_INLINE bool getChildIsValid(uint32_t slot) const {
+            return childAabbs[slot].isValid();
+        }
+        CUDA_COMMON_FUNCTION CUDA_INLINE AABB getChildAabb(uint32_t slot) const {
+            return childAabbs[slot];
+        }
+        CUDA_COMMON_FUNCTION CUDA_INLINE bool getChildIsLeaf(uint32_t slot) const {
+            return ((internalMask >> slot) & 0b1) == 0;
+        }
+        CUDA_COMMON_FUNCTION CUDA_INLINE uint32_t getChildOffset(uint32_t slot) const {
+            Assert(!getChildIsLeaf(slot), "Child offset is only valid for an internal node child.");
+            const uint32_t lowerMask = (1 << slot) - 1;
+            return popcnt(internalMask & lowerMask);
+        }
+        CUDA_COMMON_FUNCTION CUDA_INLINE uint32_t getLeafOffset(uint32_t slot) const {
+            Assert(getChildIsLeaf(slot), "Child offset is only valid for a leaf child.");
+            return childMetas[slot].leafOffset;
+        }
+
+        CUDA_COMMON_FUNCTION CUDA_INLINE AABB getAabb() const {
+            return getQuantizationAabb();
+        }
+
+        CUDA_COMMON_FUNCTION CUDA_INLINE bool hasInternalChild(uint32_t index) const {
+            if (intNodeChildBaseIndex == UINT32_MAX)
+                return false;
+            return index >= intNodeChildBaseIndex &&
+                index < (intNodeChildBaseIndex + popcnt(internalMask));
+        }
+    };
+    static_assert(sizeof(UncompressedInternalNode_T<2>) == 64, "Unexpected sizeof(UncompressedInternalNode_T<2>)");
+    static_assert(sizeof(UncompressedInternalNode_T<4>) == 112, "Unexpected sizeof(UncompressedInternalNode_T<4>)");
+    static_assert(sizeof(UncompressedInternalNode_T<8>) == 224, "Unexpected sizeof(UncompressedInternalNode_T<8>)");
+
+    template <uint32_t arity>
+    using InternalNode_T = CompressedInternalNode_T<arity>;
 
     struct PrimitiveReference {
         uint32_t storageIndex : 31;
@@ -1003,5 +1206,20 @@ namespace shared {
         const InstanceReference* instRefs;
         uint32_t numIntNodes;
         uint32_t numInstRefs;
+    };
+
+    struct HitObject {
+        float dist;
+        uint32_t instIndex;
+        uint32_t instUserData;
+        uint32_t geomIndex;
+        uint32_t primIndex;
+        float bcA;
+        float bcB;
+        float bcC;
+
+        CUDA_COMMON_FUNCTION CUDA_INLINE bool isHit() const {
+            return primIndex != UINT32_MAX;
+        }
     };
 }

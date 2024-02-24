@@ -61,4 +61,11 @@ void buildInstanceBVH(
     const Instance* const insts, const uint32_t numInsts,
     const InstanceBVHBuildConfig &config, InstanceBVH<arity>* const bvh);
 
+
+
+template <uint32_t arity>
+shared::HitObject traverse(
+    const GeometryBVH<arity> &bvh,
+    const Point3D &rayOrg, const Vector3D &rayDir, const float distMin, const float distMax);
+
 }

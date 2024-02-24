@@ -29,8 +29,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testRayVsTriangle(
     *hitDist = dot(*hitNormal, e);
 
     return
-        ((*hitDist < distMax) & (*hitDist > distMin)
-         & (*bcB >= 0.0f) & (*bcC >= 0.0f) & (*bcB + *bcC <= 1));
+        ((*hitDist < distMax) && (*hitDist > distMin)
+         && (*bcB >= 0.0f) && (*bcC >= 0.0f) && (*bcB + *bcC <= 1));
 }
 
 CUDA_DEVICE_FUNCTION CUDA_INLINE Point3D restoreTriangleHitPoint(

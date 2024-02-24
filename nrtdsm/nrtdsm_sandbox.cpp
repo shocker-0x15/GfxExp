@@ -2913,21 +2913,195 @@ static void computeFlattenedNodes(
 }
 
 void testBvhBuilder() {
-    const std::filesystem::path filePath =
-        //R"(../data/stanford_bunny_309_faces.obj)";
-        //R"(E:/assets/McguireCGArchive/conference/conference.obj)";
-        R"(E:/assets/McguireCGArchive/breakfast_room/breakfast_room.obj)";
-    hpprintf("Reading: %s ... ", filePath.string().c_str());
+    struct TestScene {
+        std::filesystem::path filePath;
+        Matrix4x4 transform;
+        Matrix4x4 cameraTransform;
+    };
+
+    std::map<std::string, TestScene> scenes = {
+        {
+            "bunny",
+            {
+                R"(E:/assets/McguireCGArchive/bunny/bunny.obj)",
+                Matrix4x4(),
+                translate3D_4x4(-0.299932f, 1.73252f, 2.4276f) *
+                rotate3DY_4x4(178.68f * pi_v<float> / 180) *
+                rotate3DX_4x4(22.2f * pi_v<float> / 180)
+            }
+        },
+        {
+            "dragon",
+            {
+                R"(E:/assets/McguireCGArchive/dragon/dragon.obj)",
+                Matrix4x4(),
+                translate3D_4x4(-1.08556f, 0.450182f, -0.473484f) *
+                rotate3DY_4x4(68.0f * pi_v<float> / 180) *
+                rotate3DX_4x4(19.0f * pi_v<float> / 180)
+            }
+        },
+        {
+            "buddha",
+            {
+                R"(E:/assets/McguireCGArchive/buddha/buddha.obj)",
+                Matrix4x4(),
+                translate3D_4x4(-0.004269f, 0.342561f, -1.34414f) *
+                rotate3DY_4x4(0.0f * pi_v<float> / 180) *
+                rotate3DX_4x4(12.5f * pi_v<float> / 180)
+            }
+        },
+        {
+            "white_oak",
+            {
+                R"(E:/assets/McguireCGArchive/white_oak/white_oak.obj)",
+                scale3D_4x4(0.01f),
+                translate3D_4x4(2.86811f, 4.87556f, 10.4772f) *
+                rotate3DY_4x4(195.5f * pi_v<float> / 180) *
+                rotate3DX_4x4(8.9f * pi_v<float> / 180)
+            }
+        },
+        {
+            "conference",
+            {
+                R"(E:/assets/McguireCGArchive/conference/conference.obj)",
+                Matrix4x4(),
+                translate3D_4x4(1579.2f, 493.793f, 321.98f) *
+                rotate3DY_4x4(-120 * pi_v<float> / 180) *
+                rotate3DX_4x4(20 * pi_v<float> / 180)
+            }
+        },
+        {
+            "breakfast_room",
+            {
+                R"(E:/assets/McguireCGArchive/breakfast_room/breakfast_room.obj)",
+                Matrix4x4(),
+                translate3D_4x4(4.37691f, 1.8413f, 6.35917f) *
+                rotate3DY_4x4(210 * pi_v<float> / 180) *
+                rotate3DX_4x4(2.8f * pi_v<float> / 180)
+            }
+        },
+        {
+            "salle_de_bain",
+            {
+                R"(E:/assets/McguireCGArchive/salle_de_bain/salle_de_bain.obj)",
+                Matrix4x4(),
+                translate3D_4x4(2.56843f, 15.9865f, 45.3711f) *
+                rotate3DY_4x4(191 * pi_v<float> / 180) *
+                rotate3DX_4x4(6.2f * pi_v<float> / 180)
+            }
+        },
+        {
+            "crytek_sponza",
+            {
+                R"(E:/assets/McguireCGArchive/sponza/sponza.obj)",
+                scale3D_4x4(0.01f),
+                translate3D_4x4(10.0f, 2.0f, -0.5f) *
+                rotate3DY_4x4(-pi_v<float> / 2)
+            }
+        },
+        {
+            "sibenik",
+            {
+                R"(E:/assets/McguireCGArchive/sibenik/sibenik.obj)",
+                Matrix4x4(),
+                translate3D_4x4(-15.0f, -3.0f, 0.0f) *
+                rotate3DY_4x4(pi_v<float> / 2) *
+                rotate3DX_4x4(20 * pi_v<float> / 180)
+            }
+        },
+        {
+            "hairball",
+            {
+                R"(E:/assets/McguireCGArchive/hairball/hairball.obj)",
+                Matrix4x4(),
+                translate3D_4x4(0.0f, 0.0f, 13.0f) *
+                rotate3DY_4x4(pi_v<float>)
+            }
+        },
+        {
+            "rungholt",
+            {
+                R"(E:/assets/McguireCGArchive/rungholt/rungholt.obj)",
+                scale3D_4x4(0.1f),
+                translate3D_4x4(36.1611f, 5.56238f, -20.4327f) *
+                rotate3DY_4x4(-53.0f * pi_v<float> / 180) *
+                rotate3DX_4x4(14.2f * pi_v<float> / 180)
+            }
+        },
+        {
+            "san_miguel",
+            {
+                R"(E:/assets/McguireCGArchive/San_Miguel/san-miguel.obj)",
+                Matrix4x4(),
+                translate3D_4x4(6.2928f, 3.05034f, 7.49142f) *
+                rotate3DY_4x4(125.8f * pi_v<float> / 180) *
+                rotate3DX_4x4(9.3f * pi_v<float> / 180)
+            }
+        },
+        {
+            "powerplant",
+            {
+                R"(E:/assets/McguireCGArchive/powerplant/powerplant.obj)",
+                scale3D_4x4(0.0001f),
+                translate3D_4x4(-16.5697f, 5.66694f, 14.8665f) *
+                rotate3DY_4x4(125.2f * pi_v<float> / 180) *
+                rotate3DX_4x4(10.5f * pi_v<float> / 180)
+            }
+        },
+        {
+            "box",
+            {
+                R"(E:/assets/box/box.obj)",
+                Matrix4x4(),
+                translate3D_4x4(3.0f, 3.0f, 3.0f) *
+                rotate3DY_4x4(225 * pi_v<float> / 180) *
+                rotate3DX_4x4(35.264f * pi_v<float> / 180)
+            }
+        },
+        {
+            "lowpoly_bunny",
+            {
+                R"(E:/assets/lowpoly_bunny/stanford_bunny_309_faces.obj)",
+                scale3D_4x4(0.1f),
+                translate3D_4x4(-4.60892f, 9.15149f, 11.7878f) *
+                rotate3DY_4x4(161.4f * pi_v<float> / 180) *
+                rotate3DX_4x4(23.6f * pi_v<float> / 180)
+            }
+        },
+        {
+            "teapot",
+            {
+                R"(E:/assets/McguireCGArchive/teapot/teapot.obj)",
+                Matrix4x4(),
+                translate3D_4x4(0.0f, 133.3f, 200.0f) *
+                rotate3DY_4x4(180 * pi_v<float> / 180) *
+                rotate3DX_4x4(25 * pi_v<float> / 180)
+            }
+        },
+        {
+            "one_tri",
+            {
+                R"(E:/assets/one_tri.obj)",
+                Matrix4x4(),
+                translate3D_4x4(0.0f, 1.0f, 3.0f) *
+                rotate3DY_4x4(180 * pi_v<float> / 180)
+            }
+        },
+    };
+
+    const TestScene &scene = scenes.at("lowpoly_bunny");
+
+    hpprintf("Reading: %s ... ", scene.filePath.string().c_str());
     fflush(stdout);
     Assimp::Importer importer;
     const aiScene* aiscene = importer.ReadFile(
-        filePath.string(),
+        scene.filePath.string(),
         aiProcess_Triangulate |
         aiProcess_GenNormals |
         aiProcess_CalcTangentSpace |
         aiProcess_FlipUVs);
     if (!aiscene) {
-        hpprintf("Failed to load %s.\n", filePath.string().c_str());
+        hpprintf("Failed to load %s.\n", scene.filePath.string().c_str());
         return;
     }
     hpprintf("done.\n");
@@ -2986,7 +3160,7 @@ void testBvhBuilder() {
     }
 
     std::vector<FlattenedNode> flattenedNodes;
-    computeFlattenedNodes(aiscene, Matrix4x4(), aiscene->mRootNode, flattenedNodes);
+    computeFlattenedNodes(aiscene, scene.transform, aiscene->mRootNode, flattenedNodes);
 
     std::vector<bvh::Geometry> bvhGeoms;
     uint32_t numGlobalPrimitives = 0;
@@ -3023,87 +3197,155 @@ void testBvhBuilder() {
         bvhGeoms.data(), static_cast<uint32_t>(bvhGeoms.size()),
         config, &bvh);
 
-    struct StackEntry {
-        uint32_t nodeIndex;
-        uint32_t depth;
-    };
-    std::vector<StackEntry> stack;
-    constexpr uint32_t maxDepth = 12;
+    static bool enableVdbViz = false;
+    if (enableVdbViz) {
+        struct StackEntry {
+            uint32_t nodeIndex;
+            uint32_t depth;
+        };
 
-    struct NodeChildAddress {
-        uint32_t nodeIndex;
-        uint32_t slot;
-    };
-    std::vector<std::vector<NodeChildAddress>> triToNodeChildMap(numGlobalPrimitives);
+        struct NodeChildAddress {
+            uint32_t nodeIndex;
+            uint32_t slot;
+        };
 
-    vdb_frame();
-    drawAxes(10.0f);
-    setColor(1.0f, 1.0f, 1.0f);
+        constexpr uint32_t maxDepth = 12;
+        std::vector<StackEntry> stack;
+        std::vector<std::vector<NodeChildAddress>> triToNodeChildMap(numGlobalPrimitives);
 
-    stack.push_back(StackEntry{ 0, 0 });
-    while (!stack.empty()) {
-        const StackEntry entry = stack.back();
-        stack.pop_back();
+        vdb_frame();
+        drawAxes(10.0f);
+        setColor(1.0f, 1.0f, 1.0f);
 
-        const shared::InternalNode_T<arity> &intNode = bvh.intNodes[entry.nodeIndex];
-        uint32_t leafOffset = intNode.leafBaseIndex;
-        for (int32_t slot = 0; slot < arity; ++slot) {
-            if (!intNode.getChildIsValid(slot))
-                break;
+        stack.push_back(StackEntry{ 0, 0 });
+        while (!stack.empty()) {
+            const StackEntry entry = stack.back();
+            stack.pop_back();
 
-            const bool isLeaf = ((intNode.leafMask >> slot) & 0b1) != 0;
-            const uint32_t lowerMask = (1 << slot) - 1;
-            if (isLeaf) {
-                setColor(0.1f, 0.1f, 0.1f);
-                drawAabb(intNode.getChildAabb(slot));
-                uint32_t chainLength = 0;
-                while (true) {
-                    //hpprintf("%3u\n", leafOffset);
-                    const shared::PrimitiveReference &primRef = bvh.primRefs[leafOffset++];
-                    const shared::TriangleStorage &triStorage = bvh.triStorages[primRef.storageIndex];
-                    ++chainLength;
-                    setColor(1.0f, 1.0f, 1.0f);
-                    drawWiredTriangle(triStorage.pA, triStorage.pB, triStorage.pC);
-                    triToNodeChildMap[primRef.storageIndex].push_back(
-                        NodeChildAddress{ entry.nodeIndex, static_cast<uint32_t>(slot) });
-                    if (primRef.isLeafEnd)
-                        break;
-                }
-            }
-            else {
-                //setColor(0.0f, 0.3f * (entry.depth + 1) / maxDepth, 0.0f);
-                //drawAabb(intNode.getChildAabb(slot));
-                if (entry.depth < maxDepth) {
-                    const uint32_t childIdx = intNode.intNodeChildBaseIndex
-                        + popcnt(~intNode.leafMask & lowerMask);
-                    stack.push_back(StackEntry{ childIdx, entry.depth + 1 });
+            const shared::InternalNode_T<arity> &intNode = bvh.intNodes[entry.nodeIndex];
+            for (int32_t slot = 0; slot < arity; ++slot) {
+                if (!intNode.getChildIsValid(slot))
+                    break;
+
+                const bool isLeaf = ((intNode.internalMask >> slot) & 0b1) == 0;
+                const uint32_t lowerMask = (1 << slot) - 1;
+                if (isLeaf) {
+                    setColor(0.1f, 0.1f, 0.1f);
+                    drawAabb(intNode.getChildAabb(slot));
+                    uint32_t leafOffset = intNode.leafBaseIndex + intNode.getLeafOffset(slot);
+                    uint32_t chainLength = 0;
+                    while (true) {
+                        //hpprintf("%3u\n", leafOffset);
+                        const shared::PrimitiveReference &primRef = bvh.primRefs[leafOffset++];
+                        const shared::TriangleStorage &triStorage = bvh.triStorages[primRef.storageIndex];
+                        ++chainLength;
+                        setColor(1.0f, 1.0f, 1.0f);
+                        drawWiredTriangle(triStorage.pA, triStorage.pB, triStorage.pC);
+                        triToNodeChildMap[primRef.storageIndex].push_back(
+                            NodeChildAddress{ entry.nodeIndex, static_cast<uint32_t>(slot) });
+                        if (primRef.isLeafEnd)
+                            break;
+                    }
                 }
                 else {
-                    printf("");
+                    //setColor(0.0f, 0.3f * (entry.depth + 1) / maxDepth, 0.0f);
+                    //drawAabb(intNode.getChildAabb(slot));
+                    if (entry.depth < maxDepth) {
+                        const uint32_t childIdx = intNode.intNodeChildBaseIndex + intNode.getChildOffset(slot);
+                        stack.push_back(StackEntry{ childIdx, entry.depth + 1 });
+                    }
+                    else {
+                        printf("");
+                    }
                 }
             }
         }
+
+        if (false) {
+            // Triangle to Node Children
+            for (uint32_t globalPrimIdx = 0; globalPrimIdx < numGlobalPrimitives; ++globalPrimIdx) {
+                const std::vector<NodeChildAddress> &refs = triToNodeChildMap[globalPrimIdx];
+
+                vdb_frame();
+                drawAxes(10.0f);
+
+                const shared::TriangleStorage &triStorage = bvh.triStorages[globalPrimIdx];
+                setColor(1.0f, 1.0f, 1.0f);
+                drawWiredTriangle(triStorage.pA, triStorage.pB, triStorage.pC);
+
+                for (uint32_t refIdx = 0; refIdx < refs.size(); ++refIdx) {
+                    const NodeChildAddress &ref = refs[refIdx];
+                    const shared::InternalNode_T<arity> &intNode = bvh.intNodes[ref.nodeIndex];
+                    setColor(0.1f, 0.1f, 0.1f);
+                    drawAabb(intNode.getChildAabb(ref.slot));
+                }
+                printf("");
+            }
+
+            printf("");
+        }
     }
 
-    if (false) {
-        // Triangle to Node Children
-        for (uint32_t globalPrimIdx = 0; globalPrimIdx < numGlobalPrimitives; ++globalPrimIdx) {
-            const std::vector<NodeChildAddress> &refs = triToNodeChildMap[globalPrimIdx];
+    static bool enableTraversalTest = true;
+    if (enableTraversalTest) {
+        constexpr uint32_t width = 1024;
+        constexpr uint32_t height = 1024;
+        const float aspect = static_cast<float>(width) / height;
+        const float fovY = 45 * pi_v<float> / 180;
 
-            vdb_frame();
-            drawAxes(10.0f);
+        for (uint32_t camIdx = 0; camIdx < 30; ++camIdx) {
+            if (camIdx != 27)
+                continue;
+            const Matrix4x4 camXfm =
+                rotate3DY_4x4<float>(static_cast<float>(camIdx) / 30 * 2 * pi_v<float>) *
+                scene.cameraTransform;
 
-            const shared::TriangleStorage &triStorage = bvh.triStorages[globalPrimIdx];
-            setColor(1.0f, 1.0f, 1.0f);
-            drawWiredTriangle(triStorage.pA, triStorage.pB, triStorage.pC);
+            std::vector<float4> image(width * height);
+            for (uint32_t ipy = 0; ipy < height; ++ipy) {
+                for (uint32_t ipx = 0; ipx < width; ++ipx) {
+                    const float px = ipx + 0.5f;
+                    const float py = ipy + 0.5f;
 
-            for (uint32_t refIdx = 0; refIdx < refs.size(); ++refIdx) {
-                const NodeChildAddress &ref = refs[refIdx];
-                const shared::InternalNode_T<arity> &intNode = bvh.intNodes[ref.nodeIndex];
-                setColor(0.1f, 0.1f, 0.1f);
-                drawAabb(intNode.getChildAabb(ref.slot));
+                    const Vector3D rayDirInLocal(
+                        aspect * tan(fovY * 0.5f) * (1 - 2 * px / width),
+                        tan(fovY * 0.5f) * (1 - 2 * py / height),
+                        1);
+                    const Point3D rayOrg = camXfm * Point3D(0, 0, 0);
+                    const Vector3D rayDir = camXfm * rayDirInLocal;
+                    const shared::HitObject hitObj = bvh::traverse(bvh, rayOrg, rayDir, 0.0f, 1e+10f);
+
+                    RGB color;
+                    if (hitObj.isHit()) {
+                        const bvh::Geometry &geom = bvhGeoms[hitObj.geomIndex];
+                        const auto tri = reinterpret_cast<const uint32_t*>(
+                            geom.triangles + geom.triangleStride * hitObj.primIndex);
+                        const Point3D pA = geom.preTransform *
+                            *reinterpret_cast<const Point3D*>(geom.vertices + geom.vertexStride * tri[0]);
+                        const Point3D pB = geom.preTransform *
+                            *reinterpret_cast<const Point3D*>(geom.vertices + geom.vertexStride * tri[1]);
+                        const Point3D pC = geom.preTransform *
+                            *reinterpret_cast<const Point3D*>(geom.vertices + geom.vertexStride * tri[2]);
+                        const Vector3D geomNormal = normalize(cross(pB - pA, pC - pA));
+                        color.r = 0.5f + 0.5f * geomNormal.x;
+                        color.g = 0.5f + 0.5f * geomNormal.y;
+                        color.b = 0.5f + 0.5f * geomNormal.z;
+                    }
+
+                    image[width * ipy + ipx] = float4(color.toNative(), 1.0f);
+                }
             }
-            printf("");
+
+            SDRImageSaverConfig imageSaveConfig = {};
+            imageSaveConfig.applyToneMap = false;
+            imageSaveConfig.apply_sRGB_gammaCorrection = false;
+            imageSaveConfig.brightnessScale = 1.0f;
+            imageSaveConfig.flipY = false;
+            char filename[256];
+            sprintf_s(filename, "trav_test_%03u.png", camIdx);
+            saveImage(
+                filename,
+                width, height, image.data(),
+                imageSaveConfig);
         }
     }
 
