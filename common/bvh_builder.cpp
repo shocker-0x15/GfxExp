@@ -175,6 +175,24 @@ struct TempInternalNode_T {
 
 
 
+static void calcTriangleVertices(
+    const BuilderInput<PrimitiveType::Geometric> &buildInput,
+    const uint32_t geomIdx, const uint32_t primIdx,
+    Point3D* const pA, Point3D* const pB, Point3D* const pC) {
+    const Geometry &geom = buildInput.geometries[geomIdx];
+    const auto tri = reinterpret_cast<const uint32_t*>(
+        geom.triangles + geom.triangleStride * primIdx);
+
+    *pA = geom.preTransform *
+        *reinterpret_cast<const Point3D*>(geom.vertices + geom.vertexStride * tri[0]);
+    *pB = geom.preTransform *
+        *reinterpret_cast<const Point3D*>(geom.vertices + geom.vertexStride * tri[1]);
+    *pC = geom.preTransform *
+        *reinterpret_cast<const Point3D*>(geom.vertices + geom.vertexStride * tri[2]);
+}
+
+
+
 static void findBestObjectSplit(
     const std::span<PrimitiveReference> primRefs, const std::span<PrimSplitInfo> primSplitInfos,
     const uint32_t numPrimRefs, const AABB &centAabb,
@@ -536,16 +554,10 @@ static void performSpatialSplit(
             curNumPrims < numPrimsReserved) {
             primSplitInfo.isRight = false;
 
-            const Geometry &geom = buildInput.geometries[primRef.geomIndex];
-            const auto tri = reinterpret_cast<const uint32_t*>(
-                geom.triangles + geom.triangleStride * primRef.primIndex);
-
-            const Point3D pA = geom.preTransform *
-                *reinterpret_cast<const Point3D*>(geom.vertices + geom.vertexStride * tri[0]);
-            const Point3D pB = geom.preTransform *
-                *reinterpret_cast<const Point3D*>(geom.vertices + geom.vertexStride * tri[1]);
-            const Point3D pC = geom.preTransform *
-                *reinterpret_cast<const Point3D*>(geom.vertices + geom.vertexStride * tri[2]);
+            Point3D pA, pB, pC;
+            calcTriangleVertices(
+                buildInput, primRef.geomIndex, primRef.primIndex,
+                &pA, &pB, &pC);
 
             PrimitiveReference &newPrimRef = splitTask.primRefs[curNumPrims];
             PrimSplitInfo &newPrimSplitInfo = splitTask.primSplitInfos[curNumPrims];
@@ -663,16 +675,11 @@ static void buildBVH(
         for (uint32_t inputPrimIdx = 0; inputPrimIdx < numInputPrimitives; ++inputPrimIdx) {
             uint32_t geomIdx, primIdx;
             extractGeomAndPrimIndex(inputPrimIdx, &geomIdx, &primIdx);
-            const Geometry &geom = buildInput.geometries[geomIdx];
-            const auto tri = reinterpret_cast<const uint32_t*>(
-                geom.triangles + geom.triangleStride * primIdx);
 
-            const Point3D pA = geom.preTransform *
-                *reinterpret_cast<const Point3D*>(geom.vertices + geom.vertexStride * tri[0]);
-            const Point3D pB = geom.preTransform *
-                *reinterpret_cast<const Point3D*>(geom.vertices + geom.vertexStride * tri[1]);
-            const Point3D pC = geom.preTransform *
-                *reinterpret_cast<const Point3D*>(geom.vertices + geom.vertexStride * tri[2]);
+            Point3D pA, pB, pC;
+            calcTriangleVertices(
+                buildInput, geomIdx, primIdx,
+                &pA, &pB, &pC);
 
             PrimitiveReference primRef = {};
             primRef.box.unify(pA).unify(pB).unify(pC);
@@ -897,16 +904,11 @@ static void buildBVH(
         for (uint32_t inputPrimIdx = 0; inputPrimIdx < numInputPrimitives; ++inputPrimIdx) {
             uint32_t geomIdx, primIdx;
             extractGeomAndPrimIndex(inputPrimIdx, &geomIdx, &primIdx);
-            const Geometry &geom = buildInput.geometries[geomIdx];
-            const auto tri = reinterpret_cast<const uint32_t*>(
-                geom.triangles + geom.triangleStride * primIdx);
 
-            const Point3D pA = geom.preTransform *
-                *reinterpret_cast<const Point3D*>(geom.vertices + geom.vertexStride * tri[0]);
-            const Point3D pB = geom.preTransform *
-                *reinterpret_cast<const Point3D*>(geom.vertices + geom.vertexStride * tri[1]);
-            const Point3D pC = geom.preTransform *
-                *reinterpret_cast<const Point3D*>(geom.vertices + geom.vertexStride * tri[2]);
+            Point3D pA, pB, pC;
+            calcTriangleVertices(
+                buildInput, geomIdx, primIdx,
+                &pA, &pB, &pC);
 
             shared::TriangleStorage &triStorage = triStorages[inputPrimIdx];
             triStorage = {};
