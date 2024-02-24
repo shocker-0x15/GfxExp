@@ -531,6 +531,11 @@ static void performSpatialSplit(
     const float binCoeff = (splitTask.geomAabb.maxP[splitDim] - splitTask.geomAabb.minP[splitDim]) / numSpaBins;
     const float splitPlane = splitTask.geomAabb.minP[splitDim] + (splitPlaneIdx + 1) * binCoeff;
 
+    const float addToLeftPartialCost =
+        splitInfo.rightAabb.calcHalfSurfaceArea() * (splitInfo.rightPrimCount - 1);
+    const float addToRightPartialCost =
+        splitInfo.leftAabb.calcHalfSurfaceArea() * (splitInfo.leftPrimCount - 1);
+
     const uint32_t numPrimsReserved = static_cast<uint32_t>(splitTask.primRefs.size());
     uint32_t leftPrimCount = 0;
     uint32_t rightPrimCount = 0;
@@ -550,46 +555,62 @@ static void performSpatialSplit(
             static_cast<uint32_t>(fExitBinIdx),
             static_cast<uint32_t>(numSpaBins - 1));
 
-        if (entryBinIdx <= splitPlaneIdx && exitBinIdx > splitPlaneIdx &&
-            curNumPrims < numPrimsReserved) {
-            primSplitInfo.isRight = false;
+        if (entryBinIdx <= splitPlaneIdx && exitBinIdx > splitPlaneIdx) {
+            // EN: Evaluate reference unsplitting.
+            const float splitCost = splitInfo.cost;
+#if 1
+            const float addToLeftCost =
+                unify(splitInfo.leftAabb, primRef.box).calcHalfSurfaceArea() * splitInfo.leftPrimCount +
+                addToLeftPartialCost;
+            const float addToRightCost =
+                addToRightPartialCost +
+                unify(splitInfo.rightAabb, primRef.box).calcHalfSurfaceArea() * splitInfo.rightPrimCount;
+#else
+            const float addToLeftCost = INFINITY;
+            const float addToRightCost = INFINITY;
+#endif
+            if (splitCost < addToLeftCost && splitCost < addToRightCost &&
+                curNumPrims < numPrimsReserved) {
+                primSplitInfo.isRight = false;
 
-            Point3D pA, pB, pC;
-            calcTriangleVertices(
-                buildInput, primRef.geomIndex, primRef.primIndex,
-                &pA, &pB, &pC);
+                Point3D pA, pB, pC;
+                calcTriangleVertices(
+                    buildInput, primRef.geomIndex, primRef.primIndex,
+                    &pA, &pB, &pC);
 
-            PrimitiveReference &newPrimRef = splitTask.primRefs[curNumPrims];
-            PrimSplitInfo &newPrimSplitInfo = splitTask.primSplitInfos[curNumPrims];
-            AABB leftAabb, rightAabb;
-            splitTriangle(pA, pB, pC, splitPlane, splitDim, &leftAabb, &rightAabb);
-            leftAabb.intersect(primRef.box);
-            rightAabb.intersect(primRef.box);
-            primRef.box = leftAabb;
-            newPrimRef.box = rightAabb;
-            newPrimRef.geomIndex = primRef.geomIndex;
-            newPrimRef.primIndex = primRef.primIndex;
-            newPrimSplitInfo.isRight = true;
+                PrimitiveReference &newPrimRef = splitTask.primRefs[curNumPrims];
+                PrimSplitInfo &newPrimSplitInfo = splitTask.primSplitInfos[curNumPrims];
+                AABB leftAabb, rightAabb;
+                splitTriangle(pA, pB, pC, splitPlane, splitDim, &leftAabb, &rightAabb);
+                leftAabb.intersect(primRef.box);
+                rightAabb.intersect(primRef.box);
+                primRef.box = leftAabb;
+                newPrimRef.box = rightAabb;
+                newPrimRef.geomIndex = primRef.geomIndex;
+                newPrimRef.primIndex = primRef.primIndex;
+                newPrimSplitInfo.isRight = true;
 
-            ++leftPrimCount;
-            ++rightPrimCount;
-            ++curNumPrims;
-        }
-        else {
-            const float center = 0.5f * (primRef.box.minP[splitDim] + primRef.box.maxP[splitDim]);
-            const float fCenterBinIdx =
-                (center - splitTask.geomAabb.minP[splitDim]) / binCoeff;
-            const uint32_t centerBinIdx = std::min(
-                static_cast<uint32_t>(fCenterBinIdx),
-                static_cast<uint32_t>(numSpaBins - 1));
-
-            if (centerBinIdx > splitPlaneIdx) {
+                ++leftPrimCount;
+                ++rightPrimCount;
+                ++curNumPrims;
+            }
+            else if (addToLeftCost < addToRightCost) {
+                primSplitInfo.isRight = false;
+                ++leftPrimCount;
+            }
+            else {
                 primSplitInfo.isRight = true;
                 ++rightPrimCount;
             }
-            else {
+        }
+        else {
+            if (entryBinIdx <= splitPlaneIdx) {
                 primSplitInfo.isRight = false;
                 ++leftPrimCount;
+            }
+            else {
+                primSplitInfo.isRight = true;
+                ++rightPrimCount;
             }
         }
     }
