@@ -3083,7 +3083,16 @@ void testBvhBuilder() {
             {
                 R"(E:/assets/one_tri.obj)",
                 Matrix4x4(),
-                translate3D_4x4(0.0f, 1.0f, 3.0f) *
+                translate3D_4x4(0.0f, 0.0f, 3.0f) *
+                rotate3DY_4x4(180 * pi_v<float> / 180)
+            }
+        },
+        {
+            "two_tris",
+            {
+                R"(E:/assets/two_tris.obj)",
+                Matrix4x4(),
+                translate3D_4x4(0.0f, 0.0f, 3.0f) *
                 rotate3DY_4x4(180 * pi_v<float> / 180)
             }
         },
