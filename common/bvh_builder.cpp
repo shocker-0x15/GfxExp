@@ -1230,12 +1230,19 @@ inline shared::HitObject __traverse(
     Entry stack[64];
     int32_t stackIdx = 0;
     Entry curEntry = { 0, 0 };
+    double sumStackAccessDepth = 0.0;
+    int32_t maxStackDepth = 0;
+    uint32_t numIterations = 0;
     while (true) {
         if (curEntry.asUInt == UINT32_MAX) {
             if (stackIdx == 0)
                 break;
             curEntry = stack[--stackIdx];
+            if (stats)
+                sumStackAccessDepth += stackIdx;
         }
+
+        ++numIterations;
 
         if (curEntry.isLeaf) {
             uint32_t primRefIdx = curEntry.index;
@@ -1267,13 +1274,13 @@ inline shared::HitObject __traverse(
 
         const InternalNode &intNode = bvh.intNodes[curEntry.index];
 
-        float dists[arity];
+        uint32_t keys[arity];
         Entry entries[arity];
         uint32_t numHits = 0;
         for (uint32_t slot = 0; slot < arity; ++slot) {
             if (!intNode.getChildIsValid(slot)) {
                 for (; slot < arity; ++slot)
-                    dists[slot] = INFINITY;
+                    keys[slot] = floatToOrderedUInt(INFINITY);
                 break;
             }
 
@@ -1282,7 +1289,6 @@ inline shared::HitObject __traverse(
             const AABB &aabb = intNode.getChildAabb(slot);
             float hitDistMin, hitDistMax;
             if (aabb.intersect(rayOrg, rayDir, distMin, ret.dist, &hitDistMin, &hitDistMax)) {
-                dists[slot] = 0.5f * (hitDistMax + hitDistMax);
                 Entry entry;
                 entry.isLeaf = intNode.getChildIsLeaf(slot);
                 if (entry.isLeaf)
@@ -1290,20 +1296,32 @@ inline shared::HitObject __traverse(
                 else
                     entry.index = intNode.intNodeChildBaseIndex + intNode.getChildOffset(slot);
                 entries[slot] = entry;
+                const float dist = 0.5f * (hitDistMax + hitDistMax);
+                keys[slot] = (floatToOrderedUInt(dist) >> 1) | (!entry.isLeaf << 31);
                 ++numHits;
             }
             else {
-                dists[slot] = INFINITY;
+                keys[slot] = floatToOrderedUInt(INFINITY);
             }
         }
 
         curEntry.asUInt = UINT32_MAX;
         if (numHits > 0) {
-            sort(dists, entries);
-            for (uint32_t i = numHits - 1; i > 0; --i)
+            sort(keys, entries);
+            for (uint32_t i = numHits - 1; i > 0; --i) {
+                if (stats)
+                    sumStackAccessDepth += stackIdx;
                 stack[stackIdx++] = entries[i];
+            }
+            if (stats)
+                maxStackDepth = std::max(stackIdx, maxStackDepth);
             curEntry = entries[0];
         }
+    }
+
+    if (stats) {
+        stats->avgStackAccessDepth = static_cast<float>(sumStackAccessDepth / numIterations);
+        stats->maxStackDepth = static_cast<uint32_t>(maxStackDepth);
     }
 
     return ret;

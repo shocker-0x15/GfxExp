@@ -3098,7 +3098,7 @@ void testBvhBuilder() {
         },
     };
 
-    const TestScene &scene = scenes.at("lowpoly_bunny");
+    const TestScene &scene = scenes.at("conference");
     constexpr uint32_t maxNumIntersections = 128;
     constexpr uint32_t singleCamIdx = 0;
     constexpr bool visStats = false;
@@ -3313,6 +3313,10 @@ void testBvhBuilder() {
                 scene.cameraTransform;
 
             std::vector<float4> image(width * height);
+            double sumMaxStackDepth = 0;
+            uint32_t maxMaxStackDepth = 0;
+            double sumAvgStackAccessDepth = 0;
+            float maxAvgStackAccessDepth;
             for (uint32_t ipy = 0; ipy < height; ++ipy) {
                 for (uint32_t ipx = 0; ipx < width; ++ipx) {
                     const float px = ipx + 0.5f;
@@ -3356,8 +3360,16 @@ void testBvhBuilder() {
                     }
 
                     image[width * ipy + ipx] = float4(color.toNative(), 1.0f);
+                    sumMaxStackDepth += stats.maxStackDepth;
+                    maxMaxStackDepth = std::max(stats.maxStackDepth, maxMaxStackDepth);
+                    sumAvgStackAccessDepth += stats.avgStackAccessDepth;
+                    maxAvgStackAccessDepth = std::max(stats.avgStackAccessDepth, maxAvgStackAccessDepth);
                 }
             }
+            hpprintf("Avg Stack Access Depth - Avg: %.3f\n", sumAvgStackAccessDepth / (width * height));
+            hpprintf("Avg Stack Access Depth - Max: %.3f\n", maxAvgStackAccessDepth);
+            hpprintf("Max Stack Depth - Avg: %.3f\n", sumMaxStackDepth / (width * height));
+            hpprintf("Max Stack Depth - Max: %u\n", maxMaxStackDepth);
 
             SDRImageSaverConfig imageSaveConfig = {};
             imageSaveConfig.applyToneMap = false;

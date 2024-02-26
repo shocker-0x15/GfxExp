@@ -66,6 +66,8 @@ void buildInstanceBVH(
 struct TraversalStatistics {
     uint32_t numAabbTests;
     uint32_t numTriTests;
+    float avgStackAccessDepth;
+    uint32_t maxStackDepth;
 };
 
 template <uint32_t arity>

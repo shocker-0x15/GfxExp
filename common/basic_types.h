@@ -333,6 +333,42 @@ CUDA_COMMON_FUNCTION CUDA_INLINE uint32_t nthSetBit(uint32_t value, int32_t n) {
     return idx;
 }
 
+CUDA_COMMON_FUNCTION CUDA_INLINE int32_t floatToOrderedInt(const float fVal) {
+#if defined(__CUDA_ARCH__)
+    const int32_t iVal = __float_as_int(fVal);
+#else
+    const int32_t iVal = std::bit_cast<int32_t>(fVal);
+#endif
+    return (iVal >= 0) ? iVal : iVal ^ 0x7FFF'FFFF;
+}
+
+CUDA_COMMON_FUNCTION CUDA_INLINE float orderedIntToFloat(const int32_t iVal) {
+    const int32_t orgBits = (iVal >= 0) ? iVal : iVal ^ 0x7FFF'FFFF;
+#if defined(__CUDA_ARCH__)
+    return __int_as_float(orgBits);
+#else
+    return std::bit_cast<float>(orgBits);
+#endif
+}
+
+CUDA_COMMON_FUNCTION CUDA_INLINE uint32_t floatToOrderedUInt(const float fVal) {
+#if defined(__CUDA_ARCH__)
+    const uint32_t uiVal = __float_as_uint(fVal);
+#else
+    const uint32_t uiVal = std::bit_cast<int32_t>(fVal);
+#endif
+    return uiVal ^ (uiVal < 0x8000'0000 ? 0x8000'0000 : 0xFFFF'FFFF);
+}
+
+CUDA_COMMON_FUNCTION CUDA_INLINE float orderedUIntToFloat(const uint32_t uiVal) {
+    const uint32_t orgBits = orgBits ^ (uiVal >= 0x8000'0000 ? 0x8000'0000 : 0xFFFF'FFFF);
+#if defined(__CUDA_ARCH__)
+    return __uint_as_float(orgBits);
+#else
+    return std::bit_cast<float>(orgBits);
+#endif
+}
+
 
 
 // ----------------------------------------------------------------
@@ -5309,24 +5345,6 @@ using RGB = RGB_T<float>;
 using FloatSum = CompensatedSum_T<float>;
 
 
-
-CUDA_COMMON_FUNCTION CUDA_INLINE int32_t floatToOrderedInt(const float fVal) {
-#if defined(__CUDA_ARCH__)
-    int32_t iVal = __float_as_int(fVal);
-#else
-    const int32_t iVal = *reinterpret_cast<const int32_t*>(&fVal);
-#endif
-    return (iVal >= 0) ? iVal : iVal ^ 0x7FFFFFFF;
-}
-
-CUDA_COMMON_FUNCTION CUDA_INLINE float orderedIntToFloat(const int32_t iVal) {
-    int32_t orgVal = (iVal >= 0) ? iVal : iVal ^ 0x7FFFFFFF;
-#if defined(__CUDA_ARCH__)
-    return __int_as_float(orgVal);
-#else
-    return *reinterpret_cast<float*>(&orgVal);
-#endif
-}
 
 struct RGBAsOrderedInt {
     int32_t r, g, b;
