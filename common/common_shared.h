@@ -983,7 +983,11 @@ namespace shared {
             const Vector3D d = (box.maxP - box.minP) / 255;
             const auto calcExpScale = []
             (float s) {
+#if defined(__CUDA_ARCH__)
+                const uint32_t us = __float_as_uint(s);
+#else
                 const uint32_t us = std::bit_cast<uint32_t>(s);
+#endif
                 return (us >> 23) + ((us & 0x7F'FFFF) ? 1 : 0);
             };
             quantBoxExpScaleX = calcExpScale(d.x);

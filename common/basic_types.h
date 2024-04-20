@@ -355,13 +355,13 @@ CUDA_COMMON_FUNCTION CUDA_INLINE uint32_t floatToOrderedUInt(const float fVal) {
 #if defined(__CUDA_ARCH__)
     const uint32_t uiVal = __float_as_uint(fVal);
 #else
-    const uint32_t uiVal = std::bit_cast<int32_t>(fVal);
+    const uint32_t uiVal = std::bit_cast<uint32_t>(fVal);
 #endif
     return uiVal ^ (uiVal < 0x8000'0000 ? 0x8000'0000 : 0xFFFF'FFFF);
 }
 
 CUDA_COMMON_FUNCTION CUDA_INLINE float orderedUIntToFloat(const uint32_t uiVal) {
-    const uint32_t orgBits = orgBits ^ (uiVal >= 0x8000'0000 ? 0x8000'0000 : 0xFFFF'FFFF);
+    const uint32_t orgBits = uiVal ^ (uiVal >= 0x8000'0000 ? 0x8000'0000 : 0xFFFF'FFFF);
 #if defined(__CUDA_ARCH__)
     return __uint_as_float(orgBits);
 #else
@@ -3357,7 +3357,7 @@ struct AABB_T {
         const Point3D_T<F> &org, const Vector3D_T<F, false> &dir, const F distMin, const F distMax,
         float* const hitDistMin, float* const hitDistMax) const {
         if (!isValid())
-            return INFINITY;
+            return false;
         const Vector3D_T<F, false> invRayDir = 1.0f / dir;
         const Vector3D_T<F, false> tNear = (minP - org) * invRayDir;
         const Vector3D_T<F, false> tFar = (maxP - org) * invRayDir;
