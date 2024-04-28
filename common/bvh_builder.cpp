@@ -1176,6 +1176,54 @@ static inline void sort(KeyType (&keys)[8], ValueType (&values)[8]) {
 
 #undef SWAP
 
+#define SWAP_ORDER(A, B, W)\
+    if (keys[A] > keys[B]) {\
+        stc::swap(keys[A], keys[B]);\
+        constexpr uint32_t mask = (1 << W) - 1;\
+        const uint32_t offsetA = A * W;\
+        const uint32_t offsetB = B * W;\
+        const uint32_t vA = (*values >> offsetA) & mask;\
+        const uint32_t vB = (*values >> offsetB) & mask;\
+        *values &= ~(mask << offsetA);\
+        *values |= (vB << offsetA);\
+        *values &= ~(mask << offsetB);\
+        *values |= (vA << offsetB);\
+    }
+
+template <typename KeyType>
+static inline void sortOrder(KeyType (&keys)[2], uint32_t* const values) {
+    SWAP_ORDER(0, 1, 1);
+}
+
+template <typename KeyType>
+static inline void sortOrder(KeyType (&keys)[4], uint32_t* const values) {
+    SWAP_ORDER(0, 2, 2); SWAP_ORDER(1, 3, 2);
+    SWAP_ORDER(0, 1, 2); SWAP_ORDER(2, 3, 2);
+    SWAP_ORDER(1, 2, 2);
+}
+
+template <typename KeyType>
+static inline void sortOrder(KeyType (&keys)[8], uint32_t* const values) {
+    SWAP_ORDER(0, 2, 3); SWAP_ORDER(1, 3, 3); SWAP_ORDER(4, 6, 3); SWAP_ORDER(5, 7, 3);
+    SWAP_ORDER(0, 4, 3); SWAP_ORDER(1, 5, 3); SWAP_ORDER(2, 6, 3); SWAP_ORDER(3, 7, 3);
+    SWAP_ORDER(0, 1, 3); SWAP_ORDER(2, 3, 3); SWAP_ORDER(4, 5, 3); SWAP_ORDER(6, 7, 3);
+    SWAP_ORDER(2, 4, 3); SWAP_ORDER(3, 5, 3);
+    SWAP_ORDER(1, 4, 3); SWAP_ORDER(3, 6, 3);
+    SWAP_ORDER(1, 2, 3); SWAP_ORDER(3, 4, 3); SWAP_ORDER(5, 6, 3);
+}
+
+#undef SWAP_ORDER
+
+template <uint32_t arity>
+static inline constexpr uint32_t getInitialOrderInfo() {
+    static constexpr uint32_t orderBitWidth = tzcntConst(arity);
+    uint32_t orderInfo = 0;
+    //#pragma unroll
+    for (uint32_t slot = 0; slot < arity; ++slot)
+        orderInfo |= (slot << (orderBitWidth * slot));
+    return orderInfo;
+}
+
 static bool testRayVsTriangle(
     const Point3D &rayOrg, const Vector3D &rayDir, const float distMin, const float distMax,
     const Point3D &pA, const Point3D &pB, const Point3D &pC,
@@ -1200,7 +1248,7 @@ template <uint32_t arity>
 inline shared::HitObject __traverse(
     const GeometryBVH<arity> &bvh,
     const Point3D &rayOrg, const Vector3D &rayDir, const float distMin, const float distMax,
-    TraversalStatistics* const stats) {
+    TraversalStatistics* const stats, const bool debugPrint) {
     using namespace shared;
     using InternalNode = InternalNode_T<arity>;
 
@@ -1219,6 +1267,226 @@ inline shared::HitObject __traverse(
         stats->numTriTests = 0;
     }
 
+#define USE_COMPRESSED_STACK 1
+
+    double sumStackAccessDepth = 0.0;
+    uint32_t numStackAccesses = 0;
+    int32_t maxStackDepth = 0;
+    uint32_t numIterations = 0;
+
+#if USE_COMPRESSED_STACK
+    union Entry {
+        struct {
+            uint32_t baseIndex : 31;
+            uint32_t isLeafGroup : 1;
+            uint32_t orderInfo : 28;
+            uint32_t numItems : 4;
+        };
+        uint32_t asUInts[2];
+    };
+
+    Entry stack[32];
+    uint8_t leafOffsets[arity];
+    int32_t stackIdx = 0;
+    Entry curGroup = { 0, 0, 0, 1 };
+    while (true) {
+        static constexpr uint32_t orderBitWidth = tzcntConst(arity);
+        static constexpr uint32_t orderMask = (1 << orderBitWidth) - 1;
+
+        Entry curTriGroup = {};
+        if (curGroup.isLeafGroup) {
+            curTriGroup = curGroup;
+            curGroup.numItems = 0;
+        }
+        else {
+            Assert(curGroup.numItems > 0, "No items anymore.");
+            const uint32_t nodeIdx = curGroup.baseIndex + (curGroup.orderInfo & orderMask);
+            curGroup.orderInfo >>= orderBitWidth;
+            --curGroup.numItems;
+
+            const InternalNode &intNode = bvh.intNodes[nodeIdx];
+            if (debugPrint)
+                hpprintf(
+                    "Int %u: %u, %u\n",
+                    nodeIdx, intNode.intNodeChildBaseIndex, intNode.leafBaseIndex);
+
+            Entry newGroup = {};
+            {
+                uint32_t keys[arity];
+                uint32_t orderInfo = 0;
+                uint32_t numIntHits = 0;
+                uint32_t numLeafHits = 0;
+                for (uint32_t slot = 0; slot < arity; ++slot) {
+                    if (!intNode.getChildIsValid(slot)) {
+                        for (; slot < arity; ++slot)
+                            keys[slot] = floatToOrderedUInt(INFINITY);
+                        break;
+                    }
+
+                    if (stats)
+                        ++stats->numAabbTests;
+                    const AABB &aabb = intNode.getChildAabb(slot);
+                    float hitDistMin, hitDistMax;
+                    if (aabb.intersect(rayOrg, rayDir, distMin, ret.dist, &hitDistMin, &hitDistMax)) {
+                        bool const isLeaf = intNode.getChildIsLeaf(slot);
+                        const float dist = 0.5f * (hitDistMin + hitDistMax);
+                        keys[slot] = (floatToOrderedUInt(dist) >> 1) | (!isLeaf << 31);
+                        if (isLeaf) {
+                            orderInfo |= (slot << (orderBitWidth * slot));
+                            ++numLeafHits;
+                            if (debugPrint)
+                                hpprintf("  %u: %g, leaf\n", slot, dist);
+                        }
+                        else {
+                            const uint32_t nthIntChild = intNode.getInternalChildIndex(slot);
+                            orderInfo |= (nthIntChild << (orderBitWidth * slot));
+                            ++numIntHits;
+                            if (debugPrint)
+                                hpprintf("  %u: %g, %u th int child\n", slot, dist, nthIntChild);
+                        }
+                    }
+                    else {
+                        keys[slot] = floatToOrderedUInt(INFINITY);
+                    }
+                }
+
+                if (numIntHits + numLeafHits > 0)
+                    sortOrder(keys, &orderInfo);
+
+                if (numLeafHits > 0) {
+                    curTriGroup.numItems = numLeafHits;
+                    curTriGroup.baseIndex = intNode.leafBaseIndex;
+                    curTriGroup.isLeafGroup = true;
+                    curTriGroup.orderInfo = orderInfo;
+
+                    //#pragma unroll
+                    for (uint32_t slot = 0; slot < arity; ++slot)
+                        leafOffsets[slot] = intNode.childMetas[slot].getLeafOffset();
+
+                    if (debugPrint) {
+                        hpprintf("  Order (Leaf): [");
+                        for (uint32_t i = 0; i < curTriGroup.numItems; ++i)
+                            hpprintf(
+                                "%u%s",
+                                (curTriGroup.orderInfo >> (orderBitWidth * i)) & orderMask,
+                                i + 1 < curTriGroup.numItems ? ", " : "");
+                        hpprintf("]\n");
+                    }
+                }
+                if (numIntHits > 0) {
+                    newGroup.numItems = numIntHits;
+                    newGroup.baseIndex = intNode.intNodeChildBaseIndex;
+                    newGroup.isLeafGroup = false;
+                    newGroup.orderInfo = orderInfo >> (orderBitWidth * numLeafHits);
+
+                    if (debugPrint) {
+                        hpprintf("  Order (Int): [");
+                        for (uint32_t i = 0; i < newGroup.numItems; ++i)
+                            hpprintf(
+                                "%u th%s",
+                                (newGroup.orderInfo >> (orderBitWidth * i)) & orderMask,
+                                i + 1 < newGroup.numItems ? ", " : "");
+                        hpprintf("]\n");
+                    }
+                }
+            }
+
+            if (newGroup.numItems > 0) {
+                if (curGroup.numItems > 0) {
+                    stack[stackIdx++] = curGroup;
+                    if (stats) {
+                        sumStackAccessDepth += stackIdx;
+                        ++numStackAccesses;
+                        maxStackDepth = std::max(stackIdx, maxStackDepth);
+                    }
+                    if (debugPrint) {
+                        hpprintf("Push (%u): %u - [", stackIdx, curGroup.baseIndex);
+                        for (uint32_t i = 0; i < curGroup.numItems; ++i)
+                            hpprintf(
+                                "%u%s",
+                                (curGroup.orderInfo >> (orderBitWidth * i)) & orderMask,
+                                i + 1 < curGroup.numItems ? ", " : "");
+                        hpprintf("]\n");
+                    }
+                }
+                curGroup = newGroup;
+            }
+        }
+
+        if (curTriGroup.numItems > 0) {
+            const uint32_t slot = curTriGroup.orderInfo & orderMask;
+            const uint32_t primRefIdx = curTriGroup.baseIndex + leafOffsets[slot]++;
+            if (stats)
+                ++stats->numTriTests;
+            const shared::PrimitiveReference primRef = bvh.primRefs[primRefIdx];
+            const TriangleStorage &triStorage = bvh.triStorages[primRef.storageIndex];
+            float hitDist;
+            float hitBcB, hitBcC;
+            Normal3D hitNormal;
+            const bool hit = testRayVsTriangle(
+                rayOrg, rayDir, distMin, ret.dist,
+                triStorage.pA, triStorage.pB, triStorage.pC,
+                &hitDist, &hitNormal, &hitBcB, &hitBcC);
+            if (hit) {
+                ret.dist = hitDist;
+                ret.geomIndex = triStorage.geomIndex;
+                ret.primIndex = triStorage.primIndex;
+                ret.bcA = 1.0f - (hitBcB + hitBcC);
+                ret.bcB = hitBcB;
+                ret.bcC = hitBcC;
+            }
+            if (primRef.isLeafEnd) {
+                curTriGroup.orderInfo >>= orderBitWidth;
+                --curTriGroup.numItems;
+            }
+            if (debugPrint)
+                hpprintf(
+                    "Leaf %u: tri %u: %s (%g)\n",
+                    primRefIdx, primRef.storageIndex, hit ? "hit" : "miss",
+                    hit ? ret.dist : INFINITY);
+
+            if (curTriGroup.numItems > 0) {
+                if (curGroup.numItems > 0) {
+                    stack[stackIdx++] = curGroup;
+                    if (stats) {
+                        sumStackAccessDepth += stackIdx;
+                        ++numStackAccesses;
+                        maxStackDepth = std::max(stackIdx, maxStackDepth);
+                    }
+                    if (debugPrint) {
+                        hpprintf("Push (%u): %u - [", stackIdx, curGroup.baseIndex);
+                        for (uint32_t i = 0; i < curGroup.numItems; ++i)
+                            hpprintf(
+                                "%u%s",
+                                (curGroup.orderInfo >> (orderBitWidth * i)) & orderMask,
+                                i + 1 < curGroup.numItems ? ", " : "");
+                        hpprintf("]\n");
+                    }
+                }
+                curGroup = curTriGroup;
+            }
+        }
+
+        if (curGroup.numItems == 0) {
+            if (stackIdx == 0)
+                break;
+            curGroup = stack[--stackIdx];
+            if (stats) {
+                sumStackAccessDepth += stackIdx;
+                ++numStackAccesses;
+            }
+            if (debugPrint) {
+                hpprintf("Pop (%u): %u - [", stackIdx, curGroup.baseIndex);
+                for (uint32_t i = 0; i < curGroup.numItems; ++i)
+                    hpprintf(
+                        "%u%s",
+                        (curGroup.orderInfo >> (orderBitWidth * i)) & orderMask,
+                        i + 1 < curGroup.numItems ? ", " : "");
+                hpprintf("]\n");
+            }
+        }
+    }
+#else
     union Entry {
         struct {
             uint32_t index : 31;
@@ -1230,49 +1498,58 @@ inline shared::HitObject __traverse(
     Entry stack[64];
     int32_t stackIdx = 0;
     Entry curEntry = { 0, 0 };
-    double sumStackAccessDepth = 0.0;
-    int32_t maxStackDepth = 0;
-    uint32_t numIterations = 0;
     while (true) {
         if (curEntry.asUInt == UINT32_MAX) {
             if (stackIdx == 0)
                 break;
             curEntry = stack[--stackIdx];
-            if (stats)
+            if (stats) {
                 sumStackAccessDepth += stackIdx;
+                ++numStackAccesses;
+            }
+            if (debugPrint)
+                hpprintf("Pop (%u)\n", stackIdx);
         }
 
         ++numIterations;
 
         if (curEntry.isLeaf) {
-            uint32_t primRefIdx = curEntry.index;
-            while (true) {
-                if (stats)
-                    ++stats->numTriTests;
-                const shared::PrimitiveReference primRef = bvh.primRefs[primRefIdx++];
-                const TriangleStorage &triStorage = bvh.triStorages[primRef.storageIndex];
-                float hitDist;
-                float hitBcB, hitBcC;
-                Normal3D hitNormal;
-                if (testRayVsTriangle(
-                        rayOrg, rayDir, distMin, ret.dist,
-                        triStorage.pA, triStorage.pB, triStorage.pC,
-                        &hitDist, &hitNormal, &hitBcB, &hitBcC)) {
-                    ret.dist = hitDist;
-                    ret.geomIndex = triStorage.geomIndex;
-                    ret.primIndex = triStorage.primIndex;
-                    ret.bcA = 1.0f - (hitBcB + hitBcC);
-                    ret.bcB = hitBcB;
-                    ret.bcC = hitBcC;
-                }
-                if (primRef.isLeafEnd)
-                    break;
+            if (stats)
+                ++stats->numTriTests;
+            const shared::PrimitiveReference primRef = bvh.primRefs[curEntry.index];
+            const TriangleStorage &triStorage = bvh.triStorages[primRef.storageIndex];
+            float hitDist;
+            float hitBcB, hitBcC;
+            Normal3D hitNormal;
+            const bool hit = testRayVsTriangle(
+                rayOrg, rayDir, distMin, ret.dist,
+                triStorage.pA, triStorage.pB, triStorage.pC,
+                &hitDist, &hitNormal, &hitBcB, &hitBcC);
+            if (hit) {
+                ret.dist = hitDist;
+                ret.geomIndex = triStorage.geomIndex;
+                ret.primIndex = triStorage.primIndex;
+                ret.bcA = 1.0f - (hitBcB + hitBcC);
+                ret.bcB = hitBcB;
+                ret.bcC = hitBcC;
             }
-            curEntry.asUInt = UINT32_MAX;
+            if (debugPrint)
+                hpprintf(
+                    "Leaf %u: tri %u: %s (%g)\n",
+                    curEntry.index, primRef.storageIndex, hit ? "hit" : "miss",
+                    hit ? ret.dist : INFINITY);
+            if (primRef.isLeafEnd)
+                curEntry.asUInt = UINT32_MAX;
+            else
+                ++curEntry.index;
             continue;
         }
 
         const InternalNode &intNode = bvh.intNodes[curEntry.index];
+        if (debugPrint)
+            hpprintf(
+                "Int %u: %u, %u\n",
+                curEntry.index, intNode.intNodeChildBaseIndex, intNode.leafBaseIndex);
 
         uint32_t keys[arity];
         Entry entries[arity];
@@ -1291,12 +1568,19 @@ inline shared::HitObject __traverse(
             if (aabb.intersect(rayOrg, rayDir, distMin, ret.dist, &hitDistMin, &hitDistMax)) {
                 Entry entry;
                 entry.isLeaf = intNode.getChildIsLeaf(slot);
-                if (entry.isLeaf)
+                const float dist = 0.5f * (hitDistMin + hitDistMax);
+                if (entry.isLeaf) {
                     entry.index = intNode.leafBaseIndex + intNode.getLeafOffset(slot);
-                else
-                    entry.index = intNode.intNodeChildBaseIndex + intNode.getChildOffset(slot);
+                    if (debugPrint)
+                        hpprintf("  %u: %g, leaf\n", slot, dist);
+                }
+                else {
+                    const uint32_t nthIntChild = intNode.getInternalChildIndex(slot);
+                    entry.index = intNode.intNodeChildBaseIndex + nthIntChild;
+                    if (debugPrint)
+                        hpprintf("  %u: %g, %u th int child\n", slot, dist, nthIntChild);
+                }
                 entries[slot] = entry;
-                const float dist = 0.5f * (hitDistMax + hitDistMax);
                 keys[slot] = (floatToOrderedUInt(dist) >> 1) | (!entry.isLeaf << 31);
                 ++numHits;
             }
@@ -1309,46 +1593,54 @@ inline shared::HitObject __traverse(
         if (numHits > 0) {
             sort(keys, entries);
             for (uint32_t i = numHits - 1; i > 0; --i) {
-                if (stats)
+                if (stats) {
                     sumStackAccessDepth += stackIdx;
+                    ++numStackAccesses;
+                }
                 stack[stackIdx++] = entries[i];
+                if (debugPrint)
+                    hpprintf("Push (%u)\n", stackIdx);
             }
             if (stats)
                 maxStackDepth = std::max(stackIdx, maxStackDepth);
             curEntry = entries[0];
         }
     }
+#endif
 
     if (stats) {
-        stats->avgStackAccessDepth = static_cast<float>(sumStackAccessDepth / numIterations);
+        stats->avgStackAccessDepth = numStackAccesses > 0 ?
+            static_cast<float>(sumStackAccessDepth / numStackAccesses) : 0.0f;
         stats->maxStackDepth = static_cast<uint32_t>(maxStackDepth);
     }
 
     return ret;
 }
 
+// Workaround for Intellisense.
+// https://developercommunity.visualstudio.com/t/The-provide-sample-template-arguments-f/10564187
 template <uint32_t arity>
 shared::HitObject traverse(
     const GeometryBVH<arity> &bvh,
     const Point3D &rayOrg, const Vector3D &rayDir, const float distMin, const float distMax,
-    TraversalStatistics* const stats) {
+    TraversalStatistics* const stats, const bool debugPrint) {
     return __traverse(
         bvh,
         rayOrg, rayDir, distMin, distMax,
-        stats);
+        stats, debugPrint);
 }
 
 template shared::HitObject traverse<2>(
     const GeometryBVH<2> &bvh,
     const Point3D &rayOrg, const Vector3D &rayDir, const float distMin, const float distMax,
-    TraversalStatistics* const stats);
+    TraversalStatistics* const stats, const bool debugPrint);
 template shared::HitObject traverse<4>(
     const GeometryBVH<4> &bvh,
     const Point3D &rayOrg, const Vector3D &rayDir, const float distMin, const float distMax,
-    TraversalStatistics* const stats);
+    TraversalStatistics* const stats, const bool debugPrint);
 template shared::HitObject traverse<8>(
     const GeometryBVH<8> &bvh,
     const Point3D &rayOrg, const Vector3D &rayDir, const float distMin, const float distMax,
-    TraversalStatistics* const stats);
+    TraversalStatistics* const stats, const bool debugPrint);
 
 }

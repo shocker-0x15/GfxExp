@@ -3263,7 +3263,7 @@ void testBvhBuilder() {
                     setColor(0.0f, 0.3f * (entry.depth + 1) / maxDepth, 0.0f);
                     drawAabb(intNode.getChildAabb(slot));
                     if (entry.depth < maxDepth) {
-                        const uint32_t childIdx = intNode.intNodeChildBaseIndex + intNode.getChildOffset(slot);
+                        const uint32_t childIdx = intNode.intNodeChildBaseIndex + intNode.getInternalChildIndex(slot);
                         stack.push_back(StackEntry{ childIdx, entry.depth + 1 });
                     }
                     else {
@@ -3316,7 +3316,7 @@ void testBvhBuilder() {
             double sumMaxStackDepth = 0;
             uint32_t maxMaxStackDepth = 0;
             double sumAvgStackAccessDepth = 0;
-            float maxAvgStackAccessDepth;
+            float maxAvgStackAccessDepth = -INFINITY;
             for (uint32_t ipy = 0; ipy < height; ++ipy) {
                 for (uint32_t ipx = 0; ipx < width; ++ipx) {
                     const float px = ipx + 0.5f;
@@ -3329,7 +3329,9 @@ void testBvhBuilder() {
                     const Point3D rayOrg = camXfm * Point3D(0, 0, 0);
                     const Vector3D rayDir = camXfm * rayDirInLocal;
                     bvh::TraversalStatistics stats;
-                    const shared::HitObject hitObj = bvh::traverse(bvh, rayOrg, rayDir, 0.0f, 1e+10f, &stats);
+                    const shared::HitObject hitObj = bvh::traverse(
+                        bvh, rayOrg, rayDir, 0.0f, 1e+10f, &stats/*,
+                        ipx == 691 && ipy == 458*/);
 
                     RGB color;
                     if (visStats) {

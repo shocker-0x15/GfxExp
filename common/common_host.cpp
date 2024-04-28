@@ -2016,11 +2016,13 @@ GeometryInstance* createLinearSegmentsGeometryInstance(
     geomInst->optixGeomInst.setVertexBuffer(
         optixu::BufferView(
             geom.curveVertexBuffer.getCUdeviceptr() + offsetof(shared::CurveVertex, position),
-            geom.curveVertexBuffer.numElements(), geom.curveVertexBuffer.stride()));
+            geom.curveVertexBuffer.numElements(),
+            static_cast<uint32_t>(geom.curveVertexBuffer.stride())));
     geomInst->optixGeomInst.setWidthBuffer(
         optixu::BufferView(
             geom.curveVertexBuffer.getCUdeviceptr() + offsetof(shared::CurveVertex, width),
-            geom.curveVertexBuffer.numElements(), geom.curveVertexBuffer.stride()));
+            geom.curveVertexBuffer.numElements(),
+            static_cast<uint32_t>(geom.curveVertexBuffer.stride())));
     geomInst->optixGeomInst.setSegmentIndexBuffer(geom.segmentIndexBuffer);
     geomInst->optixGeomInst.setCurveEndcapFlags(OPTIX_CURVE_ENDCAP_ON);
     geomInst->optixGeomInst.setMaterial(0, 0, optixMat);

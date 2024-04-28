@@ -74,6 +74,6 @@ template <uint32_t arity>
 shared::HitObject traverse(
     const GeometryBVH<arity> &bvh,
     const Point3D &rayOrg, const Vector3D &rayDir, const float distMin, const float distMax,
-    TraversalStatistics* const stats = nullptr);
+    TraversalStatistics* const stats = nullptr, const bool debugPrint = false);
 
 }

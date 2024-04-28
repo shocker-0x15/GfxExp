@@ -230,12 +230,28 @@ CUDA_COMMON_FUNCTION CUDA_INLINE uint32_t tzcnt(const uint32_t x) {
 #endif
 }
 
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr uint32_t tzcntConst(const uint32_t x) {
+    for (uint32_t i = 0; i < 32; ++i) {
+        if ((x >> i) & 0b1)
+            return i;
+    }
+    return 32;
+}
+
 CUDA_COMMON_FUNCTION CUDA_INLINE uint32_t lzcnt(const uint32_t x) {
 #if defined(__CUDA_ARCH__)
     return __clz(x);
 #else
     return _lzcnt_u32(x);
 #endif
+}
+
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr uint32_t lzcntConst(const uint32_t x) {
+    for (uint32_t i = 0; i < 32; ++i) {
+        if ((x >> (31 - i)) & 0b1)
+            return i;
+    }
+    return 32;
 }
 
 CUDA_COMMON_FUNCTION CUDA_INLINE int32_t popcnt(const uint32_t x) {
