@@ -3314,9 +3314,11 @@ void testBvhBuilder() {
 
             std::vector<float4> image(width * height);
             double sumMaxStackDepth = 0;
-            uint32_t maxMaxStackDepth = 0;
+            int32_t maxMaxStackDepth = -1;
             double sumAvgStackAccessDepth = 0;
             float maxAvgStackAccessDepth = -INFINITY;
+            constexpr int32_t fastStackDepthLimit = 12 - 1;
+            uint64_t stackMemoryAccessAmount = 0;
             for (uint32_t ipy = 0; ipy < height; ++ipy) {
                 for (uint32_t ipx = 0; ipx < width; ++ipx) {
                     const float px = ipx + 0.5f;
@@ -3328,7 +3330,8 @@ void testBvhBuilder() {
                         1);
                     const Point3D rayOrg = camXfm * Point3D(0, 0, 0);
                     const Vector3D rayDir = camXfm * rayDirInLocal;
-                    bvh::TraversalStatistics stats;
+                    bvh::TraversalStatistics stats = {};
+                    stats.fastStackDepthLimit = fastStackDepthLimit;
                     const shared::HitObject hitObj = bvh::traverse(
                         bvh, rayOrg, rayDir, 0.0f, 1e+10f, &stats/*,
                         ipx == 691 && ipy == 458*/);
@@ -3366,12 +3369,16 @@ void testBvhBuilder() {
                     maxMaxStackDepth = std::max(stats.maxStackDepth, maxMaxStackDepth);
                     sumAvgStackAccessDepth += stats.avgStackAccessDepth;
                     maxAvgStackAccessDepth = std::max(stats.avgStackAccessDepth, maxAvgStackAccessDepth);
+                    stackMemoryAccessAmount += stats.stackMemoryAccessAmount;
                 }
             }
             hpprintf("Avg Stack Access Depth - Avg: %.3f\n", sumAvgStackAccessDepth / (width * height));
             hpprintf("Avg Stack Access Depth - Max: %.3f\n", maxAvgStackAccessDepth);
             hpprintf("Max Stack Depth - Avg: %.3f\n", sumMaxStackDepth / (width * height));
-            hpprintf("Max Stack Depth - Max: %u\n", maxMaxStackDepth);
+            hpprintf("Max Stack Depth - Max: %d\n", maxMaxStackDepth);
+            hpprintf(
+                "Stack Memory Access: %llu [B] (#FastStackEntry: %d)",
+                stackMemoryAccessAmount, fastStackDepthLimit + 1);
 
             SDRImageSaverConfig imageSaveConfig = {};
             imageSaveConfig.applyToneMap = false;

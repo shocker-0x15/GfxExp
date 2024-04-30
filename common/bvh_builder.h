@@ -67,7 +67,9 @@ struct TraversalStatistics {
     uint32_t numAabbTests;
     uint32_t numTriTests;
     float avgStackAccessDepth;
-    uint32_t maxStackDepth;
+    int32_t maxStackDepth;
+    int32_t fastStackDepthLimit; // input
+    uint32_t stackMemoryAccessAmount;
 };
 
 template <uint32_t arity>

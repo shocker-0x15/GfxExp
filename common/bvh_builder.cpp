@@ -1214,16 +1214,6 @@ static inline void sortOrder(KeyType (&keys)[8], uint32_t* const values) {
 
 #undef SWAP_ORDER
 
-template <uint32_t arity>
-static inline constexpr uint32_t getInitialOrderInfo() {
-    static constexpr uint32_t orderBitWidth = tzcntConst(arity);
-    uint32_t orderInfo = 0;
-    //#pragma unroll
-    for (uint32_t slot = 0; slot < arity; ++slot)
-        orderInfo |= (slot << (orderBitWidth * slot));
-    return orderInfo;
-}
-
 static bool testRayVsTriangle(
     const Point3D &rayOrg, const Vector3D &rayDir, const float distMin, const float distMax,
     const Point3D &pA, const Point3D &pB, const Point3D &pC,
@@ -1271,8 +1261,10 @@ inline shared::HitObject __traverse(
 
     double sumStackAccessDepth = 0.0;
     uint32_t numStackAccesses = 0;
-    int32_t maxStackDepth = 0;
+    int32_t maxStackDepth = -1;
     uint32_t numIterations = 0;
+    const int32_t fastStackDepthLimit = stats ? stats->fastStackDepthLimit : 0;
+    uint32_t stackMemoryAccessAmount = 0;
 
 #if USE_COMPRESSED_STACK
     union Entry {
@@ -1393,12 +1385,14 @@ inline shared::HitObject __traverse(
 
             if (newGroup.numItems > 0) {
                 if (curGroup.numItems > 0) {
-                    stack[stackIdx++] = curGroup;
                     if (stats) {
                         sumStackAccessDepth += stackIdx;
                         ++numStackAccesses;
                         maxStackDepth = std::max(stackIdx, maxStackDepth);
+                        if (stackIdx > fastStackDepthLimit)
+                            stackMemoryAccessAmount += sizeof(Entry);
                     }
+                    stack[stackIdx++] = curGroup;
                     if (debugPrint) {
                         hpprintf("Push (%u): %u - [", stackIdx, curGroup.baseIndex);
                         for (uint32_t i = 0; i < curGroup.numItems; ++i)
@@ -1447,12 +1441,14 @@ inline shared::HitObject __traverse(
 
             if (curTriGroup.numItems > 0) {
                 if (curGroup.numItems > 0) {
-                    stack[stackIdx++] = curGroup;
                     if (stats) {
                         sumStackAccessDepth += stackIdx;
                         ++numStackAccesses;
                         maxStackDepth = std::max(stackIdx, maxStackDepth);
+                        if (stackIdx > fastStackDepthLimit)
+                            stackMemoryAccessAmount += sizeof(Entry);
                     }
+                    stack[stackIdx++] = curGroup;
                     if (debugPrint) {
                         hpprintf("Push (%u): %u - [", stackIdx, curGroup.baseIndex);
                         for (uint32_t i = 0; i < curGroup.numItems; ++i)
@@ -1474,6 +1470,8 @@ inline shared::HitObject __traverse(
             if (stats) {
                 sumStackAccessDepth += stackIdx;
                 ++numStackAccesses;
+                if (stackIdx > fastStackDepthLimit)
+                    stackMemoryAccessAmount += sizeof(Entry);
             }
             if (debugPrint) {
                 hpprintf("Pop (%u): %u - [", stackIdx, curGroup.baseIndex);
@@ -1506,6 +1504,8 @@ inline shared::HitObject __traverse(
             if (stats) {
                 sumStackAccessDepth += stackIdx;
                 ++numStackAccesses;
+                if (stackIdx > fastStackDepthLimit)
+                    stackMemoryAccessAmount += sizeof(Entry);
             }
             if (debugPrint)
                 hpprintf("Pop (%u)\n", stackIdx);
@@ -1596,13 +1596,15 @@ inline shared::HitObject __traverse(
                 if (stats) {
                     sumStackAccessDepth += stackIdx;
                     ++numStackAccesses;
+                    if (stackIdx > fastStackDepthLimit)
+                        stackMemoryAccessAmount += sizeof(Entry);
                 }
                 stack[stackIdx++] = entries[i];
                 if (debugPrint)
                     hpprintf("Push (%u)\n", stackIdx);
             }
             if (stats)
-                maxStackDepth = std::max(stackIdx, maxStackDepth);
+                maxStackDepth = std::max(stackIdx - 1, maxStackDepth);
             curEntry = entries[0];
         }
     }
@@ -1611,7 +1613,8 @@ inline shared::HitObject __traverse(
     if (stats) {
         stats->avgStackAccessDepth = numStackAccesses > 0 ?
             static_cast<float>(sumStackAccessDepth / numStackAccesses) : 0.0f;
-        stats->maxStackDepth = static_cast<uint32_t>(maxStackDepth);
+        stats->maxStackDepth = maxStackDepth;
+        stats->stackMemoryAccessAmount = stackMemoryAccessAmount;
     }
 
     return ret;
