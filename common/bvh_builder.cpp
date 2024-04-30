@@ -1285,6 +1285,29 @@ inline shared::HitObject __traverse(
         static constexpr uint32_t orderBitWidth = tzcntConst(arity);
         static constexpr uint32_t orderMask = (1 << orderBitWidth) - 1;
 
+        if (curGroup.numItems == 0) {
+            if (stackIdx == 0)
+                break;
+            curGroup = stack[--stackIdx];
+            if (stats) {
+                sumStackAccessDepth += stackIdx;
+                ++numStackAccesses;
+                if (stackIdx > fastStackDepthLimit)
+                    stackMemoryAccessAmount += sizeof(Entry);
+            }
+            if (debugPrint) {
+                hpprintf("Pop (%u): %u - [", stackIdx, curGroup.baseIndex);
+                for (uint32_t i = 0; i < curGroup.numItems; ++i)
+                    hpprintf(
+                        "%u%s",
+                        (curGroup.orderInfo >> (orderBitWidth * i)) & orderMask,
+                        i + 1 < curGroup.numItems ? ", " : "");
+                hpprintf("]\n");
+            }
+        }
+
+        ++numIterations;
+
         Entry curTriGroup = {};
         if (curGroup.isLeafGroup) {
             curTriGroup = curGroup;
@@ -1460,27 +1483,6 @@ inline shared::HitObject __traverse(
                     }
                 }
                 curGroup = curTriGroup;
-            }
-        }
-
-        if (curGroup.numItems == 0) {
-            if (stackIdx == 0)
-                break;
-            curGroup = stack[--stackIdx];
-            if (stats) {
-                sumStackAccessDepth += stackIdx;
-                ++numStackAccesses;
-                if (stackIdx > fastStackDepthLimit)
-                    stackMemoryAccessAmount += sizeof(Entry);
-            }
-            if (debugPrint) {
-                hpprintf("Pop (%u): %u - [", stackIdx, curGroup.baseIndex);
-                for (uint32_t i = 0; i < curGroup.numItems; ++i)
-                    hpprintf(
-                        "%u%s",
-                        (curGroup.orderInfo >> (orderBitWidth * i)) & orderMask,
-                        i + 1 < curGroup.numItems ? ", " : "");
-                hpprintf("]\n");
             }
         }
     }

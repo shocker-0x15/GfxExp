@@ -3098,12 +3098,15 @@ void testBvhBuilder() {
         },
     };
 
-    const TestScene &scene = scenes.at("conference");
+    //const TestScene &scene = scenes.at("lowpoly_bunny");
+    //const TestScene &scene = scenes.at("conference");
+    const TestScene &scene = scenes.at("powerplant");
+    //const TestScene &scene = scenes.at("san_miguel");
     constexpr uint32_t maxNumIntersections = 128;
     constexpr uint32_t singleCamIdx = 0;
     constexpr bool visStats = false;
 
-    constexpr uint32_t arity = 4;
+    constexpr uint32_t arity = 8;
 
     bvh::GeometryBVHBuildConfig config = {};
     config.splittingBudget = 0.3f;
