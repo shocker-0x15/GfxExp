@@ -3100,6 +3100,8 @@ void testBvhBuilder() {
 
     //const TestScene &scene = scenes.at("lowpoly_bunny");
     //const TestScene &scene = scenes.at("conference");
+    //const TestScene &scene = scenes.at("hairball");
+    //const TestScene &scene = scenes.at("breakfast_room");
     const TestScene &scene = scenes.at("powerplant");
     //const TestScene &scene = scenes.at("san_miguel");
     constexpr uint32_t maxNumIntersections = 128;
@@ -3376,9 +3378,9 @@ void testBvhBuilder() {
                 }
             }
             hpprintf("Avg Stack Access Depth - Avg: %.3f\n", sumAvgStackAccessDepth / (width * height));
-            hpprintf("Avg Stack Access Depth - Max: %.3f\n", maxAvgStackAccessDepth);
+            hpprintf("                       - Max: %.3f\n", maxAvgStackAccessDepth);
             hpprintf("Max Stack Depth - Avg: %.3f\n", sumMaxStackDepth / (width * height));
-            hpprintf("Max Stack Depth - Max: %d\n", maxMaxStackDepth);
+            hpprintf("                - Max: %d\n", maxMaxStackDepth);
             hpprintf(
                 "Stack Memory Access: %llu [B] (#FastStackEntry: %d)",
                 stackMemoryAccessAmount, fastStackDepthLimit + 1);

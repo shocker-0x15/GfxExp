@@ -1267,6 +1267,9 @@ inline shared::HitObject __traverse(
     uint32_t stackMemoryAccessAmount = 0;
 
 #if USE_COMPRESSED_STACK
+    static constexpr uint32_t orderBitWidth = tzcntConst(arity);
+    static constexpr uint32_t orderMask = (1 << orderBitWidth) - 1;
+
     union Entry {
         struct {
             uint32_t baseIndex : 31;
@@ -1281,29 +1284,50 @@ inline shared::HitObject __traverse(
     uint8_t leafOffsets[arity];
     int32_t stackIdx = 0;
     Entry curGroup = { 0, 0, 0, 1 };
-    while (true) {
-        static constexpr uint32_t orderBitWidth = tzcntConst(arity);
-        static constexpr uint32_t orderMask = (1 << orderBitWidth) - 1;
 
+    const auto push = [&]() {
+        if (stats) {
+            sumStackAccessDepth += stackIdx;
+            ++numStackAccesses;
+            maxStackDepth = std::max(stackIdx, maxStackDepth);
+            if (stackIdx > fastStackDepthLimit)
+                stackMemoryAccessAmount += sizeof(Entry);
+        }
+        stack[stackIdx++] = curGroup;
+        if (debugPrint) {
+            hpprintf("Push (%u): %u - [", stackIdx, curGroup.baseIndex);
+            for (uint32_t i = 0; i < curGroup.numItems; ++i)
+                hpprintf(
+                    "%u%s",
+                    (curGroup.orderInfo >> (orderBitWidth * i)) & orderMask,
+                    i + 1 < curGroup.numItems ? ", " : "");
+            hpprintf("]\n");
+        }
+    };
+    const auto pop = [&]() {
+        curGroup = stack[--stackIdx];
+        if (stats) {
+            sumStackAccessDepth += stackIdx;
+            ++numStackAccesses;
+            if (stackIdx > fastStackDepthLimit)
+                stackMemoryAccessAmount += sizeof(Entry);
+        }
+        if (debugPrint) {
+            hpprintf("Pop (%u): %u - [", stackIdx, curGroup.baseIndex);
+            for (uint32_t i = 0; i < curGroup.numItems; ++i)
+                hpprintf(
+                    "%u%s",
+                    (curGroup.orderInfo >> (orderBitWidth * i)) & orderMask,
+                    i + 1 < curGroup.numItems ? ", " : "");
+            hpprintf("]\n");
+        }
+    };
+
+    while (true) {
         if (curGroup.numItems == 0) {
             if (stackIdx == 0)
                 break;
-            curGroup = stack[--stackIdx];
-            if (stats) {
-                sumStackAccessDepth += stackIdx;
-                ++numStackAccesses;
-                if (stackIdx > fastStackDepthLimit)
-                    stackMemoryAccessAmount += sizeof(Entry);
-            }
-            if (debugPrint) {
-                hpprintf("Pop (%u): %u - [", stackIdx, curGroup.baseIndex);
-                for (uint32_t i = 0; i < curGroup.numItems; ++i)
-                    hpprintf(
-                        "%u%s",
-                        (curGroup.orderInfo >> (orderBitWidth * i)) & orderMask,
-                        i + 1 < curGroup.numItems ? ", " : "");
-                hpprintf("]\n");
-            }
+            pop();
         }
 
         ++numIterations;
@@ -1314,122 +1338,105 @@ inline shared::HitObject __traverse(
             curGroup.numItems = 0;
         }
         else {
+            // Get the closest node.
             Assert(curGroup.numItems > 0, "No items anymore.");
             const uint32_t nodeIdx = curGroup.baseIndex + (curGroup.orderInfo & orderMask);
             curGroup.orderInfo >>= orderBitWidth;
             --curGroup.numItems;
-
             const InternalNode &intNode = bvh.intNodes[nodeIdx];
             if (debugPrint)
                 hpprintf(
                     "Int %u: %u, %u\n",
                     nodeIdx, intNode.intNodeChildBaseIndex, intNode.leafBaseIndex);
 
-            Entry newGroup = {};
-            {
-                uint32_t keys[arity];
-                uint32_t orderInfo = 0;
-                uint32_t numIntHits = 0;
-                uint32_t numLeafHits = 0;
-                for (uint32_t slot = 0; slot < arity; ++slot) {
-                    if (!intNode.getChildIsValid(slot)) {
-                        for (; slot < arity; ++slot)
-                            keys[slot] = floatToOrderedUInt(INFINITY);
-                        break;
-                    }
+            // Intersect child AABBs.
+            uint32_t keys[arity];
+            uint32_t orderInfo = 0;
+            uint32_t numIntHits = 0;
+            uint32_t numLeafHits = 0;
+            for (uint32_t slot = 0; slot < arity; ++slot) {
+                if (!intNode.getChildIsValid(slot)) {
+                    for (; slot < arity; ++slot)
+                        keys[slot] = floatToOrderedUInt(INFINITY);
+                    break;
+                }
 
-                    if (stats)
-                        ++stats->numAabbTests;
-                    const AABB &aabb = intNode.getChildAabb(slot);
-                    float hitDistMin, hitDistMax;
-                    if (aabb.intersect(rayOrg, rayDir, distMin, ret.dist, &hitDistMin, &hitDistMax)) {
-                        bool const isLeaf = intNode.getChildIsLeaf(slot);
-                        const float dist = 0.5f * (hitDistMin + hitDistMax);
-                        keys[slot] = (floatToOrderedUInt(dist) >> 1) | (!isLeaf << 31);
-                        if (isLeaf) {
-                            orderInfo |= (slot << (orderBitWidth * slot));
-                            ++numLeafHits;
-                            if (debugPrint)
-                                hpprintf("  %u: %g, leaf\n", slot, dist);
-                        }
-                        else {
-                            const uint32_t nthIntChild = intNode.getInternalChildIndex(slot);
-                            orderInfo |= (nthIntChild << (orderBitWidth * slot));
-                            ++numIntHits;
-                            if (debugPrint)
-                                hpprintf("  %u: %g, %u th int child\n", slot, dist, nthIntChild);
-                        }
+                if (stats)
+                    ++stats->numAabbTests;
+                const AABB &aabb = intNode.getChildAabb(slot);
+                float hitDistMin, hitDistMax;
+                if (aabb.intersect(rayOrg, rayDir, distMin, ret.dist, &hitDistMin, &hitDistMax)) {
+                    bool const isLeaf = intNode.getChildIsLeaf(slot);
+                    const float dist = 0.5f * (hitDistMin + hitDistMax);
+                    keys[slot] = (floatToOrderedUInt(dist) >> 1) | (!isLeaf << 31);
+                    if (isLeaf) {
+                        orderInfo |= (slot << (orderBitWidth * slot));
+                        ++numLeafHits;
+                        if (debugPrint)
+                            hpprintf("  %u: %g, leaf\n", slot, dist);
                     }
                     else {
-                        keys[slot] = floatToOrderedUInt(INFINITY);
+                        const uint32_t nthIntChild = intNode.getInternalChildIndex(slot);
+                        orderInfo |= (nthIntChild << (orderBitWidth * slot));
+                        ++numIntHits;
+                        if (debugPrint)
+                            hpprintf("  %u: %g, %u th int child\n", slot, dist, nthIntChild);
                     }
                 }
-
-                if (numIntHits + numLeafHits > 0)
-                    sortOrder(keys, &orderInfo);
-
-                if (numLeafHits > 0) {
-                    curTriGroup.numItems = numLeafHits;
-                    curTriGroup.baseIndex = intNode.leafBaseIndex;
-                    curTriGroup.isLeafGroup = true;
-                    curTriGroup.orderInfo = orderInfo;
-
-                    //#pragma unroll
-                    for (uint32_t slot = 0; slot < arity; ++slot)
-                        leafOffsets[slot] = intNode.childMetas[slot].getLeafOffset();
-
-                    if (debugPrint) {
-                        hpprintf("  Order (Leaf): [");
-                        for (uint32_t i = 0; i < curTriGroup.numItems; ++i)
-                            hpprintf(
-                                "%u%s",
-                                (curTriGroup.orderInfo >> (orderBitWidth * i)) & orderMask,
-                                i + 1 < curTriGroup.numItems ? ", " : "");
-                        hpprintf("]\n");
-                    }
-                }
-                if (numIntHits > 0) {
-                    newGroup.numItems = numIntHits;
-                    newGroup.baseIndex = intNode.intNodeChildBaseIndex;
-                    newGroup.isLeafGroup = false;
-                    newGroup.orderInfo = orderInfo >> (orderBitWidth * numLeafHits);
-
-                    if (debugPrint) {
-                        hpprintf("  Order (Int): [");
-                        for (uint32_t i = 0; i < newGroup.numItems; ++i)
-                            hpprintf(
-                                "%u th%s",
-                                (newGroup.orderInfo >> (orderBitWidth * i)) & orderMask,
-                                i + 1 < newGroup.numItems ? ", " : "");
-                        hpprintf("]\n");
-                    }
+                else {
+                    keys[slot] = floatToOrderedUInt(INFINITY);
                 }
             }
 
-            if (newGroup.numItems > 0) {
-                if (curGroup.numItems > 0) {
-                    if (stats) {
-                        sumStackAccessDepth += stackIdx;
-                        ++numStackAccesses;
-                        maxStackDepth = std::max(stackIdx, maxStackDepth);
-                        if (stackIdx > fastStackDepthLimit)
-                            stackMemoryAccessAmount += sizeof(Entry);
-                    }
-                    stack[stackIdx++] = curGroup;
-                    if (debugPrint) {
-                        hpprintf("Push (%u): %u - [", stackIdx, curGroup.baseIndex);
-                        for (uint32_t i = 0; i < curGroup.numItems; ++i)
-                            hpprintf(
-                                "%u%s",
-                                (curGroup.orderInfo >> (orderBitWidth * i)) & orderMask,
-                                i + 1 < curGroup.numItems ? ", " : "");
-                        hpprintf("]\n");
-                    }
+            if (numIntHits + numLeafHits > 0)
+                sortOrder(keys, &orderInfo);
+
+            // Create a triangle group if any leaf hit.
+            if (numLeafHits > 0) {
+                curTriGroup.numItems = numLeafHits;
+                curTriGroup.baseIndex = intNode.leafBaseIndex;
+                curTriGroup.isLeafGroup = true;
+                curTriGroup.orderInfo = orderInfo;
+
+                //#pragma unroll
+                for (uint32_t slot = 0; slot < arity; ++slot)
+                    leafOffsets[slot] = intNode.childMetas[slot].getLeafOffset();
+
+                if (debugPrint) {
+                    hpprintf("  Order (Leaf): [");
+                    for (uint32_t i = 0; i < curTriGroup.numItems; ++i)
+                        hpprintf(
+                            "%u%s",
+                            (curTriGroup.orderInfo >> (orderBitWidth * i)) & orderMask,
+                            i + 1 < curTriGroup.numItems ? ", " : "");
+                    hpprintf("]\n");
                 }
-                curGroup = newGroup;
+            }
+
+            // Create a node group if any internal node child hit.
+            if (numIntHits > 0) {
+                if (curGroup.numItems > 0)
+                    push();
+
+                curGroup.numItems = numIntHits;
+                curGroup.baseIndex = intNode.intNodeChildBaseIndex;
+                curGroup.isLeafGroup = false;
+                curGroup.orderInfo = orderInfo >> (orderBitWidth * numLeafHits);
+
+                if (debugPrint) {
+                    hpprintf("  Order (Int): [");
+                    for (uint32_t i = 0; i < curGroup.numItems; ++i)
+                        hpprintf(
+                            "%u th%s",
+                            (curGroup.orderInfo >> (orderBitWidth * i)) & orderMask,
+                            i + 1 < curGroup.numItems ? ", " : "");
+                    hpprintf("]\n");
+                }
             }
         }
 
+        // Intersect a triangle.
+        // TODO: Loop over a primitive chain and dynamic postponing for better SIMD utilization (on GPU).
         if (curTriGroup.numItems > 0) {
             const uint32_t slot = curTriGroup.orderInfo & orderMask;
             const uint32_t primRefIdx = curTriGroup.baseIndex + leafOffsets[slot]++;
@@ -1463,25 +1470,8 @@ inline shared::HitObject __traverse(
                     hit ? ret.dist : INFINITY);
 
             if (curTriGroup.numItems > 0) {
-                if (curGroup.numItems > 0) {
-                    if (stats) {
-                        sumStackAccessDepth += stackIdx;
-                        ++numStackAccesses;
-                        maxStackDepth = std::max(stackIdx, maxStackDepth);
-                        if (stackIdx > fastStackDepthLimit)
-                            stackMemoryAccessAmount += sizeof(Entry);
-                    }
-                    stack[stackIdx++] = curGroup;
-                    if (debugPrint) {
-                        hpprintf("Push (%u): %u - [", stackIdx, curGroup.baseIndex);
-                        for (uint32_t i = 0; i < curGroup.numItems; ++i)
-                            hpprintf(
-                                "%u%s",
-                                (curGroup.orderInfo >> (orderBitWidth * i)) & orderMask,
-                                i + 1 < curGroup.numItems ? ", " : "");
-                        hpprintf("]\n");
-                    }
-                }
+                if (curGroup.numItems > 0)
+                    push();
                 curGroup = curTriGroup;
             }
         }
