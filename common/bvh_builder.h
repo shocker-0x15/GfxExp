@@ -13,12 +13,23 @@ struct GeometryBVH {
     uint32_t totalNumPrims;
 };
 
+enum class VertexFormat {
+    Fp32x3 = 0,
+};
+
+enum class TriangleFormat {
+    UI32x3 = 0,
+    UI16x3,
+};
+
 struct Geometry {
-    const uint8_t* vertices;
+    const void* vertices;
     uint32_t vertexStride;
+    VertexFormat vertexFormat;
     uint32_t numVertices;
-    const uint8_t* triangles;
+    const void* triangles;
     uint32_t triangleStride;
+    TriangleFormat triangleFormat;
     uint32_t numTriangles;
     Matrix4x4 preTransform;
 };

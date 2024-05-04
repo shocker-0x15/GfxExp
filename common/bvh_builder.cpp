@@ -180,15 +180,31 @@ static void calcTriangleVertices(
     const uint32_t geomIdx, const uint32_t primIdx,
     Point3D* const pA, Point3D* const pB, Point3D* const pC) {
     const Geometry &geom = buildInput.geometries[geomIdx];
-    const auto tri = reinterpret_cast<const uint32_t*>(
-        geom.triangles + geom.triangleStride * primIdx);
 
-    *pA = geom.preTransform *
-        *reinterpret_cast<const Point3D*>(geom.vertices + geom.vertexStride * tri[0]);
-    *pB = geom.preTransform *
-        *reinterpret_cast<const Point3D*>(geom.vertices + geom.vertexStride * tri[1]);
-    *pC = geom.preTransform *
-        *reinterpret_cast<const Point3D*>(geom.vertices + geom.vertexStride * tri[2]);
+    uint32_t tri[3];
+    const auto triAddr = reinterpret_cast<uintptr_t>(geom.triangles) + geom.triangleStride * primIdx;
+    if (geom.triangleFormat == TriangleFormat::UI32x3) {
+        tri[0] = reinterpret_cast<const uint32_t*>(triAddr)[0];
+        tri[1] = reinterpret_cast<const uint32_t*>(triAddr)[1];
+        tri[2] = reinterpret_cast<const uint32_t*>(triAddr)[2];
+    }
+    else {
+        Assert(geom.triangleFormat == TriangleFormat::UI16x3, "Invalid triangle format.");
+        tri[0] = reinterpret_cast<const uint16_t*>(triAddr)[0];
+        tri[1] = reinterpret_cast<const uint16_t*>(triAddr)[1];
+        tri[2] = reinterpret_cast<const uint16_t*>(triAddr)[2];
+    }
+
+    Point3D ps[3];
+    const auto vertBaseAddr = reinterpret_cast<uintptr_t>(geom.vertices);
+    Assert(geom.vertexFormat == VertexFormat::Fp32x3, "Invalid vertex format.");
+    ps[0] = *reinterpret_cast<const Point3D*>(vertBaseAddr + geom.vertexStride * tri[0]);
+    ps[1] = *reinterpret_cast<const Point3D*>(vertBaseAddr + geom.vertexStride * tri[1]);
+    ps[2] = *reinterpret_cast<const Point3D*>(vertBaseAddr + geom.vertexStride * tri[2]);
+
+    *pA = geom.preTransform * ps[0];
+    *pB = geom.preTransform * ps[1];
+    *pC = geom.preTransform * ps[2];
 }
 
 

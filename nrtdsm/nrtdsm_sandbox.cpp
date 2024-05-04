@@ -2912,6 +2912,35 @@ static void computeFlattenedNodes(
         computeFlattenedNodes(scene, flattenedNode.transform, curNode->mChildren[cIdx], flattenedNodes);
 }
 
+static void calcTriangleVertices(
+    const bvh::Geometry &geom, const uint32_t primIdx,
+    Point3D* const pA, Point3D* const pB, Point3D* const pC) {
+    uint32_t tri[3];
+    const auto triAddr = reinterpret_cast<uintptr_t>(geom.triangles) + geom.triangleStride * primIdx;
+    if (geom.triangleFormat == bvh::TriangleFormat::UI32x3) {
+        tri[0] = reinterpret_cast<const uint32_t*>(triAddr)[0];
+        tri[1] = reinterpret_cast<const uint32_t*>(triAddr)[1];
+        tri[2] = reinterpret_cast<const uint32_t*>(triAddr)[2];
+    }
+    else {
+        Assert(geom.triangleFormat == bvh::TriangleFormat::UI16x3, "Invalid triangle format.");
+        tri[0] = reinterpret_cast<const uint16_t*>(triAddr)[0];
+        tri[1] = reinterpret_cast<const uint16_t*>(triAddr)[1];
+        tri[2] = reinterpret_cast<const uint16_t*>(triAddr)[2];
+    }
+
+    Point3D ps[3];
+    const auto vertBaseAddr = reinterpret_cast<uintptr_t>(geom.vertices);
+    Assert(geom.vertexFormat == bvh::VertexFormat::Fp32x3, "Invalid vertex format.");
+    ps[0] = *reinterpret_cast<const Point3D*>(vertBaseAddr + geom.vertexStride * tri[0]);
+    ps[1] = *reinterpret_cast<const Point3D*>(vertBaseAddr + geom.vertexStride * tri[1]);
+    ps[2] = *reinterpret_cast<const Point3D*>(vertBaseAddr + geom.vertexStride * tri[2]);
+
+    *pA = geom.preTransform * ps[0];
+    *pB = geom.preTransform * ps[1];
+    *pC = geom.preTransform * ps[2];
+}
+
 void testBvhBuilder() {
     struct TestScene {
         std::filesystem::path filePath;
@@ -3196,11 +3225,13 @@ void testBvhBuilder() {
             const TriangleMesh &triMesh = meshes[fNode.meshIndices[mIdx]];
 
             bvh::Geometry geom = {};
-            geom.vertices = reinterpret_cast<const uint8_t*>(triMesh.vertices.data());
+            geom.vertices = triMesh.vertices.data();
             geom.vertexStride = sizeof(triMesh.vertices[0]);
+            geom.vertexFormat = bvh::VertexFormat::Fp32x3;
             geom.numVertices = static_cast<uint32_t>(triMesh.vertices.size());
-            geom.triangles = reinterpret_cast<const uint8_t*>(triMesh.triangles.data());
+            geom.triangles = triMesh.triangles.data();
             geom.triangleStride = sizeof(triMesh.triangles[0]);
+            geom.triangleFormat = bvh::TriangleFormat::UI32x3;
             geom.numTriangles = static_cast<uint32_t>(triMesh.triangles.size());
             geom.preTransform = fNode.transform;
             bvhGeoms.push_back(geom);
@@ -3354,14 +3385,8 @@ void testBvhBuilder() {
                     else {
                         if (hitObj.isHit()) {
                             const bvh::Geometry &geom = bvhGeoms[hitObj.geomIndex];
-                            const auto tri = reinterpret_cast<const uint32_t*>(
-                                geom.triangles + geom.triangleStride * hitObj.primIndex);
-                            const Point3D pA = geom.preTransform *
-                                *reinterpret_cast<const Point3D*>(geom.vertices + geom.vertexStride * tri[0]);
-                            const Point3D pB = geom.preTransform *
-                                *reinterpret_cast<const Point3D*>(geom.vertices + geom.vertexStride * tri[1]);
-                            const Point3D pC = geom.preTransform *
-                                *reinterpret_cast<const Point3D*>(geom.vertices + geom.vertexStride * tri[2]);
+                            Point3D pA, pB, pC;
+                            calcTriangleVertices(geom, hitObj.primIndex, &pA, &pB, &pC);
                             const Vector3D geomNormal = normalize(cross(pB - pA, pC - pA));
                             color.r = 0.5f + 0.5f * geomNormal.x;
                             color.g = 0.5f + 0.5f * geomNormal.y;
