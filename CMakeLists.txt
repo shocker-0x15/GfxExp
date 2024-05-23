@@ -14,7 +14,7 @@ set(
     CMAKE_MODULE_PATH
     "${CMAKE_SOURCE_DIR}/cmake"
     ${CMAKE_MODULE_PATH})
-find_package(CUDAToolkit 12.2 REQUIRED)
+find_package(CUDAToolkit 12.5 REQUIRED)
 find_package(OptiX80)
 include("copy_files")
 include("nvcuda_compile_ptx")
