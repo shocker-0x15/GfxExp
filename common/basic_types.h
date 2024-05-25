@@ -174,6 +174,29 @@ namespace stc {
         *c = std::cos(x);
 #endif
     }
+
+    template <typename DstType, typename SrcType>
+    CUDA_COMMON_FUNCTION CUDA_INLINE DstType bit_cast(const SrcType &x) {
+#if defined(__CUDA_ARCH__)
+        if constexpr (std::is_same_v<SrcType, int32_t> && std::is_same_v<DstType, float>)
+            return __int_as_float(x);
+        else if constexpr (std::is_same_v<SrcType, uint32_t> && std::is_same_v<DstType, float>)
+            return __uint_as_float(x);
+        else if constexpr (std::is_same_v<SrcType, float> && std::is_same_v<DstType, int32_t>)
+            return __float_as_int(x);
+        else if constexpr (std::is_same_v<SrcType, float> && std::is_same_v<DstType, uint32_t>)
+            return __float_as_uint(x);
+        static_assert(sizeof(DstType) == sizeof(SrcType), "Sizes do not match.");
+        union {
+            SrcType s;
+            DstType d;
+        } alias;
+        alias.s = x;
+        return alias.d;
+#else
+        return std::bit_cast<DstType>(x);
+#endif
+    }
 }
 
 

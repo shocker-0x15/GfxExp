@@ -959,9 +959,9 @@ namespace shared {
 
         CUDA_COMMON_FUNCTION CUDA_INLINE Vector3D __decodeQuantBoxScale() const {
             const Vector3D d(
-                std::bit_cast<float>(quantBoxExpScaleX << 23),
-                std::bit_cast<float>(quantBoxExpScaleY << 23),
-                std::bit_cast<float>(quantBoxExpScaleZ << 23));
+                stc::bit_cast<float>(quantBoxExpScaleX << 23),
+                stc::bit_cast<float>(quantBoxExpScaleY << 23),
+                stc::bit_cast<float>(quantBoxExpScaleZ << 23));
             return d;
         }
         CUDA_COMMON_FUNCTION CUDA_INLINE AABB __decodeAabb(
@@ -1058,12 +1058,12 @@ namespace shared {
             for (uint32_t slot = 0; slot < arity; ++slot) {
                 if (!getChildIsValid(slot))
                     break;
-                qMinX = std::min(childQMinXs[slot], qMinX);
-                qMinY = std::min(childQMinYs[slot], qMinY);
-                qMinZ = std::min(childQMinZs[slot], qMinZ);
-                qMaxX = std::max(childQMaxXs[slot], qMaxX);
-                qMaxY = std::max(childQMaxYs[slot], qMaxY);
-                qMaxZ = std::max(childQMaxZs[slot], qMaxZ);
+                qMinX = stc::min(childQMinXs[slot], qMinX);
+                qMinY = stc::min(childQMinYs[slot], qMinY);
+                qMinZ = stc::min(childQMinZs[slot], qMinZ);
+                qMaxX = stc::max(childQMaxXs[slot], qMaxX);
+                qMaxY = stc::max(childQMaxYs[slot], qMaxY);
+                qMaxZ = stc::max(childQMaxZs[slot], qMaxZ);
             }
             return __decodeAabb(
                 qMinX, qMinY, qMinZ,
