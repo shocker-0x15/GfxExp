@@ -2059,6 +2059,71 @@ GeometryGroup* createGeometryGroup(
     return geomGroup;
 }
 
+static void computeFlattenedMesh(
+    const aiScene* scene, const Matrix4x4 &parentXfm, const aiNode* curNode,
+    std::vector<Point3D>* const vertices,
+    std::vector<shared::Triangle>* const triangles,
+    AABB* const aabb) {
+    const aiMatrix4x4 &nodeAiXfm = curNode->mTransformation;
+    const Matrix4x4 nodeXfm = Matrix4x4(
+        Vector4D(nodeAiXfm.a1, nodeAiXfm.a2, nodeAiXfm.a3, nodeAiXfm.a4),
+        Vector4D(nodeAiXfm.b1, nodeAiXfm.b2, nodeAiXfm.b3, nodeAiXfm.b4),
+        Vector4D(nodeAiXfm.c1, nodeAiXfm.c2, nodeAiXfm.c3, nodeAiXfm.c4),
+        Vector4D(nodeAiXfm.d1, nodeAiXfm.d2, nodeAiXfm.d3, nodeAiXfm.d4));
+    const Matrix4x4 curXfm = parentXfm * transpose(nodeXfm);
+    const uint32_t baseVtxIdx = static_cast<uint32_t>(vertices->size());
+    for (uint32_t meshIdx = 0; meshIdx < curNode->mNumMeshes; ++meshIdx) {
+        const aiMesh* aiMesh = scene->mMeshes[curNode->mMeshes[meshIdx]];
+
+        for (uint32_t vIdx = 0; vIdx < aiMesh->mNumVertices; ++vIdx) {
+            const aiVector3D &aip = aiMesh->mVertices[vIdx];
+            const Point3D xfmP = curXfm * Point3D(aip.x, aip.y, aip.z);
+            vertices->push_back(xfmP);
+            aabb->unify(xfmP);
+        }
+
+        for (uint32_t fIdx = 0; fIdx < aiMesh->mNumFaces; ++fIdx) {
+            const aiFace &aif = aiMesh->mFaces[fIdx];
+            Assert(aif.mNumIndices == 3, "Number of face vertices must be 3 here.");
+            shared::Triangle tri;
+            tri.index0 = baseVtxIdx + aif.mIndices[0];
+            tri.index1 = baseVtxIdx + aif.mIndices[1];
+            tri.index2 = baseVtxIdx + aif.mIndices[2];
+            triangles->push_back(tri);
+        }
+    }
+
+    for (uint32_t cIdx = 0; cIdx < curNode->mNumChildren; ++cIdx)
+        computeFlattenedMesh(scene, curXfm, curNode->mChildren[cIdx], vertices, triangles, aabb);
+}
+
+void loadSingleTriangleMesh(
+    const std::filesystem::path &filePath,
+    const Matrix4x4 &preTransform,
+    std::vector<Point3D>* vertices,
+    std::vector<shared::Triangle>* triangles,
+    AABB* aabb) {
+    hpprintf("Reading: %s ... ", filePath.string().c_str());
+    fflush(stdout);
+    Assimp::Importer importer;
+    const aiScene* aiscene = importer.ReadFile(
+        filePath.string(),
+        aiProcess_Triangulate |
+        aiProcess_GenNormals |
+        aiProcess_CalcTangentSpace |
+        aiProcess_FlipUVs);
+    if (!aiscene) {
+        hpprintf("Failed to load %s.\n", filePath.string().c_str());
+        return;
+    }
+    hpprintf("done.\n");
+
+    vertices->clear();
+    triangles->clear();
+    *aabb = AABB();
+    computeFlattenedMesh(aiscene, preTransform, aiscene->mRootNode, vertices, triangles, aabb);
+}
+
 constexpr bool useLambertMaterial = false;
 
 void createTriangleMeshes(

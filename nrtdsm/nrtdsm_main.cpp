@@ -77,7 +77,8 @@ struct GPUEnvironment {
     CUmodule nrtdsmModule;
     cudau::Kernel kernelGenerateFirstMinMaxMipMap;
     cudau::Kernel kernelGenerateMinMaxMipMap;
-    cudau::Kernel kernelComputeAABBs;
+    cudau::Kernel kernelComputeAABBsForDisplacementMapping;
+    cudau::Kernel kernelComputeAABBsForShellMapping;
 
     template <typename EntryPointType>
     struct Pipeline {
@@ -113,8 +114,10 @@ struct GPUEnvironment {
             cudau::Kernel(nrtdsmModule, "generateFirstMinMaxMipMap", cudau::dim3(8, 8), 0);
         kernelGenerateMinMaxMipMap =
             cudau::Kernel(nrtdsmModule, "generateMinMaxMipMap", cudau::dim3(8, 8), 0);
-        kernelComputeAABBs =
-            cudau::Kernel(nrtdsmModule, "computeAABBs", cudau::dim3(32), 0);
+        kernelComputeAABBsForDisplacementMapping =
+            cudau::Kernel(nrtdsmModule, "computeAABBsForDisplacementMapping", cudau::dim3(32), 0);
+        kernelComputeAABBsForShellMapping =
+            cudau::Kernel(nrtdsmModule, "computeAABBsForShellMapping", cudau::dim3(32), 0);
 
         optixContext = optixu::Context::create(
             cuContext/*, 4, DEBUG_SELECT(optixu::EnableValidation::Yes, optixu::EnableValidation::No)*/);
@@ -162,10 +165,14 @@ struct GPUEnvironment {
                 m, RT_CH_NAME_STR("setupGBuffers"),
                 emptyModule, nullptr,
                 m, RT_IS_NAME_STR("prism"));
-            pipeline.hitPrograms["displacedSurface"] = p.createHitProgramGroupForCustomIS(
+            pipeline.hitPrograms["displacementMappedSurface"] = p.createHitProgramGroupForCustomIS(
                 m, RT_CH_NAME_STR("setupGBuffers"),
                 emptyModule, nullptr,
-                m, RT_IS_NAME_STR("displacedSurface"));
+                m, RT_IS_NAME_STR("displacementMappedSurface"));
+            pipeline.hitPrograms["shellMappedSurface"] = p.createHitProgramGroupForCustomIS(
+                m, RT_CH_NAME_STR("setupGBuffers"),
+                emptyModule, nullptr,
+                m, RT_IS_NAME_STR("shellMappedSurface"));
 
             pipeline.hitPrograms["emptyHitGroup"] = p.createEmptyHitProgramGroup();
 
@@ -196,7 +203,8 @@ struct GPUEnvironment {
                     {
                         pipeline.hitPrograms.at("triangle").getCHStackSize(),
                         pipeline.hitPrograms.at("prism").getCHStackSize(),
-                        pipeline.hitPrograms.at("displacedSurface").getCHStackSize(),
+                        pipeline.hitPrograms.at("displacementMappedSurface").getCHStackSize(),
+                        pipeline.hitPrograms.at("shellMappedSurface").getCHStackSize(),
                         pipeline.programs.at("miss").getStackSize()
                     });
 
@@ -206,10 +214,7 @@ struct GPUEnvironment {
             for (uint32_t rayType = shared::GBufferRayType::NumTypes; rayType < shared::maxNumRayTypes; ++rayType)
                 optixDefaultMaterial.setHitGroup(rayType, pipeline.hitPrograms.at("emptyHitGroup"));
 
-#if USE_DISPLACED_SURFACES
-            optixDisplacedMeshMaterial.setHitGroup(
-                shared::GBufferRayType::Primary, pipeline.hitPrograms.at("displacedSurface"));
-#else
+#if !USE_DISPLACED_SURFACES
             optixDisplacedMeshMaterial.setHitGroup(
                 shared::GBufferRayType::Primary, pipeline.hitPrograms.at("prism"));
 #endif
@@ -263,10 +268,14 @@ struct GPUEnvironment {
                 m, RT_CH_NAME_STR("pathTrace"),
                 emptyModule, nullptr,
                 m, RT_IS_NAME_STR("prism"));
-            pipeline.hitPrograms["pathTraceClosestDisplacedSurface"] = p.createHitProgramGroupForCustomIS(
+            pipeline.hitPrograms["pathTraceClosestDisplacementMappedSurface"] = p.createHitProgramGroupForCustomIS(
                 m, RT_CH_NAME_STR("pathTrace"),
                 emptyModule, nullptr,
-                m, RT_IS_NAME_STR("displacedSurface"));
+                m, RT_IS_NAME_STR("displacementMappedSurface"));
+            pipeline.hitPrograms["pathTraceClosestShellMappedSurface"] = p.createHitProgramGroupForCustomIS(
+                m, RT_CH_NAME_STR("pathTrace"),
+                emptyModule, nullptr,
+                m, RT_IS_NAME_STR("shellMappedSurface"));
 
             pipeline.hitPrograms["pathTraceVisibilityTriangle"] = p.createHitProgramGroupForTriangleIS(
                 emptyModule, nullptr,
@@ -275,10 +284,14 @@ struct GPUEnvironment {
                 emptyModule, nullptr,
                 m, RT_AH_NAME_STR("visibility"),
                 m, RT_IS_NAME_STR("prism"));
-            pipeline.hitPrograms["pathTraceVisibilityDisplacedSurface"] = p.createHitProgramGroupForCustomIS(
+            pipeline.hitPrograms["pathTraceVisibilityDisplacementMappedSurface"] = p.createHitProgramGroupForCustomIS(
                 emptyModule, nullptr,
                 m, RT_AH_NAME_STR("visibility"),
-                m, RT_IS_NAME_STR("displacedSurface"));
+                m, RT_IS_NAME_STR("displacementMappedSurface"));
+            pipeline.hitPrograms["pathTraceVisibilityShellMappedSurface"] = p.createHitProgramGroupForCustomIS(
+                emptyModule, nullptr,
+                m, RT_AH_NAME_STR("visibility"),
+                m, RT_IS_NAME_STR("shellMappedSurface"));
 
             pipeline.programs["emptyMiss"] = p.createMissProgram(emptyModule, nullptr);
 
@@ -311,12 +324,14 @@ struct GPUEnvironment {
                         std::max({
                             pipeline.hitPrograms.at("pathTraceClosestTriangle").getCHStackSize(),
                             pipeline.hitPrograms.at("pathTraceClosestPrism").getCHStackSize(),
-                            pipeline.hitPrograms.at("pathTraceClosestDisplacedSurface").getCHStackSize(),
+                            pipeline.hitPrograms.at("pathTraceClosestDisplacementMappedSurface").getCHStackSize(),
+                            pipeline.hitPrograms.at("pathTraceClosestShellMappedSurface").getCHStackSize(),
                                  }) +
                         std::max({
                             pipeline.hitPrograms.at("pathTraceVisibilityTriangle").getAHStackSize(),
                             pipeline.hitPrograms.at("pathTraceVisibilityPrism").getAHStackSize(),
-                            pipeline.hitPrograms.at("pathTraceVisibilityDisplacedSurface").getAHStackSize(),
+                            pipeline.hitPrograms.at("pathTraceVisibilityDisplacementMappedSurface").getAHStackSize(),
+                            pipeline.hitPrograms.at("pathTraceVisibilityShellMappedSurface").getAHStackSize(),
                                  }),
                         pipeline.programs.at(RT_MS_NAME_STR("pathTrace")).getStackSize()
                     });
@@ -330,14 +345,7 @@ struct GPUEnvironment {
                 shared::PathTracingRayType::Visibility,
                 pipeline.hitPrograms.at("pathTraceVisibilityTriangle"));
 
-#if USE_DISPLACED_SURFACES
-            optixDisplacedMeshMaterial.setHitGroup(
-                shared::PathTracingRayType::Closest,
-                pipeline.hitPrograms.at("pathTraceClosestDisplacedSurface"));
-            optixDisplacedMeshMaterial.setHitGroup(
-                shared::PathTracingRayType::Visibility,
-                pipeline.hitPrograms.at("pathTraceVisibilityDisplacedSurface"));
-#else
+#if !USE_DISPLACED_SURFACES
             optixDisplacedMeshMaterial.setHitGroup(
                 shared::PathTracingRayType::Closest,
                 pipeline.hitPrograms.at("pathTraceClosestPrism"));
@@ -562,6 +570,8 @@ static void parseCommandline(int32_t argc, const char* argv[]) {
 }
 
 
+// ----------------------------------------------------------------
+// Base Geometries
 
 static void createQuad(
     std::vector<shared::Vertex>* vertices,
@@ -706,6 +716,103 @@ static void createSphere(
     //(*triangles)[0] = shared::Triangle{ 0, 2, 3 };
     //(*triangles)[1] = shared::Triangle{ 0, 3, 1 };
 }
+
+// END: Base Geometries
+// ----------------------------------------------------------------
+
+// ----------------------------------------------------------------
+// Shell Geometries
+
+static void buildOneBoxShellBvh(
+    bvh::GeometryBVH<shared::shellBvhArity>* ret) {
+    std::vector<bvh::Geometry> geometries;
+
+    std::vector<Point3D> box0Vertices = {
+        Point3D(0.2f, 0.2f, 0.0f),
+        Point3D(0.8f, 0.2f, 0.0f),
+        Point3D(0.2f, 0.8f, 0.0f),
+        Point3D(0.8f, 0.8f, 0.0f),
+        Point3D(0.2f, 0.2f, 0.08f),
+        Point3D(0.8f, 0.2f, 0.08f),
+        Point3D(0.2f, 0.8f, 0.08f),
+        Point3D(0.8f, 0.8f, 0.08f),
+    };
+    std::vector<shared::Triangle> box0Triangles = {
+        // xy-planes
+        {0, 2, 3}, {0, 3, 1},
+        {4, 7, 6}, {4, 5, 7},
+        // yz-planes
+        {4, 6, 2}, {4, 2, 0},
+        {5, 3, 7}, {5, 1, 3},
+        // zx-planes
+        {0, 1, 5}, {0, 5, 4},
+        {2, 7, 3}, {2, 6, 7},
+    };
+    bvh::Geometry box0Geom = {};
+    box0Geom.vertices = box0Vertices.data();
+    box0Geom.vertexStride = sizeof(box0Vertices[0]);
+    box0Geom.vertexFormat = bvh::VertexFormat::Fp32x3;
+    box0Geom.numVertices = box0Vertices.size();
+    box0Geom.triangles = box0Triangles.data();
+    box0Geom.triangleStride = sizeof(box0Triangles[0]);
+    box0Geom.triangleFormat = bvh::TriangleFormat::UI32x3;
+    box0Geom.numTriangles = box0Triangles.size();
+    box0Geom.preTransform = Matrix4x4();
+    geometries.push_back(box0Geom);
+
+    bvh::GeometryBVHBuildConfig config = {};
+    config.splittingBudget = 0.3f;
+    config.intNodeTravCost = 1.2f;
+    config.primIntersectCost = 1.0f;
+    config.minNumPrimsPerLeaf = 1;
+    config.maxNumPrimsPerLeaf = 128;
+
+    bvh::buildGeometryBVH(geometries.data(), geometries.size(), config, ret);
+}
+
+static void buildTriangleMeshShellBvh(
+    const std::filesystem::path &filePath,
+    bool isYup,
+    bvh::GeometryBVH<shared::shellBvhArity>* ret) {
+    std::vector<bvh::Geometry> geometries;
+
+    std::vector<Point3D> vertices;
+    std::vector<shared::Triangle> triangles;
+    AABB aabb;
+    loadSingleTriangleMesh(
+        filePath,
+        isYup ? rotate3DX_4x4(0.5f * pi_v<float>) : Matrix4x4(),
+        &vertices, &triangles, &aabb);
+    const Point3D aabbCenter = aabb.getCenter();
+    const Vector3D aabbDim = aabb.maxP - aabb.minP;
+
+    bvh::Geometry geom = {};
+    geom.vertices = vertices.data();
+    geom.vertexStride = sizeof(vertices[0]);
+    geom.vertexFormat = bvh::VertexFormat::Fp32x3;
+    geom.numVertices = vertices.size();
+    geom.triangles = triangles.data();
+    geom.triangleStride = sizeof(triangles[0]);
+    geom.triangleFormat = bvh::TriangleFormat::UI32x3;
+    geom.numTriangles = triangles.size();
+    geom.preTransform =
+        translate3D_4x4(0.5f, 0.5f, 0.0f) *
+        scale3D_4x4(1.0f / stc::max(aabbDim.x, aabbDim.y)) *
+        translate3D_4x4(Point3D(-aabbCenter.xy(), -aabb.minP.z));
+    geometries.push_back(geom);
+
+    bvh::GeometryBVHBuildConfig config = {};
+    config.splittingBudget = 0.3f;
+    config.intNodeTravCost = 1.2f;
+    config.primIntersectCost = 1.0f;
+    config.minNumPrimsPerLeaf = 1;
+    config.maxNumPrimsPerLeaf = 128;
+
+    bvh::buildGeometryBVH(geometries.data(), geometries.size(), config, ret);
+}
+
+// END: Shell Geometries
+// ----------------------------------------------------------------
 
 
 
@@ -1734,19 +1841,27 @@ int32_t main(int32_t argc, const char* argv[]) try {
         static int32_t log2MaxNumAccums = 16;
         static bool enableJittering = false;
         bool lastFrameWasAnimated = false;
-        static shared::BufferToDisplay bufferTypeToDisplay = shared::BufferToDisplay::NoisyBeauty;
+        //static shared::BufferToDisplay bufferTypeToDisplay = shared::BufferToDisplay::NoisyBeauty;
+        static shared::BufferToDisplay bufferTypeToDisplay = shared::BufferToDisplay::Normal;
         static int32_t maxPathLength = 5;
 
+        enum class DetailType {
+            DisplacementMap = 0,
+            ShellMap,
+        };
+        static DetailType detailType = DetailType::DisplacementMap;
+        bool detailTypeChanged = false;
         static int32_t baseSurfaceIndex = 0;
         bool geomChanged = false;
-        static int32_t textureIndex = 0;
-        bool textureChanged = false;
         static float instPitch = initInstPitch;
         static float instYaw = 0.0f;
         static float instRoll = 0.0f;
         static float instScale = 1.0f;
         static Point3D instPosition = initInstPos;
         static bool showBaseEdges = false;
+
+        static int32_t textureIndex = 0;
+        bool textureChanged = false;
         static Vector2D heightMapTexScale(1, 1);
         static Point2D heightMapTexOffset(0, 0);
         static float heightMapTexRotation = 0.0f;
@@ -1754,6 +1869,10 @@ int32_t main(int32_t argc, const char* argv[]) try {
         static float heightScale = initHeightScale;
         static float heightBias = initHeightBias;
         bool heightParamChanged = false;
+
+        static int32_t shellGeomIndex = 0;
+        bool shellGeomChanged = false;
+
         static bool debugSwitches[] = {
             false, false, false, false, false, false, false, false
         };
@@ -1845,8 +1964,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
                         displacedMeshGeomInst->optixGeomInst.setVertexBuffer(displacedMeshGeomInst->vertexBuffer);
                         displacedMeshGeomInst->optixGeomInst.setTriangleBuffer(displacedMeshGeomInst->triangleBuffer);
 #else
-                        geom.nrtdsmTriAuxInfoBuffer.finalize();
-                        geom.nrtdsmTriAuxInfoBuffer.initialize(
+                        geom.triAuxInfoBuffer.finalize();
+                        geom.triAuxInfoBuffer.initialize(
                             gpuEnv.cuContext, cudau::BufferType::Device, triangles.size());
                         geom.aabbBuffer.finalize();
                         geom.aabbBuffer.initialize(
@@ -1856,8 +1975,10 @@ int32_t main(int32_t argc, const char* argv[]) try {
                             geomInstNrtdsmDataBuffer.getCUdeviceptrAt(displacedMeshGeomInst->geomInstSlot);
                         shared::GeometryInstanceDataForNRTDSM nrtdsmData = {};
                         CUDADRV_CHECK(cuMemcpyDtoH(&nrtdsmData, nrtdsmDataAddrOnDevice, sizeof(nrtdsmData)));
+
                         nrtdsmData.dispTriAuxInfoBuffer =
-                            geom.nrtdsmTriAuxInfoBuffer.getROBuffer<shared::enableBufferOobCheck>();
+                            geom.triAuxInfoBuffer.getROBuffer<shared::enableBufferOobCheck>();
+
                         nrtdsmData.aabbBuffer =
                             geom.aabbBuffer.getROBuffer<shared::enableBufferOobCheck>();
                         CUDADRV_CHECK(cuMemcpyHtoDAsync(
@@ -1873,167 +1994,285 @@ int32_t main(int32_t argc, const char* argv[]) try {
                         displacedMeshGeomGroup->optixGas.markDirty();
                     }
 
-                    struct TextureAsset {
-                        const char* name;
-                        std::filesystem::path albedo;
-                        std::filesystem::path height;
-                        float defaultHeightScale;
-                    };
-                    std::filesystem::path dataDir = R"(..\data)";
-                    const TextureAsset textureAssets[] = {
-                        {
-                            "River Pebbles",
-                            R"(TCom_Ground_PebblesRiver2_2.5x2.5_1K_albedo.dds)",
-                            R"(TCom_Ground_PebblesRiver2_2.5x2.5_1K_height.dds)",
-                            0.1f,
-                        },
-                        {
-                            "Cobble Stones",
-                            R"(TCom_Pavement_CobblestoneMedieval15_3x3_1K_albedo.dds)",
-                            R"(TCom_Pavement_CobblestoneMedieval15_3x3_1K_height.dds)",
-                            0.1f,
-                        },
-                        {
-                            "Cliff",
-                            R"(TCom_Rock_Cliff3_2x2_1K_albedo.dds)",
-                            R"(TCom_Rock_Cliff3_2x2_1K_height.dds)",
-                            0.2f,
-                        },
-                        {
-                            "Cliff Layered",
-                            R"(TCom_Rock_CliffLayered_1.5x1.5_1K_albedo.dds)",
-                            R"(TCom_Rock_CliffLayered_1.5x1.5_1K_height.dds)",
-                            0.3f,
-                        },
-                        {
-                            "Wall Stones",
-                            R"(TCom_Wall_Stone4_2x2_1K_albedo.dds)",
-                            R"(TCom_Wall_Stone4_2x2_1K_height.dds)",
-                            0.2f,
-                        },
-                        {
-                            "Earth",
-                            R"()",
-                            R"(gebco_08_rev_elev_4096_4096.dds)",
-                            0.02f,
-                        },
-                        {
-                            "50% Gray",
-                            R"()",
-                            R"(50p_gray_32x32.dds)",
-                            0.02f,
-                        },
-                    };
-                    if (ImGui::Combo(
-                            "Texture", &textureIndex,
+                    const DetailType oldDetailType = detailType;
+                    ImGui::RadioButtonE("Displacement Mapping", &detailType, DetailType::DisplacementMap);
+                    ImGui::RadioButtonE("Shell Mapping", &detailType, DetailType::ShellMap);
+                    if (detailType != oldDetailType || frameIndex == 0) {
+                        detailTypeChanged = true;
+
+                        if (detailType == DetailType::DisplacementMap) {
+                            gpuEnv.optixDisplacedMeshMaterial.setHitGroup(
+                                shared::GBufferRayType::Primary,
+                                gpuEnv.gBuffer.hitPrograms.at("displacementMappedSurface"));
+                            gpuEnv.optixDisplacedMeshMaterial.setHitGroup(
+                                shared::PathTracingRayType::Closest,
+                                gpuEnv.pathTracing.hitPrograms.at("pathTraceClosestDisplacementMappedSurface"));
+                            gpuEnv.optixDisplacedMeshMaterial.setHitGroup(
+                                shared::PathTracingRayType::Visibility,
+                                gpuEnv.pathTracing.hitPrograms.at("pathTraceVisibilityDisplacementMappedSurface"));
+                        }
+                        else {
+                            gpuEnv.optixDisplacedMeshMaterial.setHitGroup(
+                                shared::GBufferRayType::Primary,
+                                gpuEnv.gBuffer.hitPrograms.at("shellMappedSurface"));
+                            gpuEnv.optixDisplacedMeshMaterial.setHitGroup(
+                                shared::PathTracingRayType::Closest,
+                                gpuEnv.pathTracing.hitPrograms.at("pathTraceClosestShellMappedSurface"));
+                            gpuEnv.optixDisplacedMeshMaterial.setHitGroup(
+                                shared::PathTracingRayType::Visibility,
+                                gpuEnv.pathTracing.hitPrograms.at("pathTraceVisibilityShellMappedSurface"));
+                        }
+                        gpuEnv.gBuffer.optixPipeline.markHitGroupShaderBindingTableDirty();
+                        gpuEnv.pathTracing.optixPipeline.markHitGroupShaderBindingTableDirty();
+                    }
+
+                    const std::filesystem::path dataDir = R"(..\data)";
+                    if (detailType == DetailType::DisplacementMap) {
+                        struct TextureAsset {
+                            const char* name;
+                            std::filesystem::path albedo;
+                            std::filesystem::path height;
+                            float defaultHeightScale;
+                        };
+                        const TextureAsset textureAssets[] = {
+                            {
+                                "River Pebbles",
+                                R"(TCom_Ground_PebblesRiver2_2.5x2.5_1K_albedo.dds)",
+                                R"(TCom_Ground_PebblesRiver2_2.5x2.5_1K_height.dds)",
+                                0.1f,
+                            },
+                            {
+                                "Cobble Stones",
+                                R"(TCom_Pavement_CobblestoneMedieval15_3x3_1K_albedo.dds)",
+                                R"(TCom_Pavement_CobblestoneMedieval15_3x3_1K_height.dds)",
+                                0.1f,
+                            },
+                            {
+                                "Cliff",
+                                R"(TCom_Rock_Cliff3_2x2_1K_albedo.dds)",
+                                R"(TCom_Rock_Cliff3_2x2_1K_height.dds)",
+                                0.2f,
+                            },
+                            {
+                                "Cliff Layered",
+                                R"(TCom_Rock_CliffLayered_1.5x1.5_1K_albedo.dds)",
+                                R"(TCom_Rock_CliffLayered_1.5x1.5_1K_height.dds)",
+                                0.3f,
+                            },
+                            {
+                                "Wall Stones",
+                                R"(TCom_Wall_Stone4_2x2_1K_albedo.dds)",
+                                R"(TCom_Wall_Stone4_2x2_1K_height.dds)",
+                                0.2f,
+                            },
+                            {
+                                "Earth",
+                                R"()",
+                                R"(gebco_08_rev_elev_4096_4096.dds)",
+                                0.02f,
+                            },
+                            {
+                                "50% Gray",
+                                R"()",
+                                R"(50p_gray_32x32.dds)",
+                                0.02f,
+                            },
+                        };
+                        if (ImGui::Combo(
+                                "Texture", &textureIndex,
+                                [](void* data, int32_t idx, const char** outStr) {
+                                    const TextureAsset &asset = reinterpret_cast<const TextureAsset*>(data)[idx];
+                                    *outStr = asset.name;
+                                    return true;
+                                },
+                                const_cast<TextureAsset*>(textureAssets), lengthof(textureAssets))
+                            || detailType != oldDetailType || frameIndex == 0) {
+                            glFinish();
+                            streamChain.waitAllWorkDone();
+
+                            const TextureAsset &asset = textureAssets[textureIndex];
+                            heightScale = asset.defaultHeightScale;
+                            heightParamChanged = true;
+
+                            auto &geom = std::get<NRTDSMGeometry>(displacedMeshGeomInst->geometry);
+
+                            //auto &body = std::get<Material::Lambert>(displacedMeshMaterial->body);
+                            //if (body.texReflectance.texObj)
+                            //    CUDADRV_CHECK(cuTexObjectDestroy(body.texReflectance.texObj));
+                            //body.texReflectance.cudaArray->finalize();
+
+                            CUDADRV_CHECK(cuTexObjectDestroy(geom.texHeight.texObj));
+                            //geom.texHeight.cudaArray->finalize();
+                            geom.minMaxMipMap.finalize();
+                            geom.minMaxMipMapSurfs.finalize();
+
+                            const CUdeviceptr addrOnDevice =
+                                geomInstNrtdsmDataBuffer.getCUdeviceptrAt(displacedMeshGeomInst->geomInstSlot);
+
+                            shared::GeometryInstanceDataForNRTDSM nrtdsmData = {};
+                            CUDADRV_CHECK(cuMemcpyDtoH(&nrtdsmData, addrOnDevice, sizeof(nrtdsmData)));
+
+                            bool needsDegamma;
+                            //loadTexture(
+                            //    dataDir / asset.albedo, float4(1.0f, 0.0f, 1.0f, 1.0f), gpuEnv.cuContext,
+                            //    &body.texReflectance.cudaArray, &needsDegamma);
+
+                            cudau::TextureSampler sampler_sRGB;
+                            sampler_sRGB.setXyFilterMode(cudau::TextureFilterMode::Linear);
+                            sampler_sRGB.setWrapMode(0, cudau::TextureWrapMode::Repeat);
+                            sampler_sRGB.setWrapMode(1, cudau::TextureWrapMode::Repeat);
+                            sampler_sRGB.setMipMapFilterMode(cudau::TextureFilterMode::Linear);
+                            sampler_sRGB.setReadMode(cudau::TextureReadMode::NormalizedFloat_sRGB);
+
+                            cudau::TextureSampler sampler_normFloat;
+                            sampler_normFloat.setXyFilterMode(cudau::TextureFilterMode::Linear);
+                            sampler_normFloat.setWrapMode(0, cudau::TextureWrapMode::Repeat);
+                            sampler_normFloat.setWrapMode(1, cudau::TextureWrapMode::Repeat);
+                            sampler_normFloat.setMipMapFilterMode(cudau::TextureFilterMode::Linear);
+                            sampler_normFloat.setReadMode(cudau::TextureReadMode::NormalizedFloat);
+
+                            //if (needsDegamma) {
+                            //    body.texReflectance.texObj =
+                            //        sampler_sRGB.createTextureObject(*body.texReflectance.cudaArray);
+                            //}
+                            //else {
+                            //    body.texReflectance.texObj =
+                            //        sampler_normFloat.createTextureObject(*body.texReflectance.cudaArray);
+                            //}
+
+                            //matData.asLambert.reflectance = body.texReflectance.texObj;
+                            //matData.asLambert.reflectanceDimInfo = calcDimInfo(*body.texReflectance.cudaArray);
+
+                            loadTexture<float, false>(
+                                dataDir / asset.height, 0.0f, gpuEnv.cuContext,
+                                &geom.texHeight.cudaArray, &needsDegamma);
+
+                            cudau::TextureSampler heightSampler = {};
+                            heightSampler.setXyFilterMode(cudau::TextureFilterMode::Linear);
+                            heightSampler.setWrapMode(0, cudau::TextureWrapMode::Repeat);
+                            heightSampler.setWrapMode(1, cudau::TextureWrapMode::Repeat);
+                            heightSampler.setMipMapFilterMode(cudau::TextureFilterMode::Point);
+                            heightSampler.setReadMode(cudau::TextureReadMode::NormalizedFloat);
+                            geom.texHeight.texObj =
+                                heightSampler.createTextureObject(*geom.texHeight.cudaArray);
+
+                            nrtdsmData.heightMapSize = int2(
+                                geom.texHeight.cudaArray->getWidth(),
+                                geom.texHeight.cudaArray->getHeight());
+                            nrtdsmData.heightMap = geom.texHeight.texObj;
+
+                            if (nrtdsmData.heightMapSize.x != nrtdsmData.heightMapSize.y)
+                                throw std::runtime_error("Non-square height map is not supported.");
+                            if (popcnt(nrtdsmData.heightMapSize.x) != 1)
+                                throw std::runtime_error("Non-power-of-two height map is not supported.");
+
+                            const uint32_t numMinMaxMipMapLevels = nextPowOf2Exponent(nrtdsmData.heightMapSize.x) + 1;
+                            geom.minMaxMipMap.initialize2D(
+                                gpuEnv.cuContext,
+                                cudau::ArrayElementType::Float32, 2,
+                                cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable,
+                                nrtdsmData.heightMapSize.x, nrtdsmData.heightMapSize.y,
+                                numMinMaxMipMapLevels);
+
+                            std::vector<optixu::NativeBlockBuffer2D<float2>> surfObjs(numMinMaxMipMapLevels);
+                            for (int mipLevel = 0; mipLevel < numMinMaxMipMapLevels; ++mipLevel)
+                                surfObjs[mipLevel] = geom.minMaxMipMap.getSurfaceObject(mipLevel);
+
+                            geom.minMaxMipMapSurfs.initialize(
+                                gpuEnv.cuContext, cudau::BufferType::Device, surfObjs);
+                            nrtdsmData.minMaxMipMap = geom.minMaxMipMapSurfs.getROBuffer<shared::enableBufferOobCheck>();
+                            CUDADRV_CHECK(cuMemcpyHtoD(addrOnDevice, &nrtdsmData, sizeof(nrtdsmData)));
+
+                            textureChanged = true;
+                            resetAccumulation = true;
+                            displacedMeshGeomGroup->needsRebuild = true;
+                            displacedMeshGeomGroup->needsReallocation = true;
+                            displacedMeshGeomGroup->optixGas.markDirty();
+                        }
+                    }
+                    else /*if (detailType == DetailType::ShellMap)*/ {
+                        struct ShellAsset {
+                            const char* name;
+                        };
+                        const ShellAsset shellAssets[] = {
+                            {
+                                "One Box"
+                            },
+                            {
+                                "Low-poly Bunny"
+                            }
+                        };
+                        if (ImGui::Combo(
+                            "Shell Geometry", &shellGeomIndex,
                             [](void* data, int32_t idx, const char** outStr) {
-                                const TextureAsset &asset = reinterpret_cast<const TextureAsset*>(data)[idx];
+                                const ShellAsset &asset = reinterpret_cast<const ShellAsset*>(data)[idx];
                                 *outStr = asset.name;
                                 return true;
                             },
-                            const_cast<TextureAsset*>(textureAssets), lengthof(textureAssets))
-                        || frameIndex == 0) {
-                        glFinish();
-                        streamChain.waitAllWorkDone();
+                            const_cast<ShellAsset*>(shellAssets), lengthof(shellAssets))
+                            || detailType != oldDetailType || frameIndex == 0) {
+                            glFinish();
+                            streamChain.waitAllWorkDone();
 
-                        const TextureAsset &asset = textureAssets[textureIndex];
-                        heightScale = asset.defaultHeightScale;
-                        heightParamChanged = true;
+                            const ShellAsset &asset = shellAssets[shellGeomIndex];
+                            heightScale = 1.0f;
+                            heightParamChanged = true;
 
-                        auto &geom = std::get<NRTDSMGeometry>(displacedMeshGeomInst->geometry);
+                            auto &geom = std::get<NRTDSMGeometry>(displacedMeshGeomInst->geometry);
 
-                        //auto &body = std::get<Material::Lambert>(displacedMeshMaterial->body);
-                        //if (body.texReflectance.texObj)
-                        //    CUDADRV_CHECK(cuTexObjectDestroy(body.texReflectance.texObj));
-                        //body.texReflectance.cudaArray->finalize();
+                            CUDADRV_CHECK(cuTexObjectDestroy(geom.texHeight.texObj));
+                            geom.shellBvh.bvhMem.finalize();
 
-                        CUDADRV_CHECK(cuTexObjectDestroy(geom.texHeight.texObj));
-                        //geom.texHeight.cudaArray->finalize();
-                        geom.minMaxMipMap.finalize();
-                        geom.minMaxMipMapSurfs.finalize();
+                            const CUdeviceptr addrOnDevice =
+                                geomInstNrtdsmDataBuffer.getCUdeviceptrAt(displacedMeshGeomInst->geomInstSlot);
 
-                        const CUdeviceptr addrOnDevice =
-                            geomInstNrtdsmDataBuffer.getCUdeviceptrAt(displacedMeshGeomInst->geomInstSlot);
+                            shared::GeometryInstanceDataForNRTDSM nrtdsmData = {};
+                            CUDADRV_CHECK(cuMemcpyDtoH(&nrtdsmData, addrOnDevice, sizeof(nrtdsmData)));
 
-                        shared::GeometryInstanceDataForNRTDSM nrtdsmData = {};
-                        CUDADRV_CHECK(cuMemcpyDtoH(&nrtdsmData, addrOnDevice, sizeof(nrtdsmData)));
+                            bvh::GeometryBVH<shared::shellBvhArity> bvh;
+                            if (shellGeomIndex == 0)
+                                buildOneBoxShellBvh(&bvh);
+                            else if (shellGeomIndex == 1)
+                                buildTriangleMeshShellBvh(
+                                    dataDir / "stanford_bunny_309_faces.obj", true, &bvh);
 
-                        bool needsDegamma;
-                        //loadTexture(
-                        //    dataDir / asset.albedo, float4(1.0f, 0.0f, 1.0f, 1.0f), gpuEnv.cuContext,
-                        //    &body.texReflectance.cudaArray, &needsDegamma);
+                            const uint64_t triStoragesOffset = alignUp(
+                                sizeof(bvh.intNodes[0]) * bvh.intNodes.size(),
+                                alignof(shared::TriangleStorage));
+                            const uint64_t primRefsOffset = alignUp(
+                                triStoragesOffset + sizeof(bvh.triStorages[0]) * bvh.triStorages.size(),
+                                alignof(shared::PrimitiveReference));
+                            std::vector<uint8_t> packedBvhData(
+                                primRefsOffset + sizeof(bvh.primRefs[0]) * bvh.primRefs.size());
+                            std::memcpy(
+                                packedBvhData.data(), bvh.intNodes.data(),
+                                sizeof(bvh.intNodes[0]) * bvh.intNodes.size());
+                            std::memcpy(
+                                packedBvhData.data() + triStoragesOffset, bvh.triStorages.data(),
+                                sizeof(bvh.triStorages[0]) * bvh.triStorages.size());
+                            std::memcpy(
+                                packedBvhData.data() + primRefsOffset, bvh.primRefs.data(),
+                                sizeof(bvh.primRefs[0]) * bvh.primRefs.size());
 
-                        cudau::TextureSampler sampler_sRGB;
-                        sampler_sRGB.setXyFilterMode(cudau::TextureFilterMode::Linear);
-                        sampler_sRGB.setWrapMode(0, cudau::TextureWrapMode::Repeat);
-                        sampler_sRGB.setWrapMode(1, cudau::TextureWrapMode::Repeat);
-                        sampler_sRGB.setMipMapFilterMode(cudau::TextureFilterMode::Linear);
-                        sampler_sRGB.setReadMode(cudau::TextureReadMode::NormalizedFloat_sRGB);
+                            geom.shellBvh.bvhMem.initialize(
+                                gpuEnv.cuContext, cudau::BufferType::Device,
+                                packedBvhData.data(), packedBvhData.size(), sizeof(uint8_t));
+                            geom.shellBvh.offsetToTriStorages = triStoragesOffset;
+                            geom.shellBvh.offsetToPrimRefs = primRefsOffset;
+                            geom.shellBvh.numIntNodes = bvh.intNodes.size();
+                            geom.shellBvh.numTriStorages = bvh.triStorages.size();
+                            geom.shellBvh.numPrimRefs = bvh.primRefs.size();
 
-                        cudau::TextureSampler sampler_normFloat;
-                        sampler_normFloat.setXyFilterMode(cudau::TextureFilterMode::Linear);
-                        sampler_normFloat.setWrapMode(0, cudau::TextureWrapMode::Repeat);
-                        sampler_normFloat.setWrapMode(1, cudau::TextureWrapMode::Repeat);
-                        sampler_normFloat.setMipMapFilterMode(cudau::TextureFilterMode::Linear);
-                        sampler_normFloat.setReadMode(cudau::TextureReadMode::NormalizedFloat);
+                            nrtdsmData.shellBvh = geom.shellBvh.getBvhOnDevice();
 
-                        //if (needsDegamma) {
-                        //    body.texReflectance.texObj =
-                        //        sampler_sRGB.createTextureObject(*body.texReflectance.cudaArray);
-                        //}
-                        //else {
-                        //    body.texReflectance.texObj =
-                        //        sampler_normFloat.createTextureObject(*body.texReflectance.cudaArray);
-                        //}
+                            CUDADRV_CHECK(cuMemcpyHtoD(addrOnDevice, &nrtdsmData, sizeof(nrtdsmData)));
 
-                        //matData.asLambert.reflectance = body.texReflectance.texObj;
-                        //matData.asLambert.reflectanceDimInfo = calcDimInfo(*body.texReflectance.cudaArray);
-
-                        loadTexture<float, false>(
-                            dataDir / asset.height, 0.0f, gpuEnv.cuContext,
-                            &geom.texHeight.cudaArray, &needsDegamma);
-
-                        cudau::TextureSampler heightSampler = {};
-                        heightSampler.setXyFilterMode(cudau::TextureFilterMode::Linear);
-                        heightSampler.setWrapMode(0, cudau::TextureWrapMode::Repeat);
-                        heightSampler.setWrapMode(1, cudau::TextureWrapMode::Repeat);
-                        heightSampler.setMipMapFilterMode(cudau::TextureFilterMode::Point);
-                        heightSampler.setReadMode(cudau::TextureReadMode::NormalizedFloat);
-                        geom.texHeight.texObj =
-                            heightSampler.createTextureObject(*geom.texHeight.cudaArray);
-
-                        nrtdsmData.heightMapSize = int2(
-                            geom.texHeight.cudaArray->getWidth(),
-                            geom.texHeight.cudaArray->getHeight());
-                        nrtdsmData.heightMap = geom.texHeight.texObj;
-
-                        if (nrtdsmData.heightMapSize.x != nrtdsmData.heightMapSize.y)
-                            throw std::runtime_error("Non-square height map is not supported.");
-                        if (popcnt(nrtdsmData.heightMapSize.x) != 1)
-                            throw std::runtime_error("Non-power-of-two height map is not supported.");
-
-                        const uint32_t numMinMaxMipMapLevels = nextPowOf2Exponent(nrtdsmData.heightMapSize.x) + 1;
-                        geom.minMaxMipMap.initialize2D(
-                            gpuEnv.cuContext,
-                            cudau::ArrayElementType::Float32, 2,
-                            cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable,
-                            nrtdsmData.heightMapSize.x, nrtdsmData.heightMapSize.y,
-                            numMinMaxMipMapLevels);
-
-                        std::vector<optixu::NativeBlockBuffer2D<float2>> surfObjs(numMinMaxMipMapLevels);
-                        for (int mipLevel = 0; mipLevel < numMinMaxMipMapLevels; ++mipLevel)
-                            surfObjs[mipLevel] = geom.minMaxMipMap.getSurfaceObject(mipLevel);
-
-                        geom.minMaxMipMapSurfs.initialize(
-                            gpuEnv.cuContext, cudau::BufferType::Device, surfObjs);
-                        nrtdsmData.minMaxMipMap = geom.minMaxMipMapSurfs.getROBuffer<shared::enableBufferOobCheck>();
-                        CUDADRV_CHECK(cuMemcpyHtoD(addrOnDevice, &nrtdsmData, sizeof(nrtdsmData)));
-
-                        textureChanged = true;
-                        resetAccumulation = true;
-                        displacedMeshGeomGroup->needsRebuild = true;
-                        displacedMeshGeomGroup->needsReallocation = true;
-                        displacedMeshGeomGroup->optixGas.markDirty();
+                            shellGeomChanged = true;
+                            resetAccumulation = true;
+                            displacedMeshGeomGroup->needsRebuild = true;
+                            displacedMeshGeomGroup->needsReallocation = true;
+                            displacedMeshGeomGroup->optixGas.markDirty();
+                        }
                     }
 
                     ImGui::PushID("Instance Transform");
@@ -2248,6 +2487,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
         // EN: Compute the minmax mipmap.
         curGPUTimer.prepareDisplacedMesh.start(curCuStream);
         if (textureChanged) {
+            Assert(
+                detailType == DetailType::DisplacementMap,
+                "This should not be called when shell mapping is used.");
             const auto &geom = std::get<NRTDSMGeometry>(displacedMeshGeomInst->geometry);
             const shared::GeometryInstanceDataForNRTDSM* nrtdsmGeomInst =
                 geomInstNrtdsmDataBuffer.getDevicePointerAt(displacedMeshGeomInst->geomInstSlot);
@@ -2301,7 +2543,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
         // JP: ディスプレイスメントを適用した各プリミティブのAABBを計算する。
         // EN: Compute the AABB of each displacement-enabled primitive.
-        if (textureChanged || heightParamChanged || geomChanged) {
+        if (textureChanged || heightParamChanged || shellGeomChanged || geomChanged) {
             const GeometryInstance* geomInst = displacedMeshGeomInst;
             const auto &geom = std::get<NRTDSMGeometry>(geomInst->geometry);
 
@@ -2323,10 +2565,18 @@ int32_t main(int32_t argc, const char* argv[]) try {
                 reinterpret_cast<CUdeviceptr>(&nrtdsmData->params), &dispParams, sizeof(dispParams),
                 curCuStream));
 
-            gpuEnv.kernelComputeAABBs.launchWithThreadDim(
-                curCuStream, cudau::dim3(geom.aabbBuffer.numElements()),
-                geomInstData, nrtdsmData);
+            if (detailType == DetailType::DisplacementMap) {
+                gpuEnv.kernelComputeAABBsForDisplacementMapping.launchWithThreadDim(
+                    curCuStream, cudau::dim3(geom.aabbBuffer.numElements()),
+                    geomInstData, nrtdsmData);
+            }
+            else {
+                gpuEnv.kernelComputeAABBsForShellMapping.launchWithThreadDim(
+                    curCuStream, cudau::dim3(geom.aabbBuffer.numElements()),
+                    geomInstData, nrtdsmData);
+            }
 
+            // debug AABBs
             //CUDADRV_CHECK(cuStreamSynchronize(curCuStream));
             //std::vector<AABB> aabbs = geom.aabbBuffer;
 
@@ -2338,7 +2588,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         // JP: ASesのリビルドを行う。
         // EN: Rebuild the ASes.
         if (animate || frameIndex == 0 ||
-            heightParamChanged || geomChanged || textureChanged) {
+            geomChanged || textureChanged || heightParamChanged || shellGeomChanged) {
             perFramePlp.travHandle = scene.updateASs(gpuEnv.cuContext, curCuStream);
 
             if (!gpuEnv.gBuffer.hitGroupSbt.isInitialized() ||
@@ -2409,9 +2659,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         CUDADRV_CHECK(cuMemcpyHtoDAsync(plpPureCUDAOnDevice, &plp, sizeof(plp), curCuStream));
 
         // JP: Gバッファーのセットアップ。
-        //     ここではレイトレースを使ってGバッファーを生成しているがもちろんラスタライザーで生成可能。
         // EN: Setup the G-buffers.
-        //     Generate the G-buffers using ray trace here, but of course this can be done using rasterizer.
         curGPUTimer.setupGBuffers.start(curCuStream);
         gpuEnv.gBuffer.optixPipeline.launch(
             curCuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);

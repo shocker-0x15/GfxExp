@@ -749,171 +749,6 @@ namespace shared {
 
 
 
-    struct TexDimInfo {
-        uint32_t dimX : 14;
-        uint32_t dimY : 14;
-        uint32_t isNonPowerOfTwo : 1;
-        uint32_t isBCTexture : 1;
-        uint32_t isLeftHanded : 1; // for normal map
-    };
-
-
-
-    using ReadModifiedNormal = DynamicFunction<
-        Normal3D(CUtexObject texture, TexDimInfo dimInfo, Point2D texCoord, float mipLevel)>;
-
-    using BSDFGetSurfaceParameters = DynamicFunction<
-        void(const uint32_t* data, RGB* diffuseReflectance, RGB* specularReflectance, float* roughness)>;
-    using BSDFSampleThroughput = DynamicFunction<
-        RGB(const uint32_t* data, const Vector3D &vGiven, float uDir0, float uDir1,
-            Vector3D* vSampled, float* dirPDensity)>;
-    using BSDFEvaluate = DynamicFunction<
-        RGB(const uint32_t* data, const Vector3D &vGiven, const Vector3D &vSampled)>;
-    using BSDFEvaluatePDF = DynamicFunction<
-        float(const uint32_t* data, const Vector3D &vGiven, const Vector3D &vSampled)>;
-    using BSDFEvaluateDHReflectanceEstimate = DynamicFunction<
-        RGB(const uint32_t* data, const Vector3D &vGiven)>;
-
-
-
-    struct Vertex {
-        Point3D position;
-        Normal3D normal;
-        Vector3D texCoord0Dir;
-        Point2D texCoord;
-    };
-
-    struct CurveVertex {
-        Point3D position;
-        float width;
-    };
-
-    struct Triangle {
-        uint32_t index0, index1, index2;
-    };
-
-    struct MaterialData;
-
-    struct BSDFFlags {
-        enum Value {
-            None = 0,
-            Regularize = 1 << 0,
-        } value;
-
-        CUDA_DEVICE_FUNCTION constexpr BSDFFlags(Value v = None) : value(v) {}
-
-        CUDA_DEVICE_FUNCTION operator uint32_t() const {
-            return static_cast<uint32_t>(value);
-        }
-    };
-
-    using SetupBSDFBody = DynamicFunction<
-        void(const MaterialData &matData, Point2D texCoord, float mipLevel,
-             uint32_t* bodyData, BSDFFlags flags)>;
-
-    struct MaterialData {
-        union {
-            struct {
-                CUtexObject reflectance;
-                TexDimInfo reflectanceDimInfo;
-            } asLambert;
-            struct {
-                CUtexObject diffuse;
-                CUtexObject specular;
-                CUtexObject smoothness;
-                TexDimInfo diffuseDimInfo;
-                TexDimInfo specularDimInfo;
-                TexDimInfo smoothnessDimInfo;
-            } asDiffuseAndSpecular;
-            struct {
-                CUtexObject baseColor_opacity;
-                CUtexObject occlusion_roughness_metallic;
-                TexDimInfo baseColor_opacity_dimInfo;
-                TexDimInfo occlusion_roughness_metallic_dimInfo;
-            } asSimplePBR;
-        };
-        CUtexObject normal;
-        CUtexObject emittance;
-        TexDimInfo normalDimInfo;
-
-        ReadModifiedNormal readModifiedNormal;
-
-        SetupBSDFBody setupBSDFBody;
-        BSDFGetSurfaceParameters bsdfGetSurfaceParameters;
-        BSDFSampleThroughput bsdfSampleThroughput;
-        BSDFEvaluate bsdfEvaluate;
-        BSDFEvaluatePDF bsdfEvaluatePDF;
-        BSDFEvaluateDHReflectanceEstimate bsdfEvaluateDHReflectanceEstimate;
-    };
-
-    struct GeometryInstanceData {
-        union {
-            struct {
-                ROBuffer<Vertex> vertexBuffer;
-                ROBuffer<Triangle> triangleBuffer;
-            };
-            struct {
-                ROBuffer<CurveVertex> curveVertexBuffer;
-                ROBuffer<uint32_t> segmentIndexBuffer;
-            };
-        };
-        LightDistribution emitterPrimDist;
-        uint32_t materialSlot;
-        uint32_t geomInstSlot;
-    };
-
-    // for TFDM, NRTDSM
-    struct DisplacementParameters {
-        Matrix3x3 textureTransform;
-        float hOffset;
-        float hScale;
-        float hBias;
-        // not used for NRTDSM (at least for now)
-        int32_t targetMipLevel;
-        uint32_t localIntersectionType : 2;
-    };
-
-    struct TFDMTriangleAuxInfo {
-        Matrix4x4 matObjToTcTang;
-        Matrix3x3 matTcToBc;
-        Matrix3x3 matTcToNInObj;
-    };
-
-    struct GeometryInstanceDataForTFDM {
-        int2 heightMapSize;
-        CUtexObject heightMap;
-        ROBuffer<optixu::NativeBlockBuffer2D<float2>> minMaxMipMap;
-        ROBuffer<TFDMTriangleAuxInfo> dispTriAuxInfoBuffer;
-        ROBuffer<AABB> aabbBuffer;
-        DisplacementParameters params;
-    };
-
-    struct NRTDSMTriangleAuxInfo {
-        float minHeight;
-        float amplitude;
-    };
-
-    struct GeometryInstanceDataForNRTDSM {
-        int2 heightMapSize;
-        CUtexObject heightMap;
-        ROBuffer<optixu::NativeBlockBuffer2D<float2>> minMaxMipMap;
-        ROBuffer<NRTDSMTriangleAuxInfo> dispTriAuxInfoBuffer;
-        ROBuffer<AABB> aabbBuffer;
-        DisplacementParameters params;
-    };
-
-    struct InstanceData {
-        Matrix4x4 transform;
-        Matrix4x4 curToPrevTransform;
-        Matrix3x3 normalMatrix;
-        float uniformScale;
-
-        ROBuffer<uint32_t> geomInstSlots;
-        LightDistribution lightGeomInstDist;
-    };
-
-
-
     static constexpr uint32_t invalidNodeIndex = 0xFFFFFFFF;
 
     // Reference: Efficient Incoherent Ray Traversal on GPUs Through Wide BVHs
@@ -1188,12 +1023,9 @@ namespace shared {
 
     template <uint32_t arity>
     struct GeometryBVH_T {
-        const InternalNode_T<arity>* intNodes;
-        const PrimitiveReference* primRefs;
-        const TriangleStorage* triStorages;
-        uint32_t numIntNodes;
-        uint32_t numPrimRefs;
-        uint32_t numTriStorages;
+        ROBuffer<InternalNode_T<arity>> intNodes;
+        ROBuffer<TriangleStorage> triStorages;
+        ROBuffer<PrimitiveReference> primRefs;
     };
 
     struct InstanceReference {
@@ -1210,10 +1042,8 @@ namespace shared {
 
     template <uint32_t arity>
     struct InstanceBVH_T {
-        const InternalNode_T<arity>* intNodes;
-        const InstanceReference* instRefs;
-        uint32_t numIntNodes;
-        uint32_t numInstRefs;
+        ROBuffer<InternalNode_T<arity>> intNodes;
+        ROBuffer<InstanceReference> instRefs;
     };
 
     struct HitObject {
@@ -1229,5 +1059,176 @@ namespace shared {
         CUDA_COMMON_FUNCTION CUDA_INLINE bool isHit() const {
             return primIndex != UINT32_MAX;
         }
+    };
+
+
+
+    struct TexDimInfo {
+        uint32_t dimX : 14;
+        uint32_t dimY : 14;
+        uint32_t isNonPowerOfTwo : 1;
+        uint32_t isBCTexture : 1;
+        uint32_t isLeftHanded : 1; // for normal map
+    };
+
+
+
+    using ReadModifiedNormal = DynamicFunction<
+        Normal3D(CUtexObject texture, TexDimInfo dimInfo, Point2D texCoord, float mipLevel)>;
+
+    using BSDFGetSurfaceParameters = DynamicFunction<
+        void(const uint32_t* data, RGB* diffuseReflectance, RGB* specularReflectance, float* roughness)>;
+    using BSDFSampleThroughput = DynamicFunction<
+        RGB(const uint32_t* data, const Vector3D &vGiven, float uDir0, float uDir1,
+            Vector3D* vSampled, float* dirPDensity)>;
+    using BSDFEvaluate = DynamicFunction<
+        RGB(const uint32_t* data, const Vector3D &vGiven, const Vector3D &vSampled)>;
+    using BSDFEvaluatePDF = DynamicFunction<
+        float(const uint32_t* data, const Vector3D &vGiven, const Vector3D &vSampled)>;
+    using BSDFEvaluateDHReflectanceEstimate = DynamicFunction<
+        RGB(const uint32_t* data, const Vector3D &vGiven)>;
+
+
+
+    struct Vertex {
+        Point3D position;
+        Normal3D normal;
+        Vector3D texCoord0Dir;
+        Point2D texCoord;
+    };
+
+    struct CurveVertex {
+        Point3D position;
+        float width;
+    };
+
+    struct Triangle {
+        uint32_t index0, index1, index2;
+    };
+
+    struct MaterialData;
+
+    struct BSDFFlags {
+        enum Value {
+            None = 0,
+            Regularize = 1 << 0,
+        } value;
+
+        CUDA_DEVICE_FUNCTION constexpr BSDFFlags(Value v = None) : value(v) {}
+
+        CUDA_DEVICE_FUNCTION operator uint32_t() const {
+            return static_cast<uint32_t>(value);
+        }
+    };
+
+    using SetupBSDFBody = DynamicFunction<
+        void(const MaterialData &matData, Point2D texCoord, float mipLevel,
+             uint32_t* bodyData, BSDFFlags flags)>;
+
+    struct MaterialData {
+        union {
+            struct {
+                CUtexObject reflectance;
+                TexDimInfo reflectanceDimInfo;
+            } asLambert;
+            struct {
+                CUtexObject diffuse;
+                CUtexObject specular;
+                CUtexObject smoothness;
+                TexDimInfo diffuseDimInfo;
+                TexDimInfo specularDimInfo;
+                TexDimInfo smoothnessDimInfo;
+            } asDiffuseAndSpecular;
+            struct {
+                CUtexObject baseColor_opacity;
+                CUtexObject occlusion_roughness_metallic;
+                TexDimInfo baseColor_opacity_dimInfo;
+                TexDimInfo occlusion_roughness_metallic_dimInfo;
+            } asSimplePBR;
+        };
+        CUtexObject normal;
+        CUtexObject emittance;
+        TexDimInfo normalDimInfo;
+
+        ReadModifiedNormal readModifiedNormal;
+
+        SetupBSDFBody setupBSDFBody;
+        BSDFGetSurfaceParameters bsdfGetSurfaceParameters;
+        BSDFSampleThroughput bsdfSampleThroughput;
+        BSDFEvaluate bsdfEvaluate;
+        BSDFEvaluatePDF bsdfEvaluatePDF;
+        BSDFEvaluateDHReflectanceEstimate bsdfEvaluateDHReflectanceEstimate;
+    };
+
+    struct GeometryInstanceData {
+        union {
+            struct {
+                ROBuffer<Vertex> vertexBuffer;
+                ROBuffer<Triangle> triangleBuffer;
+            };
+            struct {
+                ROBuffer<CurveVertex> curveVertexBuffer;
+                ROBuffer<uint32_t> segmentIndexBuffer;
+            };
+        };
+        LightDistribution emitterPrimDist;
+        uint32_t materialSlot;
+        uint32_t geomInstSlot;
+    };
+
+    // for TFDM, NRTDSM
+    struct DisplacementParameters {
+        Matrix3x3 textureTransform;
+        float hOffset;
+        float hScale;
+        float hBias;
+        // not used for NRTDSM (at least for now)
+        int32_t targetMipLevel;
+        uint32_t localIntersectionType : 2;
+    };
+
+    struct TFDMTriangleAuxInfo {
+        Matrix4x4 matObjToTcTang;
+        Matrix3x3 matTcToBc;
+        Matrix3x3 matTcToNInObj;
+    };
+
+    struct GeometryInstanceDataForTFDM {
+        int2 heightMapSize;
+        CUtexObject heightMap;
+        ROBuffer<optixu::NativeBlockBuffer2D<float2>> minMaxMipMap;
+        ROBuffer<TFDMTriangleAuxInfo> dispTriAuxInfoBuffer;
+        ROBuffer<AABB> aabbBuffer;
+        DisplacementParameters params;
+    };
+
+    struct NRTDSMTriangleAuxInfo {
+        float minHeight;
+        float amplitude;
+    };
+
+    static constexpr uint32_t shellBvhArity = 8;
+
+    struct GeometryInstanceDataForNRTDSM {
+        ROBuffer<AABB> aabbBuffer;
+        ROBuffer<NRTDSMTriangleAuxInfo> dispTriAuxInfoBuffer;
+        DisplacementParameters params;
+
+        // for displacement mapping
+        int2 heightMapSize;
+        CUtexObject heightMap;
+        ROBuffer<optixu::NativeBlockBuffer2D<float2>> minMaxMipMap;
+        // for shell mapping
+        GeometryBVH_T<shellBvhArity> shellBvh;
+    };
+
+    struct InstanceData {
+        Matrix4x4 transform;
+        Matrix4x4 curToPrevTransform;
+        Matrix3x3 normalMatrix;
+        float uniformScale;
+
+        ROBuffer<uint32_t> geomInstSlots;
+        LightDistribution lightGeomInstDist;
     };
 }

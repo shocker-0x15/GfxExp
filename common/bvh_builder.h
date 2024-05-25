@@ -7,8 +7,8 @@ namespace bvh {
 template <uint32_t arity>
 struct GeometryBVH {
     std::vector<shared::InternalNode_T<arity>> intNodes;
-    std::vector<shared::PrimitiveReference> primRefs;
     std::vector<shared::TriangleStorage> triStorages;
+    std::vector<shared::PrimitiveReference> primRefs;
     uint32_t numGeoms;
     uint32_t totalNumPrims;
 };

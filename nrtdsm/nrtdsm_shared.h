@@ -815,8 +815,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE TriangleSquareIntersection2DResult testTriangle
         pC - vSquareCenter,
     };
 
-    // JP: テクセルのAABBと三角形のAABBのIntersectionを計算する。
-    // EN: Test intersection between the texel AABB and the triangle AABB.
+    // JP: テクセルと三角形のAABBのIntersectionを計算する。
+    // EN: Test intersection between the texel and the triangle AABB.
     if (any(min(Point2D(squareHalfWidth), triAabbMaxP - vSquareCenter) <=
             max(Point2D(-squareHalfWidth), triAabbMinP - vSquareCenter)))
         return TriangleSquareIntersection2DResult::SquareOutsideTriangle;
@@ -826,10 +826,9 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE TriangleSquareIntersection2DResult testTriangle
     for (int eIdx = 0; eIdx < 3; ++eIdx) {
         Vector2D eNormal = (tcFlipped ? -1 : 1) * triEdgeNormals[eIdx];
         Bool2D b = eNormal >= Vector2D(0.0f);
-        Vector2D e = static_cast<Vector2D>(relTriPs[eIdx]) +
-            Vector2D((b.x ? 1 : -1) * squareHalfWidth,
-                     (b.y ? 1 : -1) * squareHalfWidth);
-        if (dot(eNormal, e) <= 0)
+        Vector2D pToCorner = Point2D((b.x ? -1 : 1) * squareHalfWidth, (b.y ? -1 : 1) * squareHalfWidth)
+            - relTriPs[eIdx];
+        if (dot(eNormal, pToCorner) > 0)
             return TriangleSquareIntersection2DResult::SquareOutsideTriangle;
     }
 
@@ -851,6 +850,81 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE TriangleSquareIntersection2DResult testTriangle
     // JP: それ以外の場合はテクセルは三角形に囲まれている。
     // EN: Otherwise, the texel is encompassed by the triangle.
     return TriangleSquareIntersection2DResult::SquareInsideTriangle;
+}
+
+CUDA_DEVICE_FUNCTION CUDA_INLINE TriangleSquareIntersection2DResult testTriangleRectangleIntersection2D(
+    const Point2D &pA, const Point2D &pB, const Point2D &pC, bool tcFlipped, const Vector2D triEdgeNormals[3],
+    const Point2D &triAabbMinP, const Point2D &triAabbMaxP,
+    const Point2D &rectCenter, const Vector2D &rectHalfWidth) {
+    const Vector2D vRectCenter = static_cast<Vector2D>(rectCenter);
+    const Point2D relTriPs[] = {
+        pA - vRectCenter,
+        pB - vRectCenter,
+        pC - vRectCenter,
+    };
+
+    // JP: 四角形と三角形のAABBのIntersectionを計算する。
+    // EN: Test intersection between the rectangle and the triangle AABB.
+    if (any(min(Point2D(rectHalfWidth), triAabbMaxP - vRectCenter) <=
+            max(Point2D(-rectHalfWidth), triAabbMinP - vRectCenter)))
+        return TriangleSquareIntersection2DResult::SquareOutsideTriangle;
+
+    // JP: いずれかの三角形のエッジの法線方向に四角形があるなら四角形は三角形の外にある。
+    // EN: Rectangle is outside of the triangle if the rectangle is in the normal direction of any edge.
+    for (int eIdx = 0; eIdx < 3; ++eIdx) {
+        Vector2D eNormal = (tcFlipped ? -1 : 1) * triEdgeNormals[eIdx];
+        Bool2D b = eNormal >= Vector2D(0.0f);
+        Vector2D pToCorner = Point2D((b.x ? -1 : 1) * rectHalfWidth.x, (b.y ? -1 : 1) * rectHalfWidth.y)
+            - relTriPs[eIdx];
+        if (dot(eNormal, pToCorner) > 0)
+            return TriangleSquareIntersection2DResult::SquareOutsideTriangle;
+    }
+
+    // JP: 四角形が三角形のエッジとかぶっているかどうかを調べる。
+    // EN: Test if the rectangle is overlapping with some edges of the triangle.
+    for (int i = 0; i < 4; ++i) {
+        Point2D corner(
+            (i % 2 ? -1 : 1) * rectHalfWidth.x,
+            (i / 2 ? -1 : 1) * rectHalfWidth.y);
+        for (int eIdx = 0; eIdx < 3; ++eIdx) {
+            const Point2D &o = relTriPs[eIdx];
+            const Vector2D &e1 = relTriPs[(eIdx + 1) % 3] - o;
+            Vector2D e2 = corner - o;
+            if ((tcFlipped ? -1 : 1) * cross(e1, e2) < 0)
+                return TriangleSquareIntersection2DResult::SquareOverlappingTriangle;
+        }
+    }
+
+    // JP: それ以外の場合は四角形は三角形に囲まれている。
+    // EN: Otherwise, the rectangle is encompassed by the triangle.
+    return TriangleSquareIntersection2DResult::SquareInsideTriangle;
+}
+
+CUDA_DEVICE_FUNCTION CUDA_INLINE void findRootsForShellMapping(
+    const Point2D &triAabbMinP, const Point2D &triAabbMaxP,
+    Texel* const roots, uint32_t* const numRoots) {
+    using namespace shared;
+    int32_t startMipLevel = 0;
+    while (true) {
+        const float res = std::pow(2.0f, static_cast<float>(-startMipLevel));
+        const int32_t minTexelX = static_cast<int32_t>(std::floor(res * triAabbMinP.x));
+        const int32_t minTexelY = static_cast<int32_t>(std::floor(res * triAabbMinP.y));
+        const int32_t maxTexelX = static_cast<int32_t>(std::floor(res * triAabbMaxP.x));
+        const int32_t maxTexelY = static_cast<int32_t>(std::floor(res * triAabbMaxP.y));
+        if ((maxTexelX - minTexelX) < 2 && (maxTexelY - minTexelY) < 2) {
+            *numRoots = 0;
+            for (int y = minTexelY; y <= maxTexelY; ++y) {
+                for (int x = minTexelX; x <= maxTexelX; ++x) {
+                    Texel &root = roots[(*numRoots)++];
+                    root.x = x;
+                    root.y = y;
+                    root.lod = startMipLevel;
+                }
+            }
+            break;
+        }
+        ++startMipLevel;
+    }
 }
 
 CUDA_DEVICE_FUNCTION CUDA_INLINE void findRoots(

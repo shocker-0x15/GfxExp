@@ -674,14 +674,42 @@ struct TFDMGeometry {
     cudau::TypedBuffer<shared::TFDMTriangleAuxInfo> tfdmTriAuxInfoBuffer;
 };
 
+struct ShellBVH {
+    cudau::Buffer bvhMem;
+    uint64_t offsetToTriStorages;
+    uint64_t offsetToPrimRefs;
+    uint32_t numIntNodes;
+    uint32_t numTriStorages;
+    uint32_t numPrimRefs;
+
+    shared::GeometryBVH_T<shared::shellBvhArity> getBvhOnDevice() const {
+        using IntNode = shared::InternalNode_T<shared::shellBvhArity>;
+        shared::GeometryBVH_T<shared::shellBvhArity> ret = {};
+        ret.intNodes = shared::ROBuffer(
+            reinterpret_cast<IntNode*>(bvhMem.getCUdeviceptr()),
+            numIntNodes);
+        ret.triStorages = shared::ROBuffer(
+            reinterpret_cast<shared::TriangleStorage*>(bvhMem.getCUdeviceptr() + offsetToTriStorages),
+            numTriStorages);
+        ret.primRefs = shared::ROBuffer(
+            reinterpret_cast<shared::PrimitiveReference*>(bvhMem.getCUdeviceptr() + offsetToPrimRefs),
+            numPrimRefs);
+        return ret;
+    }
+};
+
 struct NRTDSMGeometry {
     cudau::TypedBuffer<shared::Vertex> vertexBuffer;
     cudau::TypedBuffer<shared::Triangle> triangleBuffer;
     cudau::TypedBuffer<AABB> aabbBuffer;
+    cudau::TypedBuffer<shared::NRTDSMTriangleAuxInfo> triAuxInfoBuffer;
+
+    // for displacement mapping
     Texture texHeight;
     cudau::Array minMaxMipMap;
     cudau::TypedBuffer<optixu::NativeBlockBuffer2D<float2>> minMaxMipMapSurfs;
-    cudau::TypedBuffer<shared::NRTDSMTriangleAuxInfo> nrtdsmTriAuxInfoBuffer;
+    // for shell mapping
+    ShellBVH shellBvh;
 };
 
 struct GeometryInstance {
@@ -1424,6 +1452,13 @@ GeometryInstance* createLinearSegmentsGeometryInstance(
 GeometryGroup* createGeometryGroup(
     Scene* scene,
     const std::set<const GeometryInstance*> &geomInsts);
+
+void loadSingleTriangleMesh(
+    const std::filesystem::path &filePath,
+    const Matrix4x4 &preTransform,
+    std::vector<Point3D>* vertices,
+    std::vector<shared::Triangle>* triangles,
+    AABB* aabb);
 
 void createTriangleMeshes(
     const std::string &meshName,

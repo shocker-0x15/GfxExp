@@ -2584,9 +2584,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         CUDADRV_CHECK(cuMemcpyHtoDAsync(plpPureCUDAOnDevice, &plp, sizeof(plp), curCuStream));
 
         // JP: Gバッファーのセットアップ。
-        //     ここではレイトレースを使ってGバッファーを生成しているがもちろんラスタライザーで生成可能。
         // EN: Setup the G-buffers.
-        //     Generate the G-buffers using ray trace here, but of course this can be done using rasterizer.
         curGPUTimer.setupGBuffers.start(curCuStream);
         gpuEnv.gBuffer.optixPipeline.launch(
             curCuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);

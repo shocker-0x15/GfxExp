@@ -79,7 +79,7 @@ CUDA_DEVICE_KERNEL void generateMinMaxMipMap(
 
 
 
-CUDA_DEVICE_KERNEL void computeAABBs(
+CUDA_DEVICE_KERNEL void computeAABBsForDisplacementMapping(
     const GeometryInstanceData* const geomInst, const GeometryInstanceDataForNRTDSM* const nrtdsmGeomInst) {
     const uint32_t primIndex = blockDim.x * blockIdx.x + threadIdx.x;
     if (primIndex >= geomInst->triangleBuffer.getNumElements())
@@ -208,6 +208,153 @@ CUDA_DEVICE_KERNEL void computeAABBs(
                 }
             }
         }
+    }
+#if DEBUG_TRAVERSAL
+    if (primIndex == debugPrimIndex) {
+        printf("prim %u: height min/max: %g/%g\n", primIndex, minHeight, maxHeight);
+    }
+#endif
+
+    RWBuffer aabbBuffer(nrtdsmGeomInst->aabbBuffer);
+    RWBuffer dispTriAuxInfoBuffer(nrtdsmGeomInst->dispTriAuxInfoBuffer);
+
+    const float amplitude = nrtdsmGeomInst->params.hScale * (maxHeight - minHeight);
+    minHeight = nrtdsmGeomInst->params.hOffset + nrtdsmGeomInst->params.hScale * (
+        minHeight - nrtdsmGeomInst->params.hBias);
+
+    AABB triAabb;
+    triAabb.unify(vs[0].position + minHeight * vs[0].normal);
+    triAabb.unify(vs[1].position + minHeight * vs[1].normal);
+    triAabb.unify(vs[2].position + minHeight * vs[2].normal);
+    triAabb.unify(vs[0].position + (minHeight + amplitude) * vs[0].normal);
+    triAabb.unify(vs[1].position + (minHeight + amplitude) * vs[1].normal);
+    triAabb.unify(vs[2].position + (minHeight + amplitude) * vs[2].normal);
+
+    aabbBuffer[primIndex] = triAabb;
+    dispTriAuxInfoBuffer[primIndex].minHeight = minHeight;
+    dispTriAuxInfoBuffer[primIndex].amplitude = amplitude;
+}
+
+CUDA_DEVICE_KERNEL void computeAABBsForShellMapping(
+    const GeometryInstanceData* const geomInst, const GeometryInstanceDataForNRTDSM* const nrtdsmGeomInst) {
+    const uint32_t primIndex = blockDim.x * blockIdx.x + threadIdx.x;
+    if (primIndex >= geomInst->triangleBuffer.getNumElements())
+        return;
+
+#define DEBUG_TRAVERSAL 0
+
+    const Triangle &tri = geomInst->triangleBuffer[primIndex];
+    const Vertex (&vs)[] = {
+        geomInst->vertexBuffer[tri.index0],
+        geomInst->vertexBuffer[tri.index1],
+        geomInst->vertexBuffer[tri.index2]
+    };
+#if DEBUG_TRAVERSAL
+    constexpr uint32_t debugPrimIndex = 0;
+    if (primIndex == debugPrimIndex) {
+        printf(
+            "prim %u: "
+            "p (" V3FMT "), n (" V3FMT "), tc (" V2FMT "), "
+            "p (" V3FMT "), n (" V3FMT "), tc (" V2FMT "), "
+            "p (" V3FMT "), n (" V3FMT "), tc (" V2FMT ")\n",
+            primIndex,
+            v3print(vs[0].position), v3print(vs[0].normal), v2print(vs[0].texCoord),
+            v3print(vs[1].position), v3print(vs[1].normal), v2print(vs[1].texCoord),
+            v3print(vs[2].position), v3print(vs[2].normal), v2print(vs[2].texCoord));
+    }
+#endif
+
+    // JP: 三角形を含むBVHノードのmin/maxを読み取る。
+    // EN: Compute the min/max of BVH nodes overlapping with the triangle.
+    float minHeight = INFINITY;
+    float maxHeight = -INFINITY;
+    {
+        const Matrix3x3 &texXfm = nrtdsmGeomInst->params.textureTransform;
+        const Point2D tcA = texXfm * vs[0].texCoord;
+        const Point2D tcB = texXfm * vs[1].texCoord;
+        const Point2D tcC = texXfm * vs[2].texCoord;
+        const bool tcFlipped = cross(tcB - tcA, tcC - tcA) < 0;
+#if DEBUG_TRAVERSAL
+        if (primIndex == debugPrimIndex) {
+            printf("prim %u: (" V2FMT "), (" V2FMT "), (" V2FMT ")\n",
+                   primIndex,
+                   v2print(tcA), v2print(tcB), v2print(tcC));
+        }
+#endif
+
+        const Vector2D texTriEdgeNormals[] = {
+            Vector2D(tcB.y - tcA.y, tcA.x - tcB.x),
+            Vector2D(tcC.y - tcB.y, tcB.x - tcC.x),
+            Vector2D(tcA.y - tcC.y, tcC.x - tcA.x),
+        };
+        const Point2D texTriAabbMinP = min(tcA, min(tcB, tcC));
+        const Point2D texTriAabbMaxP = max(tcA, max(tcB, tcC));
+#if DEBUG_TRAVERSAL
+        if (primIndex == debugPrimIndex) {
+            printf("prim %u: (" V2FMT "), (" V2FMT ")\n",
+                   primIndex,
+                   v2print(texTriAabbMinP), v2print(texTriAabbMaxP));
+        }
+#endif
+
+        using InternalNode = InternalNode_T<shellBvhArity>;
+        static constexpr uint32_t orderBitWidth = tzcntConst(shellBvhArity);
+        static constexpr uint32_t orderMask = (1 << orderBitWidth) - 1;
+
+        const GeometryBVH_T<shellBvhArity> &bvh = nrtdsmGeomInst->shellBvh;
+
+        //union Entry {
+        //    struct {
+        //        uint32_t baseIndex : 31;
+        //        uint32_t isLeafGroup : 1;
+        //        uint32_t orderInfo : 28;
+        //        uint32_t numItems : 4;
+        //    };
+        //    uint32_t asUInts[2];
+        //};
+
+        //Entry stack[12];
+        //int32_t stackIdx = 0;
+        //Entry curGroup = { 0, 0, 0, 1 };
+
+        //const auto push = [&]() {
+        //    stack[stackIdx++] = curGroup;
+        //};
+        //const auto pop = [&]() {
+        //    curGroup = stack[--stackIdx];
+        //};
+
+        //while (true) {
+        //    if (curGroup.numItems == 0) {
+        //        if (stackIdx == 0)
+        //            break;
+        //        pop();
+        //    }
+
+        //    Assert(curGroup.numItems > 0, "No items anymore.");
+        //    const uint32_t nodeIdx = curGroup.baseIndex + (curGroup.orderInfo & orderMask);
+        //    curGroup.orderInfo >>= orderBitWidth;
+        //    --curGroup.numItems;
+        //    const InternalNode &intNode = bvh.intNodes[nodeIdx];
+
+        //    for (uint32_t slot = 0; slot < shellBvhArity; ++slot) {
+        //        if (!intNode.getChildIsValid(slot))
+        //            break;
+
+        //        const AABB &aabb = intNode.getChildAabb(slot);
+
+        //        const TriangleSquareIntersection2DResult isectResult =
+        //            testTriangleRectangleIntersection2D(
+        //                tcA, tcB, tcC, tcFlipped, texTriEdgeNormals, texTriAabbMinP, texTriAabbMaxP,
+        //                Point2D((curTexel.x + 0.5f) * texelScale, (curTexel.y + 0.5f) * texelScale),
+        //                0.5f * texelScale);
+        //    }
+        //}
+
+        // TODO: BVH traversal to accurately determine the min/max.
+        const AABB rootAabb = bvh.intNodes[0].getAabb();
+        minHeight = rootAabb.minP.z;
+        maxHeight = rootAabb.maxP.z;
     }
 #if DEBUG_TRAVERSAL
     if (primIndex == debugPrimIndex) {

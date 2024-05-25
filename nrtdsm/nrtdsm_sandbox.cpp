@@ -3427,4 +3427,156 @@ void testBvhBuilder() {
     printf("");
 }
 
+
+
+enum class TriangleSquareIntersection2DResult {
+    SquareOutsideTriangle = 0,
+    SquareInsideTriangle,
+    SquareOverlappingTriangle
+};
+
+TriangleSquareIntersection2DResult testTriangleRectangleIntersection2D(
+    const Point2D &pA, const Point2D &pB, const Point2D &pC, bool tcFlipped, const Vector2D triEdgeNormals[3],
+    const Point2D &triAabbMinP, const Point2D &triAabbMaxP,
+    const Point2D &rectCenter, const Vector2D &rectHalfWidth) {
+    const Vector2D vRectCenter = static_cast<Vector2D>(rectCenter);
+    const Point2D relTriPs[] = {
+        pA - vRectCenter,
+        pB - vRectCenter,
+        pC - vRectCenter,
+    };
+
+    // JP: 四角形と三角形のAABBのIntersectionを計算する。
+    // EN: Test intersection between the rectangle and the triangle AABB.
+    if (any(min(Point2D(rectHalfWidth), triAabbMaxP - vRectCenter) <=
+            max(Point2D(-rectHalfWidth), triAabbMinP - vRectCenter)))
+        return TriangleSquareIntersection2DResult::SquareOutsideTriangle;
+
+    // JP: いずれかの三角形のエッジの法線方向に四角形があるなら四角形は三角形の外にある。
+    // EN: Rectangle is outside of the triangle if the rectangle is in the normal direction of any edge.
+    for (int eIdx = 0; eIdx < 3; ++eIdx) {
+        Vector2D eNormal = (tcFlipped ? -1 : 1) * triEdgeNormals[eIdx];
+        Bool2D b = eNormal >= Vector2D(0.0f);
+        Vector2D pToCorner = Point2D((b.x ? -1 : 1) * rectHalfWidth.x, (b.y ? -1 : 1) * rectHalfWidth.y)
+            - relTriPs[eIdx];
+        if (dot(eNormal, pToCorner) > 0)
+            return TriangleSquareIntersection2DResult::SquareOutsideTriangle;
+    }
+
+    // JP: 四角形が三角形のエッジとかぶっているかどうかを調べる。
+    // EN: Test if the rectangle is overlapping with some edges of the triangle.
+    for (int i = 0; i < 4; ++i) {
+        Point2D corner(
+            (i % 2 ? -1 : 1) * rectHalfWidth.x,
+            (i / 2 ? -1 : 1) * rectHalfWidth.y);
+        for (int eIdx = 0; eIdx < 3; ++eIdx) {
+            const Point2D &o = relTriPs[eIdx];
+            const Vector2D &e1 = relTriPs[(eIdx + 1) % 3] - o;
+            Vector2D e2 = corner - o;
+            if ((tcFlipped ? -1 : 1) * cross(e1, e2) < 0)
+                return TriangleSquareIntersection2DResult::SquareOverlappingTriangle;
+        }
+    }
+
+    // JP: それ以外の場合は四角形は三角形に囲まれている。
+    // EN: Otherwise, the rectangle is encompassed by the triangle.
+    return TriangleSquareIntersection2DResult::SquareInsideTriangle;
+}
+
+void testTriVsRectIntersection() {
+        std::mt19937 rng(14131631);
+    std::uniform_real_distribution<float> u01;
+
+    constexpr int32_t maxLevel = 4;
+    constexpr int32_t maxRes = 1 << maxLevel;
+    constexpr int32_t wrapMin = -3;
+    constexpr int32_t wrapMax = 3;
+
+    const auto drawGrid = [&]
+    () {
+        constexpr int32_t numRepeats = wrapMax - wrapMin;
+        for (int i = 1; i < numRepeats * maxRes; ++i) {
+            float p = static_cast<float>(i) / maxRes;
+            RGB color(RGB(sRGB_degamma_s(0.05f * (1 << tzcnt(i % maxRes)))));
+            if (i % maxRes == 0)
+                color = RGB(0.8f, 0.8f, 0.8f);
+            setColor(color);
+            drawLine(Point3D(wrapMin, p + wrapMin, 0.0f), Point3D(numRepeats + wrapMin, p + wrapMin, 0.0f));
+            drawLine(Point3D(p + wrapMin, wrapMin, 0.0f), Point3D(p + wrapMin, numRepeats + wrapMin, 0.0f));
+        }
+        setColor(RGB(0.25f, 0.0f, 0.0f));
+        drawLine(Point3D(0.0f, 0.0f, 0.0025f), Point3D(wrapMin, 0.0f, 0.0025f));
+        setColor(RGB(0.0f, 0.25f, 0.0f));
+        drawLine(Point3D(0.0f, 0.0f, 0.0025f), Point3D(0.0f, wrapMin, 0.0025f));
+        setColor(RGB(1.0f, 0.0f, 0.0f));
+        drawLine(Point3D(0.0f, 0.0f, 0.0025f), Point3D(wrapMax, 0.0f, 0.0025f));
+        setColor(RGB(0.0f, 1.0f, 0.0f));
+        drawLine(Point3D(0.0f, 0.0f, 0.0025f), Point3D(0.0f, wrapMax, 0.0025f));
+    };
+
+    const auto drawRect = [](const Point2D &minP, const Point2D &maxP, float z) {
+        drawLine(Point3D(minP.x, minP.y, z), Point3D(maxP.x, minP.y, z));
+        drawLine(Point3D(minP.x, maxP.y, z), Point3D(maxP.x, maxP.y, z));
+        drawLine(Point3D(minP.x, minP.y, z), Point3D(minP.x, maxP.y, z));
+        drawLine(Point3D(maxP.x, minP.y, z), Point3D(maxP.x, maxP.y, z));
+    };
+
+    const auto drawTriangle = [](const Point2D &pA, const Point2D &pB, const Point2D &pC, float z) {
+        drawLine(Point3D(pA, z), Point3D(pB, z));
+        drawLine(Point3D(pB, z), Point3D(pC, z));
+        drawLine(Point3D(pC, z), Point3D(pA, z));
+    };
+
+    constexpr uint32_t numTests = 1000;
+    for (int testIdx = 0; testIdx < numTests; ++testIdx) {
+        vdb_frame();
+
+        drawGrid();
+
+        const float scale = u01(rng);
+        const float aspect = 2 * u01(rng) - 1;
+        const Point2D minP(u01(rng), u01(rng));
+        Vector2D d = Vector2D(scale, scale * std::fabs(aspect));
+        if (aspect < 0.0f)
+            d = d.yx();
+        const Point2D maxP = minP + d;
+
+        setColor(RGB(1.0f, 1.0f, 1.0f));
+        drawRect(minP, maxP, 0.01f);
+
+        const float triScale = 2 * u01(rng);
+        const Point2D triOffset = 0.5f * (minP + maxP) + Vector2D(2 * u01(rng) - 1, 2 * u01(rng) - 1);
+
+        const Point2D tcA = triScale * Point2D(u01(rng) - 0.5f, u01(rng) - 0.5f) + triOffset;
+        const Point2D tcB = triScale * Point2D(u01(rng) - 0.5f, u01(rng) - 0.5f) + triOffset;
+        const Point2D tcC = triScale * Point2D(u01(rng) - 0.5f, u01(rng) - 0.5f) + triOffset;
+        const bool tcFlipped = cross(tcB - tcA, tcC - tcA) < 0;
+
+        setColor(0.01f, 0.01f, 0.01f);
+        drawTriangle(tcA, tcB, tcC, 0.01f);
+
+        const Vector2D texTriEdgeNormals[] = {
+            Vector2D(tcB.y - tcA.y, tcA.x - tcB.x),
+            Vector2D(tcC.y - tcB.y, tcB.x - tcC.x),
+            Vector2D(tcA.y - tcC.y, tcC.x - tcA.x),
+        };
+        const Point2D texTriAabbMinP = min(tcA, min(tcB, tcC));
+        const Point2D texTriAabbMaxP = max(tcA, max(tcB, tcC));
+
+        const TriangleSquareIntersection2DResult isectResult =
+            testTriangleRectangleIntersection2D(
+                tcA, tcB, tcC, tcFlipped, texTriEdgeNormals, texTriAabbMinP, texTriAabbMaxP,
+                0.5f * (minP + maxP), 0.5f * d);
+        if (isectResult == TriangleSquareIntersection2DResult::SquareInsideTriangle)
+            setColor(1.0f, 0.5f, 0.0f);
+        else if (isectResult == TriangleSquareIntersection2DResult::SquareOutsideTriangle)
+            setColor(0.25f, 0.25f, 0.25f);
+        else
+            setColor(0.0f, 1.0f, 1.0f);
+        drawTriangle(tcA, tcB, tcC, 0.02f);
+
+        hpprintf("");
+    }
+}
+
 #endif

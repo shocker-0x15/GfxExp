@@ -3362,6 +3362,15 @@ struct AABB_T {
         return 0.5f * (minP + maxP);
     }
 
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr F getMinDimSize() const {
+        Vector3D_T<F, false> d = maxP - minP;
+        return stc::min(stc::min(d.x, d.y), d.z);
+    }
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr F getMaxDimSize() const {
+        Vector3D_T<F, false> d = maxP - minP;
+        return stc::max(stc::max(d.x, d.y), d.z);
+    }
+
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr F calcHalfSurfaceArea() const {
         const Vector3D_T<F, false> d = maxP - minP;
         return d.x * d.y + d.y * d.z + d.z * d.x;
@@ -4801,7 +4810,7 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix4x4_T<F> translate3D_4x4(
         Vector4D_T<F>(t, 1.0f));
 }
 template <std::floating_point F>
-CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix3x3_T<F> translate3D_4x4(
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix4x4_T<F> translate3D_4x4(
     const Point3D_T<F> &t) {
     return translate3D_4x4(static_cast<Vector3D_T<F, false>>(t));
 }
