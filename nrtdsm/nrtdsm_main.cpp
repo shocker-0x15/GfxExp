@@ -2298,9 +2298,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
                     ImGui::Text("Texture Transform");
                     ImGui::PushID("Texture");
                     heightParamChanged |= ImGui::SliderFloat(
-                        "Scale U", &heightMapTexScale.x, 0.1f, 3.0f);
+                        "Scale U", &heightMapTexScale.x, 0.1f, 10.0f);
                     heightParamChanged |= ImGui::SliderFloat(
-                        "Scale V", &heightMapTexScale.y, 0.1f, 3.0f);
+                        "Scale V", &heightMapTexScale.y, 0.1f, 10.0f);
                     heightParamChanged |= ImGui::SliderFloat(
                         "Rotation", &heightMapTexRotation, 0.0f, 360.0f);
                     heightParamChanged |= ImGui::SliderFloat(

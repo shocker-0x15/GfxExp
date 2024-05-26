@@ -1271,7 +1271,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsShellBvh(
     const bool tcFlipped, const Vector2D texTriEdgeNormals[2],
     const Point2D &texTriAabbMinP, const Point2D &texTriAabbMaxP,
     // Shell BVH
-    const GeometryBVH_T<shellBvhArity> &shellBvh,
+    const GeometryBVH_T<shellBvhArity> &shellBvh, const Vector2D &bvhShift,
     // Ray
     const Point3D &rayOrg, const Vector3D &rayDir, const float distMin, const float distMax,
     const Vector3D &e0, const Vector3D &e1,
@@ -1282,7 +1282,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsShellBvh(
     // Results
     Point3D* const hitPointInCan, /*Point3D* const hitPointInTex,*/
     float* const hitDist, Normal3D* const hitNormalInObj,
-    TraversalStats* travStats) {
+    TraversalStats* const travStats) {
     using InternalNode = InternalNode_T<shellBvhArity>;
 
     static constexpr uint32_t orderBitWidth = tzcntConst(shellBvhArity);
@@ -1352,7 +1352,11 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsShellBvh(
                     break;
                 }
 
-                const AABB &aabb = intNode.getChildAabb(slot);
+                AABB aabb = intNode.getChildAabb(slot);
+                aabb.minP.x += bvhShift.x;
+                aabb.minP.y += bvhShift.y;
+                aabb.maxP.x += bvhShift.x;
+                aabb.maxP.y += bvhShift.y;
                 const Point2D minP = aabb.minP.xy();
                 const Point2D maxP = aabb.maxP.xy();
                 const TriangleSquareIntersection2DResult isectResult =
@@ -1463,11 +1467,15 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsShellBvh(
             float tt;
             Normal3D nn;
             Point3D hpInCan;
+            const Vector3D triShift(bvhShift, 0.0f);
+            const Point3D mpA = triStorage.pA + triShift;
+            const Point3D mpB = triStorage.pB + triShift;
+            const Point3D mpC = triStorage.pC + triShift;
             const bool triHit = testNonlinearRayVsMicroTriangle(
                 pA, pB, pC,
                 nA, nB, nC,
                 tcA, tcB, tcC,
-                triStorage.pA, triStorage.pB, triStorage.pC,
+                mpA, mpB, mpC,
                 rayOrg, rayDir, distMin, *hitDist,
                 e0, e1,
                 tc2, tc1, tc0,
@@ -1529,11 +1537,10 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void detailedSurface_generic(TraversalStats* tr
     // JP: まずは直線レイとプリズムの交差判定を行う。
     // EN: Test rectlinear ray vs prism intersection first.
     float prismHitDistEnter, prismHitDistLeave;
-    float minHeight, maxHeight;
     {
         const NRTDSMTriangleAuxInfo &dispTriAuxInfo = nrtdsmGeomInst.dispTriAuxInfoBuffer[primIdx];
-        minHeight = dispTriAuxInfo.minHeight;
-        maxHeight = minHeight + dispTriAuxInfo.amplitude;
+        const float minHeight = dispTriAuxInfo.minHeight;
+        const float maxHeight = minHeight + dispTriAuxInfo.amplitude;
         const Point3D pA = vA.position + minHeight * vA.normal;
         const Point3D pB = vB.position + minHeight * vB.normal;
         const Point3D pC = vC.position + minHeight * vC.normal;
@@ -1644,6 +1651,10 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void detailedSurface_generic(TraversalStats* tr
     };
 
     if constexpr (forShellMapping) {
+        const AABB rootAabb = nrtdsmGeomInst.shellBvh.intNodes[0].getAabb();
+        const float minHeight = rootAabb.minP.z;
+        const float maxHeight = rootAabb.maxP.z;
+
         Texel roots[4];
         uint32_t numRoots;
         findRootsForShellMapping(texTriAabbMinP, texTriAabbMaxP, roots, &numRoots);
@@ -1873,7 +1884,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void detailedSurface_generic(TraversalStats* tr
                     nA, nB, nC,
                     tcA, tcB, tcC,
                     tcFlipped, texTriEdgeNormals, texTriAabbMinP, texTriAabbMaxP,
-                    nrtdsmGeomInst.shellBvh,
+                    nrtdsmGeomInst.shellBvh, Vector2D(curTexel.x, curTexel.y),
                     rayOrgInObj, rayDirInObj, prismHitDistEnter, hitDist,
                     e0, e1,
                     alpha2, alpha1, alpha0,
