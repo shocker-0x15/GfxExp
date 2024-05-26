@@ -7,10 +7,10 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(primaryDisplacedSurface_Box)() {
 #if OUTPUT_TRAVERSAL_STATS
     TraversalStats travStats;
     PrimaryRayPayloadSignature::get(nullptr, nullptr, &travStats);
-#endif
     displacedSurface_generic<true, LocalIntersectionType::Box>(&travStats);
-#if OUTPUT_TRAVERSAL_STATS
     PrimaryRayPayloadSignature::set(nullptr, nullptr, &travStats);
+#else
+    displacedSurface_generic<false, LocalIntersectionType::Box>(nullptr);
 #endif
 }
 
@@ -18,10 +18,10 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(primaryDisplacedSurface_TwoTriangle)() {
 #if OUTPUT_TRAVERSAL_STATS
     TraversalStats travStats;
     PrimaryRayPayloadSignature::get(nullptr, nullptr, &travStats);
-#endif
     displacedSurface_generic<true, LocalIntersectionType::TwoTriangle>(&travStats);
-#if OUTPUT_TRAVERSAL_STATS
     PrimaryRayPayloadSignature::set(nullptr, nullptr, &travStats);
+#else
+    displacedSurface_generic<false, LocalIntersectionType::TwoTriangle>(nullptr);
 #endif
 }
 
@@ -29,10 +29,10 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(primaryDisplacedSurface_Bilinear)() {
 #if OUTPUT_TRAVERSAL_STATS
     TraversalStats travStats;
     PrimaryRayPayloadSignature::get(nullptr, nullptr, &travStats);
-#endif
     displacedSurface_generic<true, LocalIntersectionType::Bilinear>(&travStats);
-#if OUTPUT_TRAVERSAL_STATS
     PrimaryRayPayloadSignature::set(nullptr, nullptr, &travStats);
+#else
+    displacedSurface_generic<false, LocalIntersectionType::Bilinear>(nullptr);
 #endif
 }
 
@@ -40,10 +40,10 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(primaryDisplacedSurface_BSpline)() {
 #if OUTPUT_TRAVERSAL_STATS
     TraversalStats travStats;
     PrimaryRayPayloadSignature::get(nullptr, nullptr, &travStats);
-#endif
     displacedSurface_generic<true, LocalIntersectionType::BSpline>(&travStats);
-#if OUTPUT_TRAVERSAL_STATS
     PrimaryRayPayloadSignature::set(nullptr, nullptr, &travStats);
+#else
+    displacedSurface_generic<false, LocalIntersectionType::BSpline>(nullptr);
 #endif
 }
 
@@ -169,7 +169,12 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
 
     HitPointParams* hitPointParams;
     PickInfo* pickInfo;
-    PrimaryRayPayloadSignature::get(&hitPointParams, &pickInfo, nullptr);
+    PrimaryRayPayloadSignature::get(
+        &hitPointParams, &pickInfo
+#if OUTPUT_TRAVERSAL_STATS
+        , nullptr
+#endif
+    );
 
     const auto hp = HitPointParameter::get();
     const uint32_t hitKind = optixGetHitKind();
@@ -297,7 +302,12 @@ CUDA_DEVICE_KERNEL void RT_MS_NAME(setupGBuffers)() {
 
     HitPointParams* hitPointParams;
     PickInfo* pickInfo;
-    PrimaryRayPayloadSignature::get(&hitPointParams, &pickInfo, nullptr);
+    PrimaryRayPayloadSignature::get(
+        &hitPointParams, &pickInfo
+#if OUTPUT_TRAVERSAL_STATS
+        , nullptr
+#endif
+    );
 
     hitPointParams->positionInWorld = p;
     hitPointParams->prevPositionInWorld = p;
