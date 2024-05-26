@@ -36,8 +36,8 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(aabb)() {
 
 
 
-template <LocalIntersectionType intersectionType>
-CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
+template <bool outputTravStats, LocalIntersectionType intersectionType>
+CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic(TraversalStats* travStats) {
     const auto sbtr = HitGroupSBTRecordData::get();
     const GeometryInstanceData &geomInst = plp.s->geometryInstanceDataBuffer[sbtr.geomInstSlot];
     const GeometryInstanceDataForTFDM &tfdmGeomInst = plp.s->geomInstTfdmDataBuffer[sbtr.geomInstSlot];
@@ -113,11 +113,6 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
         prevPowOf2Exponent(max(tfdmGeomInst.heightMapSize.x, tfdmGeomInst.heightMapSize.y));
     const int32_t targetMipLevel = dispParams.targetMipLevel;
 
-#if OUTPUT_TRAVERSAL_STATS
-    uint16_t numAabbTests = 0;
-    uint16_t numLeafTests = 0;
-#endif
-
     Texel roots[4];
     uint32_t numRoots;
     findRoots(texTriAabbMinP, texTriAabbMaxP, maxDepth, targetMipLevel, roots, &numRoots);
@@ -174,9 +169,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
             // EN: Compute the AABB of texel in the tangent space using affine arithmetic.
             AABB texelAabb;
             {
-#if OUTPUT_TRAVERSAL_STATS
-                ++numAabbTests;
-#endif
+                if constexpr (outputTravStats)
+                    ++travStats->numAabbTests;
                 const int2 wrapIndex = make_int2(floorDiv(curTexel.x, imgSize.x), floorDiv(curTexel.y, imgSize.y));
                 const uint2 wrappedTexel = curTexel.lod <= maxDepth ?
                     make_uint2(curTexel.x - wrapIndex.x * imgSize.x, curTexel.y - wrapIndex.y * imgSize.y) :
@@ -250,9 +244,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
             }
 #endif
 
-#if OUTPUT_TRAVERSAL_STATS
-            ++numLeafTests;
-#endif
+            if constexpr (outputTravStats)
+                ++travStats->numLeafTests;
 
             const auto sample = [&](float px, float py) {
                 // No need to explicitly consider texture wrapping since the sampler is responsible for it.
@@ -559,28 +552,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic() {
     else {
         attr.normalInObj = hitNormal;
     }
-#if OUTPUT_TRAVERSAL_STATS
-    attr.travStats.numAabbTests = numAabbTests;
-    attr.travStats.numLeafTests = numLeafTests;
-#endif
     const uint8_t hitKind = dot(rayDirInTcTang, hitNormal) <= 0 ?
         CustomHitKind_DisplacedSurfaceFrontFace :
         CustomHitKind_DisplacedSurfaceBackFace;
     DisplacedSurfaceAttributeSignature::reportIntersection(tMax, hitKind, hitBcB, hitBcC, attr);
-}
-
-CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface_Box)() {
-    displacedSurface_generic<LocalIntersectionType::Box>();
-}
-
-CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface_TwoTriangle)() {
-    displacedSurface_generic<LocalIntersectionType::TwoTriangle>();
-}
-
-CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface_Bilinear)() {
-    displacedSurface_generic<LocalIntersectionType::Bilinear>();
-}
-
-CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface_BSpline)() {
-    displacedSurface_generic<LocalIntersectionType::BSpline>();
 }

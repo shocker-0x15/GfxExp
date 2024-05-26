@@ -37,9 +37,6 @@ namespace shared {
 
     struct DisplacedSurfaceAttributes {
         Normal3D normalInObj;
-#if OUTPUT_TRAVERSAL_STATS
-        TraversalStats travStats;
-#endif
     };
 
 
@@ -106,9 +103,6 @@ namespace shared {
         uint32_t primIndex;
         uint16_t qbcB;
         uint16_t qbcC;
-#if OUTPUT_TRAVERSAL_STATS
-        TraversalStats travStats;
-#endif
     };
 
 
@@ -260,12 +254,15 @@ namespace shared {
     using AABBAttributeSignature = optixu::AttributeSignature<float, float>;
     using DisplacedSurfaceAttributeSignature = optixu::AttributeSignature<float, float, DisplacedSurfaceAttributes>;
 
-    using PrimaryRayPayloadSignature =
-        optixu::PayloadSignature<shared::HitPointParams*, shared::PickInfo*>;
-    using PathTraceRayPayloadSignature =
-        optixu::PayloadSignature<shared::PathTraceWriteOnlyPayload*, shared::PathTraceReadWritePayload*>;
-    using VisibilityRayPayloadSignature =
-        optixu::PayloadSignature<float>;
+    using PrimaryRayPayloadSignature = optixu::PayloadSignature<
+        shared::HitPointParams*, shared::PickInfo*
+#if OUTPUT_TRAVERSAL_STATS
+        , shared::TraversalStats
+#endif
+    >;
+    using PathTraceRayPayloadSignature = optixu::PayloadSignature<
+        shared::PathTraceWriteOnlyPayload*, shared::PathTraceReadWritePayload*>;
+    using VisibilityRayPayloadSignature = optixu::PayloadSignature<float>;
 }
 
 

@@ -3,6 +3,22 @@
 
 using namespace shared;
 
+CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface_Box)() {
+    displacedSurface_generic<false, LocalIntersectionType::Box>(nullptr);
+}
+
+CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface_TwoTriangle)() {
+    displacedSurface_generic<false, LocalIntersectionType::TwoTriangle>(nullptr);
+}
+
+CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface_Bilinear)() {
+    displacedSurface_generic<false, LocalIntersectionType::Bilinear>(nullptr);
+}
+
+CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface_BSpline)() {
+    displacedSurface_generic<false, LocalIntersectionType::BSpline>(nullptr);
+}
+
 CUDA_DEVICE_KERNEL void RT_AH_NAME(visibility)() {
     float visibility = 0.0f;
     VisibilityRayPayloadSignature::set(&visibility);

@@ -176,19 +176,19 @@ struct GPUEnvironment {
             pipeline.hitPrograms["displacedSurface_Box"] = p.createHitProgramGroupForCustomIS(
                 m, RT_CH_NAME_STR("setupGBuffers"),
                 emptyModule, nullptr,
-                m, RT_IS_NAME_STR("displacedSurface_Box"));
+                m, RT_IS_NAME_STR("primaryDisplacedSurface_Box"));
             pipeline.hitPrograms["displacedSurface_TwoTriangle"] = p.createHitProgramGroupForCustomIS(
                 m, RT_CH_NAME_STR("setupGBuffers"),
                 emptyModule, nullptr,
-                m, RT_IS_NAME_STR("displacedSurface_TwoTriangle"));
+                m, RT_IS_NAME_STR("primaryDisplacedSurface_TwoTriangle"));
             pipeline.hitPrograms["displacedSurface_Bilinear"] = p.createHitProgramGroupForCustomIS(
                 m, RT_CH_NAME_STR("setupGBuffers"),
                 emptyModule, nullptr,
-                m, RT_IS_NAME_STR("displacedSurface_Bilinear"));
+                m, RT_IS_NAME_STR("primaryDisplacedSurface_Bilinear"));
             pipeline.hitPrograms["displacedSurface_BSpline"] = p.createHitProgramGroupForCustomIS(
                 m, RT_CH_NAME_STR("setupGBuffers"),
                 emptyModule, nullptr,
-                m, RT_IS_NAME_STR("displacedSurface_BSpline"));
+                m, RT_IS_NAME_STR("primaryDisplacedSurface_BSpline"));
 
             pipeline.hitPrograms["emptyHitGroup"] = p.createEmptyHitProgramGroup();
 
