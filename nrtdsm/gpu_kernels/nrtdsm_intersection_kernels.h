@@ -1334,7 +1334,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsShellBvh(
 #if DEBUG_TRAVERSAL
             if (isDebugPixel() && getDebugPrintEnabled()) {
                 printf(
-                    "%u-%u, Int %u: %u, %u\n",
+                    "%u-%u,   Int %u: %u, %u\n",
                     plp.f->frameIndex, optixGetPrimitiveIndex(),
                     nodeIdx, intNode.intNodeChildBaseIndex, intNode.leafBaseIndex);
             }
@@ -1381,7 +1381,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsShellBvh(
 #if DEBUG_TRAVERSAL
                             if (isDebugPixel() && getDebugPrintEnabled()) {
                                 printf(
-                                    "%u-%u,   %u: %g, leaf\n",
+                                    "%u-%u,     %u: %g, leaf\n",
                                     plp.f->frameIndex, optixGetPrimitiveIndex(),
                                     slot, dist);
                             }
@@ -1394,13 +1394,33 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsShellBvh(
 #if DEBUG_TRAVERSAL
                             if (isDebugPixel() && getDebugPrintEnabled()) {
                                 printf(
-                                    "%u-%u,   %u: %g, %u th int child\n",
+                                    "%u-%u,     %u: %g, %u th int child\n",
                                     plp.f->frameIndex, optixGetPrimitiveIndex(),
                                     slot, dist, nthIntChild);
                             }
 #endif
                         }
                     }
+                    else {
+#if DEBUG_TRAVERSAL
+                        if (isDebugPixel() && getDebugPrintEnabled()) {
+                            printf(
+                                "%u-%u,     %u miss\n",
+                                plp.f->frameIndex, optixGetPrimitiveIndex(),
+                                slot);
+                        }
+#endif
+                    }
+                }
+                else {
+#if DEBUG_TRAVERSAL
+                    if (isDebugPixel() && getDebugPrintEnabled()) {
+                        printf(
+                            "%u-%u,     %u OutTri\n",
+                            plp.f->frameIndex, optixGetPrimitiveIndex(),
+                            slot);
+                    }
+#endif
                 }
 
                 if (!aabbHit)
@@ -1467,10 +1487,10 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsShellBvh(
 #if DEBUG_TRAVERSAL
             if (isDebugPixel() && getDebugPrintEnabled()) {
                 printf(
-                    "%u-%u, Leaf %u: tri %u: %s (%g)\n",
+                    "%u-%u,   Leaf %u: tri %u: %s (%g)%s\n",
                     plp.f->frameIndex, optixGetPrimitiveIndex(),
                     primRefIdx, primRef.storageIndex, triHit ? "hit" : "miss",
-                    triHit ? *hitDist : INFINITY);
+                    triHit ? *hitDist : INFINITY, primRef.isLeafEnd ? " end" : "");
             }
 #endif
 
@@ -1874,7 +1894,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void detailedSurface_generic(TraversalStats* tr
                             "%u-%u, Root %u: [%d - %d, %d], tMax: %g, nObj: (%g, %g, %g) Hit\n",
                             plp.f->frameIndex, optixGetPrimitiveIndex(), rootIdx,
                             curTexel.lod, curTexel.x, curTexel.y,
-                            hitDist, v3print(nn));
+                            hitDist, v3print(hitNormal));
                     }
 #endif
                 }
