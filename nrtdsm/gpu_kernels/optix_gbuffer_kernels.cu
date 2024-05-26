@@ -3,6 +3,28 @@
 
 using namespace shared;
 
+CUDA_DEVICE_KERNEL void RT_IS_NAME(primaryDisplacementMappedSurface)() {
+#if OUTPUT_TRAVERSAL_STATS
+    TraversalStats travStats;
+    PrimaryRayPayloadSignature::get(nullptr, nullptr, &travStats);
+    detailedSurface_generic<true, false>(&travStats);
+    PrimaryRayPayloadSignature::set(nullptr, nullptr, &travStats);
+#else
+    detailedSurface_generic<false, false>(nullptr);
+#endif
+}
+
+CUDA_DEVICE_KERNEL void RT_IS_NAME(primaryShellMappedSurface)() {
+#if OUTPUT_TRAVERSAL_STATS
+    TraversalStats travStats;
+    PrimaryRayPayloadSignature::get(nullptr, nullptr, &travStats);
+    detailedSurface_generic<true, true>(&travStats);
+    PrimaryRayPayloadSignature::set(nullptr, nullptr, &travStats);
+#else
+    detailedSurface_generic<false, true>(nullptr);
+#endif
+}
+
 CUDA_DEVICE_KERNEL void RT_RG_NAME(setupGBuffers)() {
     const uint2 launchIndex = make_uint2(optixGetLaunchIndex().x, optixGetLaunchIndex().y);
     const uint32_t bufIdx = plp.f->bufferIndex;
@@ -37,8 +59,9 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(setupGBuffers)() {
     hitPointParams.qbcB = 0;
     hitPointParams.qbcC = 0;
 #if OUTPUT_TRAVERSAL_STATS
-    hitPointParams.travStats.numAabbTests = 0;
-    hitPointParams.travStats.numLeafTests = 0;
+    TraversalStats travStats;
+    travStats.numAabbTests = 0;
+    travStats.numLeafTests = 0;
 #endif
 
     PickInfo pickInfo = {};
@@ -49,7 +72,11 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(setupGBuffers)() {
         plp.f->travHandle, origin.toNative(), direction.toNative(),
         0.0f, FLT_MAX, 0.0f, 0xFF, OPTIX_RAY_FLAG_NONE,
         GBufferRayType::Primary, maxNumRayTypes, GBufferRayType::Primary,
-        hitPointParamsPtr, pickInfoPtr);
+        hitPointParamsPtr, pickInfoPtr
+#if OUTPUT_TRAVERSAL_STATS
+        , travStats
+#endif
+    );
 
 
 
@@ -80,7 +107,7 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(setupGBuffers)() {
     plp.s->GBuffer2[bufIdx].write(launchIndex, gb2Elems);
 
 #if OUTPUT_TRAVERSAL_STATS
-    plp.s->numTravStatsBuffer.write(launchIndex, hitPointParams.travStats);
+    plp.s->numTravStatsBuffer.write(launchIndex, travStats);
 #endif
 
     if (launchIndex.x == plp.f->mousePosition.x &&
@@ -120,7 +147,12 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
 
     HitPointParams* hitPointParams;
     PickInfo* pickInfo;
-    PrimaryRayPayloadSignature::get(&hitPointParams, &pickInfo);
+    PrimaryRayPayloadSignature::get(
+        &hitPointParams, &pickInfo
+#if OUTPUT_TRAVERSAL_STATS
+        , nullptr
+#endif
+    );
 
     const auto hp = HitPointParameter::get();
     const uint32_t hitKind = optixGetHitKind();
@@ -134,10 +166,6 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
     hitPointParams->geomInstSlot = sbtr.geomInstSlot;
     hitPointParams->isDisplacedMesh = !isTriangleHit;
     hitPointParams->primIndex = hp.primIndex;
-#if OUTPUT_TRAVERSAL_STATS
-    hitPointParams->travStats.numAabbTests = 0;
-    hitPointParams->travStats.numLeafTests = 0;
-#endif
 
     Point3D positionInWorld;
     Point3D prevPositionInWorld;
@@ -171,9 +199,6 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
             DisplacedSurfaceAttributeSignature::get(nullptr, nullptr, &hitAttrs);
             geometricNormalInObj = hitAttrs.normalInObj;
             shadingNormalInObj = hitAttrs.normalInObj;
-#if OUTPUT_TRAVERSAL_STATS
-            hitPointParams->travStats = hitAttrs.travStats;
-#endif
         }
         texCoord = bcA * vA.texCoord + bcB * vB.texCoord + bcC * vC.texCoord;
         prevPositionInWorld = inst.curToPrevTransform * positionInWorld;
@@ -266,7 +291,12 @@ CUDA_DEVICE_KERNEL void RT_MS_NAME(setupGBuffers)() {
 
     HitPointParams* hitPointParams;
     PickInfo* pickInfo;
-    PrimaryRayPayloadSignature::get(&hitPointParams, &pickInfo);
+    PrimaryRayPayloadSignature::get(
+        &hitPointParams, &pickInfo
+#if OUTPUT_TRAVERSAL_STATS
+        , nullptr
+#endif
+    );
 
     hitPointParams->positionInWorld = p;
     hitPointParams->prevPositionInWorld = p;

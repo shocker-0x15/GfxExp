@@ -168,11 +168,11 @@ struct GPUEnvironment {
             pipeline.hitPrograms["displacementMappedSurface"] = p.createHitProgramGroupForCustomIS(
                 m, RT_CH_NAME_STR("setupGBuffers"),
                 emptyModule, nullptr,
-                m, RT_IS_NAME_STR("displacementMappedSurface"));
+                m, RT_IS_NAME_STR("primaryDisplacementMappedSurface"));
             pipeline.hitPrograms["shellMappedSurface"] = p.createHitProgramGroupForCustomIS(
                 m, RT_CH_NAME_STR("setupGBuffers"),
                 emptyModule, nullptr,
-                m, RT_IS_NAME_STR("shellMappedSurface"));
+                m, RT_IS_NAME_STR("primaryShellMappedSurface"));
 
             pipeline.hitPrograms["emptyHitGroup"] = p.createEmptyHitProgramGroup();
 

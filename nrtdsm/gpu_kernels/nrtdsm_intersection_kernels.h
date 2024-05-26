@@ -1262,6 +1262,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void sortOrder(KeyType (&keys)[8], uint32_t* co
 
 #undef SWAP_ORDER
 
+template <bool outputTravStats>
 CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsShellBvh(
     // Base Triangle
     const Point3D &pA, const Point3D &pB, const Point3D &pC,
@@ -1280,7 +1281,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsShellBvh(
     const Point2D &tc2, const Point2D &tc1, const Point2D &tc0,
     // Results
     Point3D* const hitPointInCan, /*Point3D* const hitPointInTex,*/
-    float* const hitDist, Normal3D* const hitNormalInObj) {
+    float* const hitDist, Normal3D* const hitNormalInObj,
+    TraversalStats* travStats) {
     using InternalNode = InternalNode_T<shellBvhArity>;
 
     static constexpr uint32_t orderBitWidth = tzcntConst(shellBvhArity);
@@ -1367,6 +1369,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsShellBvh(
                         alpha2, alpha1, alpha0, beta2, beta1, beta0, denom2, denom1, denom0,
                         tc2, tc1, tc0,
                         &aabbHitDistMin, &aabbHitDistMax);
+                    if constexpr (outputTravStats)
+                        ++travStats->numAabbTests;
                     if (aabbHit) {
                         bool const isLeaf = intNode.getChildIsLeaf(slot);
                         const float dist = 0.5f * (aabbHitDistMin + aabbHitDistMax);
@@ -1458,6 +1462,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsShellBvh(
                 curTriGroup.orderInfo >>= orderBitWidth;
                 --curTriGroup.numItems;
             }
+            if constexpr (outputTravStats)
+                ++travStats->numLeafTests;
 #if DEBUG_TRAVERSAL
             if (isDebugPixel() && getDebugPrintEnabled()) {
                 printf(
@@ -1484,8 +1490,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsShellBvh(
 
 
 
-template <bool forShellMapping>
-CUDA_DEVICE_FUNCTION CUDA_INLINE void detailedSurface_generic() {
+template <bool outputTravStats, bool forShellMapping>
+CUDA_DEVICE_FUNCTION CUDA_INLINE void detailedSurface_generic(TraversalStats* travStats) {
     const auto sbtr = HitGroupSBTRecordData::get();
     const GeometryInstanceData &geomInst = plp.s->geometryInstanceDataBuffer[sbtr.geomInstSlot];
     const GeometryInstanceDataForNRTDSM &nrtdsmGeomInst = plp.s->geomInstNrtdsmDataBuffer[sbtr.geomInstSlot];
@@ -1618,11 +1624,6 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void detailedSurface_generic() {
     };
 
     if constexpr (forShellMapping) {
-#if OUTPUT_TRAVERSAL_STATS
-        uint16_t numAabbTests = 0;
-        uint16_t numLeafTests = 0;
-#endif
-
         Texel roots[4];
         uint32_t numRoots;
         findRootsForShellMapping(texTriAabbMinP, texTriAabbMaxP, roots, &numRoots);
@@ -1768,9 +1769,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void detailedSurface_generic() {
                     int32_t numValidEntries = 0;
 #pragma unroll
                     for (int i = 0; i < 4; ++i) {
-#if OUTPUT_TRAVERSAL_STATS
-                        ++numAabbTests;
-#endif
+                        if constexpr (outputTravStats)
+                            ++travStats->numAabbTests;
                         const int32_t uOff = i % 2;
                         const int32_t vOff = i / 2;
                         entries[i] = MipMapStack::Entry(uOff, vOff);
@@ -1843,16 +1843,12 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void detailedSurface_generic() {
                     continue;
                 }
 
-#if OUTPUT_TRAVERSAL_STATS
-                ++numLeafTests;
-#endif
-
                 // JP: レイとシェルBVHの交差判定を行う。
                 // EN: Test the intersection of the ray vs the shell BVH.
                 float tt;
                 Normal3D nn;
                 Point3D hpInCan;
-                const bool hit = testNonlinearRayVsShellBvh(
+                const bool hit = testNonlinearRayVsShellBvh<outputTravStats>(
                     pA, pB, pC,
                     nA, nB, nC,
                     tcA, tcB, tcC,
@@ -1864,7 +1860,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void detailedSurface_generic() {
                     beta2, beta1, beta0,
                     denom2, denom1, denom0,
                     tc2, tc1, tc0,
-                    &hpInCan, &tt, &nn);
+                    &hpInCan, &tt, &nn,
+                    travStats);
                 if (hit) {
                     hitDist = tt;
                     hitBcB = hpInCan.x;
@@ -1891,10 +1888,6 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void detailedSurface_generic() {
 
         DisplacedSurfaceAttributes attr = {};
         attr.normalInObj = hitNormal;
-#if OUTPUT_TRAVERSAL_STATS
-        attr.travStats.numAabbTests = numAabbTests;
-        attr.travStats.numLeafTests = numLeafTests;
-#endif
         const uint8_t hitKind = dot(rayDirInObj, hitNormal) <= 0 ?
             CustomHitKind_DisplacedSurfaceFrontFace :
             CustomHitKind_DisplacedSurfaceBackFace;
@@ -1904,11 +1897,6 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void detailedSurface_generic() {
         const int32_t maxDepth =
             prevPowOf2Exponent(stc::max(nrtdsmGeomInst.heightMapSize.x, nrtdsmGeomInst.heightMapSize.y));
         constexpr int32_t targetMipLevel = 0;
-
-#if OUTPUT_TRAVERSAL_STATS
-        uint16_t numAabbTests = 0;
-        uint16_t numLeafTests = 0;
-#endif
 
         Texel roots[4];
         uint32_t numRoots;
@@ -2077,9 +2065,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void detailedSurface_generic() {
                     int32_t numValidEntries = 0;
 #pragma unroll
                     for (int i = 0; i < 4; ++i) {
-#if OUTPUT_TRAVERSAL_STATS
-                        ++numAabbTests;
-#endif
+                        if constexpr (outputTravStats)
+                            ++travStats->numAabbTests;
                         const int32_t uOff = i % 2;
                         const int32_t vOff = i / 2;
                         entries[i] = MipMapStack::Entry(uOff, vOff);
@@ -2153,9 +2140,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void detailedSurface_generic() {
                     continue;
                 }
 
-#if OUTPUT_TRAVERSAL_STATS
-                ++numLeafTests;
-#endif
+                if constexpr (outputTravStats)
+                    ++travStats->numLeafTests;
 
                 const int2 imgSize = make_int2(1 << stc::max(maxDepth - curTexel.lod, 0));
                 const auto sample = [&](float px, float py) {
@@ -2267,21 +2253,9 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void detailedSurface_generic() {
 
         DisplacedSurfaceAttributes attr = {};
         attr.normalInObj = hitNormal;
-#if OUTPUT_TRAVERSAL_STATS
-        attr.travStats.numAabbTests = numAabbTests;
-        attr.travStats.numLeafTests = numLeafTests;
-#endif
         const uint8_t hitKind = dot(rayDirInObj, hitNormal) <= 0 ?
             CustomHitKind_DisplacedSurfaceFrontFace :
             CustomHitKind_DisplacedSurfaceBackFace;
         DisplacedSurfaceAttributeSignature::reportIntersection(hitDist, hitKind, hitBcB, hitBcC, attr);
     }
-}
-
-CUDA_DEVICE_KERNEL void RT_IS_NAME(displacementMappedSurface)() {
-    detailedSurface_generic<false>();
-}
-
-CUDA_DEVICE_KERNEL void RT_IS_NAME(shellMappedSurface)() {
-    detailedSurface_generic<true>();
 }

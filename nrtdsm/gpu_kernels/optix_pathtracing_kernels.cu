@@ -3,6 +3,14 @@
 
 using namespace shared;
 
+CUDA_DEVICE_KERNEL void RT_IS_NAME(displacementMappedSurface)() {
+    detailedSurface_generic<false, false>(nullptr);
+}
+
+CUDA_DEVICE_KERNEL void RT_IS_NAME(shellMappedSurface)() {
+    detailedSurface_generic<false, true>(nullptr);
+}
+
 CUDA_DEVICE_KERNEL void RT_AH_NAME(visibility)() {
     float visibility = 0.0f;
     VisibilityRayPayloadSignature::set(&visibility);
