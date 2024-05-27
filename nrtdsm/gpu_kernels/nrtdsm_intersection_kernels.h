@@ -803,7 +803,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void computeCanonicalSpaceRayCoeffs(
     //const float denB1 = eAC.x * fAB.y + fAC.x * eAB.y - eAC.y * fAB.x - fAC.y * eAB.x;
     //const float denB0 = eAC.x * eAB.y - eAC.y * eAB.x;
 
-    // denA* == -denB* となるので分母はbeta*を反転すれば共通で使える。
+    // JP: denA* == -denB* となるので分母はbeta*を反転すれば共通で使える。
+    // EN: Denominator can be shared with negated beta* since denA* == -denB*.
     *denom2 = fAB.x * fAC.y - fAB.y * fAC.x;
     *denom1 = eAB.x * fAC.y + fAB.x * eAC.y - eAB.y * fAC.x - fAB.y * eAC.x;
     *denom0 = eAB.x * eAC.y - eAB.y * eAC.x;
@@ -828,12 +829,59 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void computeTextureSpaceRayCoeffs(
 
 
 
-class MipMapStack {
-    // JP: 各8ビットがカウンター(2ビット)と最大3つの要素(それぞれ2ビット)を持つ。
-    // EN: every 8 bits represents counter (2-bit) and up to three entries (each with 2-bit).
+template <uint32_t N>
+struct MipMapStackData_T;
+template <>
+struct MipMapStackData_T<1> {
+    uint64_t m_data0;
+
+    CUDA_DEVICE_FUNCTION CUDA_INLINE MipMapStackData_T() : m_data0(0) {}
+    CUDA_DEVICE_FUNCTION CUDA_INLINE uint64_t &operator[](const uint32_t /*idx*/) {
+        return m_data0;
+    }
+    CUDA_DEVICE_FUNCTION CUDA_INLINE const uint64_t &operator[](const uint32_t /*idx*/) const {
+        return m_data0;
+    }
+};
+template <>
+struct MipMapStackData_T<2> {
+    uint64_t m_data0;
+    uint64_t m_data1;
+
+    CUDA_DEVICE_FUNCTION CUDA_INLINE MipMapStackData_T() : m_data0(0), m_data1(0) {}
+    CUDA_DEVICE_FUNCTION CUDA_INLINE uint64_t &operator[](const uint32_t idx) {
+        return idx == 0 ? m_data0 : m_data1;
+    }
+    CUDA_DEVICE_FUNCTION CUDA_INLINE const uint64_t &operator[](const uint32_t idx) const {
+        return idx == 0 ? m_data0 : m_data1;
+    }
+};
+template <>
+struct MipMapStackData_T<3> {
     uint64_t m_data0;
     uint64_t m_data1;
     uint64_t m_data2;
+
+    CUDA_DEVICE_FUNCTION CUDA_INLINE MipMapStackData_T() : m_data0(0), m_data1(0), m_data2(0) {}
+    CUDA_DEVICE_FUNCTION CUDA_INLINE uint64_t &operator[](const uint32_t idx) {
+        return
+            idx == 0 ? m_data0 :
+            idx == 1 ? m_data1 :
+            m_data2;
+    }
+    CUDA_DEVICE_FUNCTION CUDA_INLINE const uint64_t &operator[](const uint32_t idx) const {
+        return
+            idx == 0 ? m_data0 :
+            idx == 1 ? m_data1 :
+            m_data2;
+    }
+};
+
+template <uint32_t N>
+class MipMapStack_T {
+    // JP: 各8ビットがカウンター(2ビット)と最大3つの要素(それぞれ2ビット)を持つ。
+    // EN: every 8 bits represents counter (2-bit) and up to three entries (each with 2-bit).
+    MipMapStackData_T<N> m_data;
 
 public:
     union Entry {
@@ -851,14 +899,10 @@ public:
         }
     };
 
-    CUDA_DEVICE_FUNCTION CUDA_INLINE MipMapStack() :
-        m_data0(0), m_data1(0), m_data2(0) {
-    }
-
     CUDA_DEVICE_FUNCTION CUDA_INLINE void push(
         const uint32_t level,
         const Entry entry0, const Entry entry1, const Entry entry2, const int32_t numEntries) {
-        Assert(level < 24, "Level must be < 24.");
+        Assert(level < N * 8, "Level out of bounds.");
         Assert(numEntries <= 3, "Num entries to push must be <= 3.");
         if (numEntries > 0) {
             uint8_t newData = 0;
@@ -872,26 +916,22 @@ public:
             newData |= numEntries;
             const uint32_t dataIdx = level / 8;
             const uint32_t bitPosInData = (level % 8) * 8;
-            (dataIdx == 0 ? m_data0 : dataIdx == 1 ? m_data1 : m_data2) &=
-                ~(static_cast<uint64_t>(0xFF) << bitPosInData);
-            (dataIdx == 0 ? m_data0 : dataIdx == 1 ? m_data1 : m_data2) |=
-                (static_cast<uint64_t>(newData) << bitPosInData);
+            m_data[dataIdx] &= ~(static_cast<uint64_t>(0xFF) << bitPosInData);
+            m_data[dataIdx] |= (static_cast<uint64_t>(newData) << bitPosInData);
         }
     }
     CUDA_DEVICE_FUNCTION CUDA_INLINE bool tryPop(const uint32_t level, Entry* const entry) {
-        Assert(level < 24, "Level must be < 24.");
+        Assert(level < N * 8, "Level out of bounds.");
         const uint32_t dataIdx = level / 8;
         const uint32_t bitPosInData = (level % 8) * 8;
-        const uint8_t data = ((dataIdx == 0 ? m_data0 : dataIdx == 1 ? m_data1 : m_data2) >> bitPosInData) & 0xFF;
+        const uint8_t data = (m_data[dataIdx] >> bitPosInData) & 0xFF;
         const uint32_t counter = data & 0b11;
         if (counter == 0)
             return false;
         entry->asUInt8 = (data >> 2) & 0b11;
         const uint8_t newData = ((data >> 2) & ~0b11) | (counter - 1);
-        (dataIdx == 0 ? m_data0 : dataIdx == 1 ? m_data1 : m_data2) &=
-            ~(static_cast<uint64_t>(0xFF) << bitPosInData);
-        (dataIdx == 0 ? m_data0 : dataIdx == 1 ? m_data1 : m_data2) |=
-            (static_cast<uint64_t>(newData) << bitPosInData);
+        m_data[dataIdx] &= ~(static_cast<uint64_t>(0xFF) << bitPosInData);
+        m_data[dataIdx] |= (static_cast<uint64_t>(newData) << bitPosInData);
         return true;
     }
 };
@@ -1655,6 +1695,9 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void detailedSurface_generic(TraversalStats* tr
     };
 
     if constexpr (forShellMapping) {
+        using MipMapStack = MipMapStack_T<1>;
+        using StackEntry = typename MipMapStack::Entry;
+
         const AABB rootAabb = nrtdsmGeomInst.shellBvh.intNodes[0].getAabb();
         const float minHeight = rootAabb.minP.z;
         const float maxHeight = rootAabb.maxP.z;
@@ -1717,7 +1760,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void detailedSurface_generic(TraversalStats* tr
             }
 #endif
 
-            MipMapStack::Entry curEntry(floorMod(curTexel.x, 2), floorMod(curTexel.y, 2));
+            StackEntry curEntry(floorMod(curTexel.x, 2), floorMod(curTexel.y, 2));
             while (curTexel.lod <= initialLod) {
 #if DEBUG_TRAVERSAL
                 ++numIterations;
@@ -1799,7 +1842,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void detailedSurface_generic(TraversalStats* tr
 
                     down(curTexel);
 
-                    MipMapStack::Entry entries[4];
+                    StackEntry entries[4];
                     float dists[4];
                     int32_t numValidEntries = 0;
 #pragma unroll
@@ -1808,7 +1851,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void detailedSurface_generic(TraversalStats* tr
                             ++travStats->numAabbTests;
                         const int32_t uOff = i % 2;
                         const int32_t vOff = i / 2;
-                        entries[i] = MipMapStack::Entry(uOff, vOff);
+                        entries[i] = StackEntry(uOff, vOff);
 
                         const int32_t iuLo = uOff;
                         const int32_t iuHi = uOff + 1;
@@ -1850,8 +1893,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void detailedSurface_generic(TraversalStats* tr
                     }
 
                     const auto sort = []
-                    (float &distA, MipMapStack::Entry &entryA,
-                     float &distB, MipMapStack::Entry &entryB) {
+                    (float &distA, StackEntry &entryA,
+                     float &distB, StackEntry &entryB) {
                         if (distA > distB) {
                             const float tempDist = distA;
                             distA = distB;
@@ -1929,6 +1972,9 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void detailedSurface_generic(TraversalStats* tr
         DisplacedSurfaceAttributeSignature::reportIntersection(hitDist, hitKind, hitBcB, hitBcC, attr);
     }
     else { // Displacement Mapping
+        using MipMapStack = MipMapStack_T<3>;
+        using StackEntry = typename MipMapStack::Entry;
+
         const int32_t maxDepth =
             prevPowOf2Exponent(stc::max(nrtdsmGeomInst.heightMapSize.x, nrtdsmGeomInst.heightMapSize.y));
         constexpr int32_t targetMipLevel = 0;
@@ -1995,7 +2041,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void detailedSurface_generic(TraversalStats* tr
             }
 #endif
 
-            MipMapStack::Entry curEntry(floorMod(curTexel.x, 2), floorMod(curTexel.y, 2));
+            StackEntry curEntry(floorMod(curTexel.x, 2), floorMod(curTexel.y, 2));
             while (curTexel.lod <= initialLod) {
 #if DEBUG_TRAVERSAL
                 ++numIterations;
@@ -2095,7 +2141,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void detailedSurface_generic(TraversalStats* tr
                         *hMax = minmax.y;
                     };
 
-                    MipMapStack::Entry entries[4];
+                    StackEntry entries[4];
                     float dists[4];
                     int32_t numValidEntries = 0;
 #pragma unroll
@@ -2104,7 +2150,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void detailedSurface_generic(TraversalStats* tr
                             ++travStats->numAabbTests;
                         const int32_t uOff = i % 2;
                         const int32_t vOff = i / 2;
-                        entries[i] = MipMapStack::Entry(uOff, vOff);
+                        entries[i] = StackEntry(uOff, vOff);
 
                         const int32_t x = curTexel.x + uOff;
                         const int32_t y = curTexel.y + vOff;
@@ -2147,8 +2193,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void detailedSurface_generic(TraversalStats* tr
                     }
 
                     const auto sort = []
-                    (float &distA, MipMapStack::Entry &entryA,
-                     float &distB, MipMapStack::Entry &entryB) {
+                    (float &distA, StackEntry &entryA,
+                     float &distB, StackEntry &entryB) {
                         if (distA > distB) {
                             const float tempDist = distA;
                             distA = distB;
