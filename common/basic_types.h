@@ -2083,6 +2083,12 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr F cross(
 }
 
 template <std::floating_point F>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr F length(
+    const Vector2D_T<F> &v) {
+    return v.length();
+}
+
+template <std::floating_point F>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector2D_T<F> normalize(
     const Vector2D_T<F> &v) {
     Vector2D_T<F> ret = v;
@@ -2446,6 +2452,9 @@ struct Vector3D_T {
     }
     CUDA_COMMON_FUNCTION CUDA_INLINE explicit /*constexpr*/ operator float3() const {
         return make_float3(x, y, z);
+    }
+    CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr operator Vector2D_T<F>() const {
+        return Vector2D_T<F>(x, y);
     }
 
     CUDA_COMMON_FUNCTION CUDA_INLINE /*constexpr*/ float3 toNative() const {
@@ -4111,6 +4120,37 @@ struct Matrix3x3_T {
         return *this;
     }
 
+    // Assume the matrix is composed by T * R * S.
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr void decompose(
+        Vector2D_T<F>* const scale,
+        F* const rotation,
+        Vector2D_T<F>* const translation) const {
+        Matrix3x3_T mat = *this;
+
+        // JP: 移動成分
+        // EN: Translation component
+        if (translation)
+            *translation = Vector2D_T<F>(mat.c2);
+
+        // JP: 回転成分
+        // EN: Rotation component
+        const float rot = std::atan2(mat.c0.y, mat.c0.x);
+        if (rotation)
+            *rotation = rot;
+
+        // JP: 拡大縮小成分
+        // EN: Scale component
+        if (scale) {
+            scale->x = length(Vector2D_T<F>(mat.c0));
+            float sinR, cosR;
+            stc::sincos(rot, &sinR, &cosR);
+            if (std::fabs(sinR) < 1e-3f)
+                scale->y = mat.c1.y / cosR;
+            else
+                scale->y = -mat.c1.x / sinR;
+        }
+    }
+
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr bool allFinite() const {
         return c0.allFinite() && c1.allFinite() && c2.allFinite();
     }
@@ -4581,12 +4621,11 @@ struct Matrix4x4_T {
 
         // JP: 上記成分を排除
         // EN: Remove the above components
-        mat.c3 = Vector4D_T<F>(0, 0, 0, 1);
-        if (std::fabs(scale.x) > 0)
+        if (scale.x > 0)
             mat.c0 /= scale.x;
-        if (std::fabs(scale.y) > 0)
+        if (scale.y > 0)
             mat.c1 /= scale.y;
-        if (std::fabs(scale.z) > 0)
+        if (scale.z > 0)
             mat.c2 /= scale.z;
 
         // JP: 回転成分がXYZの順で作られている、つまりZYXp(pは何らかのベクトル)と仮定すると、

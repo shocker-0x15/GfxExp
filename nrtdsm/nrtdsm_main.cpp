@@ -607,7 +607,7 @@ static void createQuad(
 static void createCurvedSurface(
     std::vector<shared::Vertex>* vertices,
     std::vector<shared::Triangle>* triangles) {
-    constexpr uint32_t numEdges = 7;
+    constexpr uint32_t numEdges = 31;
     constexpr float fcx = 2 * pi_v<float>;
     constexpr float fcz = 2 * pi_v<float>;
     constexpr float heightScale = 0.1f;
@@ -1841,8 +1841,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
         static int32_t log2MaxNumAccums = 16;
         static bool enableJittering = false;
         bool lastFrameWasAnimated = false;
-        //static shared::BufferToDisplay bufferTypeToDisplay = shared::BufferToDisplay::NoisyBeauty;
-        static shared::BufferToDisplay bufferTypeToDisplay = shared::BufferToDisplay::Normal;
+        static shared::BufferToDisplay bufferTypeToDisplay = shared::BufferToDisplay::NoisyBeauty;
+        //static shared::BufferToDisplay bufferTypeToDisplay = shared::BufferToDisplay::Normal;
         static int32_t maxPathLength = 5;
 
         enum class DetailType {
@@ -2200,6 +2200,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
                             },
                             {
                                 "Low-poly Bunny"
+                            },
+                            {
+                                "Fabric"
                             }
                         };
                         if (ImGui::Combo(
@@ -2235,6 +2238,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
                             else if (shellGeomIndex == 1)
                                 buildTriangleMeshShellBvh(
                                     dataDir / "stanford_bunny_309_faces.obj", true, &bvh);
+                            else if (shellGeomIndex == 2)
+                                buildTriangleMeshShellBvh(
+                                    dataDir / "fabric_instantiated.obj", true, &bvh);
 
                             const uint64_t triStoragesOffset = alignUp(
                                 sizeof(bvh.intNodes[0]) * bvh.intNodes.size(),
@@ -2298,9 +2304,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
                     ImGui::Text("Texture Transform");
                     ImGui::PushID("Texture");
                     heightParamChanged |= ImGui::SliderFloat(
-                        "Scale U", &heightMapTexScale.x, 0.1f, 10.0f);
+                        "Scale U", &heightMapTexScale.x, 0.1f, 30.0f);
                     heightParamChanged |= ImGui::SliderFloat(
-                        "Scale V", &heightMapTexScale.y, 0.1f, 10.0f);
+                        "Scale V", &heightMapTexScale.y, 0.1f, 30.0f);
                     heightParamChanged |= ImGui::SliderFloat(
                         "Rotation", &heightMapTexRotation, 0.0f, 360.0f);
                     heightParamChanged |= ImGui::SliderFloat(

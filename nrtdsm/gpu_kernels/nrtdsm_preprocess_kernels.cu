@@ -268,8 +268,12 @@ CUDA_DEVICE_KERNEL void computeAABBsForShellMapping(
     // EN: Compute the min/max of BVH nodes overlapping with the triangle.
     float minHeight = INFINITY;
     float maxHeight = -INFINITY;
+    float preScale = 1.0f;
     {
         const Matrix3x3 &texXfm = nrtdsmGeomInst->params.textureTransform;
+        Vector2D uvScale;
+        texXfm.decompose(&uvScale, nullptr, nullptr);
+        preScale = 1.0f / std::sqrt(uvScale.x * uvScale.y);
         const Point2D tcA = texXfm * vs[0].texCoord;
         const Point2D tcB = texXfm * vs[1].texCoord;
         const Point2D tcC = texXfm * vs[2].texCoord;
@@ -365,9 +369,9 @@ CUDA_DEVICE_KERNEL void computeAABBsForShellMapping(
     RWBuffer aabbBuffer(nrtdsmGeomInst->aabbBuffer);
     RWBuffer dispTriAuxInfoBuffer(nrtdsmGeomInst->dispTriAuxInfoBuffer);
 
-    const float amplitude = nrtdsmGeomInst->params.hScale * (maxHeight - minHeight);
-    minHeight = nrtdsmGeomInst->params.hOffset + nrtdsmGeomInst->params.hScale * (
-        minHeight - nrtdsmGeomInst->params.hBias);
+    const float scale = nrtdsmGeomInst->params.hScale * preScale;
+    const float amplitude = scale * (maxHeight - minHeight);
+    minHeight = nrtdsmGeomInst->params.hOffset + scale * (minHeight - nrtdsmGeomInst->params.hBias);
 
     AABB triAabb;
     triAabb.unify(vs[0].position + minHeight * vs[0].normal);

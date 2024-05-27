@@ -1560,14 +1560,18 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void detailedSurface_generic(TraversalStats* tr
 
     const DisplacementParameters &dispParams = nrtdsmGeomInst.params;
 
-    const float baseHeight = dispParams.hOffset - dispParams.hScale * dispParams.hBias;
+    const Matrix3x3 &texXfm = dispParams.textureTransform;
+    Vector2D uvScale;
+    texXfm.decompose(&uvScale, nullptr, nullptr);
+    const float preScale = 1.0f / std::sqrt(uvScale.x * uvScale.y);
+    const float scale = dispParams.hScale * preScale;
+    const float baseHeight = dispParams.hOffset - scale * dispParams.hBias;
     const Point3D pA = vA.position + baseHeight * vA.normal;
     const Point3D pB = vB.position + baseHeight * vB.normal;
     const Point3D pC = vC.position + baseHeight * vC.normal;
-    const Normal3D nA = dispParams.hScale * vA.normal;
-    const Normal3D nB = dispParams.hScale * vB.normal;
-    const Normal3D nC = dispParams.hScale * vC.normal;
-    const Matrix3x3 &texXfm = dispParams.textureTransform;
+    const Normal3D nA = scale * vA.normal;
+    const Normal3D nB = scale * vB.normal;
+    const Normal3D nC = scale * vC.normal;
     const Point2D tcA = texXfm * vA.texCoord;
     const Point2D tcB = texXfm * vB.texCoord;
     const Point2D tcC = texXfm * vC.texCoord;

@@ -2084,7 +2084,8 @@ static void computeFlattenedMesh(
 
         for (uint32_t fIdx = 0; fIdx < aiMesh->mNumFaces; ++fIdx) {
             const aiFace &aif = aiMesh->mFaces[fIdx];
-            Assert(aif.mNumIndices == 3, "Number of face vertices must be 3 here.");
+            if (aif.mNumIndices != 3)
+                continue;
             shared::Triangle tri;
             tri.index0 = baseVtxIdx + aif.mIndices[0];
             tri.index1 = baseVtxIdx + aif.mIndices[1];
@@ -2322,7 +2323,8 @@ void createTriangleMeshes(
         std::vector<shared::Triangle> triangles(aiMesh->mNumFaces);
         for (int fIdx = 0; fIdx < triangles.size(); ++fIdx) {
             const aiFace &aif = aiMesh->mFaces[fIdx];
-            Assert(aif.mNumIndices == 3, "Number of face vertices must be 3 here.");
+            if (aif.mNumIndices != 3)
+                continue;
             shared::Triangle tri;
             tri.index0 = aif.mIndices[0];
             tri.index1 = aif.mIndices[1];
