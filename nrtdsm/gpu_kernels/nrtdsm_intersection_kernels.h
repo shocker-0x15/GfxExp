@@ -1147,10 +1147,14 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsMicroTriangle(
     Point3D* const hitPointInCan, /*Point3D* const hitPointInTex,*/
     float* const hitDist, Normal3D* const hitNormalInObj) {
     // JP: テクスチャー空間中のマイクロ三角形を含む平面の方程式の係数を求める。
+    // EN: Compute the coefficients of the equation of a plane in which
+    //     the micro triangle in the texture space is contained.
     const Normal3D nInTex(normalize(cross(mpBInTex - mpAInTex, mpCInTex - mpAInTex)));
     const float KInTex = -dot(nInTex, static_cast<Vector3D>(mpAInTex));
 
     // JP: 正準空間中のマイクロ三角形を含む平面の方程式の係数を求める。
+    // EN: Compute the coefficients of the equation of a plane in which
+    //     the micro triangle in the canonical space is contained.
     const Normal3D nInCan(
         nInTex.x * (tcB.x - tcA.x) + nInTex.y * (tcB.y - tcA.y),
         nInTex.x * (tcC.x - tcA.x) + nInTex.y * (tcC.y - tcA.y),
@@ -1160,6 +1164,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsMicroTriangle(
     const float maxHeight = std::fmax(std::fmax(mpAInTex.z, mpBInTex.z), mpCInTex.z) + 1e-4f;
 
     // JP: テクスチャー空間中のレイとマイクロ三角形を含む平面の交差判定。
+    // EN: Test intersection of the plane containing the micro triangle and the ray in the texture space.
     float hs[3];
     uint32_t numRoots;
     {
@@ -1182,6 +1187,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsMicroTriangle(
         const Point3D SCh = pC + h * nC;
 
         // JP: 正準空間の他の座標を求める。
+        // EN: Compute the other coordinates in the canonical space.
         float alpha, beta;
         Matrix3x3 transposedAdjMat;
         {
@@ -1216,6 +1222,9 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsMicroTriangle(
 
             // JP: 論文中の余因子行列は「ij成分がij余因子である行列」を指しているが、
             //     このコードではadjugate()は「ij成分がij余因子である行列の転置行列」を指す。
+            // EN: Adjugate matrix in the paper refers to "A matrix whose ij component is ij cofactor"
+            //     but it refers to "The transpose matrix of a matrix whose ij component is ij cofactor"
+            //     in this code.
             transposedAdjMat = adjugateWithoutTranspose(Matrix3x3(
                 eSABInObj,
                 eSACInObj,
@@ -1231,6 +1240,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsMicroTriangle(
 
         // JP: 上で求まったα, βはベース三角形における重心座標に過ぎない。
         //     求めた交点がマイクロ三角形内にあるかチェックする必要がある。
+        // EN: alpha and beta found above are just barycentric coordinates of the base triangle.
+        //     We need to check if the found intersection point is inside the micro triangle.
         {
             const Vector3D eAB = mpBInTex - mpAInTex;
             const Vector3D eAC = mpCInTex - mpAInTex;
@@ -1702,6 +1713,10 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void detailedSurface_generic(TraversalStats* tr
         const float minHeight = rootAabb.minP.z;
         const float maxHeight = rootAabb.maxP.z;
 
+        // JP: Shell MappingにおいてもシェルBVHをテクスチャーのようにリピートするため暗黙的な四分木を使用する。
+        //     四分木のトラバーサルにはDisplacement Mappingで使用するMipmapと同じスタックが使用できる。
+        // EN: We use an implicit quad tree for shell mapping to repeat the shell BVH like a texture.
+        //     We can use the same stack as used in displacement mapping for quad tree traversal.
         Texel roots[4];
         uint32_t numRoots;
         findRootsForShellMapping(texTriAabbMinP, texTriAabbMaxP, roots, &numRoots);
