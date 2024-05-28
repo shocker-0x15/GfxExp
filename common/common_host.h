@@ -678,9 +678,11 @@ struct ShellBVH {
     cudau::Buffer bvhMem;
     uint64_t offsetToTriStorages;
     uint64_t offsetToPrimRefs;
+    uint64_t offsetToParentPointers;
     uint32_t numIntNodes;
     uint32_t numTriStorages;
     uint32_t numPrimRefs;
+    uint32_t numParentPointers;
 
     shared::GeometryBVH_T<shared::shellBvhArity> getBvhOnDevice() const {
         using IntNode = shared::InternalNode_T<shared::shellBvhArity>;
@@ -694,6 +696,9 @@ struct ShellBVH {
         ret.primRefs = shared::ROBuffer(
             reinterpret_cast<shared::PrimitiveReference*>(bvhMem.getCUdeviceptr() + offsetToPrimRefs),
             numPrimRefs);
+        ret.parentPointers = shared::ROBuffer(
+            reinterpret_cast<shared::ParentPointer*>(bvhMem.getCUdeviceptr() + offsetToParentPointers),
+            numParentPointers);
         return ret;
     }
 };

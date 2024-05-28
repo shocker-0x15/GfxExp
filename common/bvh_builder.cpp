@@ -967,7 +967,7 @@ static void buildBVH(
     std::vector<uint32_t> dstIntNodeIndices(numIntNodes);
     std::vector<uint32_t> leafChildBlockIndices(numIntNodes);
     dstIntNodeIndices[0] = 0;
-    uint32_t intChildBlockIdx = 1;
+    uint32_t intChildBlockIdx = 1; // EN: Root is always at 0.
     uint32_t leafChildBlockIdx = 0;
     for (uint32_t intNodeIdx = 0; intNodeIdx < numIntNodes; ++intNodeIdx) {
         const TempInternalNode &intNode = tempIntNodes[intNodeIdx];
@@ -996,6 +996,8 @@ static void buildBVH(
     const uint32_t numFinalPrimRefs = leafChildBlockIdx;
     std::vector<InternalNode> dstIntNodes(numIntNodes);
     std::vector<shared::PrimitiveReference> dstPrimRefs(numFinalPrimRefs);
+    std::vector<shared::ParentPointer> parentPointers(numIntNodes);
+    parentPointers[0] = shared::ParentPointer(0xFFFF'FFFF);
     for (uint32_t srcIntNodeIdx = 0; srcIntNodeIdx < numIntNodes; ++srcIntNodeIdx) {
         const uint32_t dstIntNodeIdx = dstIntNodeIndices[srcIntNodeIdx];
         const TempInternalNode &srcIntNode = tempIntNodes[srcIntNodeIdx];
@@ -1056,6 +1058,10 @@ static void buildBVH(
                     childMeta.setLeafOffset(leafOffset);
                     leafOffset += srcChild.numLeaves;
                 }
+                else {
+                    parentPointers[dstIntNodeIndices[srcChild.index]] =
+                        shared::ParentPointer(dstIntNodeIdx, slot);
+                }
                 dstIntNode.setChildMeta(slot, childMeta);
             }
             else {
@@ -1099,12 +1105,14 @@ static void buildBVH(
     if constexpr (primType == PrimitiveType::Geometric) {
         bvh->primRefs = std::move(dstPrimRefs);
         bvh->triStorages = std::move(triStorages);
+        bvh->parentPointers = std::move(parentPointers);
         bvh->numGeoms = buildInput.numGeometries;
         bvh->totalNumPrims = numInputPrimitives;
     } 
     else /*if constexpr (primType == PrimitiveType::Instance)*/ {
         Assert_NotImplemented();
         bvh->numInsts = numInputPrimitives;
+        bvh->parentPointers = std::move(parentPointers);
     }
 }
 
@@ -1392,7 +1400,7 @@ inline shared::HitObject __traverse(
                             hpprintf("  %u: %g, leaf\n", slot, dist);
                     }
                     else {
-                        const uint32_t nthIntChild = intNode.getInternalChildIndex(slot);
+                        const uint32_t nthIntChild = intNode.getInternalChildNumber(slot);
                         orderInfo |= (nthIntChild << (orderBitWidth * slot));
                         ++numIntHits;
                         if (debugPrint)
@@ -1583,7 +1591,7 @@ inline shared::HitObject __traverse(
                         hpprintf("  %u: %g, leaf\n", slot, dist);
                 }
                 else {
-                    const uint32_t nthIntChild = intNode.getInternalChildIndex(slot);
+                    const uint32_t nthIntChild = intNode.getInternalChildNumber(slot);
                     entry.index = intNode.intNodeChildBaseIndex + nthIntChild;
                     if (debugPrint)
                         hpprintf("  %u: %g, %u th int child\n", slot, dist, nthIntChild);

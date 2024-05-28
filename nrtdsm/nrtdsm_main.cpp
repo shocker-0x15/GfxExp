@@ -2248,8 +2248,11 @@ int32_t main(int32_t argc, const char* argv[]) try {
                             const uint64_t primRefsOffset = alignUp(
                                 triStoragesOffset + sizeof(bvh.triStorages[0]) * bvh.triStorages.size(),
                                 alignof(shared::PrimitiveReference));
+                            const uint64_t parentPointersOffset = alignUp(
+                                primRefsOffset + sizeof(bvh.primRefs[0]) * bvh.primRefs.size(),
+                                alignof(shared::ParentPointer));
                             std::vector<uint8_t> packedBvhData(
-                                primRefsOffset + sizeof(bvh.primRefs[0]) * bvh.primRefs.size());
+                                parentPointersOffset + sizeof(bvh.parentPointers[0]) * bvh.parentPointers.size());
                             std::memcpy(
                                 packedBvhData.data(), bvh.intNodes.data(),
                                 sizeof(bvh.intNodes[0]) * bvh.intNodes.size());
@@ -2259,15 +2262,20 @@ int32_t main(int32_t argc, const char* argv[]) try {
                             std::memcpy(
                                 packedBvhData.data() + primRefsOffset, bvh.primRefs.data(),
                                 sizeof(bvh.primRefs[0]) * bvh.primRefs.size());
+                            std::memcpy(
+                                packedBvhData.data() + parentPointersOffset, bvh.parentPointers.data(),
+                                sizeof(bvh.parentPointers[0]) * bvh.parentPointers.size());
 
                             geom.shellBvh.bvhMem.initialize(
                                 gpuEnv.cuContext, cudau::BufferType::Device,
                                 packedBvhData.data(), packedBvhData.size(), sizeof(uint8_t));
                             geom.shellBvh.offsetToTriStorages = triStoragesOffset;
                             geom.shellBvh.offsetToPrimRefs = primRefsOffset;
+                            geom.shellBvh.offsetToParentPointers = parentPointersOffset;
                             geom.shellBvh.numIntNodes = bvh.intNodes.size();
                             geom.shellBvh.numTriStorages = bvh.triStorages.size();
                             geom.shellBvh.numPrimRefs = bvh.primRefs.size();
+                            geom.shellBvh.numParentPointers = bvh.parentPointers.size();
 
                             nrtdsmData.shellBvh = geom.shellBvh.getBvhOnDevice();
 

@@ -3299,7 +3299,7 @@ void testBvhBuilder() {
                     setColor(0.0f, 0.3f * (entry.depth + 1) / maxDepth, 0.0f);
                     drawAabb(intNode.getChildAabb(slot));
                     if (entry.depth < maxDepth) {
-                        const uint32_t childIdx = intNode.intNodeChildBaseIndex + intNode.getInternalChildIndex(slot);
+                        const uint32_t childIdx = intNode.intNodeChildBaseIndex + intNode.getInternalChildNumber(slot);
                         stack.push_back(StackEntry{ childIdx, entry.depth + 1 });
                     }
                     else {

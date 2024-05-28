@@ -872,12 +872,12 @@ namespace shared {
         CUDA_COMMON_FUNCTION CUDA_INLINE bool getChildIsLeaf(uint32_t slot) const {
             return ((internalMask >> slot) & 0b1) == 0;
         }
-        CUDA_COMMON_FUNCTION CUDA_INLINE uint32_t getInternalChildIndex(uint32_t slot) const {
+        CUDA_COMMON_FUNCTION CUDA_INLINE uint32_t getInternalChildNumber(uint32_t slot) const {
             Assert(!getChildIsLeaf(slot), "only valid for an internal node child.");
             const uint32_t lowerMask = (1 << slot) - 1;
             return popcnt(internalMask & lowerMask);
         }
-        CUDA_COMMON_FUNCTION CUDA_INLINE uint32_t getLeafChildIndex(uint32_t slot) const {
+        CUDA_COMMON_FUNCTION CUDA_INLINE uint32_t getLeafChildNumber(uint32_t slot) const {
             Assert(getChildIsLeaf(slot), "only valid for an leaf node child.");
             const uint32_t lowerMask = (1 << slot) - 1;
             return popcnt(~internalMask & lowerMask);
@@ -918,8 +918,6 @@ namespace shared {
 
     template <uint32_t arity>
     struct UncompressedInternalNode_T {
-        static constexpr uint32_t maxNumPrimsPerLeaf = 3;
-
         union ChildMeta {
             struct {
                 uint8_t leafOffset;
@@ -978,10 +976,15 @@ namespace shared {
         CUDA_COMMON_FUNCTION CUDA_INLINE bool getChildIsLeaf(uint32_t slot) const {
             return ((internalMask >> slot) & 0b1) == 0;
         }
-        CUDA_COMMON_FUNCTION CUDA_INLINE uint32_t getChildOffset(uint32_t slot) const {
-            Assert(!getChildIsLeaf(slot), "Child offset is only valid for an internal node child.");
+        CUDA_COMMON_FUNCTION CUDA_INLINE uint32_t getInternalChildNumber(uint32_t slot) const {
+            Assert(!getChildIsLeaf(slot), "only valid for an internal node child.");
             const uint32_t lowerMask = (1 << slot) - 1;
             return popcnt(internalMask & lowerMask);
+        }
+        CUDA_COMMON_FUNCTION CUDA_INLINE uint32_t getLeafChildNumber(uint32_t slot) const {
+            Assert(getChildIsLeaf(slot), "only valid for an leaf node child.");
+            const uint32_t lowerMask = (1 << slot) - 1;
+            return popcnt(~internalMask & lowerMask);
         }
         CUDA_COMMON_FUNCTION CUDA_INLINE uint32_t getLeafOffset(uint32_t slot) const {
             Assert(getChildIsLeaf(slot), "Child offset is only valid for a leaf child.");
@@ -1021,11 +1024,23 @@ namespace shared {
     };
     static_assert(sizeof(TriangleStorage) == 48, "Unexpected sizeof(TriangleStorage)");
 
+    union ParentPointer {
+        struct {
+            uint32_t index : 29;
+            uint32_t slot : 3;
+        };
+        uint32_t asUInt;
+        ParentPointer() {}
+        ParentPointer(const uint32_t v) : asUInt(v) {}
+        ParentPointer(const uint32_t _index, const uint32_t _slot) : index(_index), slot(_slot) {}
+    };
+
     template <uint32_t arity>
     struct GeometryBVH_T {
         ROBuffer<InternalNode_T<arity>> intNodes;
         ROBuffer<TriangleStorage> triStorages;
         ROBuffer<PrimitiveReference> primRefs;
+        ROBuffer<ParentPointer> parentPointers;
     };
 
     struct InstanceReference {
@@ -1044,6 +1059,7 @@ namespace shared {
     struct InstanceBVH_T {
         ROBuffer<InternalNode_T<arity>> intNodes;
         ROBuffer<InstanceReference> instRefs;
+        ROBuffer<ParentPointer> parentPointers;
     };
 
     struct HitObject {

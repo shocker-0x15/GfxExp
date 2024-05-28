@@ -1443,7 +1443,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsShellBvh(
 #endif
                         }
                         else {
-                            const uint32_t nthIntChild = intNode.getInternalChildIndex(slot);
+                            const uint32_t nthIntChild = intNode.getInternalChildNumber(slot);
                             orderInfo |= (nthIntChild << (orderBitWidth * slot));
                             ++numIntHits;
 #if DEBUG_TRAVERSAL
