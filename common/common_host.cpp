@@ -2061,8 +2061,7 @@ GeometryGroup* createGeometryGroup(
 
 static void computeFlattenedMesh(
     const aiScene* scene, const Matrix4x4 &parentXfm, const aiNode* curNode,
-    std::vector<Point3D>* const vertices,
-    std::vector<shared::Triangle>* const triangles,
+    std::vector<TriangleGeometryOnCPU>* geometries,
     AABB* const aabb) {
     const aiMatrix4x4 &nodeAiXfm = curNode->mTransformation;
     const Matrix4x4 nodeXfm = Matrix4x4(
@@ -2071,38 +2070,41 @@ static void computeFlattenedMesh(
         Vector4D(nodeAiXfm.c1, nodeAiXfm.c2, nodeAiXfm.c3, nodeAiXfm.c4),
         Vector4D(nodeAiXfm.d1, nodeAiXfm.d2, nodeAiXfm.d3, nodeAiXfm.d4));
     const Matrix4x4 curXfm = parentXfm * transpose(nodeXfm);
-    const uint32_t baseVtxIdx = static_cast<uint32_t>(vertices->size());
     for (uint32_t meshIdx = 0; meshIdx < curNode->mNumMeshes; ++meshIdx) {
         const aiMesh* aiMesh = scene->mMeshes[curNode->mMeshes[meshIdx]];
+
+        TriangleGeometryOnCPU geom;
 
         for (uint32_t vIdx = 0; vIdx < aiMesh->mNumVertices; ++vIdx) {
             const aiVector3D &aip = aiMesh->mVertices[vIdx];
             const Point3D xfmP = curXfm * Point3D(aip.x, aip.y, aip.z);
-            vertices->push_back(xfmP);
+            geom.vertices.push_back(xfmP);
             aabb->unify(xfmP);
         }
 
+        std::vector<shared::Triangle> triangles;
         for (uint32_t fIdx = 0; fIdx < aiMesh->mNumFaces; ++fIdx) {
             const aiFace &aif = aiMesh->mFaces[fIdx];
             if (aif.mNumIndices != 3)
                 continue;
             shared::Triangle tri;
-            tri.index0 = baseVtxIdx + aif.mIndices[0];
-            tri.index1 = baseVtxIdx + aif.mIndices[1];
-            tri.index2 = baseVtxIdx + aif.mIndices[2];
-            triangles->push_back(tri);
+            tri.index0 = aif.mIndices[0];
+            tri.index1 = aif.mIndices[1];
+            tri.index2 = aif.mIndices[2];
+            geom.triangles.push_back(tri);
         }
+
+        geometries->push_back(geom);
     }
 
     for (uint32_t cIdx = 0; cIdx < curNode->mNumChildren; ++cIdx)
-        computeFlattenedMesh(scene, curXfm, curNode->mChildren[cIdx], vertices, triangles, aabb);
+        computeFlattenedMesh(scene, curXfm, curNode->mChildren[cIdx], geometries, aabb);
 }
 
-void loadSingleTriangleMesh(
+void loadTriangleMeshGeometriesOnCPU(
     const std::filesystem::path &filePath,
     const Matrix4x4 &preTransform,
-    std::vector<Point3D>* vertices,
-    std::vector<shared::Triangle>* triangles,
+    std::vector<TriangleGeometryOnCPU>* geometries,
     AABB* aabb) {
     hpprintf("Reading: %s ... ", filePath.string().c_str());
     fflush(stdout);
@@ -2119,10 +2121,9 @@ void loadSingleTriangleMesh(
     }
     hpprintf("done.\n");
 
-    vertices->clear();
-    triangles->clear();
+    geometries->clear();
     *aabb = AABB();
-    computeFlattenedMesh(aiscene, preTransform, aiscene->mRootNode, vertices, triangles, aabb);
+    computeFlattenedMesh(aiscene, preTransform, aiscene->mRootNode, geometries, aabb);
 }
 
 constexpr bool useLambertMaterial = false;

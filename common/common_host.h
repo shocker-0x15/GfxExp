@@ -1458,11 +1458,15 @@ GeometryGroup* createGeometryGroup(
     Scene* scene,
     const std::set<const GeometryInstance*> &geomInsts);
 
-void loadSingleTriangleMesh(
+struct TriangleGeometryOnCPU {
+    std::vector<Point3D> vertices;
+    std::vector<shared::Triangle> triangles;
+};
+
+void loadTriangleMeshGeometriesOnCPU(
     const std::filesystem::path &filePath,
     const Matrix4x4 &preTransform,
-    std::vector<Point3D>* vertices,
-    std::vector<shared::Triangle>* triangles,
+    std::vector<TriangleGeometryOnCPU>* geometries,
     AABB* aabb);
 
 void createTriangleMeshes(

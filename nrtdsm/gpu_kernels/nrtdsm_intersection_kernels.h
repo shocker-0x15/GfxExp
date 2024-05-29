@@ -829,113 +829,6 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void computeTextureSpaceRayCoeffs(
 
 
 
-template <uint32_t N>
-struct MipMapStackData_T;
-template <>
-struct MipMapStackData_T<1> {
-    uint64_t m_data0;
-
-    CUDA_DEVICE_FUNCTION CUDA_INLINE MipMapStackData_T() : m_data0(0) {}
-    CUDA_DEVICE_FUNCTION CUDA_INLINE uint64_t &operator[](const uint32_t /*idx*/) {
-        return m_data0;
-    }
-    CUDA_DEVICE_FUNCTION CUDA_INLINE const uint64_t &operator[](const uint32_t /*idx*/) const {
-        return m_data0;
-    }
-};
-template <>
-struct MipMapStackData_T<2> {
-    uint64_t m_data0;
-    uint64_t m_data1;
-
-    CUDA_DEVICE_FUNCTION CUDA_INLINE MipMapStackData_T() : m_data0(0), m_data1(0) {}
-    CUDA_DEVICE_FUNCTION CUDA_INLINE uint64_t &operator[](const uint32_t idx) {
-        return idx == 0 ? m_data0 : m_data1;
-    }
-    CUDA_DEVICE_FUNCTION CUDA_INLINE const uint64_t &operator[](const uint32_t idx) const {
-        return idx == 0 ? m_data0 : m_data1;
-    }
-};
-template <>
-struct MipMapStackData_T<3> {
-    uint64_t m_data0;
-    uint64_t m_data1;
-    uint64_t m_data2;
-
-    CUDA_DEVICE_FUNCTION CUDA_INLINE MipMapStackData_T() : m_data0(0), m_data1(0), m_data2(0) {}
-    CUDA_DEVICE_FUNCTION CUDA_INLINE uint64_t &operator[](const uint32_t idx) {
-        return
-            idx == 0 ? m_data0 :
-            idx == 1 ? m_data1 :
-            m_data2;
-    }
-    CUDA_DEVICE_FUNCTION CUDA_INLINE const uint64_t &operator[](const uint32_t idx) const {
-        return
-            idx == 0 ? m_data0 :
-            idx == 1 ? m_data1 :
-            m_data2;
-    }
-};
-
-template <uint32_t N>
-class MipMapStack_T {
-    // JP: 各8ビットがカウンター(2ビット)と最大3つの要素(それぞれ2ビット)を持つ。
-    // EN: every 8 bits represents counter (2-bit) and up to three entries (each with 2-bit).
-    MipMapStackData_T<N> m_data;
-
-public:
-    union Entry {
-        struct {
-            uint8_t offsetX : 1;
-            uint8_t offsetY : 1;
-        };
-        uint8_t asUInt8;
-
-        CUDA_DEVICE_FUNCTION CUDA_INLINE Entry() {}
-        CUDA_DEVICE_FUNCTION CUDA_INLINE Entry(uint8_t _offsetX, uint8_t _offsetY) :
-            asUInt8(0) {
-            offsetX = _offsetX;
-            offsetY = _offsetY;
-        }
-    };
-
-    CUDA_DEVICE_FUNCTION CUDA_INLINE void push(
-        const uint32_t level,
-        const Entry entry0, const Entry entry1, const Entry entry2, const int32_t numEntries) {
-        Assert(level < N * 8, "Level out of bounds.");
-        Assert(numEntries <= 3, "Num entries to push must be <= 3.");
-        if (numEntries > 0) {
-            uint8_t newData = 0;
-            newData |= entry0.asUInt8 << 2;
-            if (numEntries > 1) {
-                newData |= entry1.asUInt8 << 4;
-                if (numEntries > 2) {
-                    newData |= entry2.asUInt8 << 6;
-                }
-            }
-            newData |= numEntries;
-            const uint32_t dataIdx = level / 8;
-            const uint32_t bitPosInData = (level % 8) * 8;
-            m_data[dataIdx] &= ~(static_cast<uint64_t>(0xFF) << bitPosInData);
-            m_data[dataIdx] |= (static_cast<uint64_t>(newData) << bitPosInData);
-        }
-    }
-    CUDA_DEVICE_FUNCTION CUDA_INLINE bool tryPop(const uint32_t level, Entry* const entry) {
-        Assert(level < N * 8, "Level out of bounds.");
-        const uint32_t dataIdx = level / 8;
-        const uint32_t bitPosInData = (level % 8) * 8;
-        const uint8_t data = (m_data[dataIdx] >> bitPosInData) & 0xFF;
-        const uint32_t counter = data & 0b11;
-        if (counter == 0)
-            return false;
-        entry->asUInt8 = (data >> 2) & 0b11;
-        const uint8_t newData = ((data >> 2) & ~0b11) | (counter - 1);
-        m_data[dataIdx] &= ~(static_cast<uint64_t>(0xFF) << bitPosInData);
-        m_data[dataIdx] |= (static_cast<uint64_t>(newData) << bitPosInData);
-        return true;
-    }
-};
-
 CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsAabb(
     // Prism
     const Point3D &pA, const Point3D &pB, const Point3D &pC,
@@ -1313,6 +1206,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void sortOrder(KeyType (&keys)[8], uint32_t* co
 
 #undef SWAP_ORDER
 
+// JP: これは基本的には通常のBVHトラバーサルだが、非線形レイとAABB/三角形の交差判定を使う。
+// EN: This is basically normal BVH traversal but with nonlinear ray vs AABB/triangle intersections.
 template <bool outputTravStats>
 CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsShellBvh(
     // Base Triangle
@@ -1566,6 +1461,115 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsShellBvh(
 
     return true;
 }
+
+
+
+template <uint32_t N>
+struct MipMapStackData_T;
+template <>
+struct MipMapStackData_T<1> {
+    uint64_t m_data0;
+
+    CUDA_DEVICE_FUNCTION CUDA_INLINE MipMapStackData_T() : m_data0(0) {}
+    CUDA_DEVICE_FUNCTION CUDA_INLINE uint64_t &operator[](const uint32_t /*idx*/) {
+        return m_data0;
+    }
+    CUDA_DEVICE_FUNCTION CUDA_INLINE const uint64_t &operator[](const uint32_t /*idx*/) const {
+        return m_data0;
+    }
+};
+template <>
+struct MipMapStackData_T<2> {
+    uint64_t m_data0;
+    uint64_t m_data1;
+
+    CUDA_DEVICE_FUNCTION CUDA_INLINE MipMapStackData_T() : m_data0(0), m_data1(0) {}
+    CUDA_DEVICE_FUNCTION CUDA_INLINE uint64_t &operator[](const uint32_t idx) {
+        return idx == 0 ? m_data0 : m_data1;
+    }
+    CUDA_DEVICE_FUNCTION CUDA_INLINE const uint64_t &operator[](const uint32_t idx) const {
+        return idx == 0 ? m_data0 : m_data1;
+    }
+};
+template <>
+struct MipMapStackData_T<3> {
+    uint64_t m_data0;
+    uint64_t m_data1;
+    uint64_t m_data2;
+
+    CUDA_DEVICE_FUNCTION CUDA_INLINE MipMapStackData_T() : m_data0(0), m_data1(0), m_data2(0) {}
+    CUDA_DEVICE_FUNCTION CUDA_INLINE uint64_t &operator[](const uint32_t idx) {
+        return
+            idx == 0 ? m_data0 :
+            idx == 1 ? m_data1 :
+            m_data2;
+    }
+    CUDA_DEVICE_FUNCTION CUDA_INLINE const uint64_t &operator[](const uint32_t idx) const {
+        return
+            idx == 0 ? m_data0 :
+            idx == 1 ? m_data1 :
+            m_data2;
+    }
+};
+
+template <uint32_t N>
+class MipMapStack_T {
+    // JP: 各8ビットがカウンター(2ビット)と最大3つの要素(それぞれ2ビット)を持つ。
+    // EN: every 8 bits represents counter (2-bit) and up to three entries (each with 2-bit).
+    MipMapStackData_T<N> m_data;
+
+public:
+    union Entry {
+        struct {
+            uint8_t offsetX : 1;
+            uint8_t offsetY : 1;
+        };
+        uint8_t asUInt8;
+
+        CUDA_DEVICE_FUNCTION CUDA_INLINE Entry() {}
+        CUDA_DEVICE_FUNCTION CUDA_INLINE Entry(uint8_t _offsetX, uint8_t _offsetY) :
+            asUInt8(0) {
+            offsetX = _offsetX;
+            offsetY = _offsetY;
+        }
+    };
+
+    CUDA_DEVICE_FUNCTION CUDA_INLINE void push(
+        const uint32_t level,
+        const Entry entry0, const Entry entry1, const Entry entry2, const int32_t numEntries) {
+        Assert(level < N * 8, "Level out of bounds.");
+        Assert(numEntries <= 3, "Num entries to push must be <= 3.");
+        if (numEntries > 0) {
+            uint8_t newData = 0;
+            newData |= entry0.asUInt8 << 2;
+            if (numEntries > 1) {
+                newData |= entry1.asUInt8 << 4;
+                if (numEntries > 2) {
+                    newData |= entry2.asUInt8 << 6;
+                }
+            }
+            newData |= numEntries;
+            const uint32_t dataIdx = level / 8;
+            const uint32_t bitPosInData = (level % 8) * 8;
+            m_data[dataIdx] &= ~(static_cast<uint64_t>(0xFF) << bitPosInData);
+            m_data[dataIdx] |= (static_cast<uint64_t>(newData) << bitPosInData);
+        }
+    }
+    CUDA_DEVICE_FUNCTION CUDA_INLINE bool tryPop(const uint32_t level, Entry* const entry) {
+        Assert(level < N * 8, "Level out of bounds.");
+        const uint32_t dataIdx = level / 8;
+        const uint32_t bitPosInData = (level % 8) * 8;
+        const uint8_t data = (m_data[dataIdx] >> bitPosInData) & 0xFF;
+        const uint32_t counter = data & 0b11;
+        if (counter == 0)
+            return false;
+        entry->asUInt8 = (data >> 2) & 0b11;
+        const uint8_t newData = ((data >> 2) & ~0b11) | (counter - 1);
+        m_data[dataIdx] &= ~(static_cast<uint64_t>(0xFF) << bitPosInData);
+        m_data[dataIdx] |= (static_cast<uint64_t>(newData) << bitPosInData);
+        return true;
+    }
+};
 
 
 

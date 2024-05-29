@@ -235,6 +235,64 @@ CUDA_DEVICE_KERNEL void computeAABBsForDisplacementMapping(
     dispTriAuxInfoBuffer[primIndex].amplitude = amplitude;
 }
 
+
+
+CUDA_DEVICE_FUNCTION CUDA_INLINE void traverseShellBvh(
+    const Point2D &tcA, const Point2D &tcB, const Point2D &tcC,
+    const bool tcFlipped, const Vector2D texTriEdgeNormals[2],
+    const Point2D &texTriAabbMinP, const Point2D &texTriAabbMaxP,
+    const GeometryBVH_T<shellBvhArity> &shellBvh, const Vector2D &bvhShift,
+    float* const minHeight, float* const maxHeight) {
+    using InternalNode = InternalNode_T<shellBvhArity>;
+
+    uint32_t curNodeIdx = 0;
+    uint32_t curStartSlot = 0;
+    while (true) {
+        const InternalNode &intNode = shellBvh.intNodes[curNodeIdx];
+        uint32_t nextNodeIdx = 0xFFFF'FFFF;
+        for (uint32_t slot = curStartSlot; slot < shellBvhArity; ++slot) {
+            if (!intNode.getChildIsValid(slot))
+                break;
+
+            AABB aabb = intNode.getChildAabb(slot);
+            aabb.minP.x += bvhShift.x;
+            aabb.minP.y += bvhShift.y;
+            aabb.maxP.x += bvhShift.x;
+            aabb.maxP.y += bvhShift.y;
+            const Point2D minP = aabb.minP.xy();
+            const Point2D maxP = aabb.maxP.xy();
+            const TriangleSquareIntersection2DResult isectResult =
+                testTriangleRectangleIntersection2D(
+                    tcA, tcB, tcC, tcFlipped, texTriEdgeNormals, texTriAabbMinP, texTriAabbMaxP,
+                    0.5f * (minP + maxP), 0.5f * (maxP - minP));
+            if (isectResult == TriangleSquareIntersection2DResult::SquareOutsideTriangle) {
+                continue;
+            }
+            else if (isectResult == TriangleSquareIntersection2DResult::SquareInsideTriangle ||
+                     intNode.getChildIsLeaf(slot)) {
+                *minHeight = std::fmin(aabb.minP.z, *minHeight);
+                *maxHeight = std::fmax(aabb.maxP.z, *maxHeight);
+            }
+            else {
+                nextNodeIdx = intNode.intNodeChildBaseIndex + intNode.getInternalChildNumber(slot);
+                break;
+            }
+        }
+
+        if (nextNodeIdx == 0xFFFF'FFFF) {
+            if (curNodeIdx == 0)
+                break;
+            const ParentPointer &parentPointer = shellBvh.parentPointers[curNodeIdx];
+            curNodeIdx = parentPointer.index;
+            curStartSlot = parentPointer.slot + 1;
+        }
+        else {
+            curNodeIdx = nextNodeIdx;
+            curStartSlot = 0;
+        }
+    }
+}
+
 CUDA_DEVICE_KERNEL void computeAABBsForShellMapping(
     const GeometryInstanceData* const geomInst, const GeometryInstanceDataForNRTDSM* const nrtdsmGeomInst) {
     const uint32_t primIndex = blockDim.x * blockIdx.x + threadIdx.x;
@@ -301,64 +359,92 @@ CUDA_DEVICE_KERNEL void computeAABBsForShellMapping(
         }
 #endif
 
-        using InternalNode = InternalNode_T<shellBvhArity>;
-        static constexpr uint32_t orderBitWidth = tzcntConst(shellBvhArity);
-        static constexpr uint32_t orderMask = (1 << orderBitWidth) - 1;
+        const GeometryBVH_T<shellBvhArity> &shellBvh = nrtdsmGeomInst->shellBvh;
 
-        const GeometryBVH_T<shellBvhArity> &bvh = nrtdsmGeomInst->shellBvh;
+        Texel roots[4];
+        uint32_t numRoots;
+        findRootsForShellMapping(texTriAabbMinP, texTriAabbMaxP, roots, &numRoots);
+#if DEBUG_TRAVERSAL
+        if (primIndex == debugPrimIndex) {
+            printf("prim %u: %u roots\n",
+                   primIndex, numRoots);
+        }
+#endif
+        for (int rootIdx = 0; rootIdx < lengthof(roots); ++rootIdx) {
+            if (rootIdx >= numRoots)
+                break;
+            Texel curTexel = roots[rootIdx];
+#if DEBUG_TRAVERSAL
+            if (primIndex == debugPrimIndex) {
+                printf("prim %u, root %d: %d - %d, %d\n",
+                       primIndex, rootIdx, curTexel.lod, curTexel.x, curTexel.y);
+            }
+#endif
+            //// JP: 三角形のテクスチャー座標の範囲がかなり大きい場合は
+            ////     最大ミップレベルからmin/maxを読み取って処理を終了する。
+            //// EN: Imediately finish with reading the min/max from the maximum mip level
+            ////     when the texture coordinate range of the triangle is fairly large.
+            //if (curTexel.lod >= 0) {
+            //    const AABB rootAabb = shellBvh.intNodes[0].getAabb();
+            //    minHeight = rootAabb.minP.z;
+            //    maxHeight = rootAabb.maxP.z;
+            //    break;
+            //}
+            Texel endTexel = curTexel;
+            const int16_t initialLod = curTexel.lod;
+            next(endTexel, initialLod);
+            bool travTerminated = false;
+            while (curTexel != endTexel) {
+                const float texelScale = std::pow(2.0f, static_cast<float>(curTexel.lod));
+                const TriangleSquareIntersection2DResult isectResult =
+                    testTriangleSquareIntersection2D(
+                        tcA, tcB, tcC, tcFlipped, texTriEdgeNormals, texTriAabbMinP, texTriAabbMaxP,
+                        Point2D((curTexel.x + 0.5f) * texelScale, (curTexel.y + 0.5f) * texelScale),
+                        0.5f * texelScale);
+#if DEBUG_TRAVERSAL
+                if (primIndex == debugPrimIndex) {
+                    printf("step: texel %u, %u, %u: (%u)\n", curTexel.x, curTexel.y, curTexel.lod, isectResult);
+                }
+#endif
+                if (isectResult == TriangleSquareIntersection2DResult::SquareOutsideTriangle) {
+                    // JP: テクセルがベース三角形の外にある場合はテクセルをスキップ。
+                    // EN: Skip the texel if it is outside of the base triangle.
+                    next(curTexel, initialLod);
+                }
+                else if (isectResult == TriangleSquareIntersection2DResult::SquareInsideTriangle) {
+                    // JP: テクセルがベース三角形に完全に含まれる場合は取り得る高さの範囲(の近似)が
+                    //     BVHのルートノードから分かるのでトラバーサルを終了する。
+                    // EN: If the texel is completely enclosed by the base triangle,
+                    //     a (approximated) possible height range can be obtained from the BVH root node,
+                    //     therefore terminate the traversal.
+                    const AABB rootAabb = shellBvh.intNodes[0].getAabb();
+                    minHeight = rootAabb.minP.z;
+                    maxHeight = rootAabb.maxP.z;
+                    travTerminated = true;
+                    break;
+                }
+                else if (curTexel.lod <= 0) {
+                    // JP: シェルBVHをトラバースしてベース三角形が交差する範囲の高さの範囲を求める。
+                    // EN: Traverse the shell BVH to get the height range of a region to which
+                    //     the base triangle intersects.
+                    traverseShellBvh(
+                        tcA, tcB, tcC, tcFlipped, texTriEdgeNormals, texTriAabbMinP, texTriAabbMaxP,
+                        shellBvh, Vector2D(curTexel.x, curTexel.y),
+                        &minHeight, &maxHeight);
+                    next(curTexel, initialLod);
+                }
+                else {
+                    down(curTexel);
+                }
+            }
 
-        //union Entry {
-        //    struct {
-        //        uint32_t baseIndex : 31;
-        //        uint32_t isLeafGroup : 1;
-        //        uint32_t orderInfo : 28;
-        //        uint32_t numItems : 4;
-        //    };
-        //    uint32_t asUInts[2];
-        //};
-
-        //Entry stack[12];
-        //int32_t stackIdx = 0;
-        //Entry curGroup = { 0, 0, 0, 1 };
-
-        //const auto push = [&]() {
-        //    stack[stackIdx++] = curGroup;
-        //};
-        //const auto pop = [&]() {
-        //    curGroup = stack[--stackIdx];
-        //};
-
-        //while (true) {
-        //    if (curGroup.numItems == 0) {
-        //        if (stackIdx == 0)
-        //            break;
-        //        pop();
-        //    }
-
-        //    Assert(curGroup.numItems > 0, "No items anymore.");
-        //    const uint32_t nodeIdx = curGroup.baseIndex + (curGroup.orderInfo & orderMask);
-        //    curGroup.orderInfo >>= orderBitWidth;
-        //    --curGroup.numItems;
-        //    const InternalNode &intNode = bvh.intNodes[nodeIdx];
-
-        //    for (uint32_t slot = 0; slot < shellBvhArity; ++slot) {
-        //        if (!intNode.getChildIsValid(slot))
-        //            break;
-
-        //        const AABB &aabb = intNode.getChildAabb(slot);
-
-        //        const TriangleSquareIntersection2DResult isectResult =
-        //            testTriangleRectangleIntersection2D(
-        //                tcA, tcB, tcC, tcFlipped, texTriEdgeNormals, texTriAabbMinP, texTriAabbMaxP,
-        //                Point2D((curTexel.x + 0.5f) * texelScale, (curTexel.y + 0.5f) * texelScale),
-        //                0.5f * texelScale);
-        //    }
-        //}
-
-        // TODO: BVH traversal to accurately determine the min/max.
-        const AABB rootAabb = bvh.intNodes[0].getAabb();
-        minHeight = rootAabb.minP.z;
-        maxHeight = rootAabb.maxP.z;
+            if (travTerminated) {
+                const AABB rootAabb = nrtdsmGeomInst->shellBvh.intNodes[0].getAabb();
+                minHeight = rootAabb.minP.z;
+                maxHeight = rootAabb.maxP.z;
+                break;
+            }
+        }
     }
 #if DEBUG_TRAVERSAL
     if (primIndex == debugPrimIndex) {
@@ -374,12 +460,14 @@ CUDA_DEVICE_KERNEL void computeAABBsForShellMapping(
     minHeight = nrtdsmGeomInst->params.hOffset + scale * (minHeight - nrtdsmGeomInst->params.hBias);
 
     AABB triAabb;
-    triAabb.unify(vs[0].position + minHeight * vs[0].normal);
-    triAabb.unify(vs[1].position + minHeight * vs[1].normal);
-    triAabb.unify(vs[2].position + minHeight * vs[2].normal);
-    triAabb.unify(vs[0].position + (minHeight + amplitude) * vs[0].normal);
-    triAabb.unify(vs[1].position + (minHeight + amplitude) * vs[1].normal);
-    triAabb.unify(vs[2].position + (minHeight + amplitude) * vs[2].normal);
+    if (stc::isfinite(minHeight)) {
+        triAabb.unify(vs[0].position + minHeight * vs[0].normal);
+        triAabb.unify(vs[1].position + minHeight * vs[1].normal);
+        triAabb.unify(vs[2].position + minHeight * vs[2].normal);
+        triAabb.unify(vs[0].position + (minHeight + amplitude) * vs[0].normal);
+        triAabb.unify(vs[1].position + (minHeight + amplitude) * vs[1].normal);
+        triAabb.unify(vs[2].position + (minHeight + amplitude) * vs[2].normal);
+    }
 
     aabbBuffer[primIndex] = triAabb;
     dispTriAuxInfoBuffer[primIndex].minHeight = minHeight;

@@ -774,32 +774,36 @@ static void buildTriangleMeshShellBvh(
     const std::filesystem::path &filePath,
     bool isYup,
     bvh::GeometryBVH<shared::shellBvhArity>* ret) {
-    std::vector<bvh::Geometry> geometries;
+    std::vector<bvh::Geometry> bvhGeometries;
 
-    std::vector<Point3D> vertices;
-    std::vector<shared::Triangle> triangles;
+    std::vector<TriangleGeometryOnCPU> geometries;
     AABB aabb;
-    loadSingleTriangleMesh(
+    loadTriangleMeshGeometriesOnCPU(
         filePath,
         isYup ? rotate3DX_4x4(0.5f * pi_v<float>) : Matrix4x4(),
-        &vertices, &triangles, &aabb);
+        &geometries, &aabb);
     const Point3D aabbCenter = aabb.getCenter();
     const Vector3D aabbDim = aabb.maxP - aabb.minP;
 
-    bvh::Geometry geom = {};
-    geom.vertices = vertices.data();
-    geom.vertexStride = sizeof(vertices[0]);
-    geom.vertexFormat = bvh::VertexFormat::Fp32x3;
-    geom.numVertices = vertices.size();
-    geom.triangles = triangles.data();
-    geom.triangleStride = sizeof(triangles[0]);
-    geom.triangleFormat = bvh::TriangleFormat::UI32x3;
-    geom.numTriangles = triangles.size();
-    geom.preTransform =
+    const Matrix4x4 preTransform =
         translate3D_4x4(0.5f, 0.5f, 0.0f) *
         scale3D_4x4(1.0f / stc::max(aabbDim.x, aabbDim.y)) *
         translate3D_4x4(Point3D(-aabbCenter.xy(), -aabb.minP.z));
-    geometries.push_back(geom);
+
+    for (uint32_t geomIdx = 0; geomIdx < geometries.size(); ++geomIdx) {
+        const TriangleGeometryOnCPU &srcGeom = geometries[geomIdx];
+        bvh::Geometry bvhGeom = {};
+        bvhGeom.vertices = srcGeom.vertices.data();
+        bvhGeom.vertexStride = sizeof(srcGeom.vertices[0]);
+        bvhGeom.vertexFormat = bvh::VertexFormat::Fp32x3;
+        bvhGeom.numVertices = srcGeom.vertices.size();
+        bvhGeom.triangles = srcGeom.triangles.data();
+        bvhGeom.triangleStride = sizeof(srcGeom.triangles[0]);
+        bvhGeom.triangleFormat = bvh::TriangleFormat::UI32x3;
+        bvhGeom.numTriangles = srcGeom.triangles.size();
+        bvhGeom.preTransform = preTransform;
+        bvhGeometries.push_back(bvhGeom);
+    }
 
     bvh::GeometryBVHBuildConfig config = {};
     config.splittingBudget = 0.3f;
@@ -808,7 +812,7 @@ static void buildTriangleMeshShellBvh(
     config.minNumPrimsPerLeaf = 1;
     config.maxNumPrimsPerLeaf = 128;
 
-    bvh::buildGeometryBVH(geometries.data(), geometries.size(), config, ret);
+    bvh::buildGeometryBVH(bvhGeometries.data(), bvhGeometries.size(), config, ret);
 }
 
 // END: Shell Geometries
@@ -2590,9 +2594,10 @@ int32_t main(int32_t argc, const char* argv[]) try {
                     geomInstData, nrtdsmData);
             }
 
-            // debug AABBs
+            //// debug AABBs and AuxInfos
             //CUDADRV_CHECK(cuStreamSynchronize(curCuStream));
             //std::vector<AABB> aabbs = geom.aabbBuffer;
+            //std::vector<shared::NRTDSMTriangleAuxInfo> triAuxInfos = geom.triAuxInfoBuffer;
 
             displacedMeshGeomGroup->needsRebuild = true;
         }
