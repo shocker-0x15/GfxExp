@@ -2004,6 +2004,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
                     if (detailType != oldDetailType || frameIndex == 0) {
                         detailTypeChanged = true;
 
+#if USE_DISPLACED_SURFACES
                         if (detailType == DetailType::DisplacementMap) {
                             gpuEnv.optixDisplacedMeshMaterial.setHitGroup(
                                 shared::GBufferRayType::Primary,
@@ -2028,6 +2029,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
                         }
                         gpuEnv.gBuffer.optixPipeline.markHitGroupShaderBindingTableDirty();
                         gpuEnv.pathTracing.optixPipeline.markHitGroupShaderBindingTableDirty();
+#endif
                     }
 
                     const std::filesystem::path dataDir = R"(..\data)";

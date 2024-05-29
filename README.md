@@ -120,7 +120,7 @@ Given the mapping between shell space (a space enclosed by the base triangle and
   - [x] Traversal order based on ray-box hit distance
   - [x] Texture wrapping
   - [x] Texture transform
-  - [] Multi-material support for shell mapping
+  - [ ] Multi-material support for shell mapping
 
 ![example](nrtdsm/comparison.jpg)
 Height map from [aaa](bbb)
