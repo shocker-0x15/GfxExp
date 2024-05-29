@@ -10,7 +10,12 @@ https://github.com/microsoft/DirectXTex
 Textures whose name start with TCom_ were downloaded from textures.com\
 https://www.textures.com/
 
-## visible earch
+## visible earth
 - gebco_08_rev_elev_4096_4096.dds\
 This image was generated from an earth elevation image downloaded from\
 https://visibleearth.nasa.gov/images/73934/topography
+
+## The Stanford 3D Scanning Repository
+- Stanford Bunny\
+  stanford_bunny_309_faces were created by reducing polygons of the original stanford bunny model downloaded from:\
+  http://graphics.stanford.edu/data/3Dscanrep/

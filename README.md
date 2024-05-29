@@ -112,13 +112,15 @@ https://github.com/shinjiogaki/nonlinear-ray-tracing
 
 Given the mapping between shell space (a space enclosed by the base triangle and the offset triangle formed by vertex normals) and texture space (where height fields in displacement mapping and instanced BVHs in shell mapping exist without "distortion"), rays in texture space are represented as curves, specifically degree-2 as rational functions. The proposed method directly solves the intersection test between a curved ray and an AABB given by a minmax mipmap or an instanced BVH, and the test between the curved ray and a micro triangle in texture space to achieve efficient and low-memory displacement mapping and shell mapping without troublesome initialization.
 
-- [ ] Basic Implementation (Displacement mapping, non-wrapping texture)
-- [ ] Advanced Items
-  - [ ] Shell mapping
+- [x] Basic Implementation
+  - [x] Displacement mapping (non-wrapping texture)
+  - [x] Shell mapping (non-wrapping texture)
+- [x] Advanced Items
   - [x] Better root choice
   - [x] Traversal order based on ray-box hit distance
   - [x] Texture wrapping
   - [x] Texture transform
+  - [] Multi-material support for shell mapping
 
 ![example](nrtdsm/comparison.jpg)
 Height map from [aaa](bbb)
@@ -161,4 +163,4 @@ It requires the following libraries.
 - [Tiny OpenEXR image library (tinyexr)](https://github.com/syoyo/tinyexr)
 
 ----
-2023 [@Shocker_0x15](https://twitter.com/Shocker_0x15)
+2024 [@Shocker_0x15](https://twitter.com/Shocker_0x15)
