@@ -52,10 +52,11 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(setupGBuffers)() {
     hitPointParams.prevPositionInWorld = Point3D(NAN);
     hitPointParams.geometricNormalInWorld = Normal3D(NAN);
     hitPointParams.shadingNormalInWorld = Normal3D(NAN);
-    hitPointParams.instSlot = 0xFFFFFFFF;
-    hitPointParams.geomInstSlot = 0x7FFFFFFF;
-    hitPointParams.isDisplacedMesh = false;
-    hitPointParams.primIndex = 0xFFFFFFFF;
+    hitPointParams.instSlot = 0x3FFF'FFFF;
+    hitPointParams.meshType = 0;
+    hitPointParams.geomInstSlot = 0x0FFF'FFFF;
+    hitPointParams.shellBvhGeomIndex = 0;
+    hitPointParams.primIndex = 0xFFFF'FFFF;
     hitPointParams.qbcB = 0;
     hitPointParams.qbcC = 0;
 #if OUTPUT_TRAVERSAL_STATS
@@ -90,8 +91,9 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(setupGBuffers)() {
 
     GBuffer0Elements gb0Elems = {};
     gb0Elems.instSlot = hitPointParams.instSlot;
+    gb0Elems.meshType = hitPointParams.meshType;
     gb0Elems.geomInstSlot = hitPointParams.geomInstSlot;
-    gb0Elems.isDisplacedMesh = hitPointParams.isDisplacedMesh;
+    gb0Elems.shellBvhGeomIndex = hitPointParams.shellBvhGeomIndex;
     gb0Elems.primIndex = hitPointParams.primIndex;
     gb0Elems.qbcB = hitPointParams.qbcB;
     gb0Elems.qbcC = hitPointParams.qbcC;
@@ -143,7 +145,6 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
     const auto sbtr = HitGroupSBTRecordData::get();
     const InstanceData &inst = plp.s->instanceDataBufferArray[bufIdx][optixGetInstanceId()];
     const GeometryInstanceData &geomInst = plp.s->geometryInstanceDataBuffer[sbtr.geomInstSlot];
-    const MaterialData &mat = plp.s->materialDataBuffer[geomInst.materialSlot];
 
     HitPointParams* hitPointParams;
     PickInfo* pickInfo;
@@ -157,14 +158,20 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
     const auto hp = HitPointParameter::get();
     const uint32_t hitKind = optixGetHitKind();
     const bool isTriangleHit =
-        hitKind == OPTIX_HIT_KIND_TRIANGLE_FRONT_FACE
-        || hitKind == OPTIX_HIT_KIND_TRIANGLE_BACK_FACE;
-    const bool isDisplacedTriangleHit =
-        hitKind == CustomHitKind_DisplacedSurfaceFrontFace
-        || hitKind == CustomHitKind_DisplacedSurfaceBackFace;
+        hitKind == OPTIX_HIT_KIND_TRIANGLE_FRONT_FACE ||
+        hitKind == OPTIX_HIT_KIND_TRIANGLE_BACK_FACE;
+    const bool isDispMapTriangleHit =
+        hitKind == CustomHitKind_DisplacementMappedSurfaceFrontFace ||
+        hitKind == CustomHitKind_DisplacementMappedSurfaceBackFace;
+    const bool isShellMapTriangleHit =
+        hitKind == CustomHitKind_ShellMappedSurfaceFrontFace ||
+        hitKind == CustomHitKind_ShellMappedSurfaceBackFace;
     hitPointParams->instSlot = optixGetInstanceId();
+    hitPointParams->meshType =
+        isTriangleHit ? 0 :
+        isDispMapTriangleHit ? 1 :
+        2;
     hitPointParams->geomInstSlot = sbtr.geomInstSlot;
-    hitPointParams->isDisplacedMesh = !isTriangleHit;
     hitPointParams->primIndex = hp.primIndex;
 
     Point3D positionInWorld;
@@ -173,7 +180,8 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
     Normal3D shadingNormalInWorld;
     Vector3D texCoord0DirInWorld;
     Point2D texCoord;
-    if (isTriangleHit || isDisplacedTriangleHit) {
+    uint32_t materialSlot = geomInst.materialSlot;
+    if (isTriangleHit || isDispMapTriangleHit || isShellMapTriangleHit) {
         const Triangle &tri = geomInst.triangleBuffer[hp.primIndex];
         const Vertex &vA = geomInst.vertexBuffer[tri.index0];
         const Vertex &vB = geomInst.vertexBuffer[tri.index1];
@@ -199,6 +207,13 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
             DisplacedSurfaceAttributeSignature::get(nullptr, nullptr, &hitAttrs);
             geometricNormalInObj = hitAttrs.normalInObj;
             shadingNormalInObj = hitAttrs.normalInObj;
+
+            if (isShellMapTriangleHit) {
+                const GeometryInstanceDataForNRTDSM &nrtdsmGeomInst =
+                    plp.s->geomInstNrtdsmDataBuffer[sbtr.geomInstSlot];
+                hitPointParams->shellBvhGeomIndex = hitAttrs.geomIndex;
+                materialSlot = nrtdsmGeomInst.materialSlots[hitAttrs.geomIndex];
+            }
         }
         texCoord = bcA * vA.texCoord + bcB * vB.texCoord + bcC * vC.texCoord;
         prevPositionInWorld = inst.curToPrevTransform * positionInWorld;
@@ -245,6 +260,8 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
     hitPointParams->positionInWorld = positionInWorld;
     hitPointParams->prevPositionInWorld = prevPositionInWorld;
     hitPointParams->geometricNormalInWorld = geometricNormalInWorld;
+
+    const MaterialData &mat = plp.s->materialDataBuffer[materialSlot];
 
     BSDF bsdf;
     bsdf.setup(mat, texCoord, 0.0f);

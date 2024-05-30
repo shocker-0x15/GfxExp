@@ -91,7 +91,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_rayGen_generic() {
 
     const bool useEnvLight = plp.s->envLightTexture && plp.f->enableEnvLight;
     RGB contribution(0.001f, 0.001f, 0.001f);
-    if (instSlot != 0xFFFFFFFF) {
+    if (instSlot != 0x3FFF'FFFF) {
         const uint32_t geomInstSlot = gb0Elems.geomInstSlot;
         const InstanceData &inst = plp.s->instanceDataBufferArray[bufIdx][instSlot];
         const GeometryInstanceData &geomInst = plp.s->geometryInstanceDataBuffer[geomInstSlot];
@@ -107,7 +107,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_rayGen_generic() {
         // EN: There is difficulty (not impossible though) in restoring the hit position and normals
         //     from the G-buffers for displaced surfaces.
         //     Therefore displaced surfaces use additional G-buffers to store those information.
-        if (gb0Elems.isDisplacedMesh) {
+        if (gb0Elems.meshType != 0) {
             const GBuffer1Elements gb1Elems = plp.s->GBuffer1[bufIdx].read(launchIndex);
             geometricNormalInWorld = decodeNormal(gb1Elems.qGeometricNormal);
             shadingNormalInWorld = decodeNormal(gb1Elems.qShadingNormal);
@@ -116,7 +116,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_rayGen_generic() {
             positionInWorld = gb2Elems.positionInWorld;
         }
         computeSurfacePoint(
-            inst, geomInst, gb0Elems.isDisplacedMesh,
+            inst, geomInst, gb0Elems.meshType != 0,
             gb0Elems.primIndex, bcB, bcC,
             &positionInWorld, &shadingNormalInWorld, &texCoord0DirInWorld,
             &geometricNormalInWorld, &texCoord);
@@ -130,7 +130,13 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_rayGen_generic() {
         Vector3D vIn;
         float dirPDensity;
         {
-            const MaterialData &mat = plp.s->materialDataBuffer[geomInst.materialSlot];
+            uint32_t matSlot = geomInst.materialSlot;
+            if (gb0Elems.meshType == 2) {
+                const GeometryInstanceDataForNRTDSM &nrtdsmGeomInst =
+                    plp.s->geomInstNrtdsmDataBuffer[geomInstSlot];
+                matSlot = nrtdsmGeomInst.materialSlots[gb0Elems.shellBvhGeomIndex];
+            }
+            const MaterialData &mat = plp.s->materialDataBuffer[matSlot];
 
             const Vector3D vOut = normalize(camera.position - positionInWorld);
             const float frontHit = dot(vOut, geometricNormalInWorld) >= 0.0f ? 1.0f : -1.0f;
@@ -153,7 +159,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_rayGen_generic() {
                 contribution += alpha * emittance / pi_v<float>;
             }
 
-            if (gb0Elems.isDisplacedMesh) {
+            if (gb0Elems.meshType != 0) {
                 // JP: ベース三角形のエッジに着色する。
                 // EN: Color the edges of the base triangle.
                 if (plp.f->showBaseEdges) {
@@ -271,17 +277,29 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_closestHit_generic() {
 
     const uint32_t hitKind = optixGetHitKind();
     const bool isTriangleHit =
-        hitKind == OPTIX_HIT_KIND_TRIANGLE_FRONT_FACE
-        || hitKind == OPTIX_HIT_KIND_TRIANGLE_BACK_FACE;
-    const bool isDisplacedTriangleHit =
-        hitKind == CustomHitKind_DisplacedSurfaceFrontFace
-        || hitKind == CustomHitKind_DisplacedSurfaceBackFace;
-    if (isTriangleHit || isDisplacedTriangleHit) {
+        hitKind == OPTIX_HIT_KIND_TRIANGLE_FRONT_FACE ||
+        hitKind == OPTIX_HIT_KIND_TRIANGLE_BACK_FACE;
+    const bool isDispMapTriangleHit =
+        hitKind == CustomHitKind_DisplacementMappedSurfaceFrontFace ||
+        hitKind == CustomHitKind_DisplacementMappedSurfaceBackFace;
+    const bool isShellMapTriangleHit =
+        hitKind == CustomHitKind_ShellMappedSurfaceFrontFace ||
+        hitKind == CustomHitKind_ShellMappedSurfaceBackFace;
+    uint32_t materialSlot = geomInst.materialSlot;
+    if (isTriangleHit || isDispMapTriangleHit || isShellMapTriangleHit) {
         computeSurfacePoint<useMultipleImportanceSampling, useSolidAngleSampling>(
-            inst, geomInst, isDisplacedTriangleHit, hp.primIndex, hp.bcB, hp.bcC,
+            inst, geomInst, isDispMapTriangleHit || isShellMapTriangleHit, hp.primIndex, hp.bcB, hp.bcC,
             rayOrigin,
             &positionInWorld, &shadingNormalInWorld, &texCoord0DirInWorld,
             &geometricNormalInWorld, &texCoord, &hypAreaPDensity);
+
+        if (isShellMapTriangleHit) {
+            DisplacedSurfaceAttributes hitAttrs;
+            DisplacedSurfaceAttributeSignature::get(nullptr, nullptr, &hitAttrs);
+            const GeometryInstanceDataForNRTDSM &nrtdsmGeomInst =
+                plp.s->geomInstNrtdsmDataBuffer[sbtr.geomInstSlot];
+            materialSlot = nrtdsmGeomInst.materialSlots[hitAttrs.geomIndex];
+        }
     }
     else { // for Prism debugging
         const GeometryInstanceDataForNRTDSM &nrtdsm = plp.s->geomInstNrtdsmDataBuffer[sbtr.geomInstSlot];
@@ -315,7 +333,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_closestHit_generic() {
     if constexpr (!useMultipleImportanceSampling)
         (void)hypAreaPDensity;
 
-    const MaterialData &mat = plp.s->materialDataBuffer[geomInst.materialSlot];
+    const MaterialData &mat = plp.s->materialDataBuffer[materialSlot];
 
     const Vector3D vOut = normalize(-Vector3D(optixGetWorldRayDirection()));
     const float frontHit = dot(vOut, geometricNormalInWorld) >= 0.0f ? 1.0f : -1.0f;

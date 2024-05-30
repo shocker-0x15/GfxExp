@@ -13,8 +13,10 @@ namespace shared {
     enum CustomHitKind : uint8_t {
         CustomHitKind_PrismFrontFace = 0,
         CustomHitKind_PrismBackFace,
-        CustomHitKind_DisplacedSurfaceFrontFace,
-        CustomHitKind_DisplacedSurfaceBackFace,
+        CustomHitKind_DisplacementMappedSurfaceFrontFace,
+        CustomHitKind_DisplacementMappedSurfaceBackFace,
+        CustomHitKind_ShellMappedSurfaceFrontFace,
+        CustomHitKind_ShellMappedSurfaceBackFace,
     };
 
 
@@ -26,6 +28,7 @@ namespace shared {
 
     struct DisplacedSurfaceAttributes {
         Normal3D normalInObj;
+        uint32_t geomIndex; // for shell mapping
     };
 
 
@@ -86,9 +89,10 @@ namespace shared {
         Point3D prevPositionInWorld;
         Normal3D geometricNormalInWorld;
         Normal3D shadingNormalInWorld;
-        uint32_t instSlot;
-        uint32_t geomInstSlot : 31;
-        uint32_t isDisplacedMesh : 1;
+        uint32_t instSlot : 30;
+        uint32_t meshType : 2; // 0: normal, 1: displacement map, 2: shell map
+        uint32_t geomInstSlot : 28;
+        uint32_t shellBvhGeomIndex : 4;
         uint32_t primIndex;
         uint16_t qbcB;
         uint16_t qbcC;
@@ -122,9 +126,10 @@ namespace shared {
 
 
     struct GBuffer0Elements {
-        uint32_t instSlot;
-        uint32_t geomInstSlot : 31;
-        uint32_t isDisplacedMesh : 1;
+        uint32_t instSlot : 30;
+        uint32_t meshType : 2; // 0: normal, 1: displacement map, 2: shell map
+        uint32_t geomInstSlot : 28;
+        uint32_t shellBvhGeomIndex : 4;
         uint32_t primIndex;
         uint16_t qbcB;
         uint16_t qbcC;

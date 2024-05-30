@@ -1236,6 +1236,8 @@ namespace shared {
         ROBuffer<optixu::NativeBlockBuffer2D<float2>> minMaxMipMap;
         // for shell mapping
         GeometryBVH_T<shellBvhArity> shellBvh;
+        //ROBuffer<uint32_t> materialSlots;
+        uint32_t materialSlots[8];
     };
 
     struct InstanceData {

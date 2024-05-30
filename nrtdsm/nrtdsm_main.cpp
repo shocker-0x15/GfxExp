@@ -724,95 +724,110 @@ static void createSphere(
 // Shell Geometries
 
 static void buildOneBoxShellBvh(
-    bvh::GeometryBVH<shared::shellBvhArity>* ret) {
-    std::vector<bvh::Geometry> geometries;
+    bvh::GeometryBVH<shared::shellBvhArity>* retBvh) {
+    static bool initialized = false;
+    static bvh::GeometryBVH<shared::shellBvhArity> bvh;
+    if (!initialized) {
+        std::vector<bvh::Geometry> geometries;
 
-    std::vector<Point3D> box0Vertices = {
-        Point3D(0.2f, 0.2f, 0.0f),
-        Point3D(0.8f, 0.2f, 0.0f),
-        Point3D(0.2f, 0.8f, 0.0f),
-        Point3D(0.8f, 0.8f, 0.0f),
-        Point3D(0.2f, 0.2f, 0.08f),
-        Point3D(0.8f, 0.2f, 0.08f),
-        Point3D(0.2f, 0.8f, 0.08f),
-        Point3D(0.8f, 0.8f, 0.08f),
-    };
-    std::vector<shared::Triangle> box0Triangles = {
-        // xy-planes
-        {0, 2, 3}, {0, 3, 1},
-        {4, 7, 6}, {4, 5, 7},
-        // yz-planes
-        {4, 6, 2}, {4, 2, 0},
-        {5, 3, 7}, {5, 1, 3},
-        // zx-planes
-        {0, 1, 5}, {0, 5, 4},
-        {2, 7, 3}, {2, 6, 7},
-    };
-    bvh::Geometry box0Geom = {};
-    box0Geom.vertices = box0Vertices.data();
-    box0Geom.vertexStride = sizeof(box0Vertices[0]);
-    box0Geom.vertexFormat = bvh::VertexFormat::Fp32x3;
-    box0Geom.numVertices = box0Vertices.size();
-    box0Geom.triangles = box0Triangles.data();
-    box0Geom.triangleStride = sizeof(box0Triangles[0]);
-    box0Geom.triangleFormat = bvh::TriangleFormat::UI32x3;
-    box0Geom.numTriangles = box0Triangles.size();
-    box0Geom.preTransform = Matrix4x4();
-    geometries.push_back(box0Geom);
+        std::vector<Point3D> box0Vertices = {
+            Point3D(0.2f, 0.2f, 0.0f),
+            Point3D(0.8f, 0.2f, 0.0f),
+            Point3D(0.2f, 0.8f, 0.0f),
+            Point3D(0.8f, 0.8f, 0.0f),
+            Point3D(0.2f, 0.2f, 0.08f),
+            Point3D(0.8f, 0.2f, 0.08f),
+            Point3D(0.2f, 0.8f, 0.08f),
+            Point3D(0.8f, 0.8f, 0.08f),
+        };
+        std::vector<shared::Triangle> box0Triangles = {
+            // xy-planes
+            {0, 2, 3}, {0, 3, 1},
+            {4, 7, 6}, {4, 5, 7},
+            // yz-planes
+            {4, 6, 2}, {4, 2, 0},
+            {5, 3, 7}, {5, 1, 3},
+            // zx-planes
+            {0, 1, 5}, {0, 5, 4},
+            {2, 7, 3}, {2, 6, 7},
+        };
+        bvh::Geometry box0Geom = {};
+        box0Geom.vertices = box0Vertices.data();
+        box0Geom.vertexStride = sizeof(box0Vertices[0]);
+        box0Geom.vertexFormat = bvh::VertexFormat::Fp32x3;
+        box0Geom.numVertices = box0Vertices.size();
+        box0Geom.triangles = box0Triangles.data();
+        box0Geom.triangleStride = sizeof(box0Triangles[0]);
+        box0Geom.triangleFormat = bvh::TriangleFormat::UI32x3;
+        box0Geom.numTriangles = box0Triangles.size();
+        box0Geom.preTransform = Matrix4x4();
+        geometries.push_back(box0Geom);
 
-    bvh::GeometryBVHBuildConfig config = {};
-    config.splittingBudget = 0.3f;
-    config.intNodeTravCost = 1.2f;
-    config.primIntersectCost = 1.0f;
-    config.minNumPrimsPerLeaf = 1;
-    config.maxNumPrimsPerLeaf = 128;
+        bvh::GeometryBVHBuildConfig config = {};
+        config.splittingBudget = 0.3f;
+        config.intNodeTravCost = 1.2f;
+        config.primIntersectCost = 1.0f;
+        config.minNumPrimsPerLeaf = 1;
+        config.maxNumPrimsPerLeaf = 128;
 
-    bvh::buildGeometryBVH(geometries.data(), geometries.size(), config, ret);
+        bvh::buildGeometryBVH(geometries.data(), geometries.size(), config, &bvh);
+    }
+
+    *retBvh = bvh;
 }
+
+static std::map<std::filesystem::path, bvh::GeometryBVH<shared::shellBvhArity>> g_shellBvhCache;
 
 static void buildTriangleMeshShellBvh(
     const std::filesystem::path &filePath,
     bool isYup,
-    bvh::GeometryBVH<shared::shellBvhArity>* ret) {
-    std::vector<bvh::Geometry> bvhGeometries;
+    bvh::GeometryBVH<shared::shellBvhArity>* retBvh) {
+    if (!g_shellBvhCache.contains(filePath)) {
+        std::vector<bvh::Geometry> bvhGeometries;
 
-    std::vector<TriangleGeometryOnCPU> geometries;
-    AABB aabb;
-    loadTriangleMeshGeometriesOnCPU(
-        filePath,
-        isYup ? rotate3DX_4x4(0.5f * pi_v<float>) : Matrix4x4(),
-        &geometries, &aabb);
-    const Point3D aabbCenter = aabb.getCenter();
-    const Vector3D aabbDim = aabb.maxP - aabb.minP;
+        std::vector<TriangleGeometryOnCPU> geometries;
+        AABB aabb;
+        loadTriangleMeshGeometriesOnCPU(
+            filePath,
+            isYup ? rotate3DX_4x4(0.5f * pi_v<float>) : Matrix4x4(),
+            &geometries, &aabb);
+        const Point3D aabbCenter = aabb.getCenter();
+        const Vector3D aabbDim = aabb.maxP - aabb.minP;
 
-    const Matrix4x4 preTransform =
-        translate3D_4x4(0.5f, 0.5f, 0.0f) *
-        scale3D_4x4(1.0f / stc::max(aabbDim.x, aabbDim.y)) *
-        translate3D_4x4(Point3D(-aabbCenter.xy(), -aabb.minP.z));
+        const Matrix4x4 preTransform =
+            translate3D_4x4(0.5f, 0.5f, 0.0f) *
+            scale3D_4x4(1.0f / stc::max(aabbDim.x, aabbDim.y)) *
+            translate3D_4x4(Point3D(-aabbCenter.xy(), -aabb.minP.z));
 
-    for (uint32_t geomIdx = 0; geomIdx < geometries.size(); ++geomIdx) {
-        const TriangleGeometryOnCPU &srcGeom = geometries[geomIdx];
-        bvh::Geometry bvhGeom = {};
-        bvhGeom.vertices = srcGeom.vertices.data();
-        bvhGeom.vertexStride = sizeof(srcGeom.vertices[0]);
-        bvhGeom.vertexFormat = bvh::VertexFormat::Fp32x3;
-        bvhGeom.numVertices = srcGeom.vertices.size();
-        bvhGeom.triangles = srcGeom.triangles.data();
-        bvhGeom.triangleStride = sizeof(srcGeom.triangles[0]);
-        bvhGeom.triangleFormat = bvh::TriangleFormat::UI32x3;
-        bvhGeom.numTriangles = srcGeom.triangles.size();
-        bvhGeom.preTransform = preTransform;
-        bvhGeometries.push_back(bvhGeom);
+        for (uint32_t geomIdx = 0; geomIdx < geometries.size(); ++geomIdx) {
+            const TriangleGeometryOnCPU &srcGeom = geometries[geomIdx];
+            bvh::Geometry bvhGeom = {};
+            bvhGeom.vertices = srcGeom.vertices.data();
+            bvhGeom.vertexStride = sizeof(srcGeom.vertices[0]);
+            bvhGeom.vertexFormat = bvh::VertexFormat::Fp32x3;
+            bvhGeom.numVertices = srcGeom.vertices.size();
+            bvhGeom.triangles = srcGeom.triangles.data();
+            bvhGeom.triangleStride = sizeof(srcGeom.triangles[0]);
+            bvhGeom.triangleFormat = bvh::TriangleFormat::UI32x3;
+            bvhGeom.numTriangles = srcGeom.triangles.size();
+            bvhGeom.preTransform = preTransform;
+            bvhGeometries.push_back(bvhGeom);
+        }
+
+        bvh::GeometryBVHBuildConfig config = {};
+        config.splittingBudget = 0.3f;
+        config.intNodeTravCost = 1.2f;
+        config.primIntersectCost = 1.0f;
+        config.minNumPrimsPerLeaf = 1;
+        config.maxNumPrimsPerLeaf = 128;
+
+        bvh::GeometryBVH<shared::shellBvhArity> bvh;
+        bvh::buildGeometryBVH(bvhGeometries.data(), bvhGeometries.size(), config, &bvh);
+
+        g_shellBvhCache[filePath] = std::move(bvh);
     }
 
-    bvh::GeometryBVHBuildConfig config = {};
-    config.splittingBudget = 0.3f;
-    config.intNodeTravCost = 1.2f;
-    config.primIntersectCost = 1.0f;
-    config.minNumPrimsPerLeaf = 1;
-    config.maxNumPrimsPerLeaf = 128;
-
-    bvh::buildGeometryBVH(bvhGeometries.data(), bvhGeometries.size(), config, ret);
+    *retBvh = g_shellBvhCache.at(filePath);
 }
 
 // END: Shell Geometries
@@ -1209,6 +1224,39 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
         scene.initialSceneAabb.unify(
             instXfm * mesh->groupInsts[0].transform * mesh->groupInsts[0].geomGroup->aabb);
+    }
+
+    // JP: シェルBVHで使うマテリアルを作成しておく。
+    // EN: create materials used by shell BVH.
+    enum ShellBVHMaterial {
+        ShellBVHMaterial_White = 0,
+        ShellBVHMaterial_Red,
+        ShellBVHMaterial_Green,
+        ShellBVHMaterial_Blue,
+        ShellBVHMaterial_Orange,
+    };
+    uint32_t shellBvhMatSlots[5];
+    {
+        createLambertMaterial(
+            gpuEnv.cuContext, &scene, "",
+            RGB(0.8f, 0.8f, 0.8f), "", "", RGB(0.0f));
+        shellBvhMatSlots[ShellBVHMaterial_White] = scene.materials.back()->materialSlot;
+        createLambertMaterial(
+            gpuEnv.cuContext, &scene, "",
+            RGB(0.8f, 0.0f, 0.0f), "", "", RGB(0.0f));
+        shellBvhMatSlots[ShellBVHMaterial_Red] = scene.materials.back()->materialSlot;
+        createLambertMaterial(
+            gpuEnv.cuContext, &scene, "",
+            RGB(0.0f, 0.8f, 0.0f), "", "", RGB(0.0f));
+        shellBvhMatSlots[ShellBVHMaterial_Green] = scene.materials.back()->materialSlot;
+        createLambertMaterial(
+            gpuEnv.cuContext, &scene, "",
+            RGB(0.0f, 0.0f, 0.8f), "", "", RGB(0.0f));
+        shellBvhMatSlots[ShellBVHMaterial_Blue] = scene.materials.back()->materialSlot;
+        createLambertMaterial(
+            gpuEnv.cuContext, &scene, "",
+            RGB(0.8f, 0.4f, 0.0f), "", "", RGB(0.0f));
+        shellBvhMatSlots[ShellBVHMaterial_Orange] = scene.materials.back()->materialSlot;
     }
 
     Vector3D sceneDim = scene.initialSceneAabb.maxP - scene.initialSceneAabb.minP;
@@ -2239,14 +2287,22 @@ int32_t main(int32_t argc, const char* argv[]) try {
                             CUDADRV_CHECK(cuMemcpyDtoH(&nrtdsmData, addrOnDevice, sizeof(nrtdsmData)));
 
                             bvh::GeometryBVH<shared::shellBvhArity> bvh;
-                            if (shellGeomIndex == 0)
+                            if (shellGeomIndex == 0) {
                                 buildOneBoxShellBvh(&bvh);
-                            else if (shellGeomIndex == 1)
+                                nrtdsmData.materialSlots[0] = shellBvhMatSlots[ShellBVHMaterial_White];
+                            }
+                            else if (shellGeomIndex == 1) {
                                 buildTriangleMeshShellBvh(
                                     dataDir / "stanford_bunny_309_faces.obj", true, &bvh);
-                            else if (shellGeomIndex == 2)
+                                nrtdsmData.materialSlots[0] = shellBvhMatSlots[ShellBVHMaterial_Green];
+                            }
+                            else if (shellGeomIndex == 2) {
+                                // EN: This mesh has two geometries.
                                 buildTriangleMeshShellBvh(
                                     dataDir / "fabric_instantiated.obj", true, &bvh);
+                                nrtdsmData.materialSlots[0] = shellBvhMatSlots[ShellBVHMaterial_Orange];
+                                nrtdsmData.materialSlots[1] = shellBvhMatSlots[ShellBVHMaterial_White];
+                            }
 
                             const uint64_t triStoragesOffset = alignUp(
                                 sizeof(bvh.intNodes[0]) * bvh.intNodes.size(),

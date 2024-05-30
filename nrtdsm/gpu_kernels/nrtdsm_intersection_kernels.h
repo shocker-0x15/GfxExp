@@ -1231,7 +1231,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsShellBvh(
     const Point2D &tc2, const Point2D &tc1, const Point2D &tc0,
     // Results
     Point3D* const hitPointInCan, /*Point3D* const hitPointInTex,*/
-    float* const hitDist, Normal3D* const hitNormalInObj,
+    float* const hitDist, Normal3D* const hitNormalInObj, uint32_t* const hitGeomIndex,
     TraversalStats* const travStats) {
     using InternalNode = InternalNode_T<shellBvhArity>;
 
@@ -1435,6 +1435,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsShellBvh(
                 *hitDist = tt;
                 *hitPointInCan = hpInCan;
                 *hitNormalInObj = nn;
+                *hitGeomIndex = triStorage.geomIndex;
             }
             if (primRef.isLeafEnd) {
                 curTriGroup.orderInfo >>= orderBitWidth;
@@ -1640,6 +1641,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void detailedSurface_generic(TraversalStats* tr
     float hitDist = prismHitDistLeave;
     float hitBcB, hitBcC;
     Normal3D hitNormal;
+    uint32_t hitGeomIndex;
 
     Vector3D e0, e1;
     rayDirInObj.makeCoordinateSystem(&e0, &e1);
@@ -1949,6 +1951,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void detailedSurface_generic(TraversalStats* tr
                 float tt;
                 Normal3D nn;
                 Point3D hpInCan;
+                uint32_t geomIdx;
                 const bool hit = testNonlinearRayVsShellBvh<outputTravStats>(
                     pA, pB, pC,
                     nA, nB, nC,
@@ -1961,13 +1964,14 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void detailedSurface_generic(TraversalStats* tr
                     beta2, beta1, beta0,
                     denom2, denom1, denom0,
                     tc2, tc1, tc0,
-                    &hpInCan, &tt, &nn,
+                    &hpInCan, &tt, &nn, &geomIdx,
                     travStats);
                 if (hit) {
                     hitDist = tt;
                     hitBcB = hpInCan.x;
                     hitBcC = hpInCan.y;
                     hitNormal = tcFlipped ? -nn : nn;
+                    hitGeomIndex = geomIdx;
 
 #if DEBUG_TRAVERSAL
                     if (isDebugPixel() && getDebugPrintEnabled()) {
@@ -1989,9 +1993,10 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void detailedSurface_generic(TraversalStats* tr
 
         DisplacedSurfaceAttributes attr = {};
         attr.normalInObj = hitNormal;
+        attr.geomIndex = hitGeomIndex;
         const uint8_t hitKind = dot(rayDirInObj, hitNormal) <= 0 ?
-            CustomHitKind_DisplacedSurfaceFrontFace :
-            CustomHitKind_DisplacedSurfaceBackFace;
+            CustomHitKind_ShellMappedSurfaceFrontFace :
+            CustomHitKind_ShellMappedSurfaceBackFace;
         DisplacedSurfaceAttributeSignature::reportIntersection(hitDist, hitKind, hitBcB, hitBcC, attr);
     }
     else { // Displacement Mapping
@@ -2358,8 +2363,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void detailedSurface_generic(TraversalStats* tr
         DisplacedSurfaceAttributes attr = {};
         attr.normalInObj = hitNormal;
         const uint8_t hitKind = dot(rayDirInObj, hitNormal) <= 0 ?
-            CustomHitKind_DisplacedSurfaceFrontFace :
-            CustomHitKind_DisplacedSurfaceBackFace;
+            CustomHitKind_DisplacementMappedSurfaceFrontFace :
+            CustomHitKind_DisplacementMappedSurfaceBackFace;
         DisplacedSurfaceAttributeSignature::reportIntersection(hitDist, hitKind, hitBcB, hitBcC, attr);
     }
 }
