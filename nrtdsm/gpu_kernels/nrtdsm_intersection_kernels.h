@@ -596,6 +596,9 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE uint32_t solveCubicEquationNumerical(
     float roots[3]) {
     Assert(stc::isfinite(xMin) && stc::isfinite(xMax) && xMin < xMax, "Invalid interval.");
     constexpr uint32_t degree = 3;
+    if (coeffs[3] == 0.0f)
+        return solveQuadraticEquation(coeffs, xMin, xMax, roots);
+
     const float a = coeffs[3];
     const float b = coeffs[2];
     const float c = coeffs[1];
@@ -620,6 +623,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE uint32_t solveCubicEquationNumerical(
             if (cps[0] > cps[1])
                 stc::swap(cps[0], cps[1]);
         }
+        Assert(stc::isfinite(cps[0]) && stc::isfinite(cps[1]));
 
         // JP: 有効範囲が単調増加/減少区間内に収まっていて、
         // EN: If the valid range is confined to a monotonic increasing/decreasing interval,
