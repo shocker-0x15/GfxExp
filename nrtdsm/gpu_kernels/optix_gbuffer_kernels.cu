@@ -52,11 +52,11 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(setupGBuffers)() {
     hitPointParams.prevPositionInWorld = Point3D(NAN);
     hitPointParams.geometricNormalInWorld = Normal3D(NAN);
     hitPointParams.shadingNormalInWorld = Normal3D(NAN);
-    hitPointParams.instSlot = 0x3FFF'FFFF;
+    hitPointParams.instSlot = invalidInstIndex;
     hitPointParams.meshType = 0;
-    hitPointParams.geomInstSlot = 0x0FFF'FFFF;
+    hitPointParams.geomInstSlot = invalidGeomInstIndex;
     hitPointParams.shellBvhGeomIndex = 0;
-    hitPointParams.primIndex = 0xFFFF'FFFF;
+    hitPointParams.primIndex = invalidPrimIndex;
     hitPointParams.qbcB = 0;
     hitPointParams.qbcC = 0;
 #if OUTPUT_TRAVERSAL_STATS

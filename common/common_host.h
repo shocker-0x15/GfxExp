@@ -1459,7 +1459,7 @@ GeometryGroup* createGeometryGroup(
     const std::set<const GeometryInstance*> &geomInsts);
 
 struct TriangleGeometryOnCPU {
-    std::vector<Point3D> vertices;
+    std::vector<shared::Vertex> vertices;
     std::vector<shared::Triangle> triangles;
 };
 

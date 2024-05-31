@@ -69,7 +69,7 @@ CUDA_DEVICE_KERNEL void visualizeToOutputBuffer(
         Point2D texCoord;
         const float bcB = decodeBarycentric(gb0Elems.qbcB);
         const float bcC = decodeBarycentric(gb0Elems.qbcC);
-        if (gb0Elems.instSlot != 0xFFFFFFFF) {
+        if (gb0Elems.instSlot != invalidInstIndex) {
             const InstanceData &inst = plp.s->instanceDataBufferArray[bufIdx][gb0Elems.instSlot];
             const GeometryInstanceData &geomInst = plp.s->geometryInstanceDataBuffer[gb0Elems.geomInstSlot];
             const Triangle &tri = geomInst.triangleBuffer[gb0Elems.primIndex];

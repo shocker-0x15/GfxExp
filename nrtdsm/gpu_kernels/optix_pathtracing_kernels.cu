@@ -91,7 +91,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_rayGen_generic() {
 
     const bool useEnvLight = plp.s->envLightTexture && plp.f->enableEnvLight;
     RGB contribution(0.001f, 0.001f, 0.001f);
-    if (instSlot != 0x3FFF'FFFF) {
+    if (instSlot != invalidInstIndex) {
         const uint32_t geomInstSlot = gb0Elems.geomInstSlot;
         const InstanceData &inst = plp.s->instanceDataBufferArray[bufIdx][instSlot];
         const GeometryInstanceData &geomInst = plp.s->geometryInstanceDataBuffer[geomInstSlot];

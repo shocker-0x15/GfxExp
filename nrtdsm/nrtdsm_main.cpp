@@ -573,7 +573,7 @@ static void parseCommandline(int32_t argc, const char* argv[]) {
 // ----------------------------------------------------------------
 // Base Geometries
 
-static void createQuad(
+static void createQuadBaseGeometry(
     std::vector<shared::Vertex>* vertices,
     std::vector<shared::Triangle>* triangles) {
     constexpr uint32_t numEdges = 1;
@@ -604,7 +604,7 @@ static void createQuad(
     }
 }
 
-static void createCurvedSurface(
+static void createCurvedSurfaceBaseGeometry(
     std::vector<shared::Vertex>* vertices,
     std::vector<shared::Triangle>* triangles) {
     constexpr uint32_t numEdges = 31;
@@ -640,7 +640,7 @@ static void createCurvedSurface(
     }
 }
 
-static void createSphere(
+static void createSphereBaseGeometry(
     std::vector<shared::Vertex>* vertices,
     std::vector<shared::Triangle>* triangles) {
     constexpr float radius = 0.3f;
@@ -715,6 +715,51 @@ static void createSphere(
     //}
     //(*triangles)[0] = shared::Triangle{ 0, 2, 3 };
     //(*triangles)[1] = shared::Triangle{ 0, 3, 1 };
+}
+
+struct BaseGeometry {
+    std::vector<shared::Vertex> vertices;
+    std::vector<shared::Triangle> triangles;
+};
+
+static std::map<std::filesystem::path, BaseGeometry> g_baseGeomCache;
+
+static void createTriangleMeshBaseGeometry(
+    const std::filesystem::path &filePath,
+    const Matrix4x4 &preTransform,
+    std::vector<shared::Vertex>* vertices,
+    std::vector<shared::Triangle>* triangles) {
+    if (!g_baseGeomCache.contains(filePath)) {
+        BaseGeometry baseGeom;
+
+        std::vector<TriangleGeometryOnCPU> geometries;
+        AABB aabb;
+        loadTriangleMeshGeometriesOnCPU(
+            filePath,
+            preTransform,
+            &geometries, &aabb);
+
+        uint32_t vtxBaseIdx = 0;
+        for (uint32_t geomIdx = 0; geomIdx < geometries.size(); ++geomIdx) {
+            const TriangleGeometryOnCPU &srcGeom = geometries[geomIdx];
+            baseGeom.vertices.insert(
+                baseGeom.vertices.end(), srcGeom.vertices.begin(), srcGeom.vertices.end());
+            for (uint32_t triIdx = 0; triIdx < srcGeom.triangles.size(); ++triIdx) {
+                shared::Triangle tri = srcGeom.triangles[triIdx];
+                tri.index0 += vtxBaseIdx;
+                tri.index1 += vtxBaseIdx;
+                tri.index2 += vtxBaseIdx;
+                baseGeom.triangles.push_back(tri);
+            }
+            vtxBaseIdx += srcGeom.vertices.size();
+        }
+
+        g_baseGeomCache[filePath] = std::move(baseGeom);
+    }
+
+    const BaseGeometry &baseGeom = g_baseGeomCache.at(filePath);
+    *vertices = baseGeom.vertices;
+    *triangles = baseGeom.triangles;
 }
 
 // END: Base Geometries
@@ -1176,7 +1221,47 @@ int32_t main(int32_t argc, const char* argv[]) try {
             instXfm * mesh->groupInsts[0].transform * mesh->groupInsts[0].geomGroup->aabb);
     }
 
-#define SHOW_BASE_MESH 0
+    // Base mesh (for debug visualization)
+    Material* baseMeshMaterial;
+    GeometryInstance* baseMeshGeomInst;
+    GeometryGroup* baseMeshGeomGroup;
+    Instance* baseMeshInst;
+    {
+        createLambertMaterial(
+            gpuEnv.cuContext, &scene,
+            "", RGB(0.8f, 0.8f, 0.8f),
+            "",
+            "", RGB(0.0f));
+        baseMeshMaterial = scene.materials.back();
+
+        std::vector<shared::Vertex> vertices;
+        std::vector<shared::Triangle> triangles;
+        createQuadBaseGeometry(&vertices, &triangles);
+        baseMeshGeomInst = createGeometryInstance(
+            gpuEnv.cuContext, &scene, vertices, triangles, baseMeshMaterial, gpuEnv.optixDefaultMaterial, false);
+        scene.geomInsts.push_back(baseMeshGeomInst);
+
+        std::set<const GeometryInstance*> srcGeomInsts = { baseMeshGeomInst };
+        baseMeshGeomGroup = createGeometryGroup(&scene, srcGeomInsts);
+        scene.geomGroups.push_back(baseMeshGeomGroup);
+
+        auto mesh = new Mesh();
+        {
+            Mesh::GeometryGroupInstance groupInst = {};
+            groupInst.geomGroup = baseMeshGeomGroup;
+            groupInst.transform = Matrix4x4();
+            mesh->groupInsts.clear();
+            mesh->groupInsts.push_back(groupInst);
+            scene.meshes["baseMesh"] = mesh;
+        }
+
+        Matrix4x4 instXfm;
+        baseMeshInst = createInstance(gpuEnv.cuContext, &scene, mesh->groupInsts[0], instXfm);
+        scene.insts.push_back(baseMeshInst);
+
+        scene.initialSceneAabb.unify(
+            instXfm * mesh->groupInsts[0].transform * mesh->groupInsts[0].geomGroup->aabb);
+    }
 
     // JP: 具体的なセットアップはレンダーループ内の最初のフレームで行う。
     // EN: Specific setting up will be done in the first frame of the render loop.
@@ -1194,14 +1279,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
         std::vector<shared::Vertex> vertices;
         std::vector<shared::Triangle> triangles;
-        createQuad(&vertices, &triangles);
-#if SHOW_BASE_MESH
-        displacedMeshGeomInst = createGeometryInstance(
-            gpuEnv.cuContext, &scene, vertices, triangles, displacedMeshMaterial, gpuEnv.optixDefaultMaterial, false);
-#else
+        createQuadBaseGeometry(&vertices, &triangles);
         displacedMeshGeomInst = createNRTDSMGeometryInstance(
             gpuEnv.cuContext, &scene, vertices, triangles, displacedMeshMaterial, gpuEnv.optixDisplacedMeshMaterial);
-#endif
         scene.geomInsts.push_back(displacedMeshGeomInst);
 
         std::set<const GeometryInstance*> srcGeomInsts = { displacedMeshGeomInst };
@@ -1215,7 +1295,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
             groupInst.transform = Matrix4x4();
             mesh->groupInsts.clear();
             mesh->groupInsts.push_back(groupInst);
-            scene.meshes["obj"] = mesh;
+            scene.meshes["displacedMesh"] = mesh;
         }
 
         Matrix4x4 instXfm;
@@ -1610,9 +1690,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
     struct GPUTimer {
         cudau::Timer frame;
         cudau::Timer update;
-#if !SHOW_BASE_MESH
         cudau::Timer prepareDisplacedMesh;
-#endif
         cudau::Timer computePDFTexture;
         cudau::Timer setupGBuffers;
         cudau::Timer pathTrace;
@@ -1621,9 +1699,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         void initialize(CUcontext context) {
             frame.initialize(context);
             update.initialize(context);
-#if !SHOW_BASE_MESH
             prepareDisplacedMesh.initialize(context);
-#endif
             computePDFTexture.initialize(context);
             setupGBuffers.initialize(context);
             pathTrace.initialize(context);
@@ -1634,9 +1710,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
             pathTrace.finalize();
             setupGBuffers.finalize();
             computePDFTexture.finalize();
-#if !SHOW_BASE_MESH
             prepareDisplacedMesh.finalize();
-#endif
             update.finalize();
             frame.finalize();
         }
@@ -1900,6 +1974,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         enum class DetailType {
             DisplacementMap = 0,
             ShellMap,
+            BaseMesh,
         };
         static DetailType detailType = DetailType::DisplacementMap;
         bool detailTypeChanged = false;
@@ -1914,16 +1989,17 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
         static int32_t textureIndex = 0;
         bool textureChanged = false;
-        static Vector2D heightMapTexScale(1, 1);
-        static Point2D heightMapTexOffset(0, 0);
-        static float heightMapTexRotation = 0.0f;
+
+        static int32_t shellGeomIndex = 0;
+        bool shellGeomChanged = false;
+
+        static Vector2D detailMapTexScale(1, 1);
+        static Point2D detailMapTexOffset(0, 0);
+        static float detailMapTexRotation = 0.0f;
         static float heightOffset = initHeightOffset;
         static float heightScale = initHeightScale;
         static float heightBias = initHeightBias;
         bool heightParamChanged = false;
-
-        static int32_t shellGeomIndex = 0;
-        bool shellGeomChanged = false;
 
         static bool debugSwitches[] = {
             false, false, false, false, false, false, false, false
@@ -1973,12 +2049,15 @@ int32_t main(int32_t argc, const char* argv[]) try {
                 if (ImGui::BeginTabItem("Renderer")) {
                     resetAccumulation |= ImGui::SliderInt("Max Path Length", &maxPathLength, 2, 15);
 
+                    const std::filesystem::path dataDir = R"(..\data)";
+
                     ImGui::Separator();
                     ImGui::Text("Assets");
                     const char* baseSurfaceNames[] = {
                         "Quad",
                         "Curved Surface",
                         "Sphere",
+                        "Teapot"
                     };
                     if (ImGui::Combo("Shape", &baseSurfaceIndex, baseSurfaceNames, lengthof(baseSurfaceNames))
                         || frameIndex == 0) {
@@ -1988,67 +2067,100 @@ int32_t main(int32_t argc, const char* argv[]) try {
                         std::vector<shared::Vertex> vertices;
                         std::vector<shared::Triangle> triangles;
                         if (baseSurfaceIndex == 0)
-                            createQuad(&vertices, &triangles);
+                            createQuadBaseGeometry(&vertices, &triangles);
                         else if (baseSurfaceIndex == 1)
-                            createCurvedSurface(&vertices, &triangles);
+                            createCurvedSurfaceBaseGeometry(&vertices, &triangles);
                         else if (baseSurfaceIndex == 2)
-                            createSphere(&vertices, &triangles);
+                            createSphereBaseGeometry(&vertices, &triangles);
+                        else if (baseSurfaceIndex == 3)
+                            createTriangleMeshBaseGeometry(
+                                dataDir / "teapot.obj",
+                                scale3D_4x4(0.0075f),
+                                &vertices, &triangles);
 
-                        auto &geom = std::get<NRTDSMGeometry>(displacedMeshGeomInst->geometry);
+                        // Update base geometry
+                        {
+                            auto &geom = std::get<TriangleGeometry>(baseMeshGeomInst->geometry);
 
-                        geom.vertexBuffer.finalize();
-                        geom.vertexBuffer.initialize(gpuEnv.cuContext, Scene::bufferType, vertices);
-                        geom.triangleBuffer.finalize();
-                        geom.triangleBuffer.initialize(gpuEnv.cuContext, Scene::bufferType, triangles);
+                            geom.vertexBuffer.finalize();
+                            geom.vertexBuffer.initialize(gpuEnv.cuContext, Scene::bufferType, vertices);
+                            geom.triangleBuffer.finalize();
+                            geom.triangleBuffer.initialize(gpuEnv.cuContext, Scene::bufferType, triangles);
 
-                        const CUdeviceptr geomInstDataAddrOnDevice =
-                            scene.geomInstDataBuffer.getCUdeviceptrAt(displacedMeshGeomInst->geomInstSlot);
-                        shared::GeometryInstanceData geomInstData = {};
-                        CUDADRV_CHECK(cuMemcpyDtoH(&geomInstData, geomInstDataAddrOnDevice, sizeof(geomInstData)));
-                        geomInstData.vertexBuffer =
-                            geom.vertexBuffer.getROBuffer<shared::enableBufferOobCheck>();
-                        geomInstData.triangleBuffer =
-                            geom.triangleBuffer.getROBuffer<shared::enableBufferOobCheck>();
-                        CUDADRV_CHECK(cuMemcpyHtoDAsync(
-                            geomInstDataAddrOnDevice, &geomInstData, sizeof(geomInstData), curCuStream));
+                            const CUdeviceptr geomInstDataAddrOnDevice =
+                                scene.geomInstDataBuffer.getCUdeviceptrAt(baseMeshGeomInst->geomInstSlot);
+                            shared::GeometryInstanceData geomInstData = {};
+                            CUDADRV_CHECK(cuMemcpyDtoH(&geomInstData, geomInstDataAddrOnDevice, sizeof(geomInstData)));
+                            geomInstData.vertexBuffer =
+                                geom.vertexBuffer.getROBuffer<shared::enableBufferOobCheck>();
+                            geomInstData.triangleBuffer =
+                                geom.triangleBuffer.getROBuffer<shared::enableBufferOobCheck>();
+                            CUDADRV_CHECK(cuMemcpyHtoDAsync(
+                                geomInstDataAddrOnDevice, &geomInstData, sizeof(geomInstData), curCuStream));
 
-#if SHOW_BASE_MESH
-                        displacedMeshGeomInst->optixGeomInst.setVertexBuffer(displacedMeshGeomInst->vertexBuffer);
-                        displacedMeshGeomInst->optixGeomInst.setTriangleBuffer(displacedMeshGeomInst->triangleBuffer);
-#else
-                        geom.triAuxInfoBuffer.finalize();
-                        geom.triAuxInfoBuffer.initialize(
-                            gpuEnv.cuContext, cudau::BufferType::Device, triangles.size());
-                        geom.aabbBuffer.finalize();
-                        geom.aabbBuffer.initialize(
-                            gpuEnv.cuContext, cudau::BufferType::Device, triangles.size());
+                            baseMeshGeomInst->optixGeomInst.setVertexBuffer(geom.vertexBuffer);
+                            baseMeshGeomInst->optixGeomInst.setTriangleBuffer(geom.triangleBuffer);
 
-                        const CUdeviceptr nrtdsmDataAddrOnDevice =
-                            geomInstNrtdsmDataBuffer.getCUdeviceptrAt(displacedMeshGeomInst->geomInstSlot);
-                        shared::GeometryInstanceDataForNRTDSM nrtdsmData = {};
-                        CUDADRV_CHECK(cuMemcpyDtoH(&nrtdsmData, nrtdsmDataAddrOnDevice, sizeof(nrtdsmData)));
+                            baseMeshGeomGroup->needsRebuild = true;
+                            baseMeshGeomGroup->needsReallocation = true;
+                            baseMeshGeomGroup->optixGas.markDirty();
+                        }
 
-                        nrtdsmData.dispTriAuxInfoBuffer =
-                            geom.triAuxInfoBuffer.getROBuffer<shared::enableBufferOobCheck>();
+                        // Update displaced geometry
+                        {
+                            auto &geom = std::get<NRTDSMGeometry>(displacedMeshGeomInst->geometry);
 
-                        nrtdsmData.aabbBuffer =
-                            geom.aabbBuffer.getROBuffer<shared::enableBufferOobCheck>();
-                        CUDADRV_CHECK(cuMemcpyHtoDAsync(
-                            nrtdsmDataAddrOnDevice, &nrtdsmData, sizeof(nrtdsmData), curCuStream));
+                            geom.vertexBuffer.finalize();
+                            geom.vertexBuffer.initialize(gpuEnv.cuContext, Scene::bufferType, vertices);
+                            geom.triangleBuffer.finalize();
+                            geom.triangleBuffer.initialize(gpuEnv.cuContext, Scene::bufferType, triangles);
 
-                        displacedMeshGeomInst->optixGeomInst.setCustomPrimitiveAABBBuffer(geom.aabbBuffer);
-#endif
+                            const CUdeviceptr geomInstDataAddrOnDevice =
+                                scene.geomInstDataBuffer.getCUdeviceptrAt(displacedMeshGeomInst->geomInstSlot);
+                            shared::GeometryInstanceData geomInstData = {};
+                            CUDADRV_CHECK(cuMemcpyDtoH(&geomInstData, geomInstDataAddrOnDevice, sizeof(geomInstData)));
+                            geomInstData.vertexBuffer =
+                                geom.vertexBuffer.getROBuffer<shared::enableBufferOobCheck>();
+                            geomInstData.triangleBuffer =
+                                geom.triangleBuffer.getROBuffer<shared::enableBufferOobCheck>();
+                            CUDADRV_CHECK(cuMemcpyHtoDAsync(
+                                geomInstDataAddrOnDevice, &geomInstData, sizeof(geomInstData), curCuStream));
+
+                            geom.triAuxInfoBuffer.finalize();
+                            geom.triAuxInfoBuffer.initialize(
+                                gpuEnv.cuContext, cudau::BufferType::Device, triangles.size());
+                            geom.aabbBuffer.finalize();
+                            geom.aabbBuffer.initialize(
+                                gpuEnv.cuContext, cudau::BufferType::Device, triangles.size());
+
+                            const CUdeviceptr nrtdsmDataAddrOnDevice =
+                                geomInstNrtdsmDataBuffer.getCUdeviceptrAt(displacedMeshGeomInst->geomInstSlot);
+                            shared::GeometryInstanceDataForNRTDSM nrtdsmData = {};
+                            CUDADRV_CHECK(cuMemcpyDtoH(&nrtdsmData, nrtdsmDataAddrOnDevice, sizeof(nrtdsmData)));
+
+                            nrtdsmData.dispTriAuxInfoBuffer =
+                                geom.triAuxInfoBuffer.getROBuffer<shared::enableBufferOobCheck>();
+
+                            nrtdsmData.aabbBuffer =
+                                geom.aabbBuffer.getROBuffer<shared::enableBufferOobCheck>();
+                            CUDADRV_CHECK(cuMemcpyHtoDAsync(
+                                nrtdsmDataAddrOnDevice, &nrtdsmData, sizeof(nrtdsmData), curCuStream));
+
+                            displacedMeshGeomInst->optixGeomInst.setCustomPrimitiveAABBBuffer(geom.aabbBuffer);
+
+                            displacedMeshGeomGroup->needsRebuild = true;
+                            displacedMeshGeomGroup->needsReallocation = true;
+                            displacedMeshGeomGroup->optixGas.markDirty();
+                        }
 
                         geomChanged = true;
                         resetAccumulation = true;
-                        displacedMeshGeomGroup->needsRebuild = true;
-                        displacedMeshGeomGroup->needsReallocation = true;
-                        displacedMeshGeomGroup->optixGas.markDirty();
                     }
 
                     const DetailType oldDetailType = detailType;
                     ImGui::RadioButtonE("Displacement Mapping", &detailType, DetailType::DisplacementMap);
                     ImGui::RadioButtonE("Shell Mapping", &detailType, DetailType::ShellMap);
+                    ImGui::RadioButtonE("Base Mesh", &detailType, DetailType::BaseMesh);
                     if (detailType != oldDetailType || frameIndex == 0) {
                         detailTypeChanged = true;
 
@@ -2064,7 +2176,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
                                 shared::PathTracingRayType::Visibility,
                                 gpuEnv.pathTracing.hitPrograms.at("pathTraceVisibilityDisplacementMappedSurface"));
                         }
-                        else {
+                        else if (detailType == DetailType::ShellMap) {
                             gpuEnv.optixDisplacedMeshMaterial.setHitGroup(
                                 shared::GBufferRayType::Primary,
                                 gpuEnv.gBuffer.hitPrograms.at("shellMappedSurface"));
@@ -2080,7 +2192,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
 #endif
                     }
 
-                    const std::filesystem::path dataDir = R"(..\data)";
                     if (detailType == DetailType::DisplacementMap) {
                         struct TextureAsset {
                             const char* name;
@@ -2140,7 +2251,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
                                     return true;
                                 },
                                 const_cast<TextureAsset*>(textureAssets), lengthof(textureAssets))
-                            || detailType != oldDetailType || frameIndex == 0) {
+                            || detailTypeChanged) {
                             glFinish();
                             streamChain.waitAllWorkDone();
 
@@ -2244,7 +2355,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
                             displacedMeshGeomGroup->optixGas.markDirty();
                         }
                     }
-                    else /*if (detailType == DetailType::ShellMap)*/ {
+                    else if (detailType == DetailType::ShellMap) {
                         struct ShellAsset {
                             const char* name;
                         };
@@ -2267,7 +2378,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
                                 return true;
                             },
                             const_cast<ShellAsset*>(shellAssets), lengthof(shellAssets))
-                            || detailType != oldDetailType || frameIndex == 0) {
+                            || detailTypeChanged) {
                             glFinish();
                             streamChain.waitAllWorkDone();
 
@@ -2350,6 +2461,11 @@ int32_t main(int32_t argc, const char* argv[]) try {
                             displacedMeshGeomGroup->optixGas.markDirty();
                         }
                     }
+                    else if (detailType == DetailType::BaseMesh) {
+                        if (detailTypeChanged) {
+                            resetAccumulation = true;
+                        }
+                    }
 
                     ImGui::PushID("Instance Transform");
                     animate |= ImGui::SliderFloat("Pitch", &instPitch, 0.0f, 360.0f);
@@ -2374,15 +2490,15 @@ int32_t main(int32_t argc, const char* argv[]) try {
                     ImGui::Text("Texture Transform");
                     ImGui::PushID("Texture");
                     heightParamChanged |= ImGui::SliderFloat(
-                        "Scale U", &heightMapTexScale.x, 0.1f, 30.0f);
+                        "Scale U", &detailMapTexScale.x, 0.1f, 100.0f, nullptr, ImGuiSliderFlags_Logarithmic);
                     heightParamChanged |= ImGui::SliderFloat(
-                        "Scale V", &heightMapTexScale.y, 0.1f, 30.0f);
+                        "Scale V", &detailMapTexScale.y, 0.1f, 100.0f, nullptr, ImGuiSliderFlags_Logarithmic);
                     heightParamChanged |= ImGui::SliderFloat(
-                        "Rotation", &heightMapTexRotation, 0.0f, 360.0f);
+                        "Rotation", &detailMapTexRotation, 0.0f, 360.0f);
                     heightParamChanged |= ImGui::SliderFloat(
-                        "Offset U", &heightMapTexOffset.x, -1, 1);
+                        "Offset U", &detailMapTexOffset.x, -1, 1);
                     heightParamChanged |= ImGui::SliderFloat(
-                        "Offset V", &heightMapTexOffset.y, -1, 1);
+                        "Offset V", &detailMapTexOffset.y, -1, 1);
                     resetAccumulation |= heightParamChanged;
                     ImGui::PopID();
 
@@ -2472,9 +2588,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
             static MovingAverageTime cudaFrameTime;
             static MovingAverageTime updateTime;
-#if !SHOW_BASE_MESH
             static MovingAverageTime prepareDisplacedMeshTime;
-#endif
             static MovingAverageTime computePDFTextureTime;
             static MovingAverageTime setupGBuffersTime;
             static MovingAverageTime pathTraceTime;
@@ -2482,9 +2596,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
             cudaFrameTime.append(curGPUTimer.frame.report());
             updateTime.append(curGPUTimer.update.report());
-#if !SHOW_BASE_MESH
             prepareDisplacedMeshTime.append(curGPUTimer.prepareDisplacedMesh.report());
-#endif
             computePDFTextureTime.append(curGPUTimer.computePDFTexture.report());
             setupGBuffersTime.append(curGPUTimer.setupGBuffers.report());
             pathTraceTime.append(curGPUTimer.pathTrace.report());
@@ -2493,9 +2605,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
             //ImGui::SetNextItemWidth(100.0f);
             ImGui::Text("CUDA/OptiX GPU %.3f [ms]:", cudaFrameTime.getAverage());
             ImGui::Text("  Update: %.3f [ms]", updateTime.getAverage());
-#if !SHOW_BASE_MESH
             ImGui::Text("  Prepare Displaced Mesh: %.3f [ms]", prepareDisplacedMeshTime.getAverage());
-#endif
             ImGui::Text("  Compute PDF Texture: %.3f [ms]", computePDFTextureTime.getAverage());
             ImGui::Text("  Setup G-Buffers: %.3f [ms]", setupGBuffersTime.getAverage());
             ImGui::Text("  Path Trace: %.3f [ms]", pathTraceTime.getAverage());
@@ -2517,7 +2627,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
         // JP: 各インスタンスのトランスフォームを更新する。
         // EN: Update the transform of each instance.
-        if (animate || lastFrameWasAnimated || frameIndex == 0) {
+        if (animate || lastFrameWasAnimated || detailTypeChanged) {
             cudau::TypedBuffer<shared::InstanceData> &curInstDataBuffer = scene.instDataBuffer[bufferIndex];
             shared::InstanceData* instDataBufferOnHost = curInstDataBuffer.map();
             // TODO: 更新分だけ送る？
@@ -2526,39 +2636,43 @@ int32_t main(int32_t argc, const char* argv[]) try {
                 controller->update(instDataBufferOnHost, animate ? 1.0f / 60.0f : 0.0f);
             }
 
-            {
-                Matrix4x4 prevMatM2W = displacedMeshInst->matM2W;
+            Instance* insts[] = {
+                baseMeshInst, displacedMeshInst
+            };
+            for (uint32_t instIdx = 0; instIdx < 2; ++instIdx) {
+                Instance* inst = insts[instIdx];
+
+                Matrix4x4 prevMatM2W = inst->matM2W;
                 Matrix3x3 matRot =
                     rotate3DZ_3x3(instRoll * pi_v<float> / 180)
                     * rotate3DY_3x3(instYaw * pi_v<float> / 180)
                     * rotate3DX_3x3(instPitch * pi_v<float> / 180);
-                displacedMeshInst->matM2W = Matrix4x4(matRot * instScale, instPosition);
-                displacedMeshInst->nMatM2W = matRot / instScale;
-                Matrix4x4 tMatM2W = transpose(displacedMeshInst->matM2W);
-                displacedMeshInst->optixInst.setTransform(reinterpret_cast<const float*>(&tMatM2W));
+                inst->matM2W = Matrix4x4(matRot * instScale, instPosition);
+                inst->nMatM2W = matRot / instScale;
+                Matrix4x4 tMatM2W = transpose(inst->matM2W);
+                inst->optixInst.setTransform(reinterpret_cast<const float*>(&tMatM2W));
 
-                shared::InstanceData &instData = instDataBufferOnHost[displacedMeshInst->instSlot];
-                instData.curToPrevTransform = prevMatM2W * invert(displacedMeshInst->matM2W);
-                instData.transform = displacedMeshInst->matM2W;
-                instData.normalMatrix = displacedMeshInst->nMatM2W;
+                shared::InstanceData &instData = instDataBufferOnHost[inst->instSlot];
+                instData.curToPrevTransform = prevMatM2W * invert(inst->matM2W);
+                instData.transform = inst->matM2W;
+                instData.normalMatrix = inst->nMatM2W;
                 instData.uniformScale = instScale;
             }
             curInstDataBuffer.unmap();
 
-            if (animate)
+            baseMeshInst->optixInst.setVisibilityMask(detailType == DetailType::BaseMesh);
+            displacedMeshInst->optixInst.setVisibilityMask(detailType != DetailType::BaseMesh);
+
+            if (animate || detailTypeChanged)
                 lastFrameWasAnimated = true;
         }
 
         curGPUTimer.update.start(curCuStream);
 
-#if !SHOW_BASE_MESH
         // JP: Minmax mipmapを計算する。
         // EN: Compute the minmax mipmap.
         curGPUTimer.prepareDisplacedMesh.start(curCuStream);
-        if (textureChanged) {
-            Assert(
-                detailType == DetailType::DisplacementMap,
-                "This should not be called when shell mapping is used.");
+        if (textureChanged && detailType == DetailType::DisplacementMap) {
             const auto &geom = std::get<NRTDSMGeometry>(displacedMeshGeomInst->geometry);
             const shared::GeometryInstanceDataForNRTDSM* nrtdsmGeomInst =
                 geomInstNrtdsmDataBuffer.getDevicePointerAt(displacedMeshGeomInst->geomInstSlot);
@@ -2612,7 +2726,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
         // JP: ディスプレイスメントを適用した各プリミティブのAABBを計算する。
         // EN: Compute the AABB of each displacement-enabled primitive.
-        if (textureChanged || heightParamChanged || shellGeomChanged || geomChanged) {
+        if ((geomChanged || textureChanged || shellGeomChanged || heightParamChanged) &&
+            detailType != DetailType::BaseMesh) {
             const GeometryInstance* geomInst = displacedMeshGeomInst;
             const auto &geom = std::get<NRTDSMGeometry>(geomInst->geometry);
 
@@ -2623,9 +2738,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
             shared::DisplacementParameters dispParams = {};
             Matrix3x3 texXfm =
-                translate2D_3x3(heightMapTexOffset)
-                * rotate2D_3x3(heightMapTexRotation * pi_v<float> / 180)
-                * scale2D_3x3(heightMapTexScale);
+                translate2D_3x3(detailMapTexOffset)
+                * rotate2D_3x3(detailMapTexRotation * pi_v<float> / 180)
+                * scale2D_3x3(detailMapTexScale);
             dispParams.textureTransform = texXfm;
             dispParams.hOffset = heightOffset;
             dispParams.hScale = heightScale;
@@ -2653,12 +2768,11 @@ int32_t main(int32_t argc, const char* argv[]) try {
             displacedMeshGeomGroup->needsRebuild = true;
         }
         curGPUTimer.prepareDisplacedMesh.stop(curCuStream);
-#endif
 
         // JP: ASesのリビルドを行う。
         // EN: Rebuild the ASes.
-        if (animate || frameIndex == 0 ||
-            geomChanged || textureChanged || heightParamChanged || shellGeomChanged) {
+        if (animate || detailTypeChanged ||
+            geomChanged || textureChanged || shellGeomChanged || heightParamChanged) {
             perFramePlp.travHandle = scene.updateASs(gpuEnv.cuContext, curCuStream);
 
             if (!gpuEnv.gBuffer.hitGroupSbt.isInitialized() ||

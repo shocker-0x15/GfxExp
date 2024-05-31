@@ -1,8 +1,8 @@
-# Blender MTL File: 'stanford_bunny_309_faces.blend'
-# Material Count: 1
+# Blender 4.0.1 MTL File: 'None'
+# www.blender.org
 
 newmtl Material.001
-Ns 96.078431
+Ns 96.078453
 Ka 1.000000 1.000000 1.000000
 Kd 0.640000 0.640000 0.640000
 Ks 0.500000 0.500000 0.500000

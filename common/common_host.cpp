@@ -2070,6 +2070,7 @@ static void computeFlattenedMesh(
         Vector4D(nodeAiXfm.c1, nodeAiXfm.c2, nodeAiXfm.c3, nodeAiXfm.c4),
         Vector4D(nodeAiXfm.d1, nodeAiXfm.d2, nodeAiXfm.d3, nodeAiXfm.d4));
     const Matrix4x4 curXfm = parentXfm * transpose(nodeXfm);
+    const Matrix3x3 curNormXfm = curXfm.getUpperLeftMatrix().invert().transpose();
     for (uint32_t meshIdx = 0; meshIdx < curNode->mNumMeshes; ++meshIdx) {
         const aiMesh* aiMesh = scene->mMeshes[curNode->mMeshes[meshIdx]];
 
@@ -2077,9 +2078,35 @@ static void computeFlattenedMesh(
 
         for (uint32_t vIdx = 0; vIdx < aiMesh->mNumVertices; ++vIdx) {
             const aiVector3D &aip = aiMesh->mVertices[vIdx];
-            const Point3D xfmP = curXfm * Point3D(aip.x, aip.y, aip.z);
-            geom.vertices.push_back(xfmP);
-            aabb->unify(xfmP);
+            const aiVector3D &ain = aiMesh->mNormals[vIdx];
+            aiVector3D aitc0dir;
+            if (aiMesh->mTangents)
+                aitc0dir = aiMesh->mTangents[vIdx];
+            if (!aiMesh->mTangents || !std::isfinite(aitc0dir.x)) {
+                const auto makeCoordinateSystem = []
+                (const Normal3D &normal, Vector3D* tangent, Vector3D* bitangent) {
+                    float sign = normal.z >= 0 ? 1.0f : -1.0f;
+                    const float a = -1 / (sign + normal.z);
+                    const float b = normal.x * normal.y * a;
+                    *tangent = Vector3D(1 + sign * normal.x * normal.x * a, sign * b, -sign * normal.x);
+                    *bitangent = Vector3D(b, sign + normal.y * normal.y * a, -normal.y);
+                };
+                Vector3D tangent, bitangent;
+                makeCoordinateSystem(Normal3D(ain.x, ain.y, ain.z), &tangent, &bitangent);
+                aitc0dir = aiVector3D(tangent.x, tangent.y, tangent.z);
+            }
+            const aiVector3D ait = aiMesh->mTextureCoords[0] ?
+                aiMesh->mTextureCoords[0][vIdx] :
+                aiVector3D(0.0f, 0.0f, 0.0f);
+
+            shared::Vertex v;
+            v.position = curXfm * Point3D(aip.x, aip.y, aip.z);
+            v.normal = normalize(curNormXfm * Normal3D(ain.x, ain.y, ain.z));
+            v.texCoord0Dir = normalize(curXfm * Vector3D(aitc0dir.x, aitc0dir.y, aitc0dir.z));
+            v.texCoord = Point2D(ait.x, ait.y);
+
+            geom.vertices.push_back(v);
+            aabb->unify(v.position);
         }
 
         std::vector<shared::Triangle> triangles;

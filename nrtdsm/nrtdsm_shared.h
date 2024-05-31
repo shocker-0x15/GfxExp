@@ -125,6 +125,10 @@ namespace shared {
 
 
 
+    static constexpr uint32_t invalidInstIndex = 0x3FFF'FFFF;
+    static constexpr uint32_t invalidGeomInstIndex = 0x0FFF'FFFF;
+    static constexpr uint32_t invalidPrimIndex = 0xFFFF'FFFF;
+
     struct GBuffer0Elements {
         uint32_t instSlot : 30;
         uint32_t meshType : 2; // 0: normal, 1: displacement map, 2: shell map
