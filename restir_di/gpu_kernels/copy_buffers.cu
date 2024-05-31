@@ -1,5 +1,5 @@
 #define PURE_CUDA
-#include "../restir_shared.h"
+#include "../restir_di_shared.h"
 
 using namespace shared;
 

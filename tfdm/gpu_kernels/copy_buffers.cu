@@ -44,18 +44,19 @@ CUDA_DEVICE_KERNEL void visualizeToOutputBuffer(
     const uint32_t linearIndex = launchIndex.y * plp.s->imageSize.x + launchIndex.x;
     float4 value = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
     switch (bufferTypeToDisplay) {
-    case BufferToDisplay::NoisyBeauty:
-    case BufferToDisplay::DenoisedBeauty: {
+        using enum BufferToDisplay;
+    case NoisyBeauty:
+    case DenoisedBeauty: {
         const auto typedLinearBuffer = reinterpret_cast<const float4*>(linearBuffer);
         value = typedLinearBuffer[linearIndex];
         break;
     }
-    case BufferToDisplay::Albedo: {
+    case Albedo: {
         const auto typedLinearBuffer = reinterpret_cast<const float4*>(linearBuffer);
         value = typedLinearBuffer[linearIndex];
         break;
     }
-    case BufferToDisplay::Normal: {
+    case Normal: {
         const auto typedLinearBuffer = reinterpret_cast<const float4*>(linearBuffer);
         value = typedLinearBuffer[linearIndex];
         value.x = 0.5f + 0.5f * value.x;
@@ -63,7 +64,7 @@ CUDA_DEVICE_KERNEL void visualizeToOutputBuffer(
         value.z = 0.5f + 0.5f * value.z;
         break;
     }
-    case BufferToDisplay::TexCoord: {
+    case TexCoord: {
         const GBuffer0Elements gb0Elems = plp.s->GBuffer0[bufIdx].read(launchIndex);
         Point2D texCoord;
         const float bcB = decodeBarycentric(gb0Elems.qbcB);
@@ -88,7 +89,7 @@ CUDA_DEVICE_KERNEL void visualizeToOutputBuffer(
             + 0.5f * std::fmod(texCoord.y - value.y, 2.0f);
         break;
     }
-    case BufferToDisplay::Flow: {
+    case Flow: {
         const auto typedLinearBuffer = reinterpret_cast<const float2*>(linearBuffer);
         const float2 f2Value = typedLinearBuffer[linearIndex];
         value = make_float4(
@@ -98,9 +99,23 @@ CUDA_DEVICE_KERNEL void visualizeToOutputBuffer(
         break;
     }
 #if OUTPUT_TRAVERSAL_STATS
-    case BufferToDisplay::TraversalIterations: {
-        const uint32_t numIterations = plp.s->numTravItrsBuffer.read(launchIndex);
-        const float t = static_cast<float>(numIterations) / 150;
+    case TotalTraversalTests:
+    case AABBTests:
+    case LeafTests: {
+        const TraversalStats travStats = plp.s->numTravStatsBuffer.read(launchIndex);
+        float t = 0.0f;
+        if (bufferTypeToDisplay == TotalTraversalTests) {
+            const uint32_t numTests = travStats.numAabbTests + travStats.numLeafTests;
+            t = static_cast<float>(numTests) / 150;
+        }
+        else if (bufferTypeToDisplay == AABBTests) {
+            const uint32_t numTests = travStats.numAabbTests;
+            t = static_cast<float>(numTests) / 150;
+        }
+        else if (bufferTypeToDisplay == LeafTests) {
+            const uint32_t numTests = travStats.numLeafTests;
+            t = static_cast<float>(numTests) / 20;
+        }
         const RGB Red(1, 0, 0);
         const RGB Green(0, 1, 0);
         const RGB Blue(0, 0, 1);

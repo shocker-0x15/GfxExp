@@ -1,4 +1,13 @@
-﻿#include "tfdm_shared.h"
+﻿/*
+
+JP: このソースコードは作者が色々試すためだけのもの。
+    ここの関数は一切サンプルでは使われない。
+EN: This source code is just a sand box, where the author try different things.
+    Functions here are not used in the sample at all.
+
+*/
+
+#include "tfdm_shared.h"
 #include "../common/common_host.h"
 
 #if ENABLE_VDB
@@ -204,8 +213,10 @@ void testFindRoots() {
         //const Point2D maxP(-0.6f, -0.8f);
         //const Point2D minP(-0.2f, -0.3f);
         //const Point2D maxP(1.4f, 1.2f);
-        const Point2D minP(-1.00002, -1.75675e-05);
-        const Point2D maxP(0, 0.999982);
+        //const Point2D minP(-1.00002, -1.75675e-05);
+        //const Point2D maxP(0, 0.999982);
+        const Point2D minP(0.2f, 0.2f);
+        const Point2D maxP(2.8f, 3.5f);
 
         setColor(RGB(0.0f, 1.0f, 1.0f));
         drawRect(minP, maxP, 0.005f);
@@ -311,12 +322,7 @@ void testNewtonMethod() {
         vdb_frame();
 
         constexpr float axisScale = 1;
-        setColor(RGB(1, 0, 0));
-        drawLine(Point3D(0, 0, 0), Point3D(axisScale, 0, 0));
-        setColor(RGB(0, 1, 0));
-        drawLine(Point3D(0, 0, 0), Point3D(0, axisScale, 0));
-        setColor(RGB(0, 0, 1));
-        drawLine(Point3D(0, 0, 0), Point3D(0, 0, axisScale));
+        drawAxes(axisScale);
 
         for (uint32_t testIdx = 0; testIdx < testData.size(); ++testIdx) {
             const TestData &test = testData[testIdx];
@@ -689,12 +695,7 @@ void testNewtonMethod() {
         vdb_frame();
 
         constexpr float axisScale = 5;
-        setColor(RGB(1, 0, 0));
-        drawLine(Point3D(0, 0, 0), Point3D(axisScale, 0, 0));
-        setColor(RGB(0, 1, 0));
-        drawLine(Point3D(0, 0, 0), Point3D(0, axisScale, 0));
-        setColor(RGB(0, 0, 1));
-        drawLine(Point3D(0, 0, 0), Point3D(0, 0, axisScale));
+        drawAxes(axisScale);
 
         setColor(RGB(0, 1, 1));
         drawVector(pUL, nUL, 0.5f);

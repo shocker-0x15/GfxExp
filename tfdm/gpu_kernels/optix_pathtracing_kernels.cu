@@ -3,6 +3,22 @@
 
 using namespace shared;
 
+CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface_Box)() {
+    displacedSurface_generic<false, LocalIntersectionType::Box>(nullptr);
+}
+
+CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface_TwoTriangle)() {
+    displacedSurface_generic<false, LocalIntersectionType::TwoTriangle>(nullptr);
+}
+
+CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface_Bilinear)() {
+    displacedSurface_generic<false, LocalIntersectionType::Bilinear>(nullptr);
+}
+
+CUDA_DEVICE_KERNEL void RT_IS_NAME(displacedSurface_BSpline)() {
+    displacedSurface_generic<false, LocalIntersectionType::BSpline>(nullptr);
+}
+
 CUDA_DEVICE_KERNEL void RT_AH_NAME(visibility)() {
     float visibility = 0.0f;
     VisibilityRayPayloadSignature::set(&visibility);
@@ -57,7 +73,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE RGB performNextEventEstimation(
             const Vector3D vInLocal = shadingFrame.toLocal(shadowRay);
             const float lpCos = std::fabs(dot(shadowRay, lightSample.normal));
             float bsdfPDensity = bsdf.evaluatePDF(vOutLocal, vInLocal) * lpCos / dist2;
-            if (!isfinite(bsdfPDensity))
+            if (!stc::isfinite(bsdfPDensity))
                 bsdfPDensity = 0.0f;
             const float lightPDensity = areaPDensity;
             misWeight = pow2(lightPDensity) / (pow2(bsdfPDensity) + pow2(lightPDensity));
@@ -142,7 +158,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_rayGen_generic() {
             if (vOutLocal.z > 0 && mat.emittance) {
                 const float4 texValue = tex2DLod<float4>(mat.emittance, texCoord.x, texCoord.y, 0.0f);
                 const RGB emittance(getXYZ(texValue));
-                contribution += alpha * emittance / Pi;
+                contribution += alpha * emittance / pi_v<float>;
             }
 
             float targetMipLevel = 0.0f;
@@ -186,7 +202,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_rayGen_generic() {
         Point3D rayOrg = positionInWorld;
         Vector3D rayDir = vIn;
         while (true) {
-            const bool isValidSampling = rwPayload.prevDirPDensity > 0.0f && isfinite(rwPayload.prevDirPDensity);
+            const bool isValidSampling = rwPayload.prevDirPDensity > 0.0f && stc::isfinite(rwPayload.prevDirPDensity);
             if (!isValidSampling)
                 break;
 
@@ -290,12 +306,12 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_closestHit_generic() {
         Normal3D normalInObj;
         const Point3D positionInObj = aabb.restoreHitPoint(hp.bcB, hp.bcC, &normalInObj);
         positionInWorld = transformPointFromObjectToWorldSpace(positionInObj);
-        shadingNormalInWorld = normalize(transformNormalFromObjectToWorldSpace(normalInObj));
+        geometricNormalInWorld = normalize(transformNormalFromObjectToWorldSpace(normalInObj));
+        shadingNormalInWorld = geometricNormalInWorld;
         texCoord = Point2D(0.0f, 0.0f);
         Vector3D bitangent;
         makeCoordinateSystem(shadingNormalInWorld, &texCoord0DirInWorld, &bitangent);
 
-        geometricNormalInWorld = shadingNormalInWorld;
         hypAreaPDensity = 0.0f;
     }
     if constexpr (!useMultipleImportanceSampling)
@@ -323,7 +339,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_closestHit_generic() {
                 const float bsdfPDensity = rwPayload->prevDirPDensity;
                 misWeight = pow2(bsdfPDensity) / (pow2(bsdfPDensity) + pow2(lightPDensity));
             }
-            rwPayload->contribution += rwPayload->alpha * emittance * (misWeight / Pi);
+            rwPayload->contribution += rwPayload->alpha * emittance * (misWeight / pi_v<float>);
         }
 
         // Russian roulette
@@ -375,8 +391,8 @@ CUDA_DEVICE_KERNEL void RT_MS_NAME(pathTrace)() {
         toPolarYUp(rayDir, &posPhi, &theta);
 
         float phi = posPhi + plp.f->envLightRotation;
-        phi = phi - floorf(phi / (2 * Pi)) * 2 * Pi;
-        const Point2D texCoord(phi / (2 * Pi), theta / Pi);
+        phi = phi - floorf(phi / (2 * pi_v<float>)) * 2 * pi_v<float>;
+        const Point2D texCoord(phi / (2 * pi_v<float>), theta / pi_v<float>);
 
         // Implicit Light Sampling
         const float4 texValue = tex2DLod<float4>(plp.s->envLightTexture, texCoord.x, texCoord.y, 0.0f);
@@ -384,7 +400,7 @@ CUDA_DEVICE_KERNEL void RT_MS_NAME(pathTrace)() {
         float misWeight = 1.0f;
         if constexpr (useMultipleImportanceSampling) {
             float uvPDF = plp.s->envLightImportanceMap.evaluatePDF(texCoord.x, texCoord.y);
-            float hypAreaPDensity = uvPDF / (2 * Pi * Pi * std::sin(theta));
+            float hypAreaPDensity = uvPDF / (2 * pi_v<float> * pi_v<float> * std::sin(theta));
             float lightPDensity =
                 (plp.s->lightInstDist.integral() > 0.0f ? probToSampleEnvLight : 1.0f) *
                 hypAreaPDensity;

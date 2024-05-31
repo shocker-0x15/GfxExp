@@ -424,9 +424,9 @@ CUDA_DEVICE_KERNEL void fillBackground(uint32_t numFilteringStages) {
         if (useEnvLight)
             phi += plp.f->envLightRotation;
 
-        float u = phi / (2 * Pi);
+        float u = phi / (2 * pi_v<float>);
         u -= floorf(u);
-        const float v = posTheta / Pi;
+        const float v = posTheta / pi_v<float>;
 
         return Point2D(u, v);
     };

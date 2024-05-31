@@ -43,44 +43,49 @@ CUDA_DEVICE_FUNCTION float2 computeTexelMinMax(
 
 
 template <LocalIntersectionType intersectionType>
-CUDA_DEVICE_FUNCTION void generateFirstMinMaxMipMap_generic(const MaterialData* const material) {
+CUDA_DEVICE_FUNCTION void generateFirstMinMaxMipMap_generic(
+    const GeometryInstanceDataForTFDM* const tfdmGeomInst) {
     const int2 pixIdx(
         blockDim.x * blockIdx.x + threadIdx.x,
         blockDim.y * blockIdx.y + threadIdx.y);
-    const int2 imgSize = material->heightMapSize;
+    const int2 imgSize = tfdmGeomInst->heightMapSize;
     if (pixIdx.x >= imgSize.x || pixIdx.y >= imgSize.y)
         return;
 
-    material->minMaxMipMap[0].write(
-        pixIdx, 
-        computeTexelMinMax<intersectionType>(material->heightMap, 0, imgSize, pixIdx));
+    tfdmGeomInst->minMaxMipMap[0].write(
+        pixIdx,
+        computeTexelMinMax<intersectionType>(tfdmGeomInst->heightMap, 0, imgSize, pixIdx));
 }
 
-CUDA_DEVICE_KERNEL void generateFirstMinMaxMipMap_Box(const MaterialData* const material) {
-    generateFirstMinMaxMipMap_generic<LocalIntersectionType::Box>(material);
+CUDA_DEVICE_KERNEL void generateFirstMinMaxMipMap_Box(
+    const GeometryInstanceDataForTFDM* const tfdmGeomInst) {
+    generateFirstMinMaxMipMap_generic<LocalIntersectionType::Box>(tfdmGeomInst);
 }
 
-CUDA_DEVICE_KERNEL void generateFirstMinMaxMipMap_TwoTriangle(const MaterialData* const material) {
-    generateFirstMinMaxMipMap_generic<LocalIntersectionType::TwoTriangle>(material);
+CUDA_DEVICE_KERNEL void generateFirstMinMaxMipMap_TwoTriangle(
+    const GeometryInstanceDataForTFDM* const tfdmGeomInst) {
+    generateFirstMinMaxMipMap_generic<LocalIntersectionType::TwoTriangle>(tfdmGeomInst);
 }
 
-CUDA_DEVICE_KERNEL void generateFirstMinMaxMipMap_Bilinear(const MaterialData* const material) {
-    generateFirstMinMaxMipMap_generic<LocalIntersectionType::Bilinear>(material);
+CUDA_DEVICE_KERNEL void generateFirstMinMaxMipMap_Bilinear(
+    const GeometryInstanceDataForTFDM* const tfdmGeomInst) {
+    generateFirstMinMaxMipMap_generic<LocalIntersectionType::Bilinear>(tfdmGeomInst);
 }
 
-CUDA_DEVICE_KERNEL void generateFirstMinMaxMipMap_BSpline(const MaterialData* const material) {
-    generateFirstMinMaxMipMap_generic<LocalIntersectionType::BSpline>(material);
+CUDA_DEVICE_KERNEL void generateFirstMinMaxMipMap_BSpline(
+    const GeometryInstanceDataForTFDM* const tfdmGeomInst) {
+    generateFirstMinMaxMipMap_generic<LocalIntersectionType::BSpline>(tfdmGeomInst);
 }
 
 
 
 template <LocalIntersectionType intersectionType>
 CUDA_DEVICE_FUNCTION void generateMinMaxMipMap_generic(
-    const MaterialData* material, const uint32_t srcMipLevel) {
+    const GeometryInstanceDataForTFDM* const tfdmGeomInst, const uint32_t srcMipLevel) {
     const int2 dstPixIdx(
         blockDim.x * blockIdx.x + threadIdx.x,
         blockDim.y * blockIdx.y + threadIdx.y);
-    const int2 srcImageSize = material->heightMapSize >> srcMipLevel;
+    const int2 srcImageSize = tfdmGeomInst->heightMapSize >> static_cast<int32_t>(srcMipLevel);
     const int2 dstImageSize = srcImageSize / 2;
     if (dstPixIdx.x >= dstImageSize.x || dstPixIdx.y >= dstImageSize.y)
         return;
@@ -90,7 +95,7 @@ CUDA_DEVICE_FUNCTION void generateMinMaxMipMap_generic(
     float maxHeight = -INFINITY;
     float2 minMax;
 
-    const optixu::NativeBlockBuffer2D<float2> &prevMinMaxMip = material->minMaxMipMap[srcMipLevel];
+    const optixu::NativeBlockBuffer2D<float2> &prevMinMaxMip = tfdmGeomInst->minMaxMipMap[srcMipLevel];
 
     minMax = prevMinMaxMip.read(basePixIdx + int2(0, 0));
     minHeight = std::fmin(minMax.x, minHeight);
@@ -111,38 +116,37 @@ CUDA_DEVICE_FUNCTION void generateMinMaxMipMap_generic(
     // JP: 常に最高解像度のMIPレベルしか使わないのなら不要。
     // EN: This is not necessary when using only the finest mip level.
     const float2 minMaxOfThisMipTexel = computeTexelMinMax<intersectionType>(
-        material->heightMap, srcMipLevel + 1, dstImageSize, dstPixIdx);
+        tfdmGeomInst->heightMap, srcMipLevel + 1, dstImageSize, dstPixIdx);
     minHeight = std::fmin(minHeight, minMaxOfThisMipTexel.x);
     maxHeight = std::fmax(maxHeight, minMaxOfThisMipTexel.y);
 
-    material->minMaxMipMap[srcMipLevel + 1].write(dstPixIdx, make_float2(minHeight, maxHeight));
+    tfdmGeomInst->minMaxMipMap[srcMipLevel + 1].write(dstPixIdx, make_float2(minHeight, maxHeight));
 }
 
 CUDA_DEVICE_KERNEL void generateMinMaxMipMap_Box(
-    const MaterialData* material, const uint32_t srcMipLevel) {
-    generateMinMaxMipMap_generic<LocalIntersectionType::Box>(material, srcMipLevel);
+    const GeometryInstanceDataForTFDM* const tfdmGeomInst, const uint32_t srcMipLevel) {
+    generateMinMaxMipMap_generic<LocalIntersectionType::Box>(tfdmGeomInst, srcMipLevel);
 }
 
 CUDA_DEVICE_KERNEL void generateMinMaxMipMap_TwoTriangle(
-    const MaterialData* material, const uint32_t srcMipLevel) {
-    generateMinMaxMipMap_generic<LocalIntersectionType::TwoTriangle>(material, srcMipLevel);
+    const GeometryInstanceDataForTFDM* const tfdmGeomInst, const uint32_t srcMipLevel) {
+    generateMinMaxMipMap_generic<LocalIntersectionType::TwoTriangle>(tfdmGeomInst, srcMipLevel);
 }
 
 CUDA_DEVICE_KERNEL void generateMinMaxMipMap_Bilinear(
-    const MaterialData* material, const uint32_t srcMipLevel) {
-    generateMinMaxMipMap_generic<LocalIntersectionType::Bilinear>(material, srcMipLevel);
+    const GeometryInstanceDataForTFDM* const tfdmGeomInst, const uint32_t srcMipLevel) {
+    generateMinMaxMipMap_generic<LocalIntersectionType::Bilinear>(tfdmGeomInst, srcMipLevel);
 }
 
 CUDA_DEVICE_KERNEL void generateMinMaxMipMap_BSpline(
-    const MaterialData* material, const uint32_t srcMipLevel) {
-    generateMinMaxMipMap_generic<LocalIntersectionType::BSpline>(material, srcMipLevel);
+    const GeometryInstanceDataForTFDM* const tfdmGeomInst, const uint32_t srcMipLevel) {
+    generateMinMaxMipMap_generic<LocalIntersectionType::BSpline>(tfdmGeomInst, srcMipLevel);
 }
 
 
 
 CUDA_DEVICE_KERNEL void computeAABBs(
-    const GeometryInstanceData* const geomInst, const GeometryInstanceDataForTFDM* const tfdmGeomInst,
-    const MaterialData* const material) {
+    const GeometryInstanceData* const geomInst, const GeometryInstanceDataForTFDM* const tfdmGeomInst) {
     const uint32_t primIndex = blockDim.x * blockIdx.x + threadIdx.x;
     if (primIndex >= geomInst->triangleBuffer.getNumElements())
         return;
@@ -176,27 +180,25 @@ CUDA_DEVICE_KERNEL void computeAABBs(
     float maxHeight = -INFINITY;
     {
         const Matrix3x3 &texXfm = tfdmGeomInst->params.textureTransform;
-        const Point2D tcs[] = {
-            texXfm * vs[0].texCoord,
-            texXfm * vs[1].texCoord,
-            texXfm * vs[2].texCoord,
-        };
-        const bool tcFlipped = cross(tcs[1] - tcs[0], tcs[2] - tcs[0]) < 0;
+        const Point2D tcA = texXfm * vs[0].texCoord;
+        const Point2D tcB = texXfm * vs[1].texCoord;
+        const Point2D tcC = texXfm * vs[2].texCoord;
+        const bool tcFlipped = cross(tcB - tcA, tcC - tcA) < 0;
 #if DEBUG_TRAVERSAL
         if (primIndex == debugPrimIndex) {
             printf("prim %u: (" V2FMT "), (" V2FMT "), (" V2FMT ")\n",
                    primIndex,
-                   v2print(tcs[0]), v2print(tcs[1]), v2print(tcs[2]));
+                   v2print(tcA), v2print(tcB), v2print(tcC));
         }
 #endif
 
         const Vector2D texTriEdgeNormals[] = {
-            Vector2D(tcs[1].y - tcs[0].y, tcs[0].x - tcs[1].x),
-            Vector2D(tcs[2].y - tcs[1].y, tcs[1].x - tcs[2].x),
-            Vector2D(tcs[0].y - tcs[2].y, tcs[2].x - tcs[0].x),
+            Vector2D(tcB.y - tcA.y, tcA.x - tcB.x),
+            Vector2D(tcC.y - tcB.y, tcB.x - tcC.x),
+            Vector2D(tcA.y - tcC.y, tcC.x - tcA.x),
         };
-        const Point2D texTriAabbMinP = min(tcs[0], min(tcs[1], tcs[2]));
-        const Point2D texTriAabbMaxP = max(tcs[0], max(tcs[1], tcs[2]));
+        const Point2D texTriAabbMinP = min(tcA, min(tcB, tcC));
+        const Point2D texTriAabbMaxP = max(tcA, max(tcB, tcC));
 #if DEBUG_TRAVERSAL
         if (primIndex == debugPrimIndex) {
             printf("prim %u: (" V2FMT "), (" V2FMT ")\n",
@@ -205,7 +207,7 @@ CUDA_DEVICE_KERNEL void computeAABBs(
         }
 #endif
 
-        const int32_t maxDepth = prevPowOf2Exponent(material->heightMapSize.x);
+        const int32_t maxDepth = prevPowOf2Exponent(tfdmGeomInst->heightMapSize.x);
         const int32_t targetMipLevel = tfdmGeomInst->params.targetMipLevel;
         Texel roots[4];
         uint32_t numRoots;
@@ -231,7 +233,7 @@ CUDA_DEVICE_KERNEL void computeAABBs(
             // EN: Imediately finish with reading the min/max from the maximum mip level
             //     when the texture coordinate range of the triangle is fairly large.
             if (curTexel.lod >= maxDepth) {
-                const float2 minmax = material->minMaxMipMap[maxDepth].read(make_int2(0, 0));
+                const float2 minmax = tfdmGeomInst->minMaxMipMap[maxDepth].read(make_int2(0, 0));
                 minHeight = minmax.x;
                 maxHeight = minmax.y;
                 break;
@@ -243,7 +245,7 @@ CUDA_DEVICE_KERNEL void computeAABBs(
                 const float texelScale = 1.0f / (1 << (maxDepth - curTexel.lod));
                 const TriangleSquareIntersection2DResult isectResult =
                     testTriangleSquareIntersection2D(
-                        tcs, tcFlipped, texTriEdgeNormals, texTriAabbMinP, texTriAabbMaxP,
+                        tcA, tcB, tcC, tcFlipped, texTriEdgeNormals, texTriAabbMinP, texTriAabbMaxP,
                         Point2D((curTexel.x + 0.5f) * texelScale, (curTexel.y + 0.5f) * texelScale),
                         0.5f * texelScale);
 #if DEBUG_TRAVERSAL
@@ -262,7 +264,7 @@ CUDA_DEVICE_KERNEL void computeAABBs(
                     const int2 wrapIndex = make_int2(floorDiv(curTexel.x, imgSize.x), floorDiv(curTexel.y, imgSize.y));
                     const uint2 wrappedTexel =
                         make_uint2(curTexel.x - wrapIndex.x * imgSize.x, curTexel.y - wrapIndex.y * imgSize.y);
-                    const float2 minmax = material->minMaxMipMap[curTexel.lod].read(wrappedTexel);
+                    const float2 minmax = tfdmGeomInst->minMaxMipMap[curTexel.lod].read(wrappedTexel);
                     minHeight = std::fmin(minHeight, minmax.x);
                     maxHeight = std::fmax(maxHeight, minmax.y);
                     next(curTexel, initialLod);
@@ -284,7 +286,7 @@ CUDA_DEVICE_KERNEL void computeAABBs(
         Point3D(vs[1].texCoord, 1.0f),
         Point3D(vs[2].texCoord, 1.0f),
     };
-    const DisplacedTriangleAuxInfo &dispTriAuxInfo = tfdmGeomInst->dispTriAuxInfoBuffer[primIndex];
+    const TFDMTriangleAuxInfo &dispTriAuxInfo = tfdmGeomInst->dispTriAuxInfoBuffer[primIndex];
     const Matrix3x3 matBcToPInObj(vs[0].position, vs[1].position, vs[2].position);
     const Matrix3x3 matTcToPInObj = matBcToPInObj * dispTriAuxInfo.matTcToBc;
     const Matrix3x3 &matTcToNInObj = dispTriAuxInfo.matTcToNInObj;
@@ -292,7 +294,8 @@ CUDA_DEVICE_KERNEL void computeAABBs(
     RWBuffer aabbBuffer(tfdmGeomInst->aabbBuffer);
 
     const float amplitude = tfdmGeomInst->params.hScale * (maxHeight - minHeight);
-    minHeight = tfdmGeomInst->params.hOffset + tfdmGeomInst->params.hScale * (minHeight - tfdmGeomInst->params.hBias);
+    minHeight = tfdmGeomInst->params.hOffset + tfdmGeomInst->params.hScale * (
+        minHeight - tfdmGeomInst->params.hBias);
     const AAFloatOn2D hBound(minHeight + 0.5f * amplitude, 0, 0, 0.5f * amplitude);
 
     /*

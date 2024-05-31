@@ -1726,7 +1726,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         static int32_t log2MaxNumAccums = 16;
         static bool enableJittering = false;
         static bool enableBumpMapping = false;
-        bool lastFrameWasAnimated = false;
+        static bool lastFrameWasAnimated = false;
         static shared::BufferToDisplay bufferTypeToDisplay = shared::BufferToDisplay::NoisyBeauty;
         static int32_t maxPathLength = 5;
         static bool useReGIR = true;
@@ -1935,15 +1935,10 @@ int32_t main(int32_t argc, const char* argv[]) try {
         if (animate || lastFrameWasAnimated) {
             cudau::TypedBuffer<shared::InstanceData> &curInstDataBuffer = scene.instDataBuffer[bufferIndex];
             shared::InstanceData* instDataBufferOnHost = curInstDataBuffer.map();
+            // TODO: 更新分だけ送る？
             for (int i = 0; i < scene.instControllers.size(); ++i) {
                 InstanceController* controller = scene.instControllers[i];
-                Instance* inst = controller->inst;
-                shared::InstanceData &instData = instDataBufferOnHost[inst->instSlot];
                 controller->update(instDataBufferOnHost, animate ? 1.0f / 60.0f : 0.0f);
-                // TODO: まとめて送る。
-                CUDADRV_CHECK(cuMemcpyHtoDAsync(
-                    curInstDataBuffer.getCUdeviceptrAt(inst->instSlot),
-                    &instData, sizeof(instData), curCuStream));
             }
             curInstDataBuffer.unmap();
         }

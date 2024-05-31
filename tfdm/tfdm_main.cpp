@@ -8,7 +8,7 @@ You can use an HDR environment map by downloading from the internet.
 
 (2) -cam-pos 0 3 0 -cam-yaw 90 -env-texture envlight.exr
 
-JP: このプログラムはTFDM (Tessellation-Free Displacement Mapping) [1]の実装例です。
+JP: このプログラムは"Tessellation-Free Displacement Mapping for Ray Tracing" [1] (TFDM)の実装例です。
     ディスプレイスメントマッピングによって3Dのサーフェスに詳細なジオメトリを付加することができますが、
     事前にメッシュからBVHなどのAcceleration Structureを作っておく必要があるレイトレーシングでは事前のポリゴン分割、
     事前テッセレーションが必要で、膨大なメモリ使用量が問題になります。
@@ -22,7 +22,7 @@ JP: このプログラムはTFDM (Tessellation-Free Displacement Mapping) [1]の
     BVHトラバーサルを実行、目的のMIPレベルに到達した段階で最終的な形状との交叉判定を行います。
     テクセル単位で交叉判定を行うためポリゴンの適切な事前分割について考える必要もありません。
 
-EN: This program is an example implementation of TFDM (Tessellation-Free Displacement Mapping) [1].
+EN: This program is an example implementation of "Tessellation-Free Displacement Mapping for Ray Tracing" [1] (TFDM).
     Displacement mapping can add fine details to 3D surfaces.
     However, ray tracing requires building an acceleration structure like BVH beforehand from the mesh
     with prior polygon subdivision, that is pre-tessellation, and this means significant amount of memory consumption.
@@ -176,19 +176,19 @@ struct GPUEnvironment {
             pipeline.hitPrograms["displacedSurface_Box"] = p.createHitProgramGroupForCustomIS(
                 m, RT_CH_NAME_STR("setupGBuffers"),
                 emptyModule, nullptr,
-                m, RT_IS_NAME_STR("displacedSurface_Box"));
+                m, RT_IS_NAME_STR("primaryDisplacedSurface_Box"));
             pipeline.hitPrograms["displacedSurface_TwoTriangle"] = p.createHitProgramGroupForCustomIS(
                 m, RT_CH_NAME_STR("setupGBuffers"),
                 emptyModule, nullptr,
-                m, RT_IS_NAME_STR("displacedSurface_TwoTriangle"));
+                m, RT_IS_NAME_STR("primaryDisplacedSurface_TwoTriangle"));
             pipeline.hitPrograms["displacedSurface_Bilinear"] = p.createHitProgramGroupForCustomIS(
                 m, RT_CH_NAME_STR("setupGBuffers"),
                 emptyModule, nullptr,
-                m, RT_IS_NAME_STR("displacedSurface_Bilinear"));
+                m, RT_IS_NAME_STR("primaryDisplacedSurface_Bilinear"));
             pipeline.hitPrograms["displacedSurface_BSpline"] = p.createHitProgramGroupForCustomIS(
                 m, RT_CH_NAME_STR("setupGBuffers"),
                 emptyModule, nullptr,
-                m, RT_IS_NAME_STR("displacedSurface_BSpline"));
+                m, RT_IS_NAME_STR("primaryDisplacedSurface_BSpline"));
 
             pipeline.hitPrograms["emptyHitGroup"] = p.createEmptyHitProgramGroup();
 
@@ -720,11 +720,11 @@ static void createSphere(
 static void computeDisplacedTriangleAuxiliaryInfos(
     const std::vector<shared::Vertex> &vertices,
     const std::vector<shared::Triangle> &triangles,
-    std::vector<shared::DisplacedTriangleAuxInfo>* dispTriAuxInfos) {
+    std::vector<shared::TFDMTriangleAuxInfo>* dispTriAuxInfos) {
     dispTriAuxInfos->resize(triangles.size());
     for (int triIdx = 0; triIdx < triangles.size(); ++triIdx) {
         const shared::Triangle &tri = triangles[triIdx];
-        shared::DisplacedTriangleAuxInfo &dispTriAuxInfo = (*dispTriAuxInfos)[triIdx];
+        shared::TFDMTriangleAuxInfo &dispTriAuxInfo = (*dispTriAuxInfos)[triIdx];
 
         using Vector2Dd = Vector2D_T<double>;
         using Vector3Dd = Vector3D_T<double, false>;
@@ -776,16 +776,20 @@ static void computeDisplacedTriangleAuxiliaryInfos(
             Point3D(vs[2].texCoord, 1.0f),
         };
 
-        Matrix4x4d matObjToTc(invert(Matrix3x3d(tc0Dir, tc1Dir, geomNormal)));
-        matObjToTc =
-            translate3D_4x4(Point3Dd(vs[0].texCoord, 0.0f) - matObjToTc * static_cast<Point3Dd>(vs[0].position))
-            * matObjToTc;
+        Matrix4x4d matObjToTcTang(invert(Matrix3x3d(tc0Dir, tc1Dir, geomNormal)));
+        matObjToTcTang =
+            translate3D_4x4(Point3Dd(vs[0].texCoord, 0.0f) - matObjToTcTang * static_cast<Point3Dd>(vs[0].position))
+            * matObjToTcTang;
 
         const Matrix3x3d matTcToBc = invert(Matrix3x3d(tcs3D[0], tcs3D[1], tcs3D[2]));
         const Matrix3x3d matBcToNInObj(vs[0].normal, vs[1].normal, vs[2].normal);
         const Matrix3x3d matTcToNInObj = matBcToNInObj * matTcToBc;
 
-        dispTriAuxInfo.matObjToTc = static_cast<Matrix4x4>(matObjToTc);
+        // JP: 最初の行列は2つの空間の間の変換行列だが、残りの2つはテクスチャー座標から対応する他の属性値を求める行列
+        //     であることに注意。
+        // EN: Note that the first matrix is a transform matrix between two spaces, but the others are
+        //     matrices to obtain corresponding attribute values from texture coordinates.
+        dispTriAuxInfo.matObjToTcTang = static_cast<Matrix4x4>(matObjToTcTang);
         dispTriAuxInfo.matTcToBc = static_cast<Matrix3x3>(matTcToBc);
         dispTriAuxInfo.matTcToNInObj = static_cast<Matrix3x3>(matTcToNInObj);
     }
@@ -1051,7 +1055,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
     // EN: Setup a scene.
 
     scene.map();
-    geomInstTfdmDataBuffer.map();
 
     // Area Light
     if (g_envLightTexturePath.empty()) {
@@ -1101,9 +1104,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
         std::vector<shared::Vertex> vertices = {
             shared::Vertex{Point3D(-1.0f, 0.0f, -1.0f), Normal3D(0, 1, 0), Vector3D(1, 0, 0), Point2D(0.0f, 0.0f)},
-            shared::Vertex{Point3D(1.0f, 0.0f, -1.0f), Normal3D(0, 1, 0), Vector3D(1, 0, 0), Point2D(1.0f, 0.0f)},
-            shared::Vertex{Point3D(1.0f, 0.0f, 1.0f), Normal3D(0, 1, 0), Vector3D(1, 0, 0), Point2D(1.0f, 1.0f)},
             shared::Vertex{Point3D(-1.0f, 0.0f, 1.0f), Normal3D(0, 1, 0), Vector3D(1, 0, 0), Point2D(0.0f, 1.0f)},
+            shared::Vertex{Point3D(1.0f, 0.0f, 1.0f), Normal3D(0, 1, 0), Vector3D(1, 0, 0), Point2D(1.0f, 1.0f)},
+            shared::Vertex{Point3D(1.0f, 0.0f, -1.0f), Normal3D(0, 1, 0), Vector3D(1, 0, 0), Point2D(1.0f, 0.0f)},
         };
         std::vector<shared::Triangle> triangles = {
             shared::Triangle{0, 1, 2},
@@ -1190,7 +1193,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
     g_cameraDirectionalMovingSpeed = 0.0015f;
     g_cameraTiltSpeed = 0.025f;
 
-    geomInstTfdmDataBuffer.unmap();
     scene.unmap();
 
     uint32_t totalNumEmitterPrimitives = 0;
@@ -1225,7 +1227,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
     cudau::Array gBuffer1[2];
     cudau::Array gBuffer2[2];
 #if OUTPUT_TRAVERSAL_STATS
-    cudau::Array numTravItrsBuffer;
+    cudau::Array numTravStatsBuffer;
 #endif
     
     cudau::Array beautyAccumBuffer;
@@ -1257,8 +1259,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
         }
 
 #if OUTPUT_TRAVERSAL_STATS
-        numTravItrsBuffer.initialize2D(
-            gpuEnv.cuContext, cudau::ArrayElementType::UInt32, 1,
+        numTravStatsBuffer.initialize2D(
+            gpuEnv.cuContext, cudau::ArrayElementType::UInt32, (sizeof(shared::TraversalStats) + 3) / 4,
             cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable,
             renderTargetSizeX, renderTargetSizeY, 1);
 #endif
@@ -1318,7 +1320,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         beautyAccumBuffer.finalize();
 
 #if OUTPUT_TRAVERSAL_STATS
-        numTravItrsBuffer.finalize();
+        numTravStatsBuffer.finalize();
 #endif
 
         for (int i = 1; i >= 0; --i) {
@@ -1336,7 +1338,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         }
 
 #if OUTPUT_TRAVERSAL_STATS
-        numTravItrsBuffer.resize(width, height);
+        numTravStatsBuffer.resize(width, height);
 #endif
 
         beautyAccumBuffer.resize(width, height);
@@ -1486,7 +1488,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         staticPlp.GBuffer2[1] = gBuffer2[1].getSurfaceObject(0);
 
 #if OUTPUT_TRAVERSAL_STATS
-        staticPlp.numTravItrsBuffer = numTravItrsBuffer.getSurfaceObject(0);
+        staticPlp.numTravStatsBuffer = numTravStatsBuffer.getSurfaceObject(0);
 #endif
 
         staticPlp.materialDataBuffer =
@@ -1644,7 +1646,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
             staticPlp.GBuffer2[0] = gBuffer2[0].getSurfaceObject(0);
             staticPlp.GBuffer2[1] = gBuffer2[1].getSurfaceObject(0);
 #if OUTPUT_TRAVERSAL_STATS
-            staticPlp.numTravItrsBuffer = numTravItrsBuffer.getSurfaceObject(0);
+            staticPlp.numTravStatsBuffer = numTravStatsBuffer.getSurfaceObject(0);
 #endif
             staticPlp.beautyAccumBuffer = beautyAccumBuffer.getSurfaceObject(0);
             staticPlp.albedoAccumBuffer = albedoAccumBuffer.getSurfaceObject(0);
@@ -1816,10 +1818,10 @@ int32_t main(int32_t argc, const char* argv[]) try {
         static bool useTemporalDenosier = true;
         static float motionVectorScale = -1.0f;
         bool animate = false;
-        static bool enableAccumulation = /*true*/false;
+        static bool enableAccumulation = true;
         static int32_t log2MaxNumAccums = 16;
-        static bool enableJittering = false;
-        bool lastFrameWasAnimated = false;
+        static bool enableJittering = /*false*/true;
+        static bool lastFrameWasAnimated = false;
         static shared::BufferToDisplay bufferTypeToDisplay = shared::BufferToDisplay::NoisyBeauty;
         static int32_t maxPathLength = 5;
 
@@ -1849,7 +1851,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
         {
             ImGui::Begin("Debug", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
 
-            ImGui::SameLine();
             if (ImGui::Button("Reset Accum"))
                 resetAccumulation = true;
             ImGui::Checkbox("Enable Accumulation", &enableAccumulation);
@@ -1913,49 +1914,50 @@ int32_t main(int32_t argc, const char* argv[]) try {
                         else if (baseSurfaceIndex == 2)
                             createSphere(&vertices, &triangles);
 
-                        displacedMeshGeomInst->vertexBuffer.finalize();
-                        displacedMeshGeomInst->vertexBuffer.initialize(gpuEnv.cuContext, Scene::bufferType, vertices);
-                        displacedMeshGeomInst->triangleBuffer.finalize();
-                        displacedMeshGeomInst->triangleBuffer.initialize(gpuEnv.cuContext, Scene::bufferType, triangles);
+                        auto &geom = std::get<TFDMGeometry>(displacedMeshGeomInst->geometry);
 
+                        geom.vertexBuffer.finalize();
+                        geom.vertexBuffer.initialize(gpuEnv.cuContext, Scene::bufferType, vertices);
+                        geom.triangleBuffer.finalize();
+                        geom.triangleBuffer.initialize(gpuEnv.cuContext, Scene::bufferType, triangles);
+
+                        const CUdeviceptr geomInstDataAddrOnDevice =
+                            scene.geomInstDataBuffer.getCUdeviceptrAt(displacedMeshGeomInst->geomInstSlot);
                         shared::GeometryInstanceData geomInstData = {};
+                        CUDADRV_CHECK(cuMemcpyDtoH(&geomInstData, geomInstDataAddrOnDevice, sizeof(geomInstData)));
                         geomInstData.vertexBuffer =
-                            displacedMeshGeomInst->vertexBuffer.getROBuffer<shared::enableBufferOobCheck>();
+                            geom.vertexBuffer.getROBuffer<shared::enableBufferOobCheck>();
                         geomInstData.triangleBuffer =
-                            displacedMeshGeomInst->triangleBuffer.getROBuffer<shared::enableBufferOobCheck>();
-                        displacedMeshGeomInst->emitterPrimDist.getDeviceType(&geomInstData.emitterPrimDist);
-                        geomInstData.materialSlot = displacedMeshMaterial->materialSlot;
-                        geomInstData.geomInstSlot = displacedMeshGeomInst->geomInstSlot;
+                            geom.triangleBuffer.getROBuffer<shared::enableBufferOobCheck>();
                         CUDADRV_CHECK(cuMemcpyHtoDAsync(
-                            scene.geomInstDataBuffer.getCUdeviceptrAt(displacedMeshGeomInst->geomInstSlot),
-                            &geomInstData, sizeof(geomInstData),
-                            curCuStream));
+                            geomInstDataAddrOnDevice, &geomInstData, sizeof(geomInstData), curCuStream));
 
 #if SHOW_BASE_MESH
                         displacedMeshGeomInst->optixGeomInst.setVertexBuffer(displacedMeshGeomInst->vertexBuffer);
                         displacedMeshGeomInst->optixGeomInst.setTriangleBuffer(displacedMeshGeomInst->triangleBuffer);
 #else
-                        std::vector<shared::DisplacedTriangleAuxInfo> dispTriAuxInfos;
+                        std::vector<shared::TFDMTriangleAuxInfo> dispTriAuxInfos;
                         computeDisplacedTriangleAuxiliaryInfos(vertices, triangles, &dispTriAuxInfos);
 
-                        displacedMeshGeomInst->dispTriAuxInfoBuffer.finalize();
-                        displacedMeshGeomInst->dispTriAuxInfoBuffer.initialize(
+                        geom.tfdmTriAuxInfoBuffer.finalize();
+                        geom.tfdmTriAuxInfoBuffer.initialize(
                             gpuEnv.cuContext, cudau::BufferType::Device, dispTriAuxInfos);
-                        displacedMeshGeomInst->aabbBuffer.finalize();
-                        displacedMeshGeomInst->aabbBuffer.initialize(
+                        geom.aabbBuffer.finalize();
+                        geom.aabbBuffer.initialize(
                             gpuEnv.cuContext, cudau::BufferType::Device, triangles.size());
 
+                        const CUdeviceptr tfdmDataAddrOnDevice =
+                            geomInstTfdmDataBuffer.getCUdeviceptrAt(displacedMeshGeomInst->geomInstSlot);
                         shared::GeometryInstanceDataForTFDM tfdmData = {};
+                        CUDADRV_CHECK(cuMemcpyDtoH(&tfdmData, tfdmDataAddrOnDevice, sizeof(tfdmData)));
                         tfdmData.dispTriAuxInfoBuffer =
-                            displacedMeshGeomInst->dispTriAuxInfoBuffer.getROBuffer<shared::enableBufferOobCheck>();
+                            geom.tfdmTriAuxInfoBuffer.getROBuffer<shared::enableBufferOobCheck>();
                         tfdmData.aabbBuffer =
-                            displacedMeshGeomInst->aabbBuffer.getROBuffer<shared::enableBufferOobCheck>();
+                            geom.aabbBuffer.getROBuffer<shared::enableBufferOobCheck>();
                         CUDADRV_CHECK(cuMemcpyHtoDAsync(
-                            geomInstTfdmDataBuffer.getCUdeviceptrAt(displacedMeshGeomInst->geomInstSlot),
-                            &tfdmData, sizeof(tfdmData),
-                            curCuStream));
+                            tfdmDataAddrOnDevice, &tfdmData, sizeof(tfdmData), curCuStream));
 
-                        displacedMeshGeomInst->optixGeomInst.setCustomPrimitiveAABBBuffer(displacedMeshGeomInst->aabbBuffer);
+                        displacedMeshGeomInst->optixGeomInst.setCustomPrimitiveAABBBuffer(geom.aabbBuffer);
 #endif
 
                         geomChanged = true;
@@ -2009,6 +2011,12 @@ int32_t main(int32_t argc, const char* argv[]) try {
                             R"(gebco_08_rev_elev_4096_4096.dds)",
                             0.02f,
                         },
+                        {
+                            "50% Gray",
+                            R"()",
+                            R"(50p_gray_32x32.dds)",
+                            0.02f,
+                        },
                     };
                     if (ImGui::Combo(
                             "Texture", &textureIndex,
@@ -2026,21 +2034,23 @@ int32_t main(int32_t argc, const char* argv[]) try {
                         heightScale = asset.defaultHeightScale;
                         heightParamChanged = true;
 
+                        auto &geom = std::get<TFDMGeometry>(displacedMeshGeomInst->geometry);
+
                         //auto &body = std::get<Material::Lambert>(displacedMeshMaterial->body);
                         //if (body.texReflectance.texObj)
                         //    CUDADRV_CHECK(cuTexObjectDestroy(body.texReflectance.texObj));
                         //body.texReflectance.cudaArray->finalize();
 
-                        CUDADRV_CHECK(cuTexObjectDestroy(displacedMeshMaterial->texHeight.texObj));
-                        //displacedMeshMaterial->texHeight.cudaArray->finalize();
-                        displacedMeshMaterial->minMaxMipMap.finalize();
-                        displacedMeshMaterial->minMaxMipMapSurfs.finalize();
+                        CUDADRV_CHECK(cuTexObjectDestroy(geom.texHeight.texObj));
+                        //geom.texHeight.cudaArray->finalize();
+                        geom.minMaxMipMap.finalize();
+                        geom.minMaxMipMapSurfs.finalize();
 
-                        const CUdeviceptr matAddrOnDevice =
-                            scene.materialDataBuffer.getCUdeviceptrAt(displacedMeshMaterial->materialSlot);
+                        const CUdeviceptr addrOnDevice =
+                            geomInstTfdmDataBuffer.getCUdeviceptrAt(displacedMeshGeomInst->geomInstSlot);
 
-                        shared::MaterialData matData = {};
-                        CUDADRV_CHECK(cuMemcpyDtoH(&matData, matAddrOnDevice, sizeof(matData)));
+                        shared::GeometryInstanceDataForTFDM tfdmData = {};
+                        CUDADRV_CHECK(cuMemcpyDtoH(&tfdmData, addrOnDevice, sizeof(tfdmData)));
 
                         bool needsDegamma;
                         //loadTexture(
@@ -2075,7 +2085,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
                         loadTexture<float, false>(
                             dataDir / asset.height, 0.0f, gpuEnv.cuContext,
-                            &displacedMeshMaterial->texHeight.cudaArray, &needsDegamma);
+                            &geom.texHeight.cudaArray, &needsDegamma);
 
                         cudau::TextureSampler heightSampler = {};
                         heightSampler.setXyFilterMode(cudau::TextureFilterMode::Linear);
@@ -2083,35 +2093,35 @@ int32_t main(int32_t argc, const char* argv[]) try {
                         heightSampler.setWrapMode(1, cudau::TextureWrapMode::Repeat);
                         heightSampler.setMipMapFilterMode(cudau::TextureFilterMode::Point);
                         heightSampler.setReadMode(cudau::TextureReadMode::NormalizedFloat);
-                        displacedMeshMaterial->texHeight.texObj =
-                            heightSampler.createTextureObject(*displacedMeshMaterial->texHeight.cudaArray);
+                        geom.texHeight.texObj =
+                            heightSampler.createTextureObject(*geom.texHeight.cudaArray);
 
-                        matData.heightMapSize = int2(
-                            displacedMeshMaterial->texHeight.cudaArray->getWidth(),
-                            displacedMeshMaterial->texHeight.cudaArray->getHeight());
-                        matData.heightMap = displacedMeshMaterial->texHeight.texObj;
+                        tfdmData.heightMapSize = int2(
+                            geom.texHeight.cudaArray->getWidth(),
+                            geom.texHeight.cudaArray->getHeight());
+                        tfdmData.heightMap = geom.texHeight.texObj;
 
-                        if (matData.heightMapSize.x != matData.heightMapSize.y)
+                        if (tfdmData.heightMapSize.x != tfdmData.heightMapSize.y)
                             throw std::runtime_error("Non-square height map is not supported.");
-                        if (popcnt(matData.heightMapSize.x) != 1)
+                        if (popcnt(tfdmData.heightMapSize.x) != 1)
                             throw std::runtime_error("Non-power-of-two height map is not supported.");
 
-                        const uint32_t numMinMaxMipMapLevels = nextPowOf2Exponent(matData.heightMapSize.x) + 1;
-                        displacedMeshMaterial->minMaxMipMap.initialize2D(
+                        const uint32_t numMinMaxMipMapLevels = nextPowOf2Exponent(tfdmData.heightMapSize.x) + 1;
+                        geom.minMaxMipMap.initialize2D(
                             gpuEnv.cuContext,
                             cudau::ArrayElementType::Float32, 2,
                             cudau::ArraySurface::Enable, cudau::ArrayTextureGather::Disable,
-                            matData.heightMapSize.x, matData.heightMapSize.y,
+                            tfdmData.heightMapSize.x, tfdmData.heightMapSize.y,
                             numMinMaxMipMapLevels);
 
                         std::vector<optixu::NativeBlockBuffer2D<float2>> surfObjs(numMinMaxMipMapLevels);
                         for (int mipLevel = 0; mipLevel < numMinMaxMipMapLevels; ++mipLevel)
-                            surfObjs[mipLevel] = displacedMeshMaterial->minMaxMipMap.getSurfaceObject(mipLevel);
+                            surfObjs[mipLevel] = geom.minMaxMipMap.getSurfaceObject(mipLevel);
 
-                        displacedMeshMaterial->minMaxMipMapSurfs.initialize(
+                        geom.minMaxMipMapSurfs.initialize(
                             gpuEnv.cuContext, cudau::BufferType::Device, surfObjs);
-                        matData.minMaxMipMap = displacedMeshMaterial->minMaxMipMapSurfs.getDevicePointer();
-                        CUDADRV_CHECK(cuMemcpyHtoD(matAddrOnDevice, &matData, sizeof(matData)));
+                        tfdmData.minMaxMipMap = geom.minMaxMipMapSurfs.getROBuffer<shared::enableBufferOobCheck>();
+                        CUDADRV_CHECK(cuMemcpyHtoD(addrOnDevice, &tfdmData, sizeof(tfdmData)));
 
                         textureChanged = true;
                         resetAccumulation = true;
@@ -2153,9 +2163,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
                         "Offset U", &heightMapTexOffset.x, -1, 1);
                     heightParamChanged |= ImGui::SliderFloat(
                         "Offset V", &heightMapTexOffset.y, -1, 1);
+                    resetAccumulation |= heightParamChanged;
                     ImGui::PopID();
 
-                    resetAccumulation |= heightParamChanged;
 
                     ImGui::Text("Local Intersection Type");
 
@@ -2198,8 +2208,14 @@ int32_t main(int32_t argc, const char* argv[]) try {
                     ImGui::RadioButtonE("Motion Vector", &bufferTypeToDisplay, shared::BufferToDisplay::Flow);
 #if OUTPUT_TRAVERSAL_STATS
                     ImGui::RadioButtonE(
-                        "Traversal Iterations", &bufferTypeToDisplay,
-                        shared::BufferToDisplay::TraversalIterations);
+                        "Total Traversal Tests", &bufferTypeToDisplay,
+                        shared::BufferToDisplay::TotalTraversalTests);
+                    ImGui::RadioButtonE(
+                        "AABB Tests", &bufferTypeToDisplay,
+                        shared::BufferToDisplay::AABBTests);
+                    ImGui::RadioButtonE(
+                        "Leaf Tests", &bufferTypeToDisplay,
+                        shared::BufferToDisplay::LeafTests);
 #endif
                     ImGui::RadioButtonE(
                         "Denoised Beauty", &bufferTypeToDisplay, shared::BufferToDisplay::DenoisedBeauty);
@@ -2301,16 +2317,12 @@ int32_t main(int32_t argc, const char* argv[]) try {
         if (animate || lastFrameWasAnimated || frameIndex == 0) {
             cudau::TypedBuffer<shared::InstanceData> &curInstDataBuffer = scene.instDataBuffer[bufferIndex];
             shared::InstanceData* instDataBufferOnHost = curInstDataBuffer.map();
+            // TODO: 更新分だけ送る？
             for (int i = 0; i < scene.instControllers.size(); ++i) {
                 InstanceController* controller = scene.instControllers[i];
-                Instance* inst = controller->inst;
-                shared::InstanceData &instData = instDataBufferOnHost[inst->instSlot];
                 controller->update(instDataBufferOnHost, animate ? 1.0f / 60.0f : 0.0f);
-                // TODO: まとめて送る。
-                CUDADRV_CHECK(cuMemcpyHtoDAsync(
-                    curInstDataBuffer.getCUdeviceptrAt(inst->instSlot),
-                    &instData, sizeof(instData), curCuStream));
             }
+
             {
                 Matrix4x4 prevMatM2W = displacedMeshInst->matM2W;
                 Matrix3x3 matRot =
@@ -2322,14 +2334,11 @@ int32_t main(int32_t argc, const char* argv[]) try {
                 Matrix4x4 tMatM2W = transpose(displacedMeshInst->matM2W);
                 displacedMeshInst->optixInst.setTransform(reinterpret_cast<const float*>(&tMatM2W));
 
-                shared::InstanceData instData = instDataBufferOnHost[displacedMeshInst->instSlot];
+                shared::InstanceData &instData = instDataBufferOnHost[displacedMeshInst->instSlot];
                 instData.curToPrevTransform = prevMatM2W * invert(displacedMeshInst->matM2W);
                 instData.transform = displacedMeshInst->matM2W;
                 instData.normalMatrix = displacedMeshInst->nMatM2W;
                 instData.uniformScale = instScale;
-                CUDADRV_CHECK(cuMemcpyHtoDAsync(
-                    curInstDataBuffer.getCUdeviceptrAt(displacedMeshInst->instSlot),
-                    &instData, sizeof(instData), curCuStream));
             }
             curInstDataBuffer.unmap();
 
@@ -2383,11 +2392,6 @@ int32_t main(int32_t argc, const char* argv[]) try {
             gpuEnv.pathTracing.optixPipeline.markHitGroupShaderBindingTableDirty();
 #endif
 
-            const Material* mat = displacedMeshMaterial;
-
-            const shared::MaterialData* const matData =
-                scene.materialDataBuffer.getDevicePointerAt(mat->materialSlot);
-
             cudau::Kernel generateFirstMinMaxMipMap;
             cudau::Kernel generateMinMaxMipMap;
             if (localIntersectionType == shared::LocalIntersectionType::Box) {
@@ -2410,10 +2414,14 @@ int32_t main(int32_t argc, const char* argv[]) try {
                 Assert_ShouldNotBeCalled();
             }
 
-            int2 dstImageSize(mat->texHeight.cudaArray->getWidth(), mat->texHeight.cudaArray->getHeight());
+            const auto &geom = std::get<TFDMGeometry>(displacedMeshGeomInst->geometry);
+            const shared::GeometryInstanceDataForTFDM* tfdmGeomInst =
+                geomInstTfdmDataBuffer.getDevicePointerAt(displacedMeshGeomInst->geomInstSlot);
+
+            int2 dstImageSize(geom.texHeight.cudaArray->getWidth(), geom.texHeight.cudaArray->getHeight());
             generateFirstMinMaxMipMap.launchWithThreadDim(
                 curCuStream, cudau::dim3(dstImageSize.x, dstImageSize.y),
-                matData);
+                tfdmGeomInst);
             //{
             //    CUDADRV_CHECK(cuStreamSynchronize(curCuStream));
             //    std::vector<float2> minMaxValues(dstImageSize.x * dstImageSize.y);
@@ -2421,15 +2429,15 @@ int32_t main(int32_t argc, const char* argv[]) try {
             //    hpprintf("");
             //}
             dstImageSize /= 2;
-            const uint32_t numMinMaxMipMapLevels = nextPowOf2Exponent(mat->texHeight.cudaArray->getWidth()) + 1;
+            const uint32_t numMinMaxMipMapLevels = nextPowOf2Exponent(geom.texHeight.cudaArray->getWidth()) + 1;
             for (int srcLevel = 0; srcLevel < numMinMaxMipMapLevels - 1; ++srcLevel) {
                 generateMinMaxMipMap.launchWithThreadDim(
                     curCuStream, cudau::dim3(dstImageSize.x, dstImageSize.y),
-                    matData, srcLevel);
+                    tfdmGeomInst, srcLevel);
 
                 /*CUDADRV_CHECK(cuStreamSynchronize(curCuStream));
                 std::vector<float2> minMaxValues(dstImageSize.x * dstImageSize.y);
-                mat->minMaxMipMap.read(minMaxValues, srcLevel + 1);
+                geom.minMaxMipMap.read(minMaxValues, srcLevel + 1);
 
                 bool saveImg = false;
                 if (saveImg) {
@@ -2461,14 +2469,12 @@ int32_t main(int32_t argc, const char* argv[]) try {
         // EN: Compute the AABB of each displacement-enabled primitive.
         if (localIntersectionTypeChanged || textureChanged || heightParamChanged || geomChanged) {
             const GeometryInstance* geomInst = displacedMeshGeomInst;
-            const Material* mat = displacedMeshMaterial;
+            const auto &geom = std::get<TFDMGeometry>(geomInst->geometry);
 
             const shared::GeometryInstanceData* const geomInstData =
                 scene.geomInstDataBuffer.getDevicePointerAt(geomInst->geomInstSlot);
             const shared::GeometryInstanceDataForTFDM* const tfdmData =
                 geomInstTfdmDataBuffer.getDevicePointerAt(geomInst->geomInstSlot);
-            const shared::MaterialData* const matData =
-                scene.materialDataBuffer.getDevicePointerAt(mat->materialSlot);
 
             shared::DisplacementParameters dispParams = {};
             Matrix3x3 texXfm =
@@ -2486,11 +2492,11 @@ int32_t main(int32_t argc, const char* argv[]) try {
                 curCuStream));
 
             gpuEnv.kernelComputeAABBs.launchWithThreadDim(
-                curCuStream, cudau::dim3(geomInst->aabbBuffer.numElements()),
-                geomInstData, tfdmData, matData);
+                curCuStream, cudau::dim3(geom.aabbBuffer.numElements()),
+                geomInstData, tfdmData);
 
             //CUDADRV_CHECK(cuStreamSynchronize(curCuStream));
-            //std::vector<AABB> aabbs = geomInst->aabbBuffer;
+            //std::vector<AABB> aabbs = geom.aabbBuffer;
 
             displacedMeshGeomGroup->needsRebuild = true;
         }
@@ -2571,9 +2577,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         CUDADRV_CHECK(cuMemcpyHtoDAsync(plpPureCUDAOnDevice, &plp, sizeof(plp), curCuStream));
 
         // JP: Gバッファーのセットアップ。
-        //     ここではレイトレースを使ってGバッファーを生成しているがもちろんラスタライザーで生成可能。
         // EN: Setup the G-buffers.
-        //     Generate the G-buffers using ray trace here, but of course this can be done using rasterizer.
         curGPUTimer.setupGBuffers.start(curCuStream);
         gpuEnv.gBuffer.optixPipeline.launch(
             curCuStream, plpOnDevice, renderTargetSizeX, renderTargetSizeY, 1);
@@ -2650,7 +2654,9 @@ int32_t main(int32_t argc, const char* argv[]) try {
         case shared::BufferToDisplay::DenoisedBeauty:
             bufferToDisplay = linearDenoisedBeautyBuffer.getDevicePointer();
             break;
-        case shared::BufferToDisplay::TraversalIterations:
+        case shared::BufferToDisplay::TotalTraversalTests:
+        case shared::BufferToDisplay::AABBTests:
+        case shared::BufferToDisplay::LeafTests:
             break;
         default:
             Assert_ShouldNotBeCalled();

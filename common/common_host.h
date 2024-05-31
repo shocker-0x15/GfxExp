@@ -3,11 +3,11 @@
 #include "common_shared.h"
 
 #include "../utils/gl_util.h"
-#include <numbers>
 #include <fstream>
 #include <sstream>
 #include <array>
 #include <vector>
+#include <span>
 #include <set>
 #include <map>
 #include <unordered_set>
@@ -24,7 +24,7 @@
 #define ENABLE_VDB 0
 
 #if ENABLE_VDB
-#include "../common/vdb_interface.h"
+#include "vdb_interface.h"
 
 inline void setColor(float r, float g, float b) {
     vdb_color(r, g, b);
@@ -110,10 +110,16 @@ inline void drawAabbWithXfm(const AABB &aabb, const Matrix4x4 &mat) {
     drawLine(pUUL, pUUU);
 }
 
-#endif
+inline void drawAxes(float axisScale, const Vector3D &offset = Vector3D(0, 0, 0)) {
+    setColor(RGB(1, 0, 0));
+    drawLine(offset + Point3D(0, 0, 0), offset + Point3D(axisScale, 0, 0));
+    setColor(RGB(0, 1, 0));
+    drawLine(offset + Point3D(0, 0, 0), offset + Point3D(0, axisScale, 0));
+    setColor(RGB(0, 0, 1));
+    drawLine(offset + Point3D(0, 0, 0), offset + Point3D(0, 0, axisScale));
+}
 
-template <std::floating_point T>
-static constexpr T pi_v = std::numbers::pi_v<T>;
+#endif
 
 #if 1
 #   define hpprintf(fmt, ...) do { devPrintf(fmt, ##__VA_ARGS__); printf(fmt, ##__VA_ARGS__); } while (0)
@@ -206,6 +212,18 @@ class DiscreteDistribution1DTemplate {
 public:
     DiscreteDistribution1DTemplate() :
         m_integral(0.0f), m_numValues(0), m_isInitialized(false) {}
+    DiscreteDistribution1DTemplate(DiscreteDistribution1DTemplate &&v) {
+        m_weights = std::move(v.m_weights);
+#if defined(USE_WALKER_ALIAS_METHOD)
+        m_aliasTable = std::move(v.m_aliasTable);
+        m_valueMaps = std::move(v.m_valueMaps);
+#else
+        m_CDF = std::move(v.m_CDF);
+#endif
+        m_integral = v.m_integral;
+        m_numValues = v.m_numValues;
+        m_isInitialized = v.m_isInitialized;
+    }
     void initialize(
         CUcontext cuContext, cudau::BufferType type,
         const RealType* values, uint32_t numValues);
@@ -232,6 +250,7 @@ public:
 #endif
         m_integral = v.m_integral;
         m_numValues = v.m_numValues;
+        m_isInitialized = v.m_isInitialized;
         return *this;
     }
 
@@ -398,6 +417,18 @@ class ProbabilityTexture {
 
 public:
     ProbabilityTexture() : m_cuTexObj(0), m_isInitialized(false) {}
+    ProbabilityTexture(ProbabilityTexture &&r) {
+        m_cuArray = std::move(r.m_cuArray);
+        m_cuTexObj = r.m_cuTexObj;
+        m_isInitialized = r.m_isInitialized;
+    }
+
+    ProbabilityTexture &operator=(ProbabilityTexture &&r) {
+        m_cuArray = std::move(r.m_cuArray);
+        m_cuTexObj = r.m_cuTexObj;
+        m_isInitialized = r.m_isInitialized;
+        return *this;
+    }
 
     void initialize(CUcontext cuContext, uint32_t numValues);
     void finalize() {
@@ -611,34 +642,89 @@ struct Material {
     BumpMapTextureType bumpMapType;
     Texture texEmittance;
 
-    // for TFDM
-    Texture texHeight;
-    cudau::Array minMaxMipMap;
-    cudau::TypedBuffer<optixu::NativeBlockBuffer2D<float2>> minMaxMipMapSurfs;
-
     uint32_t materialSlot;
 
     Material() : materialSlot(0) {}
 };
 
-struct GeometryInstance {
-    const Material* mat;
-
+struct TriangleGeometry {
     glu::Buffer gfxVertexBuffer;
     glu::Buffer gfxTriangleBuffer;
     glu::VertexArray gfxVertexArray;
     cudau::TypedBuffer<shared::Vertex> vertexBuffer;
     cudau::TypedBuffer<shared::Triangle> triangleBuffer;
     LightDistribution emitterPrimDist;
+};
+
+struct CurveGeometry {
+    cudau::TypedBuffer<shared::CurveVertex> curveVertexBuffer;
+    cudau::TypedBuffer<uint32_t> segmentIndexBuffer;
+};
+
+struct TFDMGeometry {
+    cudau::TypedBuffer<shared::Vertex> vertexBuffer;
+    cudau::TypedBuffer<shared::Triangle> triangleBuffer;
+    cudau::TypedBuffer<AABB> aabbBuffer;
+    Texture texHeight;
+    cudau::Array minMaxMipMap;
+    cudau::TypedBuffer<optixu::NativeBlockBuffer2D<float2>> minMaxMipMapSurfs;
+    cudau::TypedBuffer<shared::TFDMTriangleAuxInfo> tfdmTriAuxInfoBuffer;
+};
+
+struct ShellBVH {
+    cudau::Buffer bvhMem;
+    uint64_t offsetToTriStorages;
+    uint64_t offsetToPrimRefs;
+    uint64_t offsetToParentPointers;
+    uint32_t numIntNodes;
+    uint32_t numTriStorages;
+    uint32_t numPrimRefs;
+    uint32_t numParentPointers;
+
+    shared::GeometryBVH_T<shared::shellBvhArity> getBvhOnDevice() const {
+        using IntNode = shared::InternalNode_T<shared::shellBvhArity>;
+        shared::GeometryBVH_T<shared::shellBvhArity> ret = {};
+        ret.intNodes = shared::ROBuffer(
+            reinterpret_cast<IntNode*>(bvhMem.getCUdeviceptr()),
+            numIntNodes);
+        ret.triStorages = shared::ROBuffer(
+            reinterpret_cast<shared::TriangleStorage*>(bvhMem.getCUdeviceptr() + offsetToTriStorages),
+            numTriStorages);
+        ret.primRefs = shared::ROBuffer(
+            reinterpret_cast<shared::PrimitiveReference*>(bvhMem.getCUdeviceptr() + offsetToPrimRefs),
+            numPrimRefs);
+        ret.parentPointers = shared::ROBuffer(
+            reinterpret_cast<shared::ParentPointer*>(bvhMem.getCUdeviceptr() + offsetToParentPointers),
+            numParentPointers);
+        return ret;
+    }
+};
+
+struct NRTDSMGeometry {
+    cudau::TypedBuffer<shared::Vertex> vertexBuffer;
+    cudau::TypedBuffer<shared::Triangle> triangleBuffer;
+    cudau::TypedBuffer<AABB> aabbBuffer;
+    cudau::TypedBuffer<shared::NRTDSMTriangleAuxInfo> triAuxInfoBuffer;
+
+    // for displacement mapping
+    Texture texHeight;
+    cudau::Array minMaxMipMap;
+    cudau::TypedBuffer<optixu::NativeBlockBuffer2D<float2>> minMaxMipMapSurfs;
+    // for shell mapping
+    ShellBVH shellBvh;
+};
+
+struct GeometryInstance {
+    const Material* mat;
+
     uint32_t geomInstSlot;
     optixu::GeometryInstance optixGeomInst;
+    std::variant<TriangleGeometry, CurveGeometry, TFDMGeometry, NRTDSMGeometry> geometry;
     AABB aabb;
-    optixu::GeometryType geometryType;
-    // for TFDM
-    cudau::TypedBuffer<shared::DisplacedTriangleAuxInfo> dispTriAuxInfoBuffer;
-    cudau::TypedBuffer<AABB> aabbBuffer;
 
     void draw() const {
+        Assert(std::holds_alternative<TriangleGeometry>(geometry), "draw() is available only for triangle mesh.");
+        const TriangleGeometry &triGeom = std::get<TriangleGeometry>(geometry);
         glUniform1ui(9, mat->materialSlot);
         glBindTextureUnit(0, mat->texNormal.glTexture->getHandle());
         glBindSampler(0, mat->texNormal.glSampler->getHandle());
@@ -652,10 +738,14 @@ struct GeometryInstance {
             flags |= 2 << 0;
         glUniform1ui(11, flags);
 
-        glBindVertexArray(gfxVertexArray.getHandle());
+        glBindVertexArray(triGeom.gfxVertexArray.getHandle());
         glDrawElements(
-            GL_TRIANGLES, 3 * static_cast<GLsizei>(triangleBuffer.numElements()),
+            GL_TRIANGLES, 3 * static_cast<GLsizei>(triGeom.triangleBuffer.numElements()),
             GL_UNSIGNED_INT, nullptr);
+    }
+
+    void finalize() {
+        optixGeomInst.destroy();
     }
 };
 
@@ -903,16 +993,7 @@ struct Scene {
             geomGroup->optixGas.destroy();
         }
         for (int i = static_cast<int>(geomInsts.size()) - 1; i >= 0; --i) {
-            GeometryInstance* geomInst = geomInsts[i];
-            geomInst->aabbBuffer.finalize();
-            geomInst->dispTriAuxInfoBuffer.finalize();
-            geomInst->optixGeomInst.destroy();
-            geomInst->emitterPrimDist.finalize();
-            geomInst->triangleBuffer.finalize();
-            geomInst->vertexBuffer.finalize();
-            geomInst->gfxVertexArray.finalize();
-            geomInst->gfxTriangleBuffer.finalize();
-            geomInst->gfxVertexBuffer.finalize();
+            geomInsts[i]->finalize();
         }
         for (int i = static_cast<int>(materials.size()) - 1; i >= 0; --i) {
             Material* material = materials[i];
@@ -1023,11 +1104,15 @@ struct Scene {
 
         for (int geomInstIdx = 0; geomInstIdx < geomInsts.size(); ++geomInstIdx) {
             const GeometryInstance* geomInst = geomInsts[geomInstIdx];
-            if (!geomInst->emitterPrimDist.isInitialized())
+            if (!std::holds_alternative<TriangleGeometry>(geomInst->geometry))
+                continue;
+
+            auto &geom = std::get<TriangleGeometry>(geomInst->geometry);
+            if (!geom.emitterPrimDist.isInitialized())
                 continue;
             shared::GeometryInstanceData* geomInstData =
                 geomInstDataBuffer.getDevicePointerAt(geomInst->geomInstSlot);
-            uint32_t numTriangles = static_cast<uint32_t>(geomInst->triangleBuffer.numElements());
+            uint32_t numTriangles = static_cast<uint32_t>(geom.triangleBuffer.numElements());
 #if USE_PROBABILITY_TEXTURE
             uint2 dims = shared::computeProbabilityTextureDimentions(numTriangles);
             uint32_t numMipLevels = nextPowOf2Exponent(dims.x) + 1;
@@ -1035,7 +1120,7 @@ struct Scene {
                 cuStream, computeProbTex.computeTriangleProbTexture.calcGridDim(dims.x * dims.y),
                 geomInstData, numTriangles,
                 materialDataBuffer.getDevicePointer(),
-                geomInst->emitterPrimDist.getSurfaceObject(0));
+                geom.emitterPrimDist.getSurfaceObject(0));
 #else
             computeProbTex.computeTriangleProbBuffer(
                 cuStream, computeProbTex.computeTriangleProbBuffer.calcGridDim(numTriangles),
@@ -1048,11 +1133,15 @@ struct Scene {
 
         for (int geomInstIdx = 0; geomInstIdx < geomInsts.size(); ++geomInstIdx) {
             const GeometryInstance* geomInst = geomInsts[geomInstIdx];
-            if (!geomInst->emitterPrimDist.isInitialized())
+            if (!std::holds_alternative<TriangleGeometry>(geomInst->geometry))
+                continue;
+
+            auto &geom = std::get<TriangleGeometry>(geomInst->geometry);
+            if (!geom.emitterPrimDist.isInitialized())
                 continue;
             shared::GeometryInstanceData* geomInstData =
                 geomInstDataBuffer.getDevicePointerAt(geomInst->geomInstSlot);
-            uint32_t numTriangles = static_cast<uint32_t>(geomInst->triangleBuffer.numElements());
+            uint32_t numTriangles = static_cast<uint32_t>(geom.triangleBuffer.numElements());
 #if USE_PROBABILITY_TEXTURE
             uint2 curDims = shared::computeProbabilityTextureDimentions(numTriangles);
             uint32_t numMipLevels = nextPowOf2Exponent(curDims.x) + 1;
@@ -1061,16 +1150,16 @@ struct Scene {
                 computeProbTex.computeMip(
                     cuStream, computeProbTex.computeMip.calcGridDim(curDims.x, curDims.y),
                     &geomInstData->emitterPrimDist, dstMipLevel,
-                    geomInst->emitterPrimDist.getSurfaceObject(dstMipLevel - 1),
-                    geomInst->emitterPrimDist.getSurfaceObject(dstMipLevel));
+                    geom.emitterPrimDist.getSurfaceObject(dstMipLevel - 1),
+                    geom.emitterPrimDist.getSurfaceObject(dstMipLevel));
                 //hpprintf("%5u-%u: %3u x %3u\n", geomInstIdx, dstMipLevel, curDims.x, curDims.y);
             }
 #else
             size_t scratchMemSize = scanScratchMem.sizeInBytes();
             CUDADRV_CHECK(cubd::DeviceScan::ExclusiveSum(
                 scanScratchMem.getDevicePointer(), scratchMemSize,
-                geomInst->emitterPrimDist.weightsOnDevice(),
-                geomInst->emitterPrimDist.cdfOnDevice(),
+                geom.emitterPrimDist.weightsOnDevice(),
+                geom.emitterPrimDist.cdfOnDevice(),
                 numTriangles, cuStream));
 
             computeProbTex.finalizeDiscreteDistribution1D(
@@ -1084,13 +1173,13 @@ struct Scene {
         //    CUDADRV_CHECK(cuStreamSynchronize(cuStream));
         //    for (int geomInstIdx = 0; geomInstIdx < geomInsts.size(); ++geomInstIdx) {
         //        GeometryInstance* geomInst = geomInsts[geomInstIdx];
-        //        if (!geomInst->emitterPrimDist.isInitialized())
+        //        if (!geom.emitterPrimDist.isInitialized())
         //            continue;
         //        shared::GeometryInstanceData* geomInstData =
         //            geomInstDataBuffer.getDevicePointerAt(geomInst->geomInstSlot);
         //        shared::LightDistribution lightDistOnHost;
         //        CUDADRV_CHECK(cuMemcpyDtoH(
-        //            &lightDistOnHost, reinterpret_cast<CUdeviceptr>(&geomInstData->emitterPrimDist),
+        //            &lightDistOnHost, reinterpret_cast<CUdeviceptr>(&geom.emitterPrimDist),
         //            sizeof(lightDistOnHost)));
         //        hpprintf("%5u: %g\n", geomInstIdx, lightDistOnHost.integral());
         //    }
@@ -1350,9 +1439,32 @@ GeometryInstance* createTFDMGeometryInstance(
     const std::vector<shared::Triangle> &triangles,
     const Material* mat, optixu::Material optixMat);
 
+GeometryInstance* createNRTDSMGeometryInstance(
+    CUcontext cuContext, Scene* scene,
+    const std::vector<shared::Vertex> &vertices,
+    const std::vector<shared::Triangle> &triangles,
+    const Material* mat, optixu::Material optixMat);
+
+GeometryInstance* createLinearSegmentsGeometryInstance(
+    CUcontext cuContext, Scene* scene,
+    const std::vector<shared::CurveVertex> &vertices,
+    const std::vector<uint32_t> &indices,
+    const Material* mat, optixu::Material optixMat);
+
 GeometryGroup* createGeometryGroup(
     Scene* scene,
     const std::set<const GeometryInstance*> &geomInsts);
+
+struct TriangleGeometryOnCPU {
+    std::vector<shared::Vertex> vertices;
+    std::vector<shared::Triangle> triangles;
+};
+
+void loadTriangleMeshGeometriesOnCPU(
+    const std::filesystem::path &filePath,
+    const Matrix4x4 &preTransform,
+    std::vector<TriangleGeometryOnCPU>* geometries,
+    AABB* aabb);
 
 void createTriangleMeshes(
     const std::string &meshName,

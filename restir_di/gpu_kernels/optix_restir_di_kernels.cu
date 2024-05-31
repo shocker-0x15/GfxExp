@@ -1,4 +1,4 @@
-﻿#include "../restir_shared.h"
+﻿#include "../restir_di_shared.h"
 
 using namespace shared;
 
@@ -116,7 +116,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void performInitialAndTemporalRIS() {
     // JP: 現在のサンプルが生き残る確率密度の逆数の推定値を計算する。
     // EN: Calculate the estimate of the reciprocal of the probability density that the current sample survives.
     float recPDFEstimate = reservoir.getSumWeights() / (selectedTargetDensity * reservoir.getStreamLength());
-    if (!isfinite(recPDFEstimate)) {
+    if (!stc::isfinite(recPDFEstimate)) {
         recPDFEstimate = 0.0f;
         selectedTargetDensity = 0.0f;
     }
@@ -271,7 +271,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void performInitialAndTemporalRIS() {
         // JP: 現在のサンプルが生き残る確率密度の逆数の推定値を計算する。
         // EN: Calculate the estimate of the reciprocal of the probability density that the current sample survives.
         recPDFEstimate = weightForEstimate * reservoir.getSumWeights() / selectedTargetDensity;
-        if (!isfinite(recPDFEstimate)) {
+        if (!stc::isfinite(recPDFEstimate)) {
             recPDFEstimate = 0.0f;
             selectedTargetDensity = 0.0f;
         }
@@ -367,7 +367,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void performSpatialRIS() {
         }
         else {
             radius *= std::sqrt(rng.getFloat0cTo1o());
-            const float angle = 2 * Pi * rng.getFloat0cTo1o();
+            const float angle = 2 * pi_v<float> * rng.getFloat0cTo1o();
             deltaX = radius * std::cos(angle);
             deltaY = radius * std::sin(angle);
         }
@@ -462,7 +462,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void performSpatialRIS() {
                 }
                 else {
                     radius *= std::sqrt(rng.getFloat0cTo1o());
-                    const float angle = 2 * Pi * rng.getFloat0cTo1o();
+                    const float angle = 2 * pi_v<float> * rng.getFloat0cTo1o();
                     deltaX = radius * std::cos(angle);
                     deltaY = radius * std::sin(angle);
                 }
@@ -536,7 +536,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void performSpatialRIS() {
     ReservoirInfo reservoirInfo;
     reservoirInfo.recPDFEstimate = weightForEstimate * combinedReservoir.getSumWeights() / selectedTargetDensity;
     reservoirInfo.targetDensity = selectedTargetDensity;
-    if (!isfinite(reservoirInfo.recPDFEstimate)) {
+    if (!stc::isfinite(reservoirInfo.recPDFEstimate)) {
         reservoirInfo.recPDFEstimate = 0.0f;
         reservoirInfo.targetDensity = 0.0f;
     }
@@ -597,7 +597,7 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(shading)() {
                 const float4 texValue = tex2DLod<float4>(mat.emittance, texCoord.x, texCoord.y, 0.0f);
                 emittance = RGB(getXYZ(texValue));
             }
-            contribution += emittance / Pi;
+            contribution += emittance / pi_v<float>;
         }
 
         // JP: 最終的に残ったサンプルとそのウェイトを使ってシェーディングを実行する。
@@ -605,7 +605,7 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(shading)() {
         const LightSample lightSample = reservoir.getSample();
         RGB directCont(0.0f);
         const float recPDFEstimate = reservoirInfo.recPDFEstimate;
-        if (recPDFEstimate > 0 && isfinite(recPDFEstimate)) {
+        if (recPDFEstimate > 0 && stc::isfinite(recPDFEstimate)) {
             const bool visDone = plp.f->reuseVisibility &&
                 (!plp.f->enableTemporalReuse || (plp.f->enableSpatialReuse && plp.f->useUnbiasedEstimator));
             if (visDone)

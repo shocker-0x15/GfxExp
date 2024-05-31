@@ -30,11 +30,13 @@ namespace shared {
 
 
 
+    struct TraversalStats {
+        uint16_t numAabbTests;
+        uint16_t numLeafTests;
+    };
+
     struct DisplacedSurfaceAttributes {
         Normal3D normalInObj;
-#if OUTPUT_TRAVERSAL_STATS
-        uint32_t numIterations;
-#endif
     };
 
 
@@ -101,9 +103,6 @@ namespace shared {
         uint32_t primIndex;
         uint16_t qbcB;
         uint16_t qbcC;
-#if OUTPUT_TRAVERSAL_STATS
-        uint32_t numTravIterations;
-#endif
     };
 
 
@@ -182,7 +181,7 @@ namespace shared {
         optixu::NativeBlockBuffer2D<GBuffer2Elements> GBuffer2[2];
 
 #if OUTPUT_TRAVERSAL_STATS
-        optixu::NativeBlockBuffer2D<uint32_t> numTravItrsBuffer;
+        optixu::NativeBlockBuffer2D<TraversalStats> numTravStatsBuffer;
 #endif
 
         ROBuffer<MaterialData> materialDataBuffer;
@@ -244,7 +243,9 @@ namespace shared {
         Normal,
         TexCoord,
         Flow,
-        TraversalIterations,
+        TotalTraversalTests,
+        AABBTests,
+        LeafTests,
         DenoisedBeauty,
     };
 
@@ -253,12 +254,15 @@ namespace shared {
     using AABBAttributeSignature = optixu::AttributeSignature<float, float>;
     using DisplacedSurfaceAttributeSignature = optixu::AttributeSignature<float, float, DisplacedSurfaceAttributes>;
 
-    using PrimaryRayPayloadSignature =
-        optixu::PayloadSignature<shared::HitPointParams*, shared::PickInfo*>;
-    using PathTraceRayPayloadSignature =
-        optixu::PayloadSignature<shared::PathTraceWriteOnlyPayload*, shared::PathTraceReadWritePayload*>;
-    using VisibilityRayPayloadSignature =
-        optixu::PayloadSignature<float>;
+    using PrimaryRayPayloadSignature = optixu::PayloadSignature<
+        shared::HitPointParams*, shared::PickInfo*
+#if OUTPUT_TRAVERSAL_STATS
+        , shared::TraversalStats
+#endif
+    >;
+    using PathTraceRayPayloadSignature = optixu::PayloadSignature<
+        shared::PathTraceWriteOnlyPayload*, shared::PathTraceReadWritePayload*>;
+    using VisibilityRayPayloadSignature = optixu::PayloadSignature<float>;
 }
 
 
@@ -286,11 +290,11 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void sampleLight(
         float u, v;
         float uvPDF;
         plp.s->envLightImportanceMap.sample(u0, u1, &u, &v, &uvPDF);
-        const float phi = 2 * Pi * u;
-        const float theta = Pi * v;
+        const float phi = 2 * pi_v<float> * u;
+        const float theta = pi_v<float> * v;
 
         float posPhi = phi - plp.f->envLightRotation;
-        posPhi = posPhi - floorf(posPhi / (2 * Pi)) * 2 * Pi;
+        posPhi = posPhi - floorf(posPhi / (2 * pi_v<float>)) * 2 * pi_v<float>;
 
         const Vector3D direction = fromPolarYUp(posPhi, theta);
         const Point3D position(direction.x, direction.y, direction.z);
@@ -307,13 +311,13 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void sampleLight(
             *areaPDensity = 0.0f;
             return;
         }
-        *areaPDensity = uvPDF / (2 * Pi * Pi * sinTheta);
+        *areaPDensity = uvPDF / (2 * pi_v<float> * pi_v<float> * sinTheta);
 
         texEmittance = plp.s->envLightTexture;
         // JP: 環境マップテクスチャーの値に係数をかけて、通常の光源と同じように返り値を光束発散度
         //     として扱えるようにする。
         // EN: Multiply a coefficient to make the return value possible to be handled as luminous emittance.
-        emittance = RGB(Pi * plp.f->envLightPowerCoeff);
+        emittance = RGB(pi_v<float> * plp.f->envLightPowerCoeff);
         texCoord.x = u;
         texCoord.y = v;
     }
@@ -396,7 +400,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void sampleLight(
                 const float cosGamma = -dot(cCA, cBC);
                 const float alpha = std::acos(cosAlpha);
                 const float sinAlpha = std::sqrt(1 - pow2(cosAlpha));
-                const float sphArea = alpha + std::acos(cosBeta) + std::acos(cosGamma) - Pi;
+                const float sphArea = alpha + std::acos(cosBeta) + std::acos(cosGamma) - pi_v<float>;
 
                 const float sphAreaHat = sphArea * u0;
                 const float s = std::sin(sphAreaHat - alpha);
@@ -431,7 +435,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void sampleLight(
 
             geomNormal = normalize(geomNormal);
             const float lpCos = -dot(dir, geomNormal);
-            if (lpCos > 0 && isfinite(dirPDF))
+            if (lpCos > 0 && stc::isfinite(dirPDF))
                 *areaPDensity = lightProb * (dirPDF * lpCos / pow2(dist));
             else
                 *areaPDensity = 0.0f;
@@ -499,7 +503,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE RGB performDirectLighting(
     }
 
     if (visibility > 0 && lpCos > 0) {
-        const RGB Le = lightSample.emittance / Pi; // assume diffuse emitter.
+        const RGB Le = lightSample.emittance / pi_v<float>; // assume diffuse emitter.
         const RGB fsValue = bsdf.evaluate(vOutLocal, shadowRayDirLocal);
         const float G = lpCos * std::fabs(spCos) / dist2;
         const RGB ret = fsValue * Le * G;
@@ -606,7 +610,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void computeSurfacePoint(
         const float instImportance = inst.lightGeomInstDist.integral();
         lightProb *= (pow2(inst.uniformScale) * instImportance) / plp.s->lightInstDist.integral();
         lightProb *= geomInst.emitterPrimDist.integral() / instImportance;
-        if (!isfinite(lightProb)) {
+        if (!stc::isfinite(lightProb)) {
             *hypAreaPDensity = 0.0f;
             return;
         }
@@ -622,13 +626,13 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void computeSurfacePoint(
             const float cosAlpha = -dot(cAB, cCA);
             const float cosBeta = -dot(cBC, cAB);
             const float cosGamma = -dot(cCA, cBC);
-            const float sphArea = std::acos(cosAlpha) + std::acos(cosBeta) + std::acos(cosGamma) - Pi;
+            const float sphArea = std::acos(cosAlpha) + std::acos(cosBeta) + std::acos(cosGamma) - pi_v<float>;
             const float dirPDF = 1.0f / sphArea;
             Vector3D refDir = referencePoint - *positionInWorld;
             const float dist2ToRefPoint = sqLength(refDir);
             refDir /= std::sqrt(dist2ToRefPoint);
             const float lpCos = dot(refDir, *geometricNormalInWorld);
-            if (lpCos > 0 && isfinite(dirPDF))
+            if (lpCos > 0 && stc::isfinite(dirPDF))
                 *hypAreaPDensity = lightProb * (dirPDF * lpCos / dist2ToRefPoint);
             else
                 *hypAreaPDensity = 0.0f;
@@ -636,7 +640,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void computeSurfacePoint(
         else {
             *hypAreaPDensity = lightProb / area;
         }
-        Assert(isfinite(*hypAreaPDensity), "hypP: %g, area: %g", *hypAreaPDensity, area);
+        Assert(stc::isfinite(*hypAreaPDensity), "hypP: %g, area: %g", *hypAreaPDensity, area);
     }
     else {
         (void)*hypAreaPDensity;
@@ -761,8 +765,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void down(Texel &texel, bool signX, bool signY)
 
 CUDA_DEVICE_FUNCTION CUDA_INLINE void next(Texel &texel, int32_t maxDepth) {
     while (true) {
-        switch (2 * floorMod(texel.x, 2) + floorMod(texel.y, 2)) {
         //switch (2 * (texel.x % 2) + texel.y % 2) {
+        switch (2 * floorMod(texel.x, 2) + floorMod(texel.y, 2)) {
         case 1:
             --texel.y;
             ++texel.x;
@@ -781,8 +785,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void next(Texel &texel, int32_t maxDepth) {
 
 CUDA_DEVICE_FUNCTION CUDA_INLINE void next(Texel &texel, bool signX, bool signY, int32_t maxDepth) {
     while (true) {
-        switch (2 * floorMod(texel.x + signX, 2) + floorMod(texel.y + signY, 2)) {
         //switch (2 * ((texel.x + signX) % 2) + (texel.y + signY) % 2) {
+        switch (2 * floorMod(texel.x + signX, 2) + floorMod(texel.y + signY, 2)) {
         case 1:
             texel.y += signY ? 1 : -1;
             texel.x += signX ? -1 : 1;
@@ -806,14 +810,14 @@ enum class TriangleSquareIntersection2DResult {
 };
 
 CUDA_DEVICE_FUNCTION CUDA_INLINE TriangleSquareIntersection2DResult testTriangleSquareIntersection2D(
-    const Point2D triPs[3], bool tcFlipped, const Vector2D triEdgeNormals[3],
+    const Point2D &pA, const Point2D &pB, const Point2D &pC, bool tcFlipped, const Vector2D triEdgeNormals[3],
     const Point2D &triAabbMinP, const Point2D &triAabbMaxP,
     const Point2D &squareCenter, float squareHalfWidth) {
     const Vector2D vSquareCenter = static_cast<Vector2D>(squareCenter);
     const Point2D relTriPs[] = {
-        triPs[0] - vSquareCenter,
-        triPs[1] - vSquareCenter,
-        triPs[2] - vSquareCenter,
+        pA - vSquareCenter,
+        pB - vSquareCenter,
+        pC - vSquareCenter,
     };
 
     // JP: テクセルのAABBと三角形のAABBのIntersectionを計算する。
@@ -861,7 +865,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void findRoots(
     const Vector2D d = triAabbMaxP - triAabbMinP;
     const uint32_t largerDim = d.y > d.x;
     int32_t startMipLevel = maxDepth - prevPowOf2Exponent(static_cast<uint32_t>(1.0f / d[largerDim])) - 1;
-    startMipLevel = /*std::*/max(startMipLevel, 0);
+    startMipLevel = stc::max(startMipLevel, 0);
     while (true) {
         const float res = std::pow(2.0f, static_cast<float>(maxDepth - startMipLevel));
         const int32_t minTexelX = static_cast<int32_t>(std::floor(res * triAabbMinP.x));

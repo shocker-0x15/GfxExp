@@ -210,6 +210,10 @@ namespace cudau {
         CUDA_COMMON_FUNCTION ROBufferTemplate(const T* data, uint32_t) :
             m_data(data) {}
 
+        CUDA_COMMON_FUNCTION const T* getAddress() const {
+            return m_data;
+        }
+
         template <CUDAU_INTEGRAL_CONCEPT I>
         CUDA_COMMON_FUNCTION const T &operator[](I idx) const {
             return m_data[idx];
@@ -231,6 +235,9 @@ namespace cudau {
         CUDA_COMMON_FUNCTION ROBufferTemplate(const T* data, uint32_t numElements) :
             m_data(data), m_numElements(numElements) {}
 
+        CUDA_COMMON_FUNCTION const T* getAddress() const {
+            return m_data;
+        }
         CUDA_COMMON_FUNCTION uint32_t getNumElements() const {
             return m_numElements;
         }
@@ -261,6 +268,10 @@ namespace cudau {
         CUDA_COMMON_FUNCTION RWBufferTemplate(const ROBufferTemplate<T, oobCheck> &buf) :
             m_data(const_cast<T*>(buf.m_data)) {}
 
+        CUDA_COMMON_FUNCTION T* getAddress() const {
+            return m_data;
+        }
+
         template <CUDAU_INTEGRAL_CONCEPT I>
         CUDA_COMMON_FUNCTION T &operator[](I idx) {
             return m_data[idx];
@@ -287,6 +298,9 @@ namespace cudau {
         CUDA_COMMON_FUNCTION RWBufferTemplate(const ROBufferTemplate<T, true> &buf) :
             m_data(const_cast<T*>(buf.m_data)), m_numElements(buf.m_numElements) {}
 
+        CUDA_COMMON_FUNCTION T* getAddress() const {
+            return m_data;
+        }
         CUDA_COMMON_FUNCTION uint32_t getNumElements() const {
             return m_numElements;
         }
@@ -500,10 +514,8 @@ namespace cudau {
         uint32_t m_GLBufferID;
         CUgraphicsResource m_cudaGfxResource;
 
-        struct {
-            unsigned int m_persistentMappedMemory : 1;
-            unsigned int m_initialized : 1;
-        };
+        uint32_t m_persistentMappedMemory : 1;
+        uint32_t m_initialized : 1;
 
         Buffer(const Buffer &) = delete;
         Buffer &operator=(const Buffer &) = delete;
@@ -888,13 +900,11 @@ namespace cudau {
         uint32_t m_GLTexID;
         CUgraphicsResource m_cudaGfxResource;
 
-        struct {
-            unsigned int m_surfaceLoadStore : 1;
-            unsigned int m_useTextureGather : 1;
-            unsigned int m_cubemap : 1;
-            unsigned int m_layered : 1;
-            unsigned int m_initialized : 1;
-        };
+        uint32_t m_surfaceLoadStore : 1;
+        uint32_t m_useTextureGather : 1;
+        uint32_t m_cubemap : 1;
+        uint32_t m_layered : 1;
+        uint32_t m_initialized : 1;
 
         Array(const Array &) = delete;
         Array &operator=(const Array &) = delete;

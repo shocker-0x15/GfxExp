@@ -14,7 +14,7 @@ set(
     CMAKE_MODULE_PATH
     "${CMAKE_SOURCE_DIR}/cmake"
     ${CMAKE_MODULE_PATH})
-find_package(CUDAToolkit 12.2 REQUIRED)
+find_package(CUDAToolkit 12.5 REQUIRED)
 find_package(OptiX80)
 include("copy_files")
 include("nvcuda_compile_ptx")
@@ -321,11 +321,12 @@ target_link_libraries(
 )
 
 add_subdirectory(path_tracing)
-add_subdirectory(restir)
+add_subdirectory(restir_di)
 add_subdirectory(regir)
 add_subdirectory(neural_radiance_caching)
 add_subdirectory(svgf)
 add_subdirectory(tfdm)
+add_subdirectory(nrtdsm)
 
 # Windowsはsymlink作成に追加の権限が必要。
 # file(CREATE_LINK "${CMAKE_SOURCE_DIR}/data" "${CMAKE_BINARY_DIR}/data" SYMBOLIC)

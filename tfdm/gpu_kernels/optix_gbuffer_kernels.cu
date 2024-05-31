@@ -3,6 +3,50 @@
 
 using namespace shared;
 
+CUDA_DEVICE_KERNEL void RT_IS_NAME(primaryDisplacedSurface_Box)() {
+#if OUTPUT_TRAVERSAL_STATS
+    TraversalStats travStats;
+    PrimaryRayPayloadSignature::get(nullptr, nullptr, &travStats);
+    displacedSurface_generic<true, LocalIntersectionType::Box>(&travStats);
+    PrimaryRayPayloadSignature::set(nullptr, nullptr, &travStats);
+#else
+    displacedSurface_generic<false, LocalIntersectionType::Box>(nullptr);
+#endif
+}
+
+CUDA_DEVICE_KERNEL void RT_IS_NAME(primaryDisplacedSurface_TwoTriangle)() {
+#if OUTPUT_TRAVERSAL_STATS
+    TraversalStats travStats;
+    PrimaryRayPayloadSignature::get(nullptr, nullptr, &travStats);
+    displacedSurface_generic<true, LocalIntersectionType::TwoTriangle>(&travStats);
+    PrimaryRayPayloadSignature::set(nullptr, nullptr, &travStats);
+#else
+    displacedSurface_generic<false, LocalIntersectionType::TwoTriangle>(nullptr);
+#endif
+}
+
+CUDA_DEVICE_KERNEL void RT_IS_NAME(primaryDisplacedSurface_Bilinear)() {
+#if OUTPUT_TRAVERSAL_STATS
+    TraversalStats travStats;
+    PrimaryRayPayloadSignature::get(nullptr, nullptr, &travStats);
+    displacedSurface_generic<true, LocalIntersectionType::Bilinear>(&travStats);
+    PrimaryRayPayloadSignature::set(nullptr, nullptr, &travStats);
+#else
+    displacedSurface_generic<false, LocalIntersectionType::Bilinear>(nullptr);
+#endif
+}
+
+CUDA_DEVICE_KERNEL void RT_IS_NAME(primaryDisplacedSurface_BSpline)() {
+#if OUTPUT_TRAVERSAL_STATS
+    TraversalStats travStats;
+    PrimaryRayPayloadSignature::get(nullptr, nullptr, &travStats);
+    displacedSurface_generic<true, LocalIntersectionType::BSpline>(&travStats);
+    PrimaryRayPayloadSignature::set(nullptr, nullptr, &travStats);
+#else
+    displacedSurface_generic<false, LocalIntersectionType::BSpline>(nullptr);
+#endif
+}
+
 CUDA_DEVICE_KERNEL void RT_RG_NAME(setupGBuffers)() {
     const uint2 launchIndex = make_uint2(optixGetLaunchIndex().x, optixGetLaunchIndex().y);
     const uint32_t bufIdx = plp.f->bufferIndex;
@@ -37,7 +81,9 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(setupGBuffers)() {
     hitPointParams.qbcB = 0;
     hitPointParams.qbcC = 0;
 #if OUTPUT_TRAVERSAL_STATS
-    hitPointParams.numTravIterations = 0;
+    TraversalStats travStats;
+    travStats.numAabbTests = 0;
+    travStats.numLeafTests = 0;
 #endif
 
     PickInfo pickInfo = {};
@@ -48,7 +94,11 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(setupGBuffers)() {
         plp.f->travHandle, origin.toNative(), direction.toNative(),
         0.0f, FLT_MAX, 0.0f, 0xFF, OPTIX_RAY_FLAG_NONE,
         GBufferRayType::Primary, maxNumRayTypes, GBufferRayType::Primary,
-        hitPointParamsPtr, pickInfoPtr);
+        hitPointParamsPtr, pickInfoPtr
+#if OUTPUT_TRAVERSAL_STATS
+        , travStats
+#endif
+        );
 
 
 
@@ -79,7 +129,7 @@ CUDA_DEVICE_KERNEL void RT_RG_NAME(setupGBuffers)() {
     plp.s->GBuffer2[bufIdx].write(launchIndex, gb2Elems);
 
 #if OUTPUT_TRAVERSAL_STATS
-    plp.s->numTravItrsBuffer.write(launchIndex, hitPointParams.numTravIterations);
+    plp.s->numTravStatsBuffer.write(launchIndex, travStats);
 #endif
 
     if (launchIndex.x == plp.f->mousePosition.x &&
@@ -119,7 +169,12 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
 
     HitPointParams* hitPointParams;
     PickInfo* pickInfo;
-    PrimaryRayPayloadSignature::get(&hitPointParams, &pickInfo);
+    PrimaryRayPayloadSignature::get(
+        &hitPointParams, &pickInfo
+#if OUTPUT_TRAVERSAL_STATS
+        , nullptr
+#endif
+    );
 
     const auto hp = HitPointParameter::get();
     const uint32_t hitKind = optixGetHitKind();
@@ -131,11 +186,8 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
         || hitKind == CustomHitKind_DisplacedSurfaceBackFace;
     hitPointParams->instSlot = optixGetInstanceId();
     hitPointParams->geomInstSlot = sbtr.geomInstSlot;
-    hitPointParams->isDisplacedMesh = isDisplacedTriangleHit;
+    hitPointParams->isDisplacedMesh = !isTriangleHit;
     hitPointParams->primIndex = hp.primIndex;
-#if OUTPUT_TRAVERSAL_STATS
-    hitPointParams->numTravIterations = 0;
-#endif
 
     Point3D positionInWorld;
     Point3D prevPositionInWorld;
@@ -170,9 +222,6 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
             DisplacedSurfaceAttributeSignature::get(nullptr, nullptr, &hitAttrs);
             geometricNormalInObj = hitAttrs.normalInObj;
             shadingNormalInObj = hitAttrs.normalInObj;
-#if OUTPUT_TRAVERSAL_STATS
-            hitPointParams->numTravIterations = hitAttrs.numIterations;
-#endif
 
             const GeometryInstanceDataForTFDM &tfdmGeomInst = plp.s->geomInstTfdmDataBuffer[sbtr.geomInstSlot];
             targetMipLevel = tfdmGeomInst.params.targetMipLevel;
@@ -197,7 +246,8 @@ CUDA_DEVICE_KERNEL void RT_CH_NAME(setupGBuffers)() {
         Normal3D normalInObj;
         const Point3D positionInObj = aabb.restoreHitPoint(hp.bcB, hp.bcC, &normalInObj);
         positionInWorld = transformPointFromObjectToWorldSpace(positionInObj);
-        shadingNormalInWorld = normalize(transformNormalFromObjectToWorldSpace(normalInObj));
+        geometricNormalInWorld = normalize(transformNormalFromObjectToWorldSpace(normalInObj));
+        shadingNormalInWorld = geometricNormalInWorld;
         texCoord = Point2D(0.0f, 0.0f);
         Vector3D bitangent;
         makeCoordinateSystem(shadingNormalInWorld, &texCoord0DirInWorld, &bitangent);
@@ -246,13 +296,18 @@ CUDA_DEVICE_KERNEL void RT_MS_NAME(setupGBuffers)() {
 
     const float phi = posPhi + plp.f->envLightRotation;
 
-    float u = phi / (2 * Pi);
+    float u = phi / (2 * pi_v<float>);
     u -= floorf(u);
-    const float v = posTheta / Pi;
+    const float v = posTheta / pi_v<float>;
 
     HitPointParams* hitPointParams;
     PickInfo* pickInfo;
-    PrimaryRayPayloadSignature::get(&hitPointParams, &pickInfo);
+    PrimaryRayPayloadSignature::get(
+        &hitPointParams, &pickInfo
+#if OUTPUT_TRAVERSAL_STATS
+        , nullptr
+#endif
+    );
 
     hitPointParams->positionInWorld = p;
     hitPointParams->prevPositionInWorld = p;
@@ -271,7 +326,7 @@ CUDA_DEVICE_KERNEL void RT_MS_NAME(setupGBuffers)() {
         if (plp.s->envLightTexture && plp.f->enableEnvLight) {
             float4 texValue = tex2DLod<float4>(plp.s->envLightTexture, u, v, 0.0f);
             emittance = RGB(getXYZ(texValue));
-            emittance *= Pi * plp.f->envLightPowerCoeff;
+            emittance *= pi_v<float> * plp.f->envLightPowerCoeff;
         }
         pickInfo->emittance = emittance;
     }

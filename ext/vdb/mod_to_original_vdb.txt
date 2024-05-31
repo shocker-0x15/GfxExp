@@ -1,0 +1,10 @@
+Original repository:
+https://github.com/zdevito/vdb
+
+Ideally vdb integration is just to include vdb.h.
+However, sometimes it is messed because of errors due to the order of includes or environments.
+Therefore I (NOT the author of vdb) added vdb.cpp and vdb_interface.h to isolate the actual vdb source code from the others to make integration stable (at the cost of a slight effort increase).
+Now you need to include vdb_interface.h instead of vdb.h and don't forget to compile vdb.cpp.
+
+vdb.h comes from the above repository, but "static" qualifiers are removed from the APIs for this.
+LICENSE also comes from the repository.

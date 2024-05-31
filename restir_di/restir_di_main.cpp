@@ -25,24 +25,26 @@ You can load a 3D model for example by downloading from the internet.
     -begin-pos -5 7 -4.8 -begin-pitch -30 -end-pos 5 7 -4.8 -end-pitch -30 -freq 5 -inst rectlight3
     -begin-pos 5 7 4.8 -begin-pitch 30 -end-pos -5 7 4.8 -end-pitch 30 -freq 5 -inst rectlight3
 
-JP: このプログラムはReSTIR (Reservoir-based Spatio-Temporal Importance Resampling) [1]の実装例です。
-    ReSTIRでは、Resampled Importance Sampling (RIS), Weighted Reservoir Sampling (WRS)、
+JP: このプログラムはReSTIR DI (Reservoir-based Spatio-Temporal Importance Resampling
+    for Direct Illumination) [1] の実装例です。
+    ReSTIR DIでは、Resampled Importance Sampling (RIS), Weighted Reservoir Sampling (WRS)、
     そして複数のReservoirを結合する際の特性を利用することで、プライマリーヒットにおいて
     大量の発光プリミティブからの効率的なサンプリングが可能となります。
     さらにRearchitected ReSTIR [2]の実装も行っています。
-    Rearchitected版はアルゴリズムの構造を変更することでオリジナルのReSTIRにあったボトルネックを解消、
+    Rearchitected版はアルゴリズムの構造を変更することでオリジナルのReSTIR DIにあったボトルネックを解消、
     劇的な性能向上・品質向上を実現しています。
     ※デフォルトではBRDFにOptiXのCallable ProgramやCUDAの関数ポインターを使用した汎用的な実装になっており、
       性能上のオーバーヘッドが著しいため、純粋な性能を見る上では common_shared.h の USE_HARD_CODED_BSDF_FUNCTIONS
       を有効化したほうがよいかもしれません。
 
-EN: This program is an example implementation of ReSTIR (Reservoir-based Spatio-Temporal Importance Resampling) [1].
-    ReSTIR enables efficient sampling from a massive amount of emitter primitives at primary hit by
+EN: This program is an example implementation of ReSTIR (Reservoir-based Spatio-Temporal Importance Resampling
+    for Direct Illumination) [1].
+    ReSTIR DI enables efficient sampling from a massive amount of emitter primitives at primary hit by
     Resampled Importance Sampling (RIS), Weighted Reservoir Sampling (WRS), and utilizing the property of
     combining multiple reservoirs.
     Additionally this implements the rearchitected ReSTIR [2] as well.
     The rearchitected variant achieves significant improvements on performance and quality
-    by changing algorithmic structure to remove the bottlenecks in the original ReSTIR.
+    by changing algorithmic structure to remove the bottlenecks in the original ReSTIR DI.
     * The program is generic implementation with OptiX's callable program and CUDA's function pointer,
       and has significant performance overhead, therefore it may be recommended to enable USE_HARD_CODED_BSDF_FUNCTIONS
       in common_shared.h to see pure performance.
@@ -54,7 +56,7 @@ EN: This program is an example implementation of ReSTIR (Reservoir-based Spatio-
 
 */
 
-#include "restir_shared.h"
+#include "restir_di_shared.h"
 #include "../common/common_host.h"
 
 // Include glfw3.h after our OpenGL definitions
@@ -135,7 +137,7 @@ struct GPUEnvironment {
 
         CUDADRV_CHECK(cuModuleLoad(
             &perPixelRISModule,
-            (getExecutableDirectory() / "restir/ptxes/per_pixel_ris.ptx").string().c_str()));
+            (getExecutableDirectory() / "restir_di/ptxes/per_pixel_ris.ptx").string().c_str()));
         kernelPerformLightPreSampling =
             cudau::Kernel(perPixelRISModule, "performLightPreSampling", cudau::dim3(32), 0);
         kernelPerformPerPixelRIS =
@@ -166,7 +168,7 @@ struct GPUEnvironment {
                 OPTIX_PRIMITIVE_TYPE_FLAGS_TRIANGLE);
 
             m = p.createModuleFromPTXString(
-                readTxtFile(getExecutableDirectory() / "restir/ptxes/optix_gbuffer_kernels.ptx"),
+                readTxtFile(getExecutableDirectory() / "restir_di/ptxes/optix_gbuffer_kernels.ptx"),
                 OPTIX_COMPILE_DEFAULT_MAX_REGISTER_COUNT,
                 DEBUG_SELECT(OPTIX_COMPILE_OPTIMIZATION_LEVEL_0, OPTIX_COMPILE_OPTIMIZATION_DEFAULT),
                 DEBUG_SELECT(OPTIX_COMPILE_DEBUG_LEVEL_FULL, OPTIX_COMPILE_DEBUG_LEVEL_NONE));
@@ -237,7 +239,7 @@ struct GPUEnvironment {
                 OPTIX_PRIMITIVE_TYPE_FLAGS_TRIANGLE);
 
             m = p.createModuleFromPTXString(
-                readTxtFile(getExecutableDirectory() / "restir/ptxes/optix_restir_kernels.ptx"),
+                readTxtFile(getExecutableDirectory() / "restir_di/ptxes/optix_restir_di_kernels.ptx"),
                 OPTIX_COMPILE_DEFAULT_MAX_REGISTER_COUNT,
                 DEBUG_SELECT(OPTIX_COMPILE_OPTIMIZATION_LEVEL_0, OPTIX_COMPILE_OPTIMIZATION_DEFAULT),
                 DEBUG_SELECT(OPTIX_COMPILE_DEBUG_LEVEL_FULL, OPTIX_COMPILE_DEBUG_LEVEL_NONE));
@@ -331,7 +333,7 @@ struct GPUEnvironment {
                 OPTIX_PRIMITIVE_TYPE_FLAGS_TRIANGLE);
 
             m = p.createModuleFromPTXString(
-                readTxtFile(getExecutableDirectory() / "restir/ptxes/optix_restir_rearch_kernels.ptx"),
+                readTxtFile(getExecutableDirectory() / "restir_di/ptxes/optix_restir_di_rearch_kernels.ptx"),
                 OPTIX_COMPILE_DEFAULT_MAX_REGISTER_COUNT,
                 DEBUG_SELECT(OPTIX_COMPILE_OPTIMIZATION_LEVEL_0, OPTIX_COMPILE_OPTIMIZATION_DEFAULT),
                 DEBUG_SELECT(OPTIX_COMPILE_DEBUG_LEVEL_FULL, OPTIX_COMPILE_DEBUG_LEVEL_NONE));
@@ -1107,7 +1109,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
     Scene scene;
     scene.initialize(
-        getExecutableDirectory() / "restir/ptxes",
+        getExecutableDirectory() / "restir_di/ptxes",
         gpuEnv.cuContext, gpuEnv.optixContext, shared::maxNumRayTypes);
 
     StreamChain<2> streamChain;
@@ -1430,7 +1432,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
     // EN: Denoiser requires linear buffers as input/output, so we need to copy the results.
     CUmodule moduleCopyBuffers;
     CUDADRV_CHECK(cuModuleLoad(
-        &moduleCopyBuffers, (getExecutableDirectory() / "restir/ptxes/copy_buffers.ptx").string().c_str()));
+        &moduleCopyBuffers, (getExecutableDirectory() / "restir_di/ptxes/copy_buffers.ptx").string().c_str()));
     cudau::Kernel kernelCopyToLinearBuffers(
         moduleCopyBuffers, "copyToLinearBuffers", cudau::dim3(8, 8), 0);
     cudau::Kernel kernelVisualizeToOutputBuffer(
@@ -1477,8 +1479,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
     // EN: Shader to copy OptiX result to a frame buffer.
     glu::GraphicsProgram drawOptiXResultShader;
     drawOptiXResultShader.initializeVSPS(
-        readTxtFile(exeDir / "restir/shaders/drawOptiXResult.vert"),
-        readTxtFile(exeDir / "restir/shaders/drawOptiXResult.frag"));
+        readTxtFile(exeDir / "restir_di/shaders/drawOptiXResult.vert"),
+        readTxtFile(exeDir / "restir_di/shaders/drawOptiXResult.frag"));
 
 
 
@@ -1982,7 +1984,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         static int32_t log2MaxNumAccums = 16;
         static bool enableJittering = false;
         static bool enableBumpMapping = false;
-        bool lastFrameWasAnimated = false;
+        static bool lastFrameWasAnimated = false;
         static shared::BufferToDisplay bufferTypeToDisplay = shared::BufferToDisplay::NoisyBeauty;
         static bool debugSwitches[] = {
             false, false, false, false, false, false, false, false
@@ -2247,15 +2249,10 @@ int32_t main(int32_t argc, const char* argv[]) try {
         if (animate || lastFrameWasAnimated) {
             cudau::TypedBuffer<shared::InstanceData> &curInstDataBuffer = scene.instDataBuffer[bufferIndex];
             shared::InstanceData* instDataBufferOnHost = curInstDataBuffer.map();
+            // TODO: 更新分だけ送る？
             for (int i = 0; i < scene.instControllers.size(); ++i) {
                 InstanceController* controller = scene.instControllers[i];
-                Instance* inst = controller->inst;
-                shared::InstanceData &instData = instDataBufferOnHost[inst->instSlot];
                 controller->update(instDataBufferOnHost, animate ? 1.0f / 60.0f : 0.0f);
-                // TODO: まとめて送る。
-                CUDADRV_CHECK(cuMemcpyHtoDAsync(
-                    curInstDataBuffer.getCUdeviceptrAt(inst->instSlot),
-                    &instData, sizeof(instData), curCuStream));
             }
             curInstDataBuffer.unmap();
         }

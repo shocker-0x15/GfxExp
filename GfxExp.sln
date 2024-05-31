@@ -3,7 +3,7 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.32112.339
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "restir", "restir\restir.vcxproj", "{1EF1DE28-642D-4216-B2B3-CB456C99D435}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "restir_di", "restir_di\restir_di.vcxproj", "{1EF1DE28-642D-4216-B2B3-CB456C99D435}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "regir", "regir\regir.vcxproj", "{C90B0FB0-CCDA-4EA4-8D67-31B750EFD3ED}"
 EndProject
@@ -14,6 +14,8 @@ EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "svgf", "svgf\svgf.vcxproj", "{FB67C439-14C6-4C48-9742-22F261A1DB3A}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "tfdm", "tfdm\tfdm.vcxproj", "{C1ADE2D6-1C18-4558-A454-036EE13BAC70}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "nrtdsm", "nrtdsm\nrtdsm.vcxproj", "{6FE3FCE7-93DB-486C-AC45-EC28AB0004B1}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -45,6 +47,10 @@ Global
 		{C1ADE2D6-1C18-4558-A454-036EE13BAC70}.Debug|x64.Build.0 = Debug|x64
 		{C1ADE2D6-1C18-4558-A454-036EE13BAC70}.Release|x64.ActiveCfg = Release|x64
 		{C1ADE2D6-1C18-4558-A454-036EE13BAC70}.Release|x64.Build.0 = Release|x64
+		{6FE3FCE7-93DB-486C-AC45-EC28AB0004B1}.Debug|x64.ActiveCfg = Debug|x64
+		{6FE3FCE7-93DB-486C-AC45-EC28AB0004B1}.Debug|x64.Build.0 = Debug|x64
+		{6FE3FCE7-93DB-486C-AC45-EC28AB0004B1}.Release|x64.ActiveCfg = Release|x64
+		{6FE3FCE7-93DB-486C-AC45-EC28AB0004B1}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

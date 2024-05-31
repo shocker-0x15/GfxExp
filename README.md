@@ -8,15 +8,17 @@ I'll randomly put something for implementing/validating graphics papers here.
 
 You need to install [Git LFS](https://git-lfs.github.com/) to correctly clone this repository.
 
+
+
 ## 実装 / Implementations
 
-### ReSTIR: Reservoir-based Spatiotemporal Importance Resampling
+### ReSTIR DI: Reservoir-based Spatiotemporal Importance Resampling (for Direct Illumination)
 Spatiotemporal reservoir resampling for real-time ray tracing with dynamic direct lighting\
 https://research.nvidia.com/publication/2020-07_Spatiotemporal-reservoir-resampling
 
-ReSTIRでは、Resampled Importance Sampling (RIS), Weighted Reservoir Sampling (WRS)、そして複数のReservoirを結合する際の特性を利用することで、プライマリーヒットにおいて大量の発光プリミティブからの効率的なサンプリングが可能となります。
+ReSTIR DIでは、Resampled Importance Sampling (RIS), Weighted Reservoir Sampling (WRS)、そして複数のReservoirを結合する際の特性を利用することで、プライマリーヒットにおいて大量の発光プリミティブからの効率的なサンプリングが可能となります。
 
-ReSTIR enables efficient sampling from a massive amount of emitter primitives at primary hit by Resampled Importance Sampling (RIS), Weighted Reservoir Sampling (WRS) and utilizing the property of combining multiple reservoirs.
+ReSTIR DI enables efficient sampling from a massive amount of emitter primitives at primary hit by Resampled Importance Sampling (RIS), Weighted Reservoir Sampling (WRS) and utilizing the property of combining multiple reservoirs.
 
 - [x] Basic Implementation (Biased RIS Estimator, Spatio-temporal Reuse)
 - [x] Advanced Items
@@ -27,16 +29,16 @@ ReSTIR enables efficient sampling from a massive amount of emitter primitives at
         "Rearchitecting Spatiotemporal Resampling for Production"\
         https://research.nvidia.com/publication/2021-07_Rearchitecting-Spatiotemporal-Resampling
 
-![example](restir/comparison.jpg)
+![example](restir_di/comparison.jpg)
 Amazon Lumberyard Bistro (Exterior) from Morgan McGuire's [Computer Graphics Archive](https://casual-effects.com/data)
 
 ### ReGIR: Reservoir-based Grid Importance Resampling
 Chapter 23. "Rendering Many Lights with Grid-based Reservoirs", Ray Tracing Gems II\
 https://www.realtimerendering.com/raytracinggems/rtg2/index.html
 
-ReGIRでは、ReSTIRと同様にStreaming RISを用いて大量の発光プリミティブからの効率的なサンプリングが可能となります。ReSTIRとは異なり、セカンダリー以降の光源サンプリングにも対応するため、Reservoirをワールド空間のグリッドに記録し、2段階のStreaming RISを行います。
+ReGIRでは、ReSTIRと同様にStreaming RISを用いて大量の発光プリミティブからの効率的なサンプリングが可能となります。ReSTIR DIとは異なり、セカンダリー以降の光源サンプリングにも対応するため、Reservoirをワールド空間のグリッドに記録し、2段階のStreaming RISを行います。
 
-ReGIR enables efficient sampling from a massive amount of emitter primitives by using streaming RIS similar to ReSTIR. Unlike ReSTIR, ReGIR stores reservoirs in a world space grid and performs two-stage streaming RIS to support light sampling after secondary visibility.
+ReGIR enables efficient sampling from a massive amount of emitter primitives by using streaming RIS similar to ReSTIR. Unlike ReSTIR DI, ReGIR stores reservoirs in a world space grid and performs two-stage streaming RIS to support light sampling after secondary visibility.
 
 - [x] Basic Implementation (Uniform Grid, Temporal Reuse)
 - [ ] Advanced Items
@@ -102,24 +104,52 @@ In TFDM, a minmax mipmap is used to store the minimum and maximum values of each
 ![example](tfdm/comparison.jpg)
 Height map from [textures.com](https://www.textures.com/download/3DScans0422/133306)
 
+### Nonlinear Ray Tracing for Displacement and Shell Mapping
+Nonlinear Ray Tracing for Displacement and Shell Mapping\
+https://github.com/shinjiogaki/nonlinear-ray-tracing
+
+シェル空間──ベース三角形と頂点法線からつくられるオフセット三角形に囲まれる空間──とテクスチャー空間──ディスプレイスメントマッピングにおけるハイトフィールドやシェルマッピングにおけるインスタンスのBVHが「歪みなく」存在する──のマッピングを考えると、テクスチャー空間内ではレイは曲線、具体的には二次の有理関数で表されます。同手法では曲線レイと、MinmaxミップマップやインスタンスのBVHによって与えられるAABBやテクスチャー空間中でのマイクロ三角形の交叉判定を直接解くことで省メモリかつ面倒な初期化処理が不要で効率的なディスプレイスメントマッピングやシェルマッピングを実現します。
+
+Given the mapping between shell space — a space enclosed by the base triangle and the offset triangle formed by vertex normals — and texture space — where height fields in displacement mapping and instanced BVHs in shell mapping exist without "distortion" —, rays in texture space are represented as curves, specifically degree-2 as rational functions. The proposed method directly solves the intersection test between a curved ray and an AABB given by a minmax mipmap or an instanced BVH, and the test between the curved ray and a micro triangle in texture space to achieve efficient and low-memory displacement mapping and shell mapping without troublesome initialization.
+
+- [x] Basic Implementation
+  - [x] Displacement mapping (non-wrapping texture)
+  - [x] Shell mapping (non-wrapping texture)
+- [x] Advanced Items
+  - [x] Better root choice
+  - [x] Traversal order based on ray-box hit distance
+  - [x] Texture wrapping
+  - [x] Texture transform
+  - [x] Multi-material support for shell mapping
+
+![example](nrtdsm/comparison.jpg)
+Height map from [aaa](bbb)
+
+
+
 ## その他 / Miscellaneous
 OptiX/CUDAのラッパーとして[OptiX Utility](https://github.com/shocker-0x15/OptiX_Utility)を使用しています。
 
 Programs here use [OptiX Utility](https://github.com/shocker-0x15/OptiX_Utility) as OptiX/CUDA wrapper.
 
+
+
 ## 動作環境 / Confirmed Environment
 現状以下の環境で動作を確認しています。\
 I've confirmed that the program runs correctly in the following environment.
 
-* Windows 11 (23H2) & Visual Studio Community 2022 (17.8.2)
+* Windows 11 (23H2) & Visual Studio Community 2022 (17.9.7)
 * Ryzen 9 7950X, 64GB, RTX 4080 16GB
-* NVIDIA Driver 546.17 (Note that versions around 510-512 had several OptiX issues.)
+* NVIDIA Driver 555.85 (Note that versions around 510-512 had several OptiX issues.)
 
 動作させるにあたっては以下のライブラリが必要です。\
 It requires the following libraries.
 
-* CUDA 12.2
+* CUDA 12.5\
+  Note that CUDA 12.5 has compilation issues for C++20 with Visual Studio 2022 17.10.0.
 * OptiX 8.0.0 (requires Maxwell or later generation NVIDIA GPU)
+
+
 
 ## オープンソースソフトウェア / Open Source Software
 - [Open Asset Import Library (assimp)](https://github.com/assimp/assimp)
@@ -133,4 +163,4 @@ It requires the following libraries.
 - [Tiny OpenEXR image library (tinyexr)](https://github.com/syoyo/tinyexr)
 
 ----
-2023 [@Shocker_0x15](https://twitter.com/Shocker_0x15)
+2024 [@Shocker_0x15](https://twitter.com/Shocker_0x15)

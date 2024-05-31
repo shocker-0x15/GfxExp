@@ -12,15 +12,6 @@ concept Number = std::integral<T> || std::floating_point<T>;
 
 
 
-template <typename T>
-CUDA_COMMON_FUNCTION CUDA_INLINE void swap(T &a, T &b) {
-    T temp = a;
-    a = b;
-    b = temp;
-}
-
-
-
 enum class RoundingMode {
     N = 0,
     U,
@@ -303,7 +294,7 @@ public:
     CUDA_DEVICE_FUNCTION IAFloat(FloatType x = 0) : m_lo(x), m_hi(x) {}
     CUDA_DEVICE_FUNCTION IAFloat(FloatType lo, FloatType hi) : m_lo(lo), m_hi(hi) {
         if (m_hi < m_lo)
-            swap(m_lo, m_hi);
+            stc::swap(m_lo, m_hi);
     }
 
     CUDA_DEVICE_FUNCTION FloatType &lo() {
@@ -492,7 +483,7 @@ public:
         FloatType absLo = std::fabs(v.m_lo);
         FloatType absHi = std::fabs(v.m_hi);
         if (absLo > absHi)
-            swap(absLo, absHi);
+            stc::swap(absLo, absHi);
         ret.m_lo = absLo;
         ret.m_hi = absHi;
 
@@ -503,7 +494,7 @@ public:
         FloatType absLo = std::fabs(v.m_lo);
         FloatType absHi = std::fabs(v.m_hi);
         if (absLo > absHi)
-            swap(absLo, absHi);
+            stc::swap(absLo, absHi);
         ret.m_lo = mul<RoundingMode::D>(absLo, absLo);
         ret.m_hi = mul<RoundingMode::U>(absHi, absHi);
         setRoundingMode<RoundingMode::N>();

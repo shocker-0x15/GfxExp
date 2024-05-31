@@ -1725,7 +1725,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         static bool animate = /*true*/false;
         static bool enableAccumulation = /*true*/false;
         static int32_t log2MaxNumAccums = 16;
-        bool lastFrameWasAnimated = false;
+        static bool lastFrameWasAnimated = false;
         static int32_t maxPathLength = 5;
         static bool enableTemporalAccumulation = true;
         static bool enableSVGF = true;
@@ -1918,14 +1918,10 @@ int32_t main(int32_t argc, const char* argv[]) try {
         // EN: Update the transform of each instance.
         if (animate || lastFrameWasAnimated) {
             shared::InstanceData* instDataBufferOnHost = curInstDataBuffer.map();
+            // TODO: 更新分だけ送る？
             for (int i = 0; i < scene.instControllers.size(); ++i) {
                 InstanceController* controller = scene.instControllers[i];
-                Instance* inst = controller->inst;
-                shared::InstanceData &instData = instDataBufferOnHost[inst->instSlot];
                 controller->update(instDataBufferOnHost, animate ? 1.0f / 60.0f : 0.0f);
-                // TODO: まとめて送る。
-                CUDADRV_CHECK(cuMemcpyHtoDAsync(curInstDataBuffer.getCUdeviceptrAt(inst->instSlot),
-                                                &instData, sizeof(instData), curCuStream));
             }
             curInstDataBuffer.unmap();
         }

@@ -1,4 +1,4 @@
-set(TARGET_NAME "restir")
+set(TARGET_NAME "nrtdsm")
 
 file(
     GLOB_RECURSE SOURCES
@@ -7,14 +7,13 @@ file(
 set(
     CUDA_KERNELS
     "gpu_kernels/copy_buffers.cu"
-    "gpu_kernels/per_pixel_ris.cu"
+    "gpu_kernels/nrtdsm_preprocess_kernels.cu"
 )
 
 set(
     OPTIX_KERNELS
     "gpu_kernels/optix_gbuffer_kernels.cu"
-    "gpu_kernels/optix_restir_kernels.cu"
-    "gpu_kernels/optix_restir_rearch_kernels.cu"
+    "gpu_kernels/optix_pathtracing_kernels.cu"
 )
 
 set(
@@ -25,6 +24,7 @@ set(
     "../common/common_shared.h"
     "../common/common_device.cuh"
     "${TARGET_NAME}_shared.h"
+    "gpu_kernels/nrtdsm_intersection_kernels.h"
 )
 
 nvcuda_compile_ptx(
@@ -73,7 +73,7 @@ source_group(
     "${CMAKE_CURRENT_SOURCE_DIR}/[^/]*\.(h|hpp|c|cpp)$")
 source_group(
     "essentials/GPU kernels" REGULAR_EXPRESSION
-    "${CMAKE_CURRENT_SOURCE_DIR}/gpu_kernels/[^/]*\.(cu)$")
+    "${CMAKE_CURRENT_SOURCE_DIR}/gpu_kernels/[^/]*\.(h|cu)$")
 
 add_executable(
     "${TARGET_NAME}"
@@ -89,4 +89,3 @@ target_link_libraries(
     "${TARGET_NAME}"
     fakelib
 )
-    
