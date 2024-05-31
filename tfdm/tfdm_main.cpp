@@ -2317,16 +2317,12 @@ int32_t main(int32_t argc, const char* argv[]) try {
         if (animate || lastFrameWasAnimated || frameIndex == 0) {
             cudau::TypedBuffer<shared::InstanceData> &curInstDataBuffer = scene.instDataBuffer[bufferIndex];
             shared::InstanceData* instDataBufferOnHost = curInstDataBuffer.map();
+            // TODO: 更新分だけ送る？
             for (int i = 0; i < scene.instControllers.size(); ++i) {
                 InstanceController* controller = scene.instControllers[i];
-                Instance* inst = controller->inst;
-                shared::InstanceData &instData = instDataBufferOnHost[inst->instSlot];
                 controller->update(instDataBufferOnHost, animate ? 1.0f / 60.0f : 0.0f);
-                // TODO: まとめて送る。
-                CUDADRV_CHECK(cuMemcpyHtoDAsync(
-                    curInstDataBuffer.getCUdeviceptrAt(inst->instSlot),
-                    &instData, sizeof(instData), curCuStream));
             }
+
             {
                 Matrix4x4 prevMatM2W = displacedMeshInst->matM2W;
                 Matrix3x3 matRot =
@@ -2338,14 +2334,11 @@ int32_t main(int32_t argc, const char* argv[]) try {
                 Matrix4x4 tMatM2W = transpose(displacedMeshInst->matM2W);
                 displacedMeshInst->optixInst.setTransform(reinterpret_cast<const float*>(&tMatM2W));
 
-                shared::InstanceData instData = instDataBufferOnHost[displacedMeshInst->instSlot];
+                shared::InstanceData &instData = instDataBufferOnHost[displacedMeshInst->instSlot];
                 instData.curToPrevTransform = prevMatM2W * invert(displacedMeshInst->matM2W);
                 instData.transform = displacedMeshInst->matM2W;
                 instData.normalMatrix = displacedMeshInst->nMatM2W;
                 instData.uniformScale = instScale;
-                CUDADRV_CHECK(cuMemcpyHtoDAsync(
-                    curInstDataBuffer.getCUdeviceptrAt(displacedMeshInst->instSlot),
-                    &instData, sizeof(instData), curCuStream));
             }
             curInstDataBuffer.unmap();
 
