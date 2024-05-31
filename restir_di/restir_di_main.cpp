@@ -1984,7 +1984,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         static int32_t log2MaxNumAccums = 16;
         static bool enableJittering = false;
         static bool enableBumpMapping = false;
-        bool lastFrameWasAnimated = false;
+        static bool lastFrameWasAnimated = false;
         static shared::BufferToDisplay bufferTypeToDisplay = shared::BufferToDisplay::NoisyBeauty;
         static bool debugSwitches[] = {
             false, false, false, false, false, false, false, false

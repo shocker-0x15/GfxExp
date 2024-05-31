@@ -1725,7 +1725,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         static bool animate = /*true*/false;
         static bool enableAccumulation = /*true*/false;
         static int32_t log2MaxNumAccums = 16;
-        bool lastFrameWasAnimated = false;
+        static bool lastFrameWasAnimated = false;
         static int32_t maxPathLength = 5;
         static bool enableTemporalAccumulation = true;
         static bool enableSVGF = true;

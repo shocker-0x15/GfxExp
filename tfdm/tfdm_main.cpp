@@ -1818,10 +1818,10 @@ int32_t main(int32_t argc, const char* argv[]) try {
         static bool useTemporalDenosier = true;
         static float motionVectorScale = -1.0f;
         bool animate = false;
-        static bool enableAccumulation = /*true*/false;
+        static bool enableAccumulation = true;
         static int32_t log2MaxNumAccums = 16;
-        static bool enableJittering = false;
-        bool lastFrameWasAnimated = false;
+        static bool enableJittering = /*false*/true;
+        static bool lastFrameWasAnimated = false;
         static shared::BufferToDisplay bufferTypeToDisplay = shared::BufferToDisplay::NoisyBeauty;
         static int32_t maxPathLength = 5;
 
