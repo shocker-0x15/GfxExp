@@ -8,11 +8,21 @@ I'll randomly put something for implementing/validating graphics papers here.
 
 You need to install [Git LFS](https://git-lfs.github.com/) to correctly clone this repository.
 
+- [実装 / Implementations](#implementations)
+  - [ReSTIR DI: Reservoir-based Spatiotemporal Importance Resampling (for Direct Illumination)](#restir_di)
+  - [ReGIR: Reservoir-based Grid Importance Resampling](#regir)
+  - [NRC: Neural Radiance Caching](#nrc)
+  - [SVGF: Spatiotemporal Variance-Guided Filtering](#svgf)
+  - [TFDM: Tessellation-Free Displacement Mapping](#tfdm)
+  - [Nonlinear Ray Tracing for Displacement and Shell Mapping](#nrtdsm)
+- [その他 / Miscellaneous](#miscellaneous)
+- [動作環境 / Confirmed Environment](#confirmed_environment)
+- [オープンソースソフトウェア / Open Source Software](#oss)
 
+<h2 id="implementations">実装 / Implementations</h2>
 
-## 実装 / Implementations
+<h2 id="restir_di">ReSTIR DI: Reservoir-based Spatiotemporal Importance Resampling (for Direct Illumination)</h2>
 
-### ReSTIR DI: Reservoir-based Spatiotemporal Importance Resampling (for Direct Illumination)
 Spatiotemporal reservoir resampling for real-time ray tracing with dynamic direct lighting\
 https://research.nvidia.com/publication/2020-07_Spatiotemporal-reservoir-resampling
 
@@ -34,7 +44,8 @@ ReSTIR DI enables efficient sampling from a massive amount of emitter primitives
 ![example](restir_di/comparison.jpg)
 Amazon Lumberyard Bistro (Exterior) from Morgan McGuire's [Computer Graphics Archive](https://casual-effects.com/data)
 
-### ReGIR: Reservoir-based Grid Importance Resampling
+<h2 id="regir">ReGIR: Reservoir-based Grid Importance Resampling</h2>
+
 Chapter 23. "Rendering Many Lights with Grid-based Reservoirs", Ray Tracing Gems II\
 https://www.realtimerendering.com/raytracinggems/rtg2/index.html
 
@@ -54,7 +65,8 @@ ReGIR enables efficient sampling from a massive amount of emitter primitives by 
 ![example](regir/comparison.jpg)
 Amazon Lumberyard Bistro (Interior) from Morgan McGuire's [Computer Graphics Archive](https://casual-effects.com/data)
 
-### NRC: Neural Radiance Caching
+<h2 id="nrc">NRC: Neural Radiance Caching</h2>
+
 Real-time Neural Radiance Caching for Path Tracing\
 https://research.nvidia.com/publication/2021-06_Real-time-Neural-Radiance
 
@@ -74,7 +86,8 @@ Path Tracing + Neural Radiance Cache replaces contributions given from beyond a 
 ![example](neural_radiance_caching/comparison.jpg)
 Zero-Day from [Open Research Content Archive (ORCA)](https://developer.nvidia.com/orca/beeple-zero-day)
 
-### SVGF: Spatiotemporal Variance-Guided Filtering
+<h2 id="svgf">SVGF: Spatiotemporal Variance-Guided Filtering</h2>
+
 Spatiotemporal Variance-Guided Filtering: Real-Time Reconstruction for Path-Traced Global Illumination\
 https://research.nvidia.com/publication/2017-07_spatiotemporal-variance-guided-filtering-real-time-reconstruction-path-traced
 
@@ -90,7 +103,8 @@ SVGF filters the lighting result in screen-space obtained by methods like path t
 ![example](svgf/comparison.jpg)
 Crytek Sponza from Morgan McGuire's [Computer Graphics Archive](https://casual-effects.com/data)
 
-### TFDM: Tessellation-Free Displacement Mapping
+<h2 id="tfdm">TFDM: Tessellation-Free Displacement Mapping</h2>
+
 Tessellation-Free Displacement Mapping for Ray Tracing\
 https://research.adobe.com/publication/tessellation-free-displacement-mapping-for-ray-tracing/
 
@@ -114,7 +128,8 @@ In TFDM, a minmax mipmap is used to store the minimum and maximum values of each
 ![example](tfdm/comparison.jpg)
 Height map from [textures.com](https://www.textures.com/download/3DScans0422/133306)
 
-### Nonlinear Ray Tracing for Displacement and Shell Mapping
+<h2 id="nrtdsm">Nonlinear Ray Tracing for Displacement and Shell Mapping</h2>
+
 Nonlinear Ray Tracing for Displacement and Shell Mapping\
 https://github.com/shinjiogaki/nonlinear-ray-tracing
 
@@ -139,14 +154,16 @@ Teapot from Morgan McGuire's [Computer Graphics Archive](https://casual-effects.
 
 
 
-## その他 / Miscellaneous
+<h2 id="miscellaneous">その他 / Miscellaneous</h2>
+
 OptiX/CUDAのラッパーとして[OptiX Utility](https://github.com/shocker-0x15/OptiX_Utility)を使用しています。
 
 Programs here use [OptiX Utility](https://github.com/shocker-0x15/OptiX_Utility) as OptiX/CUDA wrapper.
 
 
 
-## 動作環境 / Confirmed Environment
+<h2 id="confirmed_environment">動作環境 / Confirmed Environment</h2>
+
 現状以下の環境で動作を確認しています。\
 I've confirmed that the program runs correctly in the following environment.
 
@@ -163,7 +180,8 @@ It requires the following libraries.
 
 
 
-## オープンソースソフトウェア / Open Source Software
+<h2 id="oss">オープンソースソフトウェア / Open Source Software</h2>
+
 - [Open Asset Import Library (assimp)](https://github.com/assimp/assimp)
 - [CUBd](https://github.com/shocker-0x15/CUBd)
 - [Dear ImGui](https://github.com/ocornut/imgui)

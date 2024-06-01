@@ -1694,13 +1694,15 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void detailedSurface_generic(TraversalStats* tr
     Texel roots[4];
     uint32_t numRoots;
     if constexpr (forShellMapping) {
-        findRootsForShellMapping(texTriAabbMinP, texTriAabbMaxP, roots, &numRoots);
         const AABB rootAabb = nrtdsmGeomInst.shellBvh.intNodes[0].getAabb();
         minHeight = rootAabb.minP.z;
         maxHeight = rootAabb.maxP.z;
-        maxDepth = 0;
+        maxDepth = 0; // constant
+        findRootsForShellMapping(texTriAabbMinP, texTriAabbMaxP, roots, &numRoots);
     }
     else {
+        (void)minHeight;
+        (void)maxHeight;
         maxDepth = prevPowOf2Exponent(
             stc::max(nrtdsmGeomInst.heightMapSize.x, nrtdsmGeomInst.heightMapSize.y));
         findRoots(texTriAabbMinP, texTriAabbMaxP, maxDepth, targetMipLevel, roots, &numRoots);
