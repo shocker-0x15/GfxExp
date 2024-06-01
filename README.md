@@ -21,7 +21,7 @@ You need to install [Git LFS](https://git-lfs.github.com/) to correctly clone th
 
 <h2 id="implementations">実装 / Implementations</h2>
 
-<h2 id="restir_di">ReSTIR DI: Reservoir-based Spatiotemporal Importance Resampling (for Direct Illumination)</h2>
+<h3 id="restir_di">ReSTIR DI: Reservoir-based Spatiotemporal Importance Resampling (for Direct Illumination)</h3>
 
 Spatiotemporal reservoir resampling for real-time ray tracing with dynamic direct lighting\
 https://research.nvidia.com/publication/2020-07_Spatiotemporal-reservoir-resampling
@@ -44,7 +44,7 @@ ReSTIR DI enables efficient sampling from a massive amount of emitter primitives
 ![example](restir_di/comparison.jpg)
 Amazon Lumberyard Bistro (Exterior) from Morgan McGuire's [Computer Graphics Archive](https://casual-effects.com/data)
 
-<h2 id="regir">ReGIR: Reservoir-based Grid Importance Resampling</h2>
+<h3 id="regir">ReGIR: Reservoir-based Grid Importance Resampling</h3>
 
 Chapter 23. "Rendering Many Lights with Grid-based Reservoirs", Ray Tracing Gems II\
 https://www.realtimerendering.com/raytracinggems/rtg2/index.html
@@ -65,7 +65,7 @@ ReGIR enables efficient sampling from a massive amount of emitter primitives by 
 ![example](regir/comparison.jpg)
 Amazon Lumberyard Bistro (Interior) from Morgan McGuire's [Computer Graphics Archive](https://casual-effects.com/data)
 
-<h2 id="nrc">NRC: Neural Radiance Caching</h2>
+<h3 id="nrc">NRC: Neural Radiance Caching</h3>
 
 Real-time Neural Radiance Caching for Path Tracing\
 https://research.nvidia.com/publication/2021-06_Real-time-Neural-Radiance
@@ -86,7 +86,7 @@ Path Tracing + Neural Radiance Cache replaces contributions given from beyond a 
 ![example](neural_radiance_caching/comparison.jpg)
 Zero-Day from [Open Research Content Archive (ORCA)](https://developer.nvidia.com/orca/beeple-zero-day)
 
-<h2 id="svgf">SVGF: Spatiotemporal Variance-Guided Filtering</h2>
+<h3 id="svgf">SVGF: Spatiotemporal Variance-Guided Filtering</h3>
 
 Spatiotemporal Variance-Guided Filtering: Real-Time Reconstruction for Path-Traced Global Illumination\
 https://research.nvidia.com/publication/2017-07_spatiotemporal-variance-guided-filtering-real-time-reconstruction-path-traced
@@ -103,7 +103,7 @@ SVGF filters the lighting result in screen-space obtained by methods like path t
 ![example](svgf/comparison.jpg)
 Crytek Sponza from Morgan McGuire's [Computer Graphics Archive](https://casual-effects.com/data)
 
-<h2 id="tfdm">TFDM: Tessellation-Free Displacement Mapping</h2>
+<h3 id="tfdm">TFDM: Tessellation-Free Displacement Mapping</h3>
 
 Tessellation-Free Displacement Mapping for Ray Tracing\
 https://research.adobe.com/publication/tessellation-free-displacement-mapping-for-ray-tracing/
@@ -128,7 +128,7 @@ In TFDM, a minmax mipmap is used to store the minimum and maximum values of each
 ![example](tfdm/comparison.jpg)
 Height map from [textures.com](https://www.textures.com/download/3DScans0422/133306)
 
-<h2 id="nrtdsm">Nonlinear Ray Tracing for Displacement and Shell Mapping</h2>
+<h3 id="nrtdsm">Nonlinear Ray Tracing for Displacement and Shell Mapping</h3>
 
 Nonlinear Ray Tracing for Displacement and Shell Mapping\
 https://github.com/shinjiogaki/nonlinear-ray-tracing
