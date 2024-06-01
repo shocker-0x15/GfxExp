@@ -20,6 +20,8 @@ ReSTIR DIでは、Resampled Importance Sampling (RIS), Weighted Reservoir Sampli
 
 ReSTIR DI enables efficient sampling from a massive amount of emitter primitives at primary hit by Resampled Importance Sampling (RIS), Weighted Reservoir Sampling (WRS) and utilizing the property of combining multiple reservoirs.
 
+[Code](restir_di)
+
 - [x] Basic Implementation (Biased RIS Estimator, Spatio-temporal Reuse)
 - [x] Advanced Items
   - [x] Diffuse + Glossy BRDF
@@ -40,6 +42,8 @@ ReGIRでは、ReSTIRと同様にStreaming RISを用いて大量の発光プリ�
 
 ReGIR enables efficient sampling from a massive amount of emitter primitives by using streaming RIS similar to ReSTIR. Unlike ReSTIR DI, ReGIR stores reservoirs in a world space grid and performs two-stage streaming RIS to support light sampling after secondary visibility.
 
+[Code](regir)
+
 - [x] Basic Implementation (Uniform Grid, Temporal Reuse)
 - [ ] Advanced Items
   - [x] Diffuse + Glossy BRDF
@@ -57,6 +61,8 @@ https://research.nvidia.com/publication/2021-06_Real-time-Neural-Radiance
 Path Tracing + Neural Radiance Cacheは、ある経路長より先から得られる寄与をニューラルネットワークによるキャッシュからの値によって置き換えることで、少しのバイアスと引き換えに低い分散の推定値(、さらにシーンによっては短いレンダリング時間)を実現します。NRCは比較的小さなネットワークであり、トレーニングはレンダリングの最中に行うオンラインラーニングとすることで、「適応による汎化」を実現、推論の実行時間もリアルタイムレンダリングに適した短いものとなります。
 
 Path Tracing + Neural Radiance Cache replaces contributions given from beyond a certain path length by a value from the cache based on a neural network. This achieves low variance estimates at the cost of a little bias (, and additionally rendering time can even be reduced depending on the scene). NRC is a relatively small network, and training is online learning during rendering. This achieves "generalization via adaptation", and short inference time appropriate to real-time rendering.
+
+[Code](neural_radiance_caching)
 
 - [x] Basic Implementation (based on simple path tracing, frequency/one-blob input encoding)
 - [ ] Advanced Items
@@ -76,6 +82,8 @@ SVGFはパストレーシングなどによって得られたライティング�
 
 SVGF filters the lighting result in screen-space obtained by methods like path tracing with references to surface parameters. It tracks the variance of the lighting for each pixel in spatially and temporally, then uses smaller filter radii at lower variance parts and larger filter radii at higher variance parts to get rid of perceptual noises from the rendered image while avoiding excessive blurs in the image. It uses an à-trous filter so that large filter radii can be used with relatively low costs.
 
+[Code](svgf)
+
 - [x] Basic Implementation (temporal accumulation, SVGF, temporal AA)
 - [ ] Advanced Items
 
@@ -89,6 +97,8 @@ https://research.adobe.com/publication/tessellation-free-displacement-mapping-fo
 TFDMではハイトマップの各テクセルの最小値・最大値を階層的に記録したMinmaxミップマップを、ベースメッシュ形状と切り離した暗黙的なBVH(の一部)として用いることで、事前テッセレーションを行うことなく、省メモリに緻密なジオメトリに対するレイトレーシングを可能とします。トラバーサル中にはベース三角形ごとにIntersectionシェーダーが起動されます。三角形の各頂点における位置、法線、テクスチャー座標とMinmaxミップマップの値から、アフィン演算を用いてその場で階層的なAABBの計算とレイの交叉判定、最終的な形状との交叉判定を行います。
 
 In TFDM, a minmax mipmap is used to store the minimum and maximum values of each texel hierarchically as (a part of) an implicit BVH, which is decoupled from the base mesh shape. This allows for ray tracing against detailed geometry without pre-tessellation, resulting in a low memory footprint. Intersection shader is invoked during traversal for each base triangle. Using the position, normal, texture coordinates of the triangle vertices and the values from the minmax mipmap, AABB computation on the fly by affine arithmetic and ray intersection test is performed hierarchically, finally ray intersection test against the final shape.
+
+[Code](tfdm)
 
 - [x] Basic Implementation (Minmax mipmap traversal, box/two-triangle local intersection, non-wrapping texture)
 - [ ] Advanced Items
@@ -111,6 +121,8 @@ https://github.com/shinjiogaki/nonlinear-ray-tracing
 シェル空間──ベース三角形と頂点法線からつくられるオフセット三角形に囲まれる空間──とテクスチャー空間──ディスプレイスメントマッピングにおけるハイトフィールドやシェルマッピングにおけるインスタンスのBVHが「歪みなく」存在する──のマッピングを考えると、テクスチャー空間内ではレイは曲線、具体的には二次の有理関数で表されます。同手法では曲線レイと、MinmaxミップマップやインスタンスのBVHによって与えられるAABBやテクスチャー空間中でのマイクロ三角形の交叉判定を直接解くことで省メモリかつ面倒な初期化処理が不要で効率的なディスプレイスメントマッピングやシェルマッピングを実現します。
 
 Given the mapping between shell space — a space enclosed by the base triangle and the offset triangle formed by vertex normals — and texture space — where height fields in displacement mapping and instanced BVHs in shell mapping exist without "distortion" —, rays in texture space are represented as curves, specifically degree-2 as rational functions. The proposed method directly solves the intersection test between a curved ray and an AABB given by a minmax mipmap or an instanced BVH, and the test between the curved ray and a micro triangle in texture space to achieve efficient and low-memory displacement mapping and shell mapping without troublesome initialization.
+
+[Code](nrtdsm)
 
 - [x] Basic Implementation
   - [x] Displacement mapping (non-wrapping texture)
