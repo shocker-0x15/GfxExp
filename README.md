@@ -123,7 +123,7 @@ Given the mapping between shell space — a space enclosed by the base triangle 
   - [x] Multi-material support for shell mapping
 
 ![example](nrtdsm/comparison.jpg)
-Height map from [aaa](bbb)
+Teapot from Morgan McGuire's [Computer Graphics Archive](https://casual-effects.com/data)
 
 
 
