@@ -623,7 +623,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE uint32_t solveCubicEquationNumerical(
             if (cps[0] > cps[1])
                 stc::swap(cps[0], cps[1]);
         }
-        Assert(stc::isfinite(cps[0]) && stc::isfinite(cps[1]));
+        Assert(stc::isfinite(cps[0]) && stc::isfinite(cps[1]), "Invalid values.");
 
         // JP: 有効範囲が単調増加/減少区間内に収まっていて、
         // EN: If the valid range is confined to a monotonic increasing/decreasing interval,
@@ -1681,271 +1681,321 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void detailedSurface_generic(TraversalStats* tr
     const Point2D texTriAabbMinP = min(tcA, min(tcB, tcC));
     const Point2D texTriAabbMaxP = max(tcA, max(tcB, tcC));
 
-    const auto compute_h_v = [&](
-        const float u_plane, float hs[2], float vs[2]) {
-        solveQuadraticEquation(
-            tc2.x - u_plane * denom2,
-            tc1.x - u_plane * denom1,
-            tc0.x - u_plane * denom0, 0.0f, 1.0f,
-            hs);
-#pragma unroll
-        for (int i = 0; i < 2; ++i) {
-            vs[i] = NAN;
-            if (stc::isfinite(hs[i])) {
-                vs[i] = evaluateQuadraticPolynomial(tc2.y, tc1.y, tc0.y, hs[i])
-                    / evaluateQuadraticPolynomial(denom2, denom1, denom0, hs[i]);
-            }
-        }
-    };
 
-    const auto compute_h_u = [&](
-        const float v_plane, float hs[2], float us[2]) {
-        solveQuadraticEquation(
-            tc2.y - v_plane * denom2,
-            tc1.y - v_plane * denom1,
-            tc0.y - v_plane * denom0, 0.0f, 1.0f,
-            hs);
-#pragma unroll
-        for (int i = 0; i < 2; ++i) {
-            us[i] = NAN;
-            if (stc::isfinite(hs[i])) {
-                us[i] = evaluateQuadraticPolynomial(tc2.x, tc1.x, tc0.x, hs[i])
-                    / evaluateQuadraticPolynomial(denom2, denom1, denom0, hs[i]);
-            }
-        }
-    };
 
+    using MipMapStack = MipMapStack_T<forShellMapping ? 1 : 3>;
+    using StackEntry = typename MipMapStack::Entry;
+
+    float minHeight;
+    float maxHeight;
+    int32_t maxDepth;
+    constexpr int32_t targetMipLevel = 0;
+
+    Texel roots[4];
+    uint32_t numRoots;
     if constexpr (forShellMapping) {
-        using MipMapStack = MipMapStack_T<1>;
-        using StackEntry = typename MipMapStack::Entry;
-
-        const AABB rootAabb = nrtdsmGeomInst.shellBvh.intNodes[0].getAabb();
-        const float minHeight = rootAabb.minP.z;
-        const float maxHeight = rootAabb.maxP.z;
-
-        // JP: Shell MappingにおいてもシェルBVHをテクスチャーのようにリピートするため暗黙的な四分木を使用する。
-        //     四分木のトラバーサルにはDisplacement Mappingで使用するMipmapと同じスタックが使用できる。
-        // EN: We use an implicit quad tree for shell mapping to repeat the shell BVH like a texture.
-        //     We can use the same stack as used in displacement mapping for quad tree traversal.
-        Texel roots[4];
-        uint32_t numRoots;
         findRootsForShellMapping(texTriAabbMinP, texTriAabbMaxP, roots, &numRoots);
-        MipMapStack stack;
+        const AABB rootAabb = nrtdsmGeomInst.shellBvh.intNodes[0].getAabb();
+        minHeight = rootAabb.minP.z;
+        maxHeight = rootAabb.maxP.z;
+        maxDepth = 0;
+    }
+    else {
+        maxDepth = prevPowOf2Exponent(
+            stc::max(nrtdsmGeomInst.heightMapSize.x, nrtdsmGeomInst.heightMapSize.y));
+        findRoots(texTriAabbMinP, texTriAabbMaxP, maxDepth, targetMipLevel, roots, &numRoots);
+    }
+    MipMapStack stack;
 #if DEBUG_TRAVERSAL
-        uint32_t numIterations = 0;
+    uint32_t numIterations = 0;
+    if (isDebugPixel() && getDebugPrintEnabled()) {
+        printf(
+            "%u-%u: pA: (%g, %g, %g), pB: (%g, %g, %g), pC: (%g, %g, %g)\n",
+            plp.f->frameIndex, optixGetPrimitiveIndex(),
+            v3print(pA), v3print(pB), v3print(pC));
+        printf(
+            "%u-%u: nA: (%g, %g, %g), nB: (%g, %g, %g), nC: (%g, %g, %g)\n",
+            plp.f->frameIndex, optixGetPrimitiveIndex(),
+            v3print(nA), v3print(nB), v3print(nC));
+        printf(
+            "%u-%u: tcA: (%g, %g), tcB: (%g, %g), tcC: (%g, %g)\n",
+            plp.f->frameIndex, optixGetPrimitiveIndex(),
+            v2print(tcA), v2print(tcB), v2print(tcC));
+        printf(
+            "%u-%u: rayOrg: (%g, %g, %g), rayDir: (%g, %g, %g), range: (%g, %g)\n",
+            plp.f->frameIndex, optixGetPrimitiveIndex(),
+            v3print(rayOrgInObj), v3print(rayDirInObj),
+            prismHitDistEnter, prismHitDistLeave);
+        printf(
+            "%u-%u: alpha: (%g, %g, %g), beta: (%g, %g, %g), denom: (%g, %g, %g)\n",
+            plp.f->frameIndex, optixGetPrimitiveIndex(),
+            alpha2, alpha1, alpha0,
+            beta2, beta1, beta0,
+            denom2, denom1, denom0);
+        printf(
+            "%u-%u: uCoeffs: (%g, %g, %g), vCoeffs: (%g, %g, %g)\n",
+            plp.f->frameIndex, optixGetPrimitiveIndex(),
+            tc2.x, tc1.x, tc0.x,
+            tc2.y, tc1.y, tc0.y);
+        printf(
+            "%u-%u: TriAABB: (%g, %g) - (%g, %g), %u roots\n",
+            plp.f->frameIndex, optixGetPrimitiveIndex(),
+            v2print(texTriAabbMinP), v2print(texTriAabbMaxP),
+            numRoots);
+        if constexpr (!forShellMapping) {
+            printf(
+                "%u-%u: maxDepth: %d\n",
+                plp.f->frameIndex, optixGetPrimitiveIndex(),
+                maxDepth);
+        }
+    }
+#endif
+
+    // JP: Shell MappingにおいてもシェルBVHをテクスチャーのようにリピートするため暗黙的な四分木を使用する。
+    //     四分木のトラバーサルにはDisplacement Mappingで使用するMipmapと同じスタックが使用できる。
+    // EN: We use an implicit quad tree for shell mapping to repeat the shell BVH like a texture.
+    //     We can use the same stack as used in displacement mapping for quad tree traversal.
+    // TODO: better root order.
+    for (int rootIdx = 0; rootIdx < lengthof(roots); ++rootIdx) {
+        if (rootIdx >= numRoots)
+            break;
+        Texel curTexel = roots[rootIdx];
+        const int16_t initialLod = curTexel.lod;
+
+#if DEBUG_TRAVERSAL
         if (isDebugPixel() && getDebugPrintEnabled()) {
             printf(
-                "%u-%u: pA: (%g, %g, %g), pB: (%g, %g, %g), pC: (%g, %g, %g)\n",
-                plp.f->frameIndex, optixGetPrimitiveIndex(),
-                v3print(pA), v3print(pB), v3print(pC));
-            printf(
-                "%u-%u: nA: (%g, %g, %g), nB: (%g, %g, %g), nC: (%g, %g, %g)\n",
-                plp.f->frameIndex, optixGetPrimitiveIndex(),
-                v3print(nA), v3print(nB), v3print(nC));
-            printf(
-                "%u-%u: tcA: (%g, %g), tcB: (%g, %g), tcC: (%g, %g)\n",
-                plp.f->frameIndex, optixGetPrimitiveIndex(),
-                v2print(tcA), v2print(tcB), v2print(tcC));
-            printf(
-                "%u-%u: rayOrg: (%g, %g, %g), rayDir: (%g, %g, %g), range: (%g, %g)\n",
-                plp.f->frameIndex, optixGetPrimitiveIndex(),
-                v3print(rayOrgInObj), v3print(rayDirInObj),
-                prismHitDistEnter, prismHitDistLeave);
-            printf(
-                "%u-%u: alpha: (%g, %g, %g), beta: (%g, %g, %g), denom: (%g, %g, %g)\n",
-                plp.f->frameIndex, optixGetPrimitiveIndex(),
-                alpha2, alpha1, alpha0,
-                beta2, beta1, beta0,
-                denom2, denom1, denom0);
-            printf(
-                "%u-%u: uCoeffs: (%g, %g, %g), vCoeffs: (%g, %g, %g)\n",
-                plp.f->frameIndex, optixGetPrimitiveIndex(),
-                tc2.x, tc1.x, tc0.x,
-                tc2.y, tc1.y, tc0.y);
-            printf(
-                "%u-%u: TriAABB: (%g, %g) - (%g, %g), %u roots\n",
-                plp.f->frameIndex, optixGetPrimitiveIndex(),
-                v2print(texTriAabbMinP), v2print(texTriAabbMaxP),
-                numRoots);
+                "%u-%u, Root %u: [%d - %d, %d]\n",
+                plp.f->frameIndex, optixGetPrimitiveIndex(), rootIdx,
+                curTexel.lod, curTexel.x, curTexel.y);
         }
 #endif
-        // TODO: better root order.
-        for (int rootIdx = 0; rootIdx < lengthof(roots); ++rootIdx) {
-            if (rootIdx >= numRoots)
-                break;
-            Texel curTexel = roots[rootIdx];
-            const int16_t initialLod = curTexel.lod;
 
+        StackEntry curEntry(floorMod(curTexel.x, 2), floorMod(curTexel.y, 2));
+        while (curTexel.lod <= initialLod) {
 #if DEBUG_TRAVERSAL
-            if (isDebugPixel() && getDebugPrintEnabled()) {
-                printf(
-                    "%u-%u, Root %u: [%d - %d, %d]\n",
-                    plp.f->frameIndex, optixGetPrimitiveIndex(), rootIdx,
-                    curTexel.lod, curTexel.x, curTexel.y);
-            }
+            ++numIterations;
 #endif
-
-            StackEntry curEntry(floorMod(curTexel.x, 2), floorMod(curTexel.y, 2));
-            while (curTexel.lod <= initialLod) {
-#if DEBUG_TRAVERSAL
-                ++numIterations;
-#endif
-                if (curEntry.asUInt8 == 0xFF) {
-                    if (!stack.tryPop(curTexel.lod, &curEntry)) {
-#if DEBUG_TRAVERSAL
-                        if (isDebugPixel() && getDebugPrintEnabled()) {
-                            printf(
-                                "%u-%u, Root %u: [%d - %d, %d] up\n",
-                                plp.f->frameIndex, optixGetPrimitiveIndex(), rootIdx,
-                                curTexel.lod, curTexel.x, curTexel.y);
-                        }
-#endif
-                        up(curTexel);
-                        continue;
-                    }
-                }
-                curTexel.x = floorDiv(curTexel.x, 2) * 2 + curEntry.offsetX;
-                curTexel.y = floorDiv(curTexel.y, 2) * 2 + curEntry.offsetY;
-
-#if DEBUG_TRAVERSAL
-                if (isDebugPixel() && getDebugPrintEnabled()) {
-                    printf(
-                        "%u-%u, Root %u: Itr: %2u, [%d - %d, %d]\n",
-                        plp.f->frameIndex, optixGetPrimitiveIndex(), rootIdx,
-                        numIterations - 1,
-                        curTexel.lod, curTexel.x, curTexel.y);
-                }
-#endif
-
-                const float texelScale = std::pow(2.0f, static_cast<float>(curTexel.lod));
-                const Point2D texelCenter = Point2D(curTexel.x + 0.5f, curTexel.y + 0.5f) * texelScale;
-                const TriangleSquareIntersection2DResult isectResult =
-                    testTriangleSquareIntersection2D(
-                        tcA, tcB, tcC, tcFlipped, texTriEdgeNormals, texTriAabbMinP, texTriAabbMaxP,
-                        texelCenter, 0.5f * texelScale);
-
-                // JP: テクセルがベース三角形の外にある場合はテクセルをスキップ。
-                // EN: Skip the texel if it is outside of the base triangle.
-                if (isectResult == TriangleSquareIntersection2DResult::SquareOutsideTriangle) {
+            if (curEntry.asUInt8 == 0xFF) {
+                if (!stack.tryPop(curTexel.lod, &curEntry)) {
 #if DEBUG_TRAVERSAL
                     if (isDebugPixel() && getDebugPrintEnabled()) {
                         printf(
-                            "%u-%u, Root %u: [%d - %d, %d] OutTri\n",
+                            "%u-%u, Root %u: [%d - %d, %d] up\n",
                             plp.f->frameIndex, optixGetPrimitiveIndex(), rootIdx,
                             curTexel.lod, curTexel.x, curTexel.y);
                     }
 #endif
-                    curEntry.asUInt8 = 0xFF;
+                    up(curTexel);
                     continue;
                 }
-
-                // JP: 現在のテクセルの4つの子のAABBとレイの交差判定を行う。
-                // EN: Test ray vs four AABBs of the current texel's children.
-                if (curTexel.lod > 0) {
-                    const float us[3] = {
-                        curTexel.x * texelScale,
-                        (curTexel.x + 0.5f) * texelScale,
-                        (curTexel.x + 1.0f) * texelScale,
-                    };
-                    const float vs[3] = {
-                        curTexel.y * texelScale,
-                        (curTexel.y + 0.5f) * texelScale,
-                        (curTexel.y + 1.0f) * texelScale,
-                    };
-
-                    // JP: minmaxミップマップから作られるAABBは兄弟と共通の面を持っているため、
-                    //     u, v軸それぞれに垂直な面との交差判定は6回で足りる。
-                    // EN: AABBs made from the minmax mipmap shares planes among their siblings,
-                    //     so six intersection tests is enough for planes parpendicular to the u and v axes.
-                    float hs_u[3][2], vs_u[3][2];
-                    float hs_v[3][2], us_v[3][2];
-#pragma unroll
-                    for (int i = 0; i < 3; ++i) {
-                        compute_h_v(us[i], hs_u[i], vs_u[i]);
-                        compute_h_u(vs[i], hs_v[i], us_v[i]);
-                    }
-
-                    down(curTexel);
-
-                    StackEntry entries[4];
-                    float dists[4];
-                    int32_t numValidEntries = 0;
-#pragma unroll
-                    for (int i = 0; i < 4; ++i) {
-                        if constexpr (outputTravStats)
-                            ++travStats->numAabbTests;
-                        const int32_t uOff = i % 2;
-                        const int32_t vOff = i / 2;
-                        entries[i] = StackEntry(uOff, vOff);
-
-                        const int32_t iuLo = uOff;
-                        const int32_t iuHi = uOff + 1;
-                        const int32_t ivLo = vOff;
-                        const int32_t ivHi = vOff + 1;
-                        const AABB aabb(
-                            Point3D(us[iuLo], vs[ivLo], minHeight),
-                            Point3D(us[iuHi], vs[ivHi], maxHeight));
-                        float distMin, distMax;
-                        const bool hit = testNonlinearRayVsAabb(
-                            pA, pB, pC, nA, nB, nC,
-                            aabb,
-                            rayOrgInObj, rayDirInObj, prismHitDistEnter, hitDist,
-                            alpha2, alpha1, alpha0, beta2, beta1, beta0, denom2, denom1, denom0,
-                            tc2, tc1, tc0,
-                            hs_u[iuLo], vs_u[iuLo], hs_u[iuHi], vs_u[iuHi],
-                            hs_v[ivLo], us_v[ivLo], hs_v[ivHi], us_v[ivHi],
-                            &distMin, &distMax);
-                        float dist = INFINITY;
-                        if (hit) {
-                            dist = 0.5f * (distMin + distMax);
-                            ++numValidEntries;
-                        }
-                        dists[i] = dist;
+            }
+            curTexel.x = floorDiv(curTexel.x, 2) * 2 + curEntry.offsetX;
+            curTexel.y = floorDiv(curTexel.y, 2) * 2 + curEntry.offsetY;
 
 #if DEBUG_TRAVERSAL
-                        const int32_t x = curTexel.x + uOff;
-                        const int32_t y = curTexel.y + vOff;
-                        if (isDebugPixel() && getDebugPrintEnabled()) {
-                            printf(
-                                "%u-%u, Root %u: [%d - %d, %d], tMax: %g, AABB (%g, %g, %g) - (%g, %g, %g): %s, %g - %g\n",
-                                plp.f->frameIndex, optixGetPrimitiveIndex(), rootIdx,
-                                curTexel.lod, x, y,
-                                hitDist,
-                                v3print(aabb.minP), v3print(aabb.maxP),
-                                hit ? "Hit" : "Miss", hit ? distMin : NAN, hit ? distMax : NAN);
-                        }
+            if (isDebugPixel() && getDebugPrintEnabled()) {
+                printf(
+                    "%u-%u, Root %u: Itr: %2u, [%d - %d, %d]\n",
+                    plp.f->frameIndex, optixGetPrimitiveIndex(), rootIdx,
+                    numIterations - 1,
+                    curTexel.lod, curTexel.x, curTexel.y);
+            }
 #endif
-                    }
 
-                    const auto sort = []
-                    (float &distA, StackEntry &entryA,
-                     float &distB, StackEntry &entryB) {
-                        if (distA > distB) {
-                            const float tempDist = distA;
-                            distA = distB;
-                            distB = tempDist;
-                            const MipMapStack::Entry tempEntry = entryA;
-                            entryA = entryB;
-                            entryB = tempEntry;
+            const float texelScale = std::pow(2.0f, static_cast<float>(curTexel.lod - maxDepth));
+            const Point2D texelCenter = Point2D(curTexel.x + 0.5f, curTexel.y + 0.5f) * texelScale;
+            const TriangleSquareIntersection2DResult isectResult =
+                testTriangleSquareIntersection2D(
+                    tcA, tcB, tcC, tcFlipped, texTriEdgeNormals, texTriAabbMinP, texTriAabbMaxP,
+                    texelCenter, 0.5f * texelScale);
+
+            // JP: テクセルがベース三角形の外にある場合はテクセルをスキップ。
+            // EN: Skip the texel if it is outside of the base triangle.
+            if (isectResult == TriangleSquareIntersection2DResult::SquareOutsideTriangle) {
+#if DEBUG_TRAVERSAL
+                if (isDebugPixel() && getDebugPrintEnabled()) {
+                    printf(
+                        "%u-%u, Root %u: [%d - %d, %d] OutTri\n",
+                        plp.f->frameIndex, optixGetPrimitiveIndex(), rootIdx,
+                        curTexel.lod, curTexel.x, curTexel.y);
+                }
+#endif
+                curEntry.asUInt8 = 0xFF;
+                continue;
+            }
+
+            // JP: 現在のテクセルの4つの子のAABBとレイの交差判定を行う。
+            // EN: Test ray vs four AABBs of the current texel's children.
+            if (curTexel.lod > targetMipLevel) {
+                const float us[3] = {
+                    curTexel.x * texelScale,
+                    (curTexel.x + 0.5f) * texelScale,
+                    (curTexel.x + 1.0f) * texelScale,
+                };
+                const float vs[3] = {
+                    curTexel.y * texelScale,
+                    (curTexel.y + 0.5f) * texelScale,
+                    (curTexel.y + 1.0f) * texelScale,
+                };
+
+                const auto compute_h_v = [&](
+                    const float u_plane, float hs[2], float vs[2]) {
+                    solveQuadraticEquation(
+                        tc2.x - u_plane * denom2,
+                        tc1.x - u_plane * denom1,
+                        tc0.x - u_plane * denom0, 0.0f, 1.0f,
+                        hs);
+#pragma unroll
+                    for (int i = 0; i < 2; ++i) {
+                        vs[i] = NAN;
+                        if (stc::isfinite(hs[i])) {
+                            vs[i] = evaluateQuadraticPolynomial(tc2.y, tc1.y, tc0.y, hs[i])
+                                / evaluateQuadraticPolynomial(denom2, denom1, denom0, hs[i]);
                         }
-                    };
+                    }
+                };
 
-                    // JP: 子ノードをレイのヒット距離の近い順にソート。
-                    // EN: Sort child nodes in the order of closest hit distance of the ray.
-                    sort(dists[0], entries[0], dists[1], entries[1]);
-                    sort(dists[2], entries[2], dists[3], entries[3]);
-                    sort(dists[0], entries[0], dists[2], entries[2]);
-                    sort(dists[1], entries[1], dists[3], entries[3]);
-                    sort(dists[1], entries[1], dists[2], entries[2]);
+                const auto compute_h_u = [&](
+                    const float v_plane, float hs[2], float us[2]) {
+                    solveQuadraticEquation(
+                        tc2.y - v_plane * denom2,
+                        tc1.y - v_plane * denom1,
+                        tc0.y - v_plane * denom0, 0.0f, 1.0f,
+                        hs);
+#pragma unroll
+                    for (int i = 0; i < 2; ++i) {
+                        us[i] = NAN;
+                        if (stc::isfinite(hs[i])) {
+                            us[i] = evaluateQuadraticPolynomial(tc2.x, tc1.x, tc0.x, hs[i])
+                                / evaluateQuadraticPolynomial(denom2, denom1, denom0, hs[i]);
+                        }
+                    }
+                };
 
-                    curEntry = entries[0];
-                    stack.push(curTexel.lod, entries[1], entries[2], entries[3], numValidEntries - 1);
-                    if (numValidEntries == 0)
-                        curEntry.asUInt8 = 0xFF;
-
-                    continue;
+                // JP: minmaxミップマップから作られるAABBは兄弟と共通の面を持っているため、
+                //     u, v軸それぞれに垂直な面との交差判定は6回で足りる。
+                // EN: AABBs made from the minmax mipmap shares planes among their siblings,
+                //     so six intersection tests is enough for planes parpendicular to the u and v axes.
+                float hs_u[3][2], vs_u[3][2];
+                float hs_v[3][2], us_v[3][2];
+#pragma unroll
+                for (int i = 0; i < 3; ++i) {
+                    compute_h_v(us[i], hs_u[i], vs_u[i]);
+                    compute_h_u(vs[i], hs_v[i], us_v[i]);
                 }
 
+                down(curTexel);
+
+                // JP: AABBの高さ方向の面の位置はDisplacement Mappingの場合それぞれ異なる。
+                // EN: Each AABB has different planes in the height direction for displacement mapping.
+                const int2 nextImgSize = make_int2(1 << stc::max(maxDepth - curTexel.lod, 0));
+                const auto readMinMax = [&nrtdsmGeomInst, &nextImgSize, &curTexel, &maxDepth]
+                (const int32_t x, const int32_t y,
+                 float* const hMin, float* const hMax) {
+                    const int2 wrapIndex = make_int2(
+                        floorDiv(x, nextImgSize.x),
+                        floorDiv(y, nextImgSize.y));
+                    const uint2 wrappedTexel = curTexel.lod <= maxDepth ?
+                        make_uint2(x - wrapIndex.x * nextImgSize.x, y - wrapIndex.y * nextImgSize.y) :
+                        make_uint2(0, 0);
+                    const float2 minmax =
+                        nrtdsmGeomInst.minMaxMipMap[stc::min<int16_t>(curTexel.lod, maxDepth)].read(wrappedTexel);
+                    *hMin = minmax.x;
+                    *hMax = minmax.y;
+                };
+
+                StackEntry entries[4];
+                float dists[4];
+                int32_t numValidEntries = 0;
+#pragma unroll
+                for (int i = 0; i < 4; ++i) {
+                    if constexpr (outputTravStats)
+                        ++travStats->numAabbTests;
+                    const int32_t uOff = i % 2;
+                    const int32_t vOff = i / 2;
+                    entries[i] = StackEntry(uOff, vOff);
+
+                    float hMin, hMax;
+                    if constexpr (forShellMapping) {
+                        hMin = minHeight;
+                        hMax = maxHeight;
+                    }
+                    else {
+                        const int32_t x = curTexel.x + uOff;
+                        const int32_t y = curTexel.y + vOff;
+                        readMinMax(x, y, &hMin, &hMax);
+                    }
+
+                    const int32_t iuLo = uOff;
+                    const int32_t iuHi = uOff + 1;
+                    const int32_t ivLo = vOff;
+                    const int32_t ivHi = vOff + 1;
+                    const AABB aabb(
+                        Point3D(us[iuLo], vs[ivLo], hMin),
+                        Point3D(us[iuHi], vs[ivHi], hMax));
+                    float distMin, distMax;
+                    const bool hit = testNonlinearRayVsAabb(
+                        pA, pB, pC, nA, nB, nC,
+                        aabb,
+                        rayOrgInObj, rayDirInObj, prismHitDistEnter, hitDist,
+                        alpha2, alpha1, alpha0, beta2, beta1, beta0, denom2, denom1, denom0,
+                        tc2, tc1, tc0,
+                        hs_u[iuLo], vs_u[iuLo], hs_u[iuHi], vs_u[iuHi],
+                        hs_v[ivLo], us_v[ivLo], hs_v[ivHi], us_v[ivHi],
+                        &distMin, &distMax);
+                    float dist = INFINITY;
+                    if (hit) {
+                        dist = 0.5f * (distMin + distMax);
+                        ++numValidEntries;
+                    }
+                    dists[i] = dist;
+
+#if DEBUG_TRAVERSAL
+                    const int32_t x = curTexel.x + uOff;
+                    const int32_t y = curTexel.y + vOff;
+                    if (isDebugPixel() && getDebugPrintEnabled()) {
+                        printf(
+                            "%u-%u, Root %u: [%d - %d, %d], tMax: %g, AABB (%g, %g, %g) - (%g, %g, %g): %s, %g - %g\n",
+                            plp.f->frameIndex, optixGetPrimitiveIndex(), rootIdx,
+                            curTexel.lod, x, y,
+                            hitDist,
+                            v3print(aabb.minP), v3print(aabb.maxP),
+                            hit ? "Hit" : "Miss", hit ? distMin : NAN, hit ? distMax : NAN);
+                    }
+#endif
+                }
+
+                const auto sort = []
+                (float &distA, StackEntry &entryA,
+                 float &distB, StackEntry &entryB) {
+                    if (distA > distB) {
+                        const float tempDist = distA;
+                        distA = distB;
+                        distB = tempDist;
+                        const StackEntry tempEntry = entryA;
+                        entryA = entryB;
+                        entryB = tempEntry;
+                    }
+                };
+
+                // JP: 子ノードをレイのヒット距離の近い順にソート。
+                // EN: Sort child nodes in the order of closest hit distance of the ray.
+                sort(dists[0], entries[0], dists[1], entries[1]);
+                sort(dists[2], entries[2], dists[3], entries[3]);
+                sort(dists[0], entries[0], dists[2], entries[2]);
+                sort(dists[1], entries[1], dists[3], entries[3]);
+                sort(dists[1], entries[1], dists[2], entries[2]);
+
+                curEntry = entries[0];
+                stack.push(curTexel.lod, entries[1], entries[2], entries[3], numValidEntries - 1);
+                if (numValidEntries == 0)
+                    curEntry.asUInt8 = 0xFF;
+
+                continue;
+            }
+
+            if constexpr (forShellMapping) {
                 // JP: レイとシェルBVHの交差判定を行う。
                 // EN: Test the intersection of the ray vs the shell BVH.
                 float tt;
@@ -1983,272 +2033,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void detailedSurface_generic(TraversalStats* tr
                     }
 #endif
                 }
-
-                curEntry.asUInt8 = 0xFF;
             }
-        }
-
-        if (hitDist == prismHitDistLeave)
-            return;
-
-        DisplacedSurfaceAttributes attr = {};
-        attr.normalInObj = hitNormal;
-        attr.geomIndex = hitGeomIndex;
-        const uint8_t hitKind = dot(rayDirInObj, hitNormal) <= 0 ?
-            CustomHitKind_ShellMappedSurfaceFrontFace :
-            CustomHitKind_ShellMappedSurfaceBackFace;
-        DisplacedSurfaceAttributeSignature::reportIntersection(hitDist, hitKind, hitBcB, hitBcC, attr);
-    }
-    else { // Displacement Mapping
-        using MipMapStack = MipMapStack_T<3>;
-        using StackEntry = typename MipMapStack::Entry;
-
-        const int32_t maxDepth =
-            prevPowOf2Exponent(stc::max(nrtdsmGeomInst.heightMapSize.x, nrtdsmGeomInst.heightMapSize.y));
-        constexpr int32_t targetMipLevel = 0;
-
-        Texel roots[4];
-        uint32_t numRoots;
-        findRoots(texTriAabbMinP, texTriAabbMaxP, maxDepth, targetMipLevel, roots, &numRoots);
-        MipMapStack stack;
-#if DEBUG_TRAVERSAL
-        uint32_t numIterations = 0;
-        if (isDebugPixel() && getDebugPrintEnabled()) {
-            printf(
-                "%u-%u: pA: (%g, %g, %g), pB: (%g, %g, %g), pC: (%g, %g, %g)\n",
-                plp.f->frameIndex, optixGetPrimitiveIndex(),
-                v3print(pA), v3print(pB), v3print(pC));
-            printf(
-                "%u-%u: nA: (%g, %g, %g), nB: (%g, %g, %g), nC: (%g, %g, %g)\n",
-                plp.f->frameIndex, optixGetPrimitiveIndex(),
-                v3print(nA), v3print(nB), v3print(nC));
-            printf(
-                "%u-%u: tcA: (%g, %g), tcB: (%g, %g), tcC: (%g, %g)\n",
-                plp.f->frameIndex, optixGetPrimitiveIndex(),
-                v2print(tcA), v2print(tcB), v2print(tcC));
-            printf(
-                "%u-%u: rayOrg: (%g, %g, %g), rayDir: (%g, %g, %g), range: (%g, %g)\n",
-                plp.f->frameIndex, optixGetPrimitiveIndex(),
-                v3print(rayOrgInObj), v3print(rayDirInObj),
-                prismHitDistEnter, prismHitDistLeave);
-            printf(
-                "%u-%u: alpha: (%g, %g, %g), beta: (%g, %g, %g), denom: (%g, %g, %g)\n",
-                plp.f->frameIndex, optixGetPrimitiveIndex(),
-                alpha2, alpha1, alpha0,
-                beta2, beta1, beta0,
-                denom2, denom1, denom0);
-            printf(
-                "%u-%u: uCoeffs: (%g, %g, %g), vCoeffs: (%g, %g, %g)\n",
-                plp.f->frameIndex, optixGetPrimitiveIndex(),
-                tc2.x, tc1.x, tc0.x,
-                tc2.y, tc1.y, tc0.y);
-            printf(
-                "%u-%u: TriAABB: (%g, %g) - (%g, %g), %u roots\n",
-                plp.f->frameIndex, optixGetPrimitiveIndex(),
-                v2print(texTriAabbMinP), v2print(texTriAabbMaxP),
-                numRoots);
-            printf(
-                "%u-%u: maxDepth: %d\n",
-                plp.f->frameIndex, optixGetPrimitiveIndex(),
-                maxDepth);
-        }
-#endif
-        // TODO: better root order.
-        for (int rootIdx = 0; rootIdx < lengthof(roots); ++rootIdx) {
-            if (rootIdx >= numRoots)
-                break;
-            Texel curTexel = roots[rootIdx];
-            const int16_t initialLod = curTexel.lod;
-
-#if DEBUG_TRAVERSAL
-            if (isDebugPixel() && getDebugPrintEnabled()) {
-                printf(
-                    "%u-%u, Root %u: [%d - %d, %d]\n",
-                    plp.f->frameIndex, optixGetPrimitiveIndex(), rootIdx,
-                    curTexel.lod, curTexel.x, curTexel.y);
-            }
-#endif
-
-            StackEntry curEntry(floorMod(curTexel.x, 2), floorMod(curTexel.y, 2));
-            while (curTexel.lod <= initialLod) {
-#if DEBUG_TRAVERSAL
-                ++numIterations;
-#endif
-                if (curEntry.asUInt8 == 0xFF) {
-                    if (!stack.tryPop(curTexel.lod, &curEntry)) {
-#if DEBUG_TRAVERSAL
-                        if (isDebugPixel() && getDebugPrintEnabled()) {
-                            printf(
-                                "%u-%u, Root %u: [%d - %d, %d] up\n",
-                                plp.f->frameIndex, optixGetPrimitiveIndex(), rootIdx,
-                                curTexel.lod, curTexel.x, curTexel.y);
-                        }
-#endif
-                        up(curTexel);
-                        continue;
-                    }
-                }
-                curTexel.x = floorDiv(curTexel.x, 2) * 2 + curEntry.offsetX;
-                curTexel.y = floorDiv(curTexel.y, 2) * 2 + curEntry.offsetY;
-
-#if DEBUG_TRAVERSAL
-                if (isDebugPixel() && getDebugPrintEnabled()) {
-                    printf(
-                        "%u-%u, Root %u: Itr: %2u, [%d - %d, %d]\n",
-                        plp.f->frameIndex, optixGetPrimitiveIndex(), rootIdx,
-                        numIterations - 1,
-                        curTexel.lod, curTexel.x, curTexel.y);
-                }
-#endif
-
-                const float texelScale = std::pow(2.0f, static_cast<float>(curTexel.lod - maxDepth));
-                const Point2D texelCenter = Point2D(curTexel.x + 0.5f, curTexel.y + 0.5f) * texelScale;
-                const TriangleSquareIntersection2DResult isectResult =
-                    testTriangleSquareIntersection2D(
-                        tcA, tcB, tcC, tcFlipped, texTriEdgeNormals, texTriAabbMinP, texTriAabbMaxP,
-                        texelCenter, 0.5f * texelScale);
-
-                // JP: テクセルがベース三角形の外にある場合はテクセルをスキップ。
-                // EN: Skip the texel if it is outside of the base triangle.
-                if (isectResult == TriangleSquareIntersection2DResult::SquareOutsideTriangle) {
-#if DEBUG_TRAVERSAL
-                    if (isDebugPixel() && getDebugPrintEnabled()) {
-                        printf(
-                            "%u-%u, Root %u: [%d - %d, %d] OutTri\n",
-                            plp.f->frameIndex, optixGetPrimitiveIndex(), rootIdx,
-                            curTexel.lod, curTexel.x, curTexel.y);
-                    }
-#endif
-                    curEntry.asUInt8 = 0xFF;
-                    continue;
-                }
-
-                // JP: 現在のテクセルの4つの子のAABBとレイの交差判定を行う。
-                // EN: Test ray vs four AABBs of the current texel's children.
-                if (curTexel.lod > targetMipLevel) {
-                    const float us[3] = {
-                        curTexel.x * texelScale,
-                        (curTexel.x + 0.5f) * texelScale,
-                        (curTexel.x + 1.0f) * texelScale,
-                    };
-                    const float vs[3] = {
-                        curTexel.y * texelScale,
-                        (curTexel.y + 0.5f) * texelScale,
-                        (curTexel.y + 1.0f) * texelScale,
-                    };
-
-                    // JP: minmaxミップマップから作られるAABBは兄弟と共通の面を持っているため、
-                    //     u, v軸それぞれに垂直な面との交差判定は6回で足りる。
-                    // EN: AABBs made from the minmax mipmap shares planes among their siblings,
-                    //     so six intersection tests is enough for planes parpendicular to the u and v axes.
-                    float hs_u[3][2], vs_u[3][2];
-                    float hs_v[3][2], us_v[3][2];
-#pragma unroll
-                    for (int i = 0; i < 3; ++i) {
-                        compute_h_v(us[i], hs_u[i], vs_u[i]);
-                        compute_h_u(vs[i], hs_v[i], us_v[i]);
-                    }
-
-                    down(curTexel);
-
-                    // JP: AABBの高さ方向の面の位置はそれぞれ異なる。
-                    // EN: Each AABB has different planes in the height direction.
-                    const int2 nextImgSize = make_int2(1 << stc::max(maxDepth - curTexel.lod, 0));
-                    const auto readMinMax = [&nrtdsmGeomInst, &nextImgSize, &curTexel, &maxDepth]
-                    (const int32_t x, const int32_t y,
-                     float* const hMin, float* const hMax) {
-                        const int2 wrapIndex = make_int2(
-                            floorDiv(x, nextImgSize.x),
-                            floorDiv(y, nextImgSize.y));
-                        const uint2 wrappedTexel = curTexel.lod <= maxDepth ?
-                            make_uint2(x - wrapIndex.x * nextImgSize.x, y - wrapIndex.y * nextImgSize.y) :
-                            make_uint2(0, 0);
-                        const float2 minmax =
-                            nrtdsmGeomInst.minMaxMipMap[stc::min<int16_t>(curTexel.lod, maxDepth)].read(wrappedTexel);
-                        *hMin = minmax.x;
-                        *hMax = minmax.y;
-                    };
-
-                    StackEntry entries[4];
-                    float dists[4];
-                    int32_t numValidEntries = 0;
-#pragma unroll
-                    for (int i = 0; i < 4; ++i) {
-                        if constexpr (outputTravStats)
-                            ++travStats->numAabbTests;
-                        const int32_t uOff = i % 2;
-                        const int32_t vOff = i / 2;
-                        entries[i] = StackEntry(uOff, vOff);
-
-                        const int32_t x = curTexel.x + uOff;
-                        const int32_t y = curTexel.y + vOff;
-                        float hMin, hMax;
-                        readMinMax(x, y, &hMin, &hMax);
-
-                        const int32_t iuLo = uOff;
-                        const int32_t iuHi = uOff + 1;
-                        const int32_t ivLo = vOff;
-                        const int32_t ivHi = vOff + 1;
-                        const AABB aabb(Point3D(us[iuLo], vs[ivLo], hMin), Point3D(us[iuHi], vs[ivHi], hMax));
-                        float distMin, distMax;
-                        const bool hit = testNonlinearRayVsAabb(
-                            pA, pB, pC, nA, nB, nC,
-                            aabb,
-                            rayOrgInObj, rayDirInObj, prismHitDistEnter, hitDist,
-                            alpha2, alpha1, alpha0, beta2, beta1, beta0, denom2, denom1, denom0,
-                            tc2, tc1, tc0,
-                            hs_u[iuLo], vs_u[iuLo], hs_u[iuHi], vs_u[iuHi],
-                            hs_v[ivLo], us_v[ivLo], hs_v[ivHi], us_v[ivHi],
-                            &distMin, &distMax);
-                        float dist = INFINITY;
-                        if (hit) {
-                            dist = 0.5f * (distMin + distMax);
-                            ++numValidEntries;
-                        }
-                        dists[i] = dist;
-
-#if DEBUG_TRAVERSAL
-                        if (isDebugPixel() && getDebugPrintEnabled()) {
-                            printf(
-                                "%u-%u, Root %u: [%d - %d, %d], tMax: %g, AABB (%g, %g, %g) - (%g, %g, %g): %s, %g - %g\n",
-                                plp.f->frameIndex, optixGetPrimitiveIndex(), rootIdx,
-                                curTexel.lod, x, y,
-                                hitDist,
-                                v3print(aabb.minP), v3print(aabb.maxP),
-                                hit ? "Hit" : "Miss", hit ? distMin : NAN, hit ? distMax : NAN);
-                        }
-#endif
-                    }
-
-                    const auto sort = []
-                    (float &distA, StackEntry &entryA,
-                     float &distB, StackEntry &entryB) {
-                        if (distA > distB) {
-                            const float tempDist = distA;
-                            distA = distB;
-                            distB = tempDist;
-                            const MipMapStack::Entry tempEntry = entryA;
-                            entryA = entryB;
-                            entryB = tempEntry;
-                        }
-                    };
-
-                    // JP: 子ノードをレイのヒット距離の近い順にソート。
-                    // EN: Sort child nodes in the order of closest hit distance of the ray.
-                    sort(dists[0], entries[0], dists[1], entries[1]);
-                    sort(dists[2], entries[2], dists[3], entries[3]);
-                    sort(dists[0], entries[0], dists[2], entries[2]);
-                    sort(dists[1], entries[1], dists[3], entries[3]);
-                    sort(dists[1], entries[1], dists[2], entries[2]);
-
-                    curEntry = entries[0];
-                    stack.push(curTexel.lod, entries[1], entries[2], entries[3], numValidEntries - 1);
-                    if (numValidEntries == 0)
-                        curEntry.asUInt8 = 0xFF;
-
-                    continue;
-                }
-
+            else {
                 if constexpr (outputTravStats)
                     ++travStats->numLeafTests;
 
@@ -2311,8 +2097,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void detailedSurface_generic(TraversalStats* tr
                             curTexel.lod, curTexel.x, curTexel.y,
                             hitDist,
                             v3print(mpTL), v3print(mpBL), v3print(mpBR));
-                    }
                 }
+            }
 #endif
                 if (testNonlinearRayVsMicroTriangle(
                     pA, pB, pC,
@@ -2352,19 +2138,28 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void detailedSurface_generic(TraversalStats* tr
                     }
                 }
 #endif
-
-                curEntry.asUInt8 = 0xFF;
             }
+
+            curEntry.asUInt8 = 0xFF;
         }
+    }
 
-        if (hitDist == prismHitDistLeave)
-            return;
+    if (hitDist == prismHitDistLeave)
+        return;
 
-        DisplacedSurfaceAttributes attr = {};
-        attr.normalInObj = hitNormal;
-        const uint8_t hitKind = dot(rayDirInObj, hitNormal) <= 0 ?
+    DisplacedSurfaceAttributes attr = {};
+    attr.normalInObj = hitNormal;
+    uint8_t hitKind;
+    if constexpr (forShellMapping) {
+        attr.geomIndex = hitGeomIndex;
+        hitKind = dot(rayDirInObj, hitNormal) <= 0 ?
+            CustomHitKind_ShellMappedSurfaceFrontFace :
+            CustomHitKind_ShellMappedSurfaceBackFace;
+    }
+    else {
+        hitKind = dot(rayDirInObj, hitNormal) <= 0 ?
             CustomHitKind_DisplacementMappedSurfaceFrontFace :
             CustomHitKind_DisplacementMappedSurfaceBackFace;
-        DisplacedSurfaceAttributeSignature::reportIntersection(hitDist, hitKind, hitBcB, hitBcC, attr);
     }
+    DisplacedSurfaceAttributeSignature::reportIntersection(hitDist, hitKind, hitBcB, hitBcC, attr);
 }
