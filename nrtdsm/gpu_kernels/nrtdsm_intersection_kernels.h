@@ -617,13 +617,16 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE uint32_t solveCubicEquationNumerical(
         float cps[2];
         {
             const float sqrtDq = std::sqrt(Dq);
-            const float temp = -b + 0.5f * std::copysign(sqrtDq, b);
+            const float temp = -b - 0.5f * std::copysign(sqrtDq, b);
             cps[0] = c / temp;
             cps[1] = temp / (3 * a);
             if (cps[0] > cps[1])
                 stc::swap(cps[0], cps[1]);
+            Assert(
+                !stc::isnan(cps[0]) && !stc::isnan(cps[1]),
+                "Invalid critical points (%g, %g). abc: (%g, %g, %g), Dq: %g, temp: %g\n",
+                cps[0], cps[1], a, b, c, Dq, temp);
         }
-        Assert(stc::isfinite(cps[0]) && stc::isfinite(cps[1]), "Invalid values.");
 
         // JP: 有効範囲が単調増加/減少区間内に収まっていて、
         // EN: If the valid range is confined to a monotonic increasing/decreasing interval,
@@ -1753,10 +1756,12 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void detailedSurface_generic(TraversalStats* tr
     }
 #endif
 
-    // JP: Shell MappingにおいてもシェルBVHをテクスチャーのようにリピートするため暗黙的な四分木を使用する。
-    //     四分木のトラバーサルにはDisplacement Mappingで使用するMipmapと同じスタックが使用できる。
-    // EN: We use an implicit quad tree for shell mapping to repeat the shell BVH like a texture.
-    //     We can use the same stack as used in displacement mapping for quad tree traversal.
+    // JP: minmaxミップマップを四分木としてトラバースする。
+    //     Shell MappingにおいてもシェルBVHをテクスチャーのようにリピートするために使用する。
+    //     ヒューリスティックではなくヒット距離に基づいた子ノードの並び替えを行うためコンパクトなスタックを使用する。
+    // EN: Traverse the minmax mipmap as a quad tree.
+    //     We use this also for shell mapping to repeat the shell BVH like a texture.
+    //     We use a compact stack since we use child node ordering based on hit distances insetead of a heuristic.
     // TODO: better root order.
     for (int rootIdx = 0; rootIdx < lengthof(roots); ++rootIdx) {
         if (rootIdx >= numRoots)
@@ -1889,8 +1894,6 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void detailedSurface_generic(TraversalStats* tr
 
                 down(curTexel);
 
-                // JP: AABBの高さ方向の面の位置はDisplacement Mappingの場合それぞれ異なる。
-                // EN: Each AABB has different planes in the height direction for displacement mapping.
                 const int2 nextImgSize = make_int2(1 << stc::max(maxDepth - curTexel.lod, 0));
                 const auto readMinMax = [&nrtdsmGeomInst, &nextImgSize, &curTexel, &maxDepth]
                 (const int32_t x, const int32_t y,
@@ -1924,6 +1927,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void detailedSurface_generic(TraversalStats* tr
                         hMax = maxHeight;
                     }
                     else {
+                        // JP: AABBの高さ方向の面の位置はDisplacement Mappingの場合それぞれ異なる。
+                        // EN: Each AABB has different planes in the height direction for displacement mapping.
                         const int32_t x = curTexel.x + uOff;
                         const int32_t y = curTexel.y + vOff;
                         readMinMax(x, y, &hMin, &hMax);
