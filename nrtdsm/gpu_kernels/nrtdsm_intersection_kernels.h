@@ -623,7 +623,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE uint32_t solveCubicEquationNumerical(
             if (cps[0] > cps[1])
                 stc::swap(cps[0], cps[1]);
             Assert(
-                !stc::isnan(cps[0]) && !stc::isnan(cps[1]),
+                stc::isfinite(cps[0]) && stc::isfinite(cps[1]),
                 "Invalid critical points (%g, %g). abc: (%g, %g, %g), Dq: %g, temp: %g\n",
                 cps[0], cps[1], a, b, c, Dq, temp);
         }
