@@ -2134,7 +2134,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
                     animate |= ImGui::SliderFloat("Pitch", &instPitch, 0.0f, 360.0f);
                     animate |= ImGui::SliderFloat("Yaw", &instYaw, 0.0f, 360.0f);
                     animate |= ImGui::SliderFloat("Roll", &instRoll, 0.0f, 360.0f);
-                    animate |= ImGui::SliderFloat("Scale", &instScale, 0.1f, 10.0f);
+                    animate |= ImGui::SliderFloat(
+                        "Scale", &instScale, 0.1f, 10.0f, nullptr, ImGuiSliderFlags_Logarithmic);
                     animate |= ImGui::InputFloat3("Position", reinterpret_cast<float*>(&instPosition));
                     ImGui::PopID();
                     resetAccumulation |= animate;
