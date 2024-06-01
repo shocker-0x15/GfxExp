@@ -203,13 +203,16 @@ static uint32_t solveCubicEquationNumerical(
         float cps[2];
         {
             const float sqrtDq = std::sqrt(Dq);
-            const float temp = -b + 0.5f * std::copysign(sqrtDq, b);
+            const float temp = -b - 0.5f * std::copysign(sqrtDq, b);
             cps[0] = c / temp;
             cps[1] = temp / (3 * a);
             if (cps[0] > cps[1])
                 std::swap(cps[0], cps[1]);
+            Assert(
+                stc::isfinite(cps[0]) && stc::isfinite(cps[1]),
+                "Invalid critical points (%g, %g). abc: (%g, %g, %g), Dq: %g, temp: %g\n",
+                cps[0], cps[1], a, b, c, Dq, temp);
         }
-        Assert(stc::isfinite(cps[0]) && stc::isfinite(cps[1]));
 
         // JP: 有効範囲が単調増加/減少区間内に収まっていて、
         // EN: If the valid range is confined to a monotonic increasing/decreasing interval,

@@ -310,6 +310,10 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(prism)() {
 
 
 
+// ----------------------------------------------------------------
+// Polynomials
+// Reference: High-Performance Polynomial Root Finding for Graphics
+
 CUDA_DEVICE_FUNCTION CUDA_INLINE float evaluateQuadraticPolynomial(
     const float a, const float b, const float c, const float x) {
     return (a * x + b) * x + c;
@@ -769,6 +773,9 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE uint32_t solveCubicEquationNumerical(
         return 0;
     }
 }
+
+// END: Polynomials
+// ----------------------------------------------------------------
 
 
 
