@@ -1,6 +1,6 @@
 ﻿/*
 
-   Copyright 2023 Shin Watanabe
+   Copyright 2024 Shin Watanabe
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -31,6 +31,9 @@ EN:
 - In Visual Studio, does the CUDA property "Use Fast Math" not work for ptx compilation??
 
 変更履歴 / Update History:
+- JP: - optixReportIntersection()に返り値があることを忘れていたのを修正。
+  EN: - fixed forgetting that optixReportIntersection has a return value.
+
 - JP: - 各プログラム(グループ)にsetActive()を追加。
   EN: - Added setActive() to programs (groups).
 
@@ -235,6 +238,9 @@ TODO:
 
 */
 
+#define OPTIXU_STRINGIFY(x) #x
+#define OPTIXU_TO_STRING(x) OPTIXU_STRINGIFY(x)
+
 // Platform defines
 #if defined(_WIN32) || defined(_WIN64)
 #   define OPTIXU_Platform_Windows
@@ -420,9 +426,6 @@ namespace optixu {
 #endif
 
     namespace detail {
-        static constexpr uint32_t maxNumPayloadsInDwords = 32;
-#define OPTIXU_STR_MAX_NUM_PAYLOADS "32"
-
         template <typename T>
         RT_DEVICE_FUNCTION constexpr size_t getNumDwords() {
             return (sizeof(T) + 3) / 4;
@@ -438,11 +441,11 @@ namespace optixu {
 
 #if !defined(__CUDA_ARCH__)
     struct PayloadType {
-        OptixPayloadSemantics semantics[detail::maxNumPayloadsInDwords];
+        OptixPayloadSemantics semantics[OPTIX_COMPILE_DEFAULT_MAX_PAYLOAD_VALUE_COUNT];
         uint32_t numDwords;
 
         PayloadType() : numDwords(0) {
-            for (uint32_t i = 0; i < detail::maxNumPayloadsInDwords; ++i)
+            for (uint32_t i = 0; i < OPTIX_COMPILE_DEFAULT_MAX_PAYLOAD_VALUE_COUNT; ++i)
                 semantics[i] = static_cast<OptixPayloadSemantics>(0);
         }
 
@@ -535,8 +538,10 @@ namespace optixu {
         static constexpr uint32_t numDwords =
             static_cast<uint32_t>(detail::calcSumDwords<PayloadTypes...>());
         static_assert(
-            numDwords <= detail::maxNumPayloadsInDwords,
-            "Maximum number of payloads is " OPTIXU_STR_MAX_NUM_PAYLOADS " in dwords.");
+            numDwords <= OPTIX_COMPILE_DEFAULT_MAX_PAYLOAD_VALUE_COUNT,
+            "Maximum number of payloads is "
+            OPTIXU_TO_STRING(OPTIX_COMPILE_DEFAULT_MAX_PAYLOAD_VALUE_COUNT)
+            " in dwords.");
         static constexpr uint32_t _arraySize = numParameters > 0 ? numParameters : 1u;
         static constexpr uint32_t sizesInDwords[_arraySize] = {
             static_cast<uint32_t>(detail::getNumDwords<PayloadTypes>())...
@@ -621,7 +626,7 @@ namespace optixu {
         };
 
 #if defined(__CUDA_ARCH__) || defined(OPTIXU_Platform_CodeCompletion)
-        RT_DEVICE_FUNCTION RT_INLINE static void reportIntersection(
+        RT_DEVICE_FUNCTION RT_INLINE static bool reportIntersection(
             float hitT, uint32_t hitKind,
             const AttributeTypes &... attributes);
         RT_DEVICE_FUNCTION RT_INLINE static void get(AttributeTypes*... attributes);
@@ -800,10 +805,10 @@ namespace optixu {
         }
 
         template <size_t... I>
-        RT_DEVICE_FUNCTION RT_INLINE void reportIntersection(
+        RT_DEVICE_FUNCTION RT_INLINE bool reportIntersection(
             float hitT, uint32_t hitKind, const uint32_t* attributes,
             index_sequence<I...>) {
-            optixReportIntersection(hitT, hitKind, attributes[I]...);
+            return optixReportIntersection(hitT, hitKind, attributes[I]...);
         }
 
         template <size_t... I>
@@ -1096,14 +1101,14 @@ namespace optixu {
 
 
     template <typename... AttributeTypes>
-    RT_DEVICE_FUNCTION RT_INLINE void AttributeSignature<AttributeTypes...>::
+    RT_DEVICE_FUNCTION RT_INLINE bool AttributeSignature<AttributeTypes...>::
         reportIntersection(
             float hitT, uint32_t hitKind,
             const AttributeTypes &... attributes) {
         uint32_t a[numDwords > 0 ? numDwords : 1];
         if constexpr (numDwords > 0)
             detail::packToUInts<0>(a, attributes...);
-        detail::reportIntersection(hitT, hitKind, a, make_index_sequence<numDwords>{});
+        return detail::reportIntersection(hitT, hitKind, a, make_index_sequence<numDwords>{});
     }
 
     template <typename... AttributeTypes>
@@ -2386,3 +2391,6 @@ unsigned int optixUndefinedValue();
 
 // END: Declarations for code completion
 // ----------------------------------------------------------------
+
+#undef OPTIXU_TO_STRING
+#undef OPTIXU_STRINGIFY
