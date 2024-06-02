@@ -145,12 +145,13 @@ Given the mapping between shell space — a space enclosed by the base triangle 
 - [x] Basic Implementation
   - [x] Displacement mapping (non-wrapping texture)
   - [x] Shell mapping (non-wrapping texture)
-- [x] Advanced Items
+- [ ] Advanced Items
   - [x] Better root choice
   - [x] Traversal order based on ray-box hit distance
   - [x] Texture wrapping
   - [x] Texture transform
   - [x] Multi-material support for shell mapping
+  - [ ] Validating numerical behavior and degenerate cases as in the paper
 
 ![example](nrtdsm/comparison.jpg)
 Teapot from Morgan McGuire's [Computer Graphics Archive](https://casual-effects.com/data)
