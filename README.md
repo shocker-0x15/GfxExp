@@ -99,6 +99,9 @@ SVGF filters the lighting result in screen-space obtained by methods like path t
 
 - [x] Basic Implementation (temporal accumulation, SVGF, temporal AA)
 - [ ] Advanced Items
+  - [ ] Implement the improved algorithm:\
+        "A Fast GPU Schedule For À-Trous Wavelet-Based Denoisers"\
+        https://jo.dreggn.org/home/
 
 ![example](svgf/comparison.jpg)
 Crytek Sponza from Morgan McGuire's [Computer Graphics Archive](https://casual-effects.com/data)
