@@ -785,7 +785,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE uint32_t solveCubicEquationNumerical(
 
 
 CUDA_DEVICE_FUNCTION CUDA_INLINE void computeCanonicalSpaceRayCoeffs(
-    const Point3D &rayOrg, const Vector3D &rayDir, const Vector3D &e0, const Vector3D &e1,
+    const Point3D &rayOrg, const Vector3D &e0, const Vector3D &e1,
     const Point3D &pA, const Point3D &pB, const Point3D &pC,
     const Normal3D &nA, const Normal3D &nB, const Normal3D &nC,
     float* const alpha2, float* const alpha1, float* const alpha0,
@@ -855,7 +855,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsAabb(
     // AABB in texture space
     const AABB &aabb,
     // Ray
-    const Point3D &rayOrg, const Vector3D &rayDir, const float distMin, const float distMax,
+    const Point3D &rayOrg, const Vector3D &rayDir, const float recSqRayLength,
+    const float distMin, const float distMax,
     const float alpha2, const float alpha1, const float alpha0,
     const float beta2, const float beta1, const float beta0,
     const float denom2, const float denom1, const float denom0,
@@ -872,7 +873,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsAabb(
         const Point3D SAh = pA + h * nA;
         const Point3D SBh = pB + h * nB;
         const Point3D SCh = pC + h * nC;
-        const float dist = dot(
+        const float dist = recSqRayLength * dot(
             rayDir,
             (1 - alpha - beta) * SAh + alpha * SBh + beta * SCh - rayOrg);
         *hitDistMin = std::fmin(*hitDistMin, dist);
@@ -958,7 +959,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsAabb(
     // AABB in texture space
     const AABB &aabb,
     // Ray
-    const Point3D &rayOrg, const Vector3D &rayDir, const float distMin, const float distMax,
+    const Point3D &rayOrg, const Vector3D &rayDir, const float recSqRayLength,
+    const float distMin, const float distMax,
     const float alpha2, const float alpha1, const float alpha0,
     const float beta2, const float beta1, const float beta0,
     const float denom2, const float denom1, const float denom0,
@@ -980,7 +982,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsAabb(
         const Point3D SAh = pA + h * nA;
         const Point3D SBh = pB + h * nB;
         const Point3D SCh = pC + h * nC;
-        const float dist = dot(
+        const float dist = recSqRayLength * dot(
             rayDir,
             (1 - alpha - beta) * SAh + alpha * SBh + beta * SCh - rayOrg);
         *hitDistMin = std::fmin(*hitDistMin, dist);
@@ -1051,7 +1053,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsMicroTriangle(
     // Micro Triangle in Texture Space
     const Point3D &mpAInTex, const Point3D &mpBInTex, const Point3D &mpCInTex,
     // Ray
-    const Point3D &rayOrg, const Vector3D &rayDir, const float distMin, const float distMax,
+    const Point3D &rayOrg, const Vector3D &rayDir, const float recSqRayLength,
+    const float distMin, const float distMax,
     const Vector3D &e0, const Vector3D &e1,
     const Point2D &tc2, const Point2D &tc1, const Point2D &tc0,
     const float denom2, const float denom1, const float denom0,
@@ -1171,7 +1174,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsMicroTriangle(
                 continue;
         }
 
-        const float dist = dot(
+        const float dist = recSqRayLength * dot(
             rayDir,
             (1 - alpha - beta) * SAh + alpha * SBh + beta * SCh - rayOrg);
         if (dist > distMin && dist < *hitDist) {
@@ -1238,7 +1241,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsShellBvh(
     // Shell BVH
     const GeometryBVH_T<shellBvhArity> &shellBvh, const Vector2D &bvhShift,
     // Ray
-    const Point3D &rayOrg, const Vector3D &rayDir, const float distMin, const float distMax,
+    const Point3D &rayOrg, const Vector3D &rayDir, const float recSqRayLength,
+    const float distMin, const float distMax,
     const Vector3D &e0, const Vector3D &e1,
     const float alpha2, const float alpha1, const float alpha0,
     const float beta2, const float beta1, const float beta0,
@@ -1334,7 +1338,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsShellBvh(
                     aabbHit = testNonlinearRayVsAabb(
                         pA, pB, pC, nA, nB, nC,
                         aabb,
-                        rayOrg, rayDir, distMin, *hitDist,
+                        rayOrg, rayDir, recSqRayLength, distMin, *hitDist,
                         alpha2, alpha1, alpha0, beta2, beta1, beta0, denom2, denom1, denom0,
                         tc2, tc1, tc0,
                         &aabbHitDistMin, &aabbHitDistMax);
@@ -1350,9 +1354,9 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsShellBvh(
 #if DEBUG_TRAVERSAL
                             if (isDebugPixel() && getDebugPrintEnabled()) {
                                 printf(
-                                    "%u-%u,     %u: %g, leaf\n",
+                                    "%u-%u,     %u: %g, leaf [(%g, %g, %g) - (%g, %g, %g)]\n",
                                     plp.f->frameIndex, optixGetPrimitiveIndex(),
-                                    slot, dist);
+                                    slot, dist, v3print(aabb.minP), v3print(aabb.maxP));
                             }
 #endif
                         }
@@ -1363,9 +1367,9 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsShellBvh(
 #if DEBUG_TRAVERSAL
                             if (isDebugPixel() && getDebugPrintEnabled()) {
                                 printf(
-                                    "%u-%u,     %u: %g, %u th int child\n",
+                                    "%u-%u,     %u: %g, %u th int child [(%g, %g, %g) - (%g, %g, %g)]\n",
                                     plp.f->frameIndex, optixGetPrimitiveIndex(),
-                                    slot, dist, nthIntChild);
+                                    slot, dist, nthIntChild, v3print(aabb.minP), v3print(aabb.maxP));
                             }
 #endif
                         }
@@ -1374,9 +1378,9 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsShellBvh(
 #if DEBUG_TRAVERSAL
                         if (isDebugPixel() && getDebugPrintEnabled()) {
                             printf(
-                                "%u-%u,     %u miss\n",
+                                "%u-%u,     %u miss [(%g, %g, %g) - (%g, %g, %g)]\n",
                                 plp.f->frameIndex, optixGetPrimitiveIndex(),
-                                slot);
+                                slot, v3print(aabb.minP), v3print(aabb.maxP));
                         }
 #endif
                     }
@@ -1441,7 +1445,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsShellBvh(
                 nA, nB, nC,
                 tcA, tcB, tcC,
                 mpA, mpB, mpC,
-                rayOrg, rayDir, distMin, *hitDist,
+                rayOrg, rayDir, recSqRayLength,
+                distMin, *hitDist,
                 e0, e1,
                 tc2, tc1, tc0,
                 denom2, denom1, denom0,
@@ -1658,8 +1663,10 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void detailedSurface_generic(TraversalStats* tr
     Normal3D hitNormal;
     uint32_t hitGeomIndex;
 
+    const float recSqRayLength = 1.0f / dot(rayDirInObj, rayDirInObj);
+
     Vector3D e0, e1;
-    rayDirInObj.makeCoordinateSystem(&e0, &e1);
+    (rayDirInObj * std::sqrt(recSqRayLength)).makeCoordinateSystem(&e0, &e1);
 
     // JP: 正準空間中のレイの係数を求める。
     // EN: Compute the coefficients of the ray in canonical space.
@@ -1667,7 +1674,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void detailedSurface_generic(TraversalStats* tr
     float beta2, beta1, beta0;
     float denom2, denom1, denom0;
     computeCanonicalSpaceRayCoeffs(
-        rayOrgInObj, rayDirInObj, e0, e1,
+        rayOrgInObj, e0, e1,
         pA, pB, pC,
         nA, nB, nC,
         &alpha2, &alpha1, &alpha0,
@@ -1957,7 +1964,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void detailedSurface_generic(TraversalStats* tr
                     const bool hit = testNonlinearRayVsAabb(
                         pA, pB, pC, nA, nB, nC,
                         aabb,
-                        rayOrgInObj, rayDirInObj, prismHitDistEnter, hitDist,
+                        rayOrgInObj, rayDirInObj, recSqRayLength, prismHitDistEnter, hitDist,
                         alpha2, alpha1, alpha0, beta2, beta1, beta0, denom2, denom1, denom0,
                         tc2, tc1, tc0,
                         hs_u[iuLo], vs_u[iuLo], hs_u[iuHi], vs_u[iuHi],
@@ -2027,7 +2034,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void detailedSurface_generic(TraversalStats* tr
                     tcA, tcB, tcC,
                     tcFlipped, texTriEdgeNormals, texTriAabbMinP, texTriAabbMaxP,
                     nrtdsmGeomInst.shellBvh, Vector2D(curTexel.x, curTexel.y),
-                    rayOrgInObj, rayDirInObj, prismHitDistEnter, hitDist,
+                    rayOrgInObj, rayDirInObj, recSqRayLength, prismHitDistEnter, hitDist,
                     e0, e1,
                     alpha2, alpha1, alpha0,
                     beta2, beta1, beta0,
@@ -2086,7 +2093,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void detailedSurface_generic(TraversalStats* tr
                     nA, nB, nC,
                     tcA, tcB, tcC,
                     mpTL, mpBL, mpBR,
-                    rayOrgInObj, rayDirInObj, prismHitDistEnter, hitDist,
+                    rayOrgInObj, rayDirInObj, recSqRayLength,
+                    prismHitDistEnter, hitDist,
                     e0, e1,
                     tc2, tc1, tc0,
                     denom2, denom1, denom0,
@@ -2124,7 +2132,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void detailedSurface_generic(TraversalStats* tr
                     nA, nB, nC,
                     tcA, tcB, tcC,
                     mpTL, mpBR, mpTR,
-                    rayOrgInObj, rayDirInObj, prismHitDistEnter, hitDist,
+                    rayOrgInObj, rayDirInObj, recSqRayLength,
+                    prismHitDistEnter, hitDist,
                     e0, e1,
                     tc2, tc1, tc0,
                     denom2, denom1, denom0,

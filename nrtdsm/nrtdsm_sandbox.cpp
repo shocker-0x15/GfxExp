@@ -694,7 +694,7 @@ void testFindHeight() {
 
 // Compute canonical-space ray coefficients of the equation (7)
 static void computeCanonicalSpaceRayCoeffs(
-    const Point3D &rayOrg, const Vector3D &rayDir, const Vector3D &e0, const Vector3D &e1,
+    const Point3D &rayOrg, const Vector3D &e0, const Vector3D &e1,
     const Point3D &pA, const Point3D &pB, const Point3D &pC,
     const Normal3D &nA, const Normal3D &nB, const Normal3D &nC,
     float* const alpha2, float* const alpha1, float* const alpha0,
@@ -998,7 +998,8 @@ bool testNonlinearRayVsMicroTriangle(
     const Normal3D &nA, const Normal3D &nB, const Normal3D &nC,
     const Point2D &tcA, const Point2D &tcB, const Point2D &tcC,
     const Point3D &mpAInTex, const Point3D &mpBInTex, const Point3D &mpCInTex,
-    const Point3D &rayOrg, const Vector3D &rayDir, const float distMin, const float distMax,
+    const Point3D &rayOrg, const Vector3D &rayDir, const float recSqRayLength,
+    const float distMin, const float distMax,
     const Vector3D &e0, const Vector3D &e1,
     const Point2D &tc2, const Point2D &tc1, const Point2D &tc0,
     const float denom2, const float denom1, const float denom0,
@@ -1116,7 +1117,7 @@ bool testNonlinearRayVsMicroTriangle(
                 continue;
         }
 
-        const float dist = dot(
+        const float dist = recSqRayLength * dot(
             rayDir,
             (1 - alpha - beta) * SAh + alpha * SBh + beta * SCh - rayOrg);
         if (dist > distMin && dist < *hitDist) {
@@ -1245,14 +1246,16 @@ void testNonlinearRayVsMicroTriangle() {
             return ret;
         };
 
+        const float recSqRayLength = 1.0f / dot(rayDir, rayDir);
+
         Vector3D e0, e1;
-        rayDir.makeCoordinateSystem(&e0, &e1);
+        normalize(rayDir).makeCoordinateSystem(&e0, &e1);
 
         float alpha2, alpha1, alpha0;
         float beta2, beta1, beta0;
         float denom2, denom1, denom0;
         computeCanonicalSpaceRayCoeffs(
-            rayOrg, rayDir, e0, e1,
+            rayOrg, e0, e1,
             pA, pB, pC,
             nA, nB, nC,
             &alpha2, &alpha1, &alpha0,
@@ -1278,7 +1281,8 @@ void testNonlinearRayVsMicroTriangle() {
             nA, nB, nC,
             tcA, tcB, tcC,
             mpAInTex, mpBInTex, mpCInTex,
-            rayOrg, rayDir, 0, rayLength,
+            rayOrg, rayDir, recSqRayLength,
+            0, rayLength,
             e0, e1,
             tc2, tc1, tc0,
             denom2, denom1, denom0,
@@ -1947,7 +1951,8 @@ static bool testNonlinearRayVsAabb(
     // AABB in texture space
     const AABB &aabb,
     // Ray
-    const Point3D &rayOrg, const Vector3D &rayDir, const float distMin, const float distMax,
+    const Point3D &rayOrg, const Vector3D &rayDir, const float recSqRayLength,
+    const float distMin, const float distMax,
     const float alpha2, const float alpha1, const float alpha0,
     const float beta2, const float beta1, const float beta0,
     const float denom2, const float denom1, const float denom0,
@@ -1982,7 +1987,7 @@ static bool testNonlinearRayVsAabb(
                 const Point3D SAh = pA + h * nA;
                 const Point3D SBh = pB + h * nB;
                 const Point3D SCh = pC + h * nC;
-                const float dist = dot(
+                const float dist = recSqRayLength * dot(
                     rayDir,
                     (1 - alpha - beta) * SAh + alpha * SBh + beta * SCh - rayOrg);
                 *hitDistMin = std::fmin(*hitDistMin, dist);
@@ -2004,7 +2009,7 @@ static bool testNonlinearRayVsAabb(
             const Point3D SAh = pA + h * nA;
             const Point3D SBh = pB + h * nB;
             const Point3D SCh = pC + h * nC;
-            const float dist = dot(
+            const float dist = recSqRayLength * dot(
                 rayDir,
                 (1 - alpha - beta) * SAh + alpha * SBh + beta * SCh - rayOrg);
             *hitDistMin = std::fmin(*hitDistMin, dist);
@@ -2027,7 +2032,7 @@ static bool testNonlinearRayVsAabb(
             const Point3D SAh = pA + h * nA;
             const Point3D SBh = pB + h * nB;
             const Point3D SCh = pC + h * nC;
-            const float dist = dot(
+            const float dist = recSqRayLength * dot(
                 rayDir,
                 (1 - alpha - beta) * SAh + alpha * SBh + beta * SCh - rayOrg);
             *hitDistMin = std::fmin(*hitDistMin, dist);
@@ -2108,22 +2113,37 @@ void testNonlinearRayVsAabb() {
 
     constexpr uint32_t numRays = 500;
     for (int rayIdx = 0; rayIdx < numRays; ++rayIdx) {
-        constexpr float rayLength = 1.5f;
+#if 1
+        //const Point3D rayOrg(0, 1.06066, 1.06066);
+        //const Vector3D rayDir(0.154003, -0.692916, -0.704379);
+        //const float distMin = 1.35723f;
+        //const float distMax = 1.53087f;
 
-#if 0
-        const Point3D rayOrg(0, 1.06066, 1.06066);
-        const Vector3D rayDir(-0.349335, -0.774794, -0.526934);
+        //const Point3D pA(-0.75, 0, -0.75);
+        //const Point3D pB(0.75, 0, 0.75);
+        //const Point3D pC(0.75, 0, -0.75);
+        //const Normal3D nA(0, 1, 0);
+        //const Normal3D nB(0, 1, 0);
+        //const Normal3D nC(0, 1, 0);
+        //const Point2D tcA(0, 0);
+        //const Point2D tcB(1, 1);
+        //const Point2D tcC(1, 0);
+        //const AABB aabb(Point3D(0.2, 0.2, 0), Point3D(0.801562, 0.801562, 0.120117));
+        const Point3D rayOrg(0, 0.707107, 0.707107);
+        const Vector3D rayDir(0.102669, -0.461944, -0.469586);
+        const float distMin = 1.35723f;
+        const float distMax = 1.53087f;
 
         const Point3D pA(-0.5, 0, -0.5);
-        const Point3D pB(-0.5, 0, 0.5);
-        const Point3D pC(0.5, 0, 0.5);
+        const Point3D pB(0.5, 0, 0.5);
+        const Point3D pC(0.5, 0, -0.5);
         const Normal3D nA(0, 1, 0);
         const Normal3D nB(0, 1, 0);
         const Normal3D nC(0, 1, 0);
         const Point2D tcA(0, 0);
-        const Point2D tcB(0, 1);
-        const Point2D tcC(1, 1);
-        const AABB aabb(Point3D(0, 0.5, 0.0218128), Point3D(0.5, 1, 0.0807843));
+        const Point2D tcB(1, 1);
+        const Point2D tcC(1, 0);
+        const AABB aabb(Point3D(0.2, 0.2, 0), Point3D(0.801562, 0.801562, 0.0800781));
 #else
         const Point3D rayOrg(
             0.5f * (2 * u01(rng) - 1) + prismCenter.x,
@@ -2189,29 +2209,14 @@ void testNonlinearRayVsAabb() {
         // World-space Ray
         setColor(RGB(1.0f));
         drawCross(rayOrg, 0.05f);
-        drawVector(rayOrg, rayDir, rayLength);
-
-        constexpr Vector3D globalOffsetForTexture(0.0f, -2.0f, 0);
-        drawAxes(axisScale, globalOffsetForTexture);
-
-        // Texture-space Shell
         setColor(RGB(0.25f));
-        drawWiredTriangle(
-            globalOffsetForTexture + Point3D(tcA, 0.0f),
-            globalOffsetForTexture + Point3D(tcB, 0.0f),
-            globalOffsetForTexture + Point3D(tcC, 0.0f));
-        setColor(RGB(0.0f, 0.5f, 1.0f));
-        drawVector(globalOffsetForTexture + Point3D(tcA, 0), Normal3D(0, 0, 1), 1.0f);
-        drawVector(globalOffsetForTexture + Point3D(tcB, 0), Normal3D(0, 0, 1), 1.0f);
-        drawVector(globalOffsetForTexture + Point3D(tcC, 0), Normal3D(0, 0, 1), 1.0f);
-        for (int i = 1; i <= 10; ++i) {
-            const float p = static_cast<float>(i) / 10;
-            setColor(RGB(p));
-            drawWiredDottedTriangle(
-                globalOffsetForTexture + Point3D(tcA, 0) + p * Normal3D(0, 0, 1),
-                globalOffsetForTexture + Point3D(tcB, 0) + p * Normal3D(0, 0, 1),
-                globalOffsetForTexture + Point3D(tcC, 0) + p * Normal3D(0, 0, 1));
-        }
+        drawLine(
+            rayOrg,
+            rayOrg + rayDir * distMin);
+        setColor(RGB(1.0f));
+        drawLine(
+            rayOrg + rayDir * distMin,
+            rayOrg + rayDir * distMax);
 
         // World-space AABB
         const Matrix2x2 invA = invert(Matrix2x2(tcB - tcA, tcC - tcA));
@@ -2261,18 +2266,42 @@ void testNonlinearRayVsAabb() {
                 prevAabbPs[j] = ps[j];
         }
 
+        constexpr Vector3D globalOffsetForTexture(0.0f, -2.0f, 0);
+        drawAxes(axisScale, globalOffsetForTexture);
+
+        // Texture-space Shell
+        setColor(RGB(0.25f));
+        drawWiredTriangle(
+            globalOffsetForTexture + Point3D(tcA, 0.0f),
+            globalOffsetForTexture + Point3D(tcB, 0.0f),
+            globalOffsetForTexture + Point3D(tcC, 0.0f));
+        setColor(RGB(0.0f, 0.5f, 1.0f));
+        drawVector(globalOffsetForTexture + Point3D(tcA, 0), Normal3D(0, 0, 1), 1.0f);
+        drawVector(globalOffsetForTexture + Point3D(tcB, 0), Normal3D(0, 0, 1), 1.0f);
+        drawVector(globalOffsetForTexture + Point3D(tcC, 0), Normal3D(0, 0, 1), 1.0f);
+        for (int i = 1; i <= 10; ++i) {
+            const float p = static_cast<float>(i) / 10;
+            setColor(RGB(p));
+            drawWiredDottedTriangle(
+                globalOffsetForTexture + Point3D(tcA, 0) + p * Normal3D(0, 0, 1),
+                globalOffsetForTexture + Point3D(tcB, 0) + p * Normal3D(0, 0, 1),
+                globalOffsetForTexture + Point3D(tcC, 0) + p * Normal3D(0, 0, 1));
+        }
+
         // Texture-space AABB
         setColor(RGB(1));
         drawAabb(AABB(globalOffsetForTexture + aabb.minP, globalOffsetForTexture + aabb.maxP));
 
+        const float recSqRayLength = 1.0f / dot(rayDir, rayDir);
+
         Vector3D e0, e1;
-        rayDir.makeCoordinateSystem(&e0, &e1);
+        normalize(rayDir).makeCoordinateSystem(&e0, &e1);
 
         float alpha2, alpha1, alpha0;
         float beta2, beta1, beta0;
         float denom2, denom1, denom0;
         computeCanonicalSpaceRayCoeffs(
-            rayOrg, rayDir, e0, e1,
+            rayOrg, e0, e1,
             pA, pB, pC,
             nA, nB, nC,
             &alpha2, &alpha1, &alpha0,
@@ -2287,10 +2316,15 @@ void testNonlinearRayVsAabb() {
             denom2, denom1, denom0,
             &tc2, &tc1, &tc0);
 
+        struct PointInTex {
+            Point3D p;
+            bool isInRange;
+        };
+
         // Texture-space Ray
         std::vector<float> heightValues;
         std::vector<int32_t> indices;
-        std::vector<Point3D> texPs;
+        std::vector<PointInTex> texPs;
         int32_t heightIdx = 0;
         for (int i = 0; i <= 500; ++i) {
             const float t = static_cast<float>(i) / 500;
@@ -2298,8 +2332,9 @@ void testNonlinearRayVsAabb() {
             findHeight(
                 pA, pB, pC,
                 nA, nB, nC,
-                rayOrg + t * rayLength * rayDir,
+                rayOrg + t * distMax * rayDir,
                 hs);
+            const bool isInRange = t * distMax >= distMin;
             for (int j = 0; j < 3; ++j) {
                 const float h = hs[j];
                 if (!std::isfinite(h))
@@ -2314,7 +2349,7 @@ void testNonlinearRayVsAabb() {
 
                 heightValues.push_back(h);
                 indices.push_back(heightIdx++);
-                texPs.push_back(tcp);
+                texPs.push_back(PointInTex{ tcp, isInRange });
             }
         }
         std::vector<int32_t> negIndices;
@@ -2324,7 +2359,7 @@ void testNonlinearRayVsAabb() {
             findHeight(
                 pA, pB, pC,
                 nA, nB, nC,
-                rayOrg + t * rayLength * rayDir,
+                rayOrg + t * -1 * rayDir,
                 hs);
             for (int j = 0; j < 3; ++j) {
                 const float h = hs[j];
@@ -2340,7 +2375,7 @@ void testNonlinearRayVsAabb() {
 
                 heightValues.push_back(h);
                 negIndices.push_back(heightIdx++);
-                texPs.push_back(tcp);
+                texPs.push_back(PointInTex{ tcp, false });
             }
         }
 
@@ -2351,19 +2386,23 @@ void testNonlinearRayVsAabb() {
             negIndices.begin(), negIndices.end(),
             [&](int32_t a, int32_t b) { return heightValues[a] < heightValues[b]; });
 
-        Point3D prevRayPInTex = texPs[*indices.cbegin()];
+        PointInTex prevRayPInTex = texPs[*indices.cbegin()];
         setColor(RGB(1.0f));
-        drawCross(globalOffsetForTexture + texPs[0], 0.05f);
+        drawCross(globalOffsetForTexture + texPs[0].p, 0.05f);
         for (auto it = ++indices.cbegin(); it != indices.cend(); ++it) {
-            const Point3D &tcp = texPs[*it];
-            drawLine(globalOffsetForTexture + prevRayPInTex, globalOffsetForTexture + tcp);
+            const PointInTex &tcp = texPs[*it];
+            if (tcp.isInRange && prevRayPInTex.isInRange)
+                setColor(RGB(1.0f));
+            else
+                setColor(RGB(0.25f));
+            drawLine(globalOffsetForTexture + prevRayPInTex.p, globalOffsetForTexture + tcp.p);
             prevRayPInTex = tcp;
         }
         prevRayPInTex = texPs[*negIndices.cbegin()];
         setColor(RGB(0.1f));
         for (auto it = ++negIndices.cbegin(); it != negIndices.cend(); ++it) {
-            const Point3D &tcp = texPs[*it];
-            drawLine(globalOffsetForTexture + prevRayPInTex, globalOffsetForTexture + tcp);
+            const PointInTex &tcp = texPs[*it];
+            drawLine(globalOffsetForTexture + prevRayPInTex.p, globalOffsetForTexture + tcp.p);
             prevRayPInTex = tcp;
         }
 
@@ -2424,7 +2463,8 @@ void testNonlinearRayVsAabb() {
         const bool hit = testNonlinearRayVsAabb(
             pA, pB, pC, nA, nB, nC,
             aabb,
-            rayOrg, rayDir, 0.0f, rayLength,
+            rayOrg, rayDir, recSqRayLength,
+            distMin, distMax,
             alpha2, alpha1, alpha0, beta2, beta1, beta0, denom2, denom1, denom0,
             tc2, tc1, tc0,
             hs_uMin, vs_uMin, hs_uMax, vs_uMax,
@@ -2650,14 +2690,16 @@ LeafNode{0.69874f, Point3D(0.709961f, 0.00683594f, 0.485206f), Point3D(0.710938f
 LeafNode{0.69874f, Point3D(0.708984f, 0.00683594f, 0.486168f), Point3D(0.709961f, 0.00683594f, 0.485206f), Point3D(0.708984f, 0.0078125f, 0.49691f), Point3D(0.709961f, 0.0078125f, 0.500206f)},
     };
 
+    const float recSqRayLength = 1.0f / dot(rayDir, rayDir);
+
     Vector3D e0, e1;
-    rayDir.makeCoordinateSystem(&e0, &e1);
+    normalize(rayDir).makeCoordinateSystem(&e0, &e1);
 
     float alpha2, alpha1, alpha0;
     float beta2, beta1, beta0;
     float denom2, denom1, denom0;
     computeCanonicalSpaceRayCoeffs(
-        rayOrg, rayDir, e0, e1,
+        rayOrg, e0, e1,
         pA, pB, pC,
         nA, nB, nC,
         &alpha2, &alpha1, &alpha0,
@@ -2831,7 +2873,8 @@ LeafNode{0.69874f, Point3D(0.708984f, 0.00683594f, 0.486168f), Point3D(0.709961f
                     pA, pB, pC,
                     nA, nB, nC,
                     aabb,
-                    rayOrg, rayDir, prismHitDistEnter, node.distMax,
+                    rayOrg, rayDir, recSqRayLength,
+                    prismHitDistEnter, node.distMax,
                     alpha2, alpha1, alpha0,
                     beta2, beta1, beta0,
                     denom2, denom1, denom0,
@@ -2859,7 +2902,8 @@ LeafNode{0.69874f, Point3D(0.708984f, 0.00683594f, 0.486168f), Point3D(0.709961f
                 nA, nB, nC,
                 tcA, tcB, tcC,
                 node.mpTL, node.mpBL, node.mpBR,
-                rayOrg, rayDir, prismHitDistEnter, node.distMax,
+                rayOrg, rayDir, recSqRayLength,
+                prismHitDistEnter, node.distMax,
                 e0, e1,
                 tc2, tc1, tc0,
                 denom2, denom1, denom0,
@@ -2871,7 +2915,8 @@ LeafNode{0.69874f, Point3D(0.708984f, 0.00683594f, 0.486168f), Point3D(0.709961f
                 nA, nB, nC,
                 tcA, tcB, tcC,
                 node.mpTL, node.mpBR, node.mpTR,
-                rayOrg, rayDir, prismHitDistEnter, node.distMax,
+                rayOrg, rayDir, recSqRayLength,
+                prismHitDistEnter, node.distMax,
                 e0, e1,
                 tc2, tc1, tc0,
                 denom2, denom1, denom0,

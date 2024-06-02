@@ -2471,7 +2471,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
                     animate |= ImGui::SliderFloat("Pitch", &instPitch, 0.0f, 360.0f);
                     animate |= ImGui::SliderFloat("Yaw", &instYaw, 0.0f, 360.0f);
                     animate |= ImGui::SliderFloat("Roll", &instRoll, 0.0f, 360.0f);
-                    animate |= ImGui::SliderFloat("Scale", &instScale, 0.1f, 10.0f);
+                    animate |= ImGui::SliderFloat(
+                        "Scale", &instScale, 0.1f, 10.0f, nullptr, ImGuiSliderFlags_Logarithmic);
                     animate |= ImGui::InputFloat3("Position", reinterpret_cast<float*>(&instPosition));
                     ImGui::PopID();
                     resetAccumulation |= animate;
@@ -2483,7 +2484,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
 
                     ImGui::PushID("Height Parameters");
                     heightParamChanged |= ImGui::SliderFloat("Bias", &heightBias, 0.0f, 1.0f);
-                    heightParamChanged |= ImGui::SliderFloat("Scale", &heightScale, -1.0f, 1.0f);
+                    heightParamChanged |= ImGui::SliderFloat("Scale", &heightScale, -2.0f, 2.0f);
                     heightParamChanged |= ImGui::SliderFloat("Offset", &heightOffset, -1.0f, 1.0f);
                     ImGui::PopID();
 
