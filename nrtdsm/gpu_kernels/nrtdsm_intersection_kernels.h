@@ -276,31 +276,36 @@ CUDA_DEVICE_KERNEL void RT_IS_NAME(prism)() {
     float hitDist;
     float hitParam0, hitParam1;
     bool isFrontHit;
+    const Point3D rayOrgInObj(optixGetObjectRayOrigin());
+    const Vector3D rayDirInObj(optixGetObjectRayDirection());
     const bool hit = testRayVsPrism(
-        Point3D(optixGetObjectRayOrigin()), Vector3D(optixGetObjectRayDirection()),
+        rayOrgInObj, rayDirInObj,
         optixGetRayTmin(), optixGetRayTmax(),
         pA, pB, pC,
         pD, pE, pF,
         &hitDist, &hitParam0, &hitParam1, &isFrontHit);
+#if DEBUG_TRAVERSAL
+    if (isDebugPixel() && getDebugPrintEnabled()) {
+        printf("%u-%u\n", plp.f->frameIndex, primIdx);
+        printf("  %s\n", hit ? "hit" : "miss");
+        printf("  height: %g, %g\n", minHeight, maxHeight);
+        printf(
+            "  org: (%g, %g, %g), dir: (%g, %g, %g)\n",
+            v3print(rayOrgInObj),
+            v3print(rayDirInObj));
+        printf("  dist range: %g - %g\n", optixGetRayTmin(), optixGetRayTmax());
+        printf(
+            "  (%g, %g, %g), (%g, %g, %g), (%g, %g, %g)\n",
+            v3print(pA), v3print(pB), v3print(pC));
+        printf(
+            "  (%g, %g, %g), (%g, %g, %g), (%g, %g, %g)\n",
+            v3print(pD), v3print(pE), v3print(pF));
+        printf("  hit dist: %g\n", hitDist);
+        printf("  params: %g, %g\n", hitParam0, hitParam1);
+    }
+#endif
     if (!hit)
         return;
-
-    //if (isCursorPixel() && getDebugPrintEnabled()) {
-    //    printf("frame %u\n", plp.f->frameIndex);
-    //    printf("height: %g, %g\n", minHeight, maxHeight);
-    //    printf(
-    //        "org: (%g, %g, %g), dir: (%g, %g, %g)\n",
-    //        v3print(optixGetObjectRayOrigin()),
-    //        v3print(optixGetObjectRayDirection()));
-    //    printf("dist: %g - %g\n", optixGetRayTmin(), optixGetRayTmax());
-    //    printf(
-    //        "(%g, %g, %g), (%g, %g, %g), (%g, %g, %g)\n",
-    //        v3print(pA), v3print(pB), v3print(pC));
-    //    printf(
-    //        "(%g, %g, %g), (%g, %g, %g), (%g, %g, %g)\n",
-    //        v3print(pD), v3print(pE), v3print(pF));
-    //    printf("params: %g, %g\n", hitParam0, hitParam1);
-    //}
 
     PrismAttributeSignature::reportIntersection(
         hitDist,
