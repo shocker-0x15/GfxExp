@@ -178,8 +178,12 @@ CUDA_DEVICE_KERNEL void computeAABBs(
     // EN: Compute the min/max of texels overlapping with the triangle.
     float minHeight = INFINITY;
     float maxHeight = -INFINITY;
+    float preScale = 1.0f;
     {
         const Matrix3x3 &texXfm = tfdmGeomInst->params.textureTransform;
+        Vector2D uvScale;
+        texXfm.decompose(&uvScale, nullptr, nullptr);
+        preScale = 1.0f / std::sqrt(uvScale.x * uvScale.y);
         const Point2D tcA = texXfm * vs[0].texCoord;
         const Point2D tcB = texXfm * vs[1].texCoord;
         const Point2D tcC = texXfm * vs[2].texCoord;
@@ -293,9 +297,9 @@ CUDA_DEVICE_KERNEL void computeAABBs(
 
     RWBuffer aabbBuffer(tfdmGeomInst->aabbBuffer);
 
-    const float amplitude = tfdmGeomInst->params.hScale * (maxHeight - minHeight);
-    minHeight = tfdmGeomInst->params.hOffset + tfdmGeomInst->params.hScale * (
-        minHeight - tfdmGeomInst->params.hBias);
+    const float scale = tfdmGeomInst->params.hScale * preScale;
+    const float amplitude = scale * (maxHeight - minHeight);
+    minHeight = tfdmGeomInst->params.hOffset + scale * (minHeight - tfdmGeomInst->params.hBias);
     const AAFloatOn2D hBound(minHeight + 0.5f * amplitude, 0, 0, 0.5f * amplitude);
 
     /*

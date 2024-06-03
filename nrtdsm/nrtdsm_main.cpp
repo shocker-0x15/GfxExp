@@ -1978,6 +1978,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         };
         static DetailType detailType = DetailType::DisplacementMap;
         bool detailTypeChanged = false;
+
         static int32_t baseSurfaceIndex = 0;
         bool geomChanged = false;
         static float instPitch = initInstPitch;
@@ -2161,36 +2162,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
                     ImGui::RadioButtonE("Displacement Mapping", &detailType, DetailType::DisplacementMap);
                     ImGui::RadioButtonE("Shell Mapping", &detailType, DetailType::ShellMap);
                     ImGui::RadioButtonE("Base Mesh", &detailType, DetailType::BaseMesh);
-                    if (detailType != oldDetailType || frameIndex == 0) {
+                    if (detailType != oldDetailType || frameIndex == 0)
                         detailTypeChanged = true;
-
-#if USE_DISPLACED_SURFACES
-                        if (detailType == DetailType::DisplacementMap) {
-                            gpuEnv.optixDisplacedMeshMaterial.setHitGroup(
-                                shared::GBufferRayType::Primary,
-                                gpuEnv.gBuffer.hitPrograms.at("displacementMappedSurface"));
-                            gpuEnv.optixDisplacedMeshMaterial.setHitGroup(
-                                shared::PathTracingRayType::Closest,
-                                gpuEnv.pathTracing.hitPrograms.at("pathTraceClosestDisplacementMappedSurface"));
-                            gpuEnv.optixDisplacedMeshMaterial.setHitGroup(
-                                shared::PathTracingRayType::Visibility,
-                                gpuEnv.pathTracing.hitPrograms.at("pathTraceVisibilityDisplacementMappedSurface"));
-                        }
-                        else if (detailType == DetailType::ShellMap) {
-                            gpuEnv.optixDisplacedMeshMaterial.setHitGroup(
-                                shared::GBufferRayType::Primary,
-                                gpuEnv.gBuffer.hitPrograms.at("shellMappedSurface"));
-                            gpuEnv.optixDisplacedMeshMaterial.setHitGroup(
-                                shared::PathTracingRayType::Closest,
-                                gpuEnv.pathTracing.hitPrograms.at("pathTraceClosestShellMappedSurface"));
-                            gpuEnv.optixDisplacedMeshMaterial.setHitGroup(
-                                shared::PathTracingRayType::Visibility,
-                                gpuEnv.pathTracing.hitPrograms.at("pathTraceVisibilityShellMappedSurface"));
-                        }
-                        gpuEnv.gBuffer.optixPipeline.markHitGroupShaderBindingTableDirty();
-                        gpuEnv.pathTracing.optixPipeline.markHitGroupShaderBindingTableDirty();
-#endif
-                    }
 
                     if (detailType == DetailType::DisplacementMap) {
                         struct TextureAsset {
@@ -2769,6 +2742,35 @@ int32_t main(int32_t argc, const char* argv[]) try {
             displacedMeshGeomGroup->needsRebuild = true;
         }
         curGPUTimer.prepareDisplacedMesh.stop(curCuStream);
+
+        if (detailTypeChanged) {
+#if USE_DISPLACED_SURFACES
+            if (detailType == DetailType::DisplacementMap) {
+                gpuEnv.optixDisplacedMeshMaterial.setHitGroup(
+                    shared::GBufferRayType::Primary,
+                    gpuEnv.gBuffer.hitPrograms.at("displacementMappedSurface"));
+                gpuEnv.optixDisplacedMeshMaterial.setHitGroup(
+                    shared::PathTracingRayType::Closest,
+                    gpuEnv.pathTracing.hitPrograms.at("pathTraceClosestDisplacementMappedSurface"));
+                gpuEnv.optixDisplacedMeshMaterial.setHitGroup(
+                    shared::PathTracingRayType::Visibility,
+                    gpuEnv.pathTracing.hitPrograms.at("pathTraceVisibilityDisplacementMappedSurface"));
+            }
+            else if (detailType == DetailType::ShellMap) {
+                gpuEnv.optixDisplacedMeshMaterial.setHitGroup(
+                    shared::GBufferRayType::Primary,
+                    gpuEnv.gBuffer.hitPrograms.at("shellMappedSurface"));
+                gpuEnv.optixDisplacedMeshMaterial.setHitGroup(
+                    shared::PathTracingRayType::Closest,
+                    gpuEnv.pathTracing.hitPrograms.at("pathTraceClosestShellMappedSurface"));
+                gpuEnv.optixDisplacedMeshMaterial.setHitGroup(
+                    shared::PathTracingRayType::Visibility,
+                    gpuEnv.pathTracing.hitPrograms.at("pathTraceVisibilityShellMappedSurface"));
+            }
+            gpuEnv.gBuffer.optixPipeline.markHitGroupShaderBindingTableDirty();
+            gpuEnv.pathTracing.optixPipeline.markHitGroupShaderBindingTableDirty();
+#endif
+        }
 
         // JP: ASesのリビルドを行う。
         // EN: Rebuild the ASes.

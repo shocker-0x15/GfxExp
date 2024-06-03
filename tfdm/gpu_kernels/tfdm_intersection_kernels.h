@@ -50,10 +50,13 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic(TraversalStats* t
     const Vertex &vC = geomInst.vertexBuffer[tri.index2];
 
     const DisplacementParameters &dispParams = tfdmGeomInst.params;
-    const float baseHeight = dispParams.hOffset - dispParams.hScale * dispParams.hBias;
-    const float heightScale = dispParams.hScale;
 
     const Matrix3x3 &texXfm = dispParams.textureTransform;
+    Vector2D uvScale;
+    texXfm.decompose(&uvScale, nullptr, nullptr);
+    const float preScale = 1.0f / std::sqrt(uvScale.x * uvScale.y);
+    const float baseHeight = dispParams.hOffset - preScale * dispParams.hScale * dispParams.hBias;
+    const float heightScale = preScale * dispParams.hScale;
     const Point2D tcA = texXfm * vA.texCoord;
     const Point2D tcB = texXfm * vB.texCoord;
     const Point2D tcC = texXfm * vC.texCoord;
