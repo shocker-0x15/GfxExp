@@ -784,12 +784,12 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE uint32_t solveCubicEquationNumerical(
 
 
 
+// 4.1 Nonlinear Ray in Canonical Space
 CUDA_DEVICE_FUNCTION CUDA_INLINE void computeCanonicalSpaceRayCoeffs(
     const Point3D &rayOrg, const Vector3D &e0, const Vector3D &e1,
     const Point3D &pA, const Point3D &pB, const Point3D &pC,
     const Normal3D &nA, const Normal3D &nB, const Normal3D &nC,
-    float* const alpha2, float* const alpha1, float* const alpha0,
-    float* const beta2, float* const beta1, float* const beta0,
+    Point2D* const bc2, Point2D* const bc1, Point2D* const bc0,
     float* const denom2, float* const denom1, float* const denom0) {
     Vector2D eAB, fAB;
     Vector2D eAC, fAC;
@@ -809,45 +809,59 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void computeCanonicalSpaceRayCoeffs(
         NA = Vector2D(dot(nA, e0), dot(nA, e1));
     }
 
-    //*alpha2 = -NA.x * fAC.y + NA.y * fAC.x;
-    //*alpha1 = eAO.x * fAC.y - eAC.y * NA.x - eAO.y * fAC.x + NA.y * eAC.x;
-    //*alpha0 = eAO.x * eAC.y - eAO.y * eAC.x;
+    //bc2->x = -NA.x * fAC.y + NA.y * fAC.x;
+    //bc1->x = eAO.x * fAC.y - eAC.y * NA.x - eAO.y * fAC.x + NA.y * eAC.x;
+    //bc0->x = eAO.x * eAC.y - eAO.y * eAC.x;
     //const float denA2 = fAB.x * fAC.y - fAB.y * fAC.x;
     //const float denA1 = eAB.x * fAC.y + fAB.x * eAC.y - eAB.y * fAC.x - fAB.y * eAC.x;
     //const float denA0 = eAB.x * eAC.y - eAB.y * eAC.x;
-    //*beta2 = -NA.x * fAB.y + NA.y * fAB.x;
-    //*beta1 = eAO.x * fAB.y - eAB.y * NA.x - eAO.y * fAB.x + NA.y * eAB.x;
-    //*beta0 = eAO.x * eAB.y - eAO.y * eAB.x;
+    //bc2->y = -NA.x * fAB.y + NA.y * fAB.x;
+    //bc1->y = eAO.x * fAB.y - eAB.y * NA.x - eAO.y * fAB.x + NA.y * eAB.x;
+    //bc0->y = eAO.x * eAB.y - eAO.y * eAB.x;
     //const float denB2 = fAC.x * fAB.y - fAC.y * fAB.x;
     //const float denB1 = eAC.x * fAB.y + fAC.x * eAB.y - eAC.y * fAB.x - fAC.y * eAB.x;
     //const float denB0 = eAC.x * eAB.y - eAC.y * eAB.x;
 
-    // JP: denA* == -denB* となるので分母はbeta*を反転すれば共通で使える。
+    // JP: denA* == -denB* となるので分母はbc*->yを反転すれば共通で使える。
     // EN: Denominator can be shared with negated beta* since denA* == -denB*.
     *denom2 = fAB.x * fAC.y - fAB.y * fAC.x;
     *denom1 = eAB.x * fAC.y + fAB.x * eAC.y - eAB.y * fAC.x - fAB.y * eAC.x;
     *denom0 = eAB.x * eAC.y - eAB.y * eAC.x;
-    *alpha2 = -NA.x * fAC.y + NA.y * fAC.x;
-    *alpha1 = eAO.x * fAC.y - eAC.y * NA.x - eAO.y * fAC.x + NA.y * eAC.x;
-    *alpha0 = eAO.x * eAC.y - eAO.y * eAC.x;
-    *beta2 = -(-NA.x * fAB.y + NA.y * fAB.x);
-    *beta1 = -(eAO.x * fAB.y - eAB.y * NA.x - eAO.y * fAB.x + NA.y * eAB.x);
-    *beta0 = -(eAO.x * eAB.y - eAO.y * eAB.x);
+    bc2->x = -NA.x * fAC.y + NA.y * fAC.x;
+    bc1->x = eAO.x * fAC.y - eAC.y * NA.x - eAO.y * fAC.x + NA.y * eAC.x;
+    bc0->x = eAO.x * eAC.y - eAO.y * eAC.x;
+    bc2->y = -(-NA.x * fAB.y + NA.y * fAB.x);
+    bc1->y = -(eAO.x * fAB.y - eAB.y * NA.x - eAO.y * fAB.x + NA.y * eAB.x);
+    bc0->y = -(eAO.x * eAB.y - eAO.y * eAB.x);
 }
 
+// 4.2 Nonlinear Ray in Texture Space
 CUDA_DEVICE_FUNCTION CUDA_INLINE void computeTextureSpaceRayCoeffs(
     const Point2D &tcA, const Point2D &tcB, const Point2D &tcC,
-    const float alpha2, const float alpha1, const float alpha0,
-    const float beta2, const float beta1, const float beta0,
+    const Point2D &bc2, Point2D &bc1, Point2D &bc0,
     const float denom2, const float denom1, const float denom0,
     Point2D* const tc2, Point2D* const tc1, Point2D* const tc0) {
-    *tc2 = (denom2 - alpha2 - beta2) * tcA + alpha2 * tcB + beta2 * tcC;
-    *tc1 = (denom1 - alpha1 - beta1) * tcA + alpha1 * tcB + beta1 * tcC;
-    *tc0 = (denom0 - alpha0 - beta0) * tcA + alpha0 * tcB + beta0 * tcC;
+    *tc2 = (denom2 - bc2.x - bc2.y) * tcA + bc2.x * tcB + bc2.y * tcC;
+    *tc1 = (denom1 - bc1.x - bc1.y) * tcA + bc1.x * tcB + bc1.y * tcC;
+    *tc0 = (denom0 - bc0.x - bc0.y) * tcA + bc0.x * tcB + bc0.y * tcC;
 }
 
 
 
+// 4.3 Intersection Tests in Texture Space - Signed distance
+CUDA_DEVICE_FUNCTION CUDA_INLINE float computeSignedDistance(
+    const Point3D &rayOrg, const Vector3D &rayDir, const float recSqRayLength,
+    const Point3D &SAh, const Point3D &SBh, const Point3D &SCh,
+    const float alpha, const float beta) {
+    const float dist = recSqRayLength * dot(
+        rayDir,
+        (1 - alpha - beta) * SAh + alpha * SBh + beta * SCh - rayOrg);
+    return dist;
+}
+
+
+
+// 4.4 Nonlinear Ray Traversal - Traversal BLAS
 CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsAabb(
     // Prism
     const Point3D &pA, const Point3D &pB, const Point3D &pC,
@@ -857,8 +871,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsAabb(
     // Ray
     const Point3D &rayOrg, const Vector3D &rayDir, const float recSqRayLength,
     const float distMin, const float distMax,
-    const float alpha2, const float alpha1, const float alpha0,
-    const float beta2, const float beta1, const float beta0,
+    const Point2D &bc2, const Point2D &bc1, const Point2D &bc0,
     const float denom2, const float denom1, const float denom0,
     const Point2D &tc2, const Point2D &tc1, const Point2D &tc0,
     // results
@@ -868,14 +881,12 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsAabb(
 
     const auto computeHitDistance = [&]
     (const float h, const float recDenom) {
-        const float alpha = evaluateQuadraticPolynomial(alpha2, alpha1, alpha0, h) * recDenom;
-        const float beta = evaluateQuadraticPolynomial(beta2, beta1, beta0, h) * recDenom;
+        const float alpha = evaluateQuadraticPolynomial(bc2.x, bc1.x, bc0.x, h) * recDenom;
+        const float beta = evaluateQuadraticPolynomial(bc2.y, bc1.y, bc0.y, h) * recDenom;
         const Point3D SAh = pA + h * nA;
         const Point3D SBh = pB + h * nB;
         const Point3D SCh = pC + h * nC;
-        const float dist = recSqRayLength * dot(
-            rayDir,
-            (1 - alpha - beta) * SAh + alpha * SBh + beta * SCh - rayOrg);
+        const float dist = computeSignedDistance(rayOrg, rayDir, recSqRayLength, SAh, SBh, SCh, alpha, beta);
         *hitDistMin = std::fmin(*hitDistMin, dist);
         *hitDistMax = std::fmax(*hitDistMax, dist);
     };
@@ -961,8 +972,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsAabb(
     // Ray
     const Point3D &rayOrg, const Vector3D &rayDir, const float recSqRayLength,
     const float distMin, const float distMax,
-    const float alpha2, const float alpha1, const float alpha0,
-    const float beta2, const float beta1, const float beta0,
+    const Point2D &bc2, const Point2D &bc1, const Point2D &bc0,
     const float denom2, const float denom1, const float denom0,
     const Point2D &tc2, const Point2D &tc1, const Point2D &tc0,
     // Intermediate intersection results
@@ -977,14 +987,12 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsAabb(
 
     const auto computeHitDistance = [&]
     (const float h, const float recDenom) {
-        const float alpha = evaluateQuadraticPolynomial(alpha2, alpha1, alpha0, h) * recDenom;
-        const float beta = evaluateQuadraticPolynomial(beta2, beta1, beta0, h) * recDenom;
+        const float alpha = evaluateQuadraticPolynomial(bc2.x, bc1.x, bc0.x, h) * recDenom;
+        const float beta = evaluateQuadraticPolynomial(bc2.y, bc1.y, bc0.y, h) * recDenom;
         const Point3D SAh = pA + h * nA;
         const Point3D SBh = pB + h * nB;
         const Point3D SCh = pC + h * nC;
-        const float dist = recSqRayLength * dot(
-            rayDir,
-            (1 - alpha - beta) * SAh + alpha * SBh + beta * SCh - rayOrg);
+        const float dist = computeSignedDistance(rayOrg, rayDir, recSqRayLength, SAh, SBh, SCh, alpha, beta);
         *hitDistMin = std::fmin(*hitDistMin, dist);
         *hitDistMax = std::fmax(*hitDistMax, dist);
     };
@@ -1045,6 +1053,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsAabb(
 
 
 
+// 4.3 Intersection Tests in Texture Space - Nonlinear ray-microtriangle intersection
 CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsMicroTriangle(
     // Base Triangle
     const Point3D &pA, const Point3D &pB, const Point3D &pC,
@@ -1174,9 +1183,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsMicroTriangle(
                 continue;
         }
 
-        const float dist = recSqRayLength * dot(
-            rayDir,
-            (1 - alpha - beta) * SAh + alpha * SBh + beta * SCh - rayOrg);
+        const float dist = computeSignedDistance(rayOrg, rayDir, recSqRayLength, SAh, SBh, SCh, alpha, beta);
         if (dist > distMin && dist < *hitDist) {
             *hitDist = dist;
             *hitPointInCan = hpInCan;
@@ -1244,8 +1251,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsShellBvh(
     const Point3D &rayOrg, const Vector3D &rayDir, const float recSqRayLength,
     const float distMin, const float distMax,
     const Vector3D &e0, const Vector3D &e1,
-    const float alpha2, const float alpha1, const float alpha0,
-    const float beta2, const float beta1, const float beta0,
+    const Point2D &bc2, const Point2D &bc1, const Point2D &bc0,
     const float denom2, const float denom1, const float denom0,
     const Point2D &tc2, const Point2D &tc1, const Point2D &tc0,
     // Results
@@ -1339,7 +1345,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsShellBvh(
                         pA, pB, pC, nA, nB, nC,
                         aabb,
                         rayOrg, rayDir, recSqRayLength, distMin, *hitDist,
-                        alpha2, alpha1, alpha0, beta2, beta1, beta0, denom2, denom1, denom0,
+                        bc2, bc1, bc0, denom2, denom1, denom0,
                         tc2, tc1, tc0,
                         &aabbHitDistMin, &aabbHitDistMax);
                     if constexpr (outputTravStats)
@@ -1670,15 +1676,13 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void detailedSurface_generic(TraversalStats* tr
 
     // JP: 正準空間中のレイの係数を求める。
     // EN: Compute the coefficients of the ray in canonical space.
-    float alpha2, alpha1, alpha0;
-    float beta2, beta1, beta0;
+    Point2D bc2, bc1, bc0;
     float denom2, denom1, denom0;
     computeCanonicalSpaceRayCoeffs(
         rayOrgInObj, e0, e1,
         pA, pB, pC,
         nA, nB, nC,
-        &alpha2, &alpha1, &alpha0,
-        &beta2, &beta1, &beta0,
+        &bc2, &bc1, &bc0,
         &denom2, &denom1, &denom0);
 
     // JP: テクスチャー空間中のレイの係数を求める。
@@ -1686,8 +1690,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void detailedSurface_generic(TraversalStats* tr
     Point2D tc2, tc1, tc0;
     computeTextureSpaceRayCoeffs(
         tcA, tcB, tcC,
-        alpha2, alpha1, alpha0,
-        beta2, beta1, beta0,
+        bc2, bc1, bc0,
         denom2, denom1, denom0,
         &tc2, &tc1, &tc0);
 
@@ -1965,7 +1968,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void detailedSurface_generic(TraversalStats* tr
                         pA, pB, pC, nA, nB, nC,
                         aabb,
                         rayOrgInObj, rayDirInObj, recSqRayLength, prismHitDistEnter, hitDist,
-                        alpha2, alpha1, alpha0, beta2, beta1, beta0, denom2, denom1, denom0,
+                        bc2, bc1, bc0, denom2, denom1, denom0,
                         tc2, tc1, tc0,
                         hs_u[iuLo], vs_u[iuLo], hs_u[iuHi], vs_u[iuHi],
                         hs_v[ivLo], us_v[ivLo], hs_v[ivHi], us_v[ivHi],
@@ -2036,8 +2039,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void detailedSurface_generic(TraversalStats* tr
                     nrtdsmGeomInst.shellBvh, Vector2D(curTexel.x, curTexel.y),
                     rayOrgInObj, rayDirInObj, recSqRayLength, prismHitDistEnter, hitDist,
                     e0, e1,
-                    alpha2, alpha1, alpha0,
-                    beta2, beta1, beta0,
+                    bc2, bc1, bc0,
                     denom2, denom1, denom0,
                     tc2, tc1, tc0,
                     &hpInCan, &tt, &nn, &geomIdx,

@@ -697,8 +697,7 @@ static void computeCanonicalSpaceRayCoeffs(
     const Point3D &rayOrg, const Vector3D &e0, const Vector3D &e1,
     const Point3D &pA, const Point3D &pB, const Point3D &pC,
     const Normal3D &nA, const Normal3D &nB, const Normal3D &nC,
-    float* const alpha2, float* const alpha1, float* const alpha0,
-    float* const beta2, float* const beta1, float* const beta0,
+    Point2D* const bc2, Point2D* const bc1, Point2D* const bc0,
     float* const denom2, float* const denom1, float* const denom0) {
     Vector2D eAB, fAB;
     Vector2D eAC, fAC;
@@ -718,29 +717,29 @@ static void computeCanonicalSpaceRayCoeffs(
         NA = Vector2D(dot(nA, e0), dot(nA, e1));
     }
 
-    //*alpha2 = -NA.x * fAC.y + NA.y * fAC.x;
-    //*alpha1 = eAO.x * fAC.y - eAC.y * NA.x - eAO.y * fAC.x + NA.y * eAC.x;
-    //*alpha0 = eAO.x * eAC.y - eAO.y * eAC.x;
+    //bc2->x = -NA.x * fAC.y + NA.y * fAC.x;
+    //bc1->x = eAO.x * fAC.y - eAC.y * NA.x - eAO.y * fAC.x + NA.y * eAC.x;
+    //bc0->x = eAO.x * eAC.y - eAO.y * eAC.x;
     //const float denA2 = fAB.x * fAC.y - fAB.y * fAC.x;
     //const float denA1 = eAB.x * fAC.y + fAB.x * eAC.y - eAB.y * fAC.x - fAB.y * eAC.x;
     //const float denA0 = eAB.x * eAC.y - eAB.y * eAC.x;
-    //*beta2 = -NA.x * fAB.y + NA.y * fAB.x;
-    //*beta1 = eAO.x * fAB.y - eAB.y * NA.x - eAO.y * fAB.x + NA.y * eAB.x;
-    //*beta0 = eAO.x * eAB.y - eAO.y * eAB.x;
+    //bc2->y = -NA.x * fAB.y + NA.y * fAB.x;
+    //bc1->y = eAO.x * fAB.y - eAB.y * NA.x - eAO.y * fAB.x + NA.y * eAB.x;
+    //bc0->y = eAO.x * eAB.y - eAO.y * eAB.x;
     //const float denB2 = fAC.x * fAB.y - fAC.y * fAB.x;
     //const float denB1 = eAC.x * fAB.y + fAC.x * eAB.y - eAC.y * fAB.x - fAC.y * eAB.x;
     //const float denB0 = eAC.x * eAB.y - eAC.y * eAB.x;
 
-    // denA* == -denB* となるので分母はbeta*を反転すれば共通で使える。
+    // denA* == -denB* となるので分母はbc*.yを反転すれば共通で使える。
     *denom2 = fAB.x * fAC.y - fAB.y * fAC.x;
     *denom1 = eAB.x * fAC.y + fAB.x * eAC.y - eAB.y * fAC.x - fAB.y * eAC.x;
     *denom0 = eAB.x * eAC.y - eAB.y * eAC.x;
-    *alpha2 = -NA.x * fAC.y + NA.y * fAC.x;
-    *alpha1 = eAO.x * fAC.y - eAC.y * NA.x - eAO.y * fAC.x + NA.y * eAC.x;
-    *alpha0 = eAO.x * eAC.y - eAO.y * eAC.x;
-    *beta2 = -(-NA.x * fAB.y + NA.y * fAB.x);
-    *beta1 = -(eAO.x * fAB.y - eAB.y * NA.x - eAO.y * fAB.x + NA.y * eAB.x);
-    *beta0 = -(eAO.x * eAB.y - eAO.y * eAB.x);
+    bc2->x = -NA.x * fAC.y + NA.y * fAC.x;
+    bc1->x = eAO.x * fAC.y - eAC.y * NA.x - eAO.y * fAC.x + NA.y * eAC.x;
+    bc0->x = eAO.x * eAC.y - eAO.y * eAC.x;
+    bc2->y = -(-NA.x * fAB.y + NA.y * fAB.x);
+    bc1->y = -(eAO.x * fAB.y - eAB.y * NA.x - eAO.y * fAB.x + NA.y * eAB.x);
+    bc0->y = -(eAO.x * eAB.y - eAO.y * eAB.x);
 }
 
 void testComputeCanonicalSpaceRayCoeffs() {
@@ -912,29 +911,27 @@ void testComputeCanonicalSpaceRayCoeffs() {
     Vector3D e0, e1;
     rayDir.makeCoordinateSystem(&e0, &e1);
 
-    float alpha2, alpha1, alpha0;
-    float beta2, beta1, beta0;
+    Point2D bc2, bc1, bc0;
     float denom2, denom1, denom0;
     computeCanonicalSpaceRayCoeffs(
-        rayOrg, rayDir, e0, e1,
+        rayOrg, e0, e1,
         pA, pB, pC,
         nA, nB, nC,
-        &alpha2, &alpha1, &alpha0,
-        &beta2, &beta1, &beta0,
+        &bc2, &bc1, &bc0,
         &denom2, &denom1, &denom0);
 
     const Point2D tc2 =
-        (denom2 - alpha2 - beta2) * tcA
-        + alpha2 * tcB
-        + beta2 * tcC;
+        (denom2 - bc2.x - bc2.y) * tcA
+        + bc2.x * tcB
+        + bc2.y * tcC;
     const Point2D tc1 =
-        (denom1 - alpha1 - beta1) * tcA
-        + alpha1 * tcB
-        + beta1 * tcC;
+        (denom1 - bc1.x - bc1.y) * tcA
+        + bc1.x * tcB
+        + bc1.y * tcC;
     const Point2D tc0 =
-        (denom0 - alpha0 - beta0) * tcA
-        + alpha0 * tcB
-        + beta0 * tcC;
+        (denom0 - bc0.x - bc0.y) * tcA
+        + bc0.x * tcB
+        + bc0.y * tcC;
 
     // Canonical-space and Texture-space Ray
     // JP: 非線形レイだからと言ってレイが分岐したり非連続になったりしない。
@@ -960,8 +957,8 @@ void testComputeCanonicalSpaceRayCoeffs() {
             const float h2 = pow2(h);
             const float denom = denom2 * h2 + denom1 * h + denom0;
             const Point3D p(
-                (alpha2 * h2 + alpha1 * h + alpha0) / denom,
-                (beta2 * h2 + beta1 * h + beta0) / denom,
+                (bc2.x * h2 + bc1.x * h + bc0.x) / denom,
+                (bc2.y * h2 + bc1.y * h + bc0.y) / denom,
                 h);
             const Point3D tcp((tc2 * h2 + tc1 * h + tc0) / denom, h);
 
@@ -1251,26 +1248,24 @@ void testNonlinearRayVsMicroTriangle() {
         Vector3D e0, e1;
         normalize(rayDir).makeCoordinateSystem(&e0, &e1);
 
-        float alpha2, alpha1, alpha0;
-        float beta2, beta1, beta0;
+        Point2D bc2, bc1, bc0;
         float denom2, denom1, denom0;
         computeCanonicalSpaceRayCoeffs(
             rayOrg, e0, e1,
             pA, pB, pC,
             nA, nB, nC,
-            &alpha2, &alpha1, &alpha0,
-            &beta2, &beta1, &beta0,
+            &bc2, &bc1, &bc0,
             &denom2, &denom1, &denom0);
 
         const auto computeTcCoeffs = []
         (const Point2D &tcA, const Point2D &tcB, const Point2D &tcC,
-         const float denom, const float alpha, const float beta) {
-            return (denom - alpha - beta) * tcA + alpha * tcB + beta * tcC;
+         const float denom, const Point2D bc) {
+            return (denom - bc.x - bc.y) * tcA + bc.x * tcB + bc.y * tcC;
         };
 
-        const Point2D tc2 = computeTcCoeffs(tcA, tcB, tcC, denom2, alpha2, beta2);
-        const Point2D tc1 = computeTcCoeffs(tcA, tcB, tcC, denom1, alpha1, beta1);
-        const Point2D tc0 = computeTcCoeffs(tcA, tcB, tcC, denom0, alpha0, beta0);
+        const Point2D tc2 = computeTcCoeffs(tcA, tcB, tcC, denom2, bc2);
+        const Point2D tc1 = computeTcCoeffs(tcA, tcB, tcC, denom1, bc1);
+        const Point2D tc0 = computeTcCoeffs(tcA, tcB, tcC, denom0, bc0);
 
         Point3D hitPointInCan;
         Point3D hitPointInTex;
@@ -1468,8 +1463,8 @@ void testNonlinearRayVsMicroTriangle() {
                 const float h2 = pow2(h);
                 const float denom = denom2 * h2 + denom1 * h + denom0;
                 const Point3D p(
-                    (alpha2 * h2 + alpha1 * h + alpha0) / denom,
-                    (beta2 * h2 + beta1 * h + beta0) / denom,
+                    (bc2.x * h2 + bc1.x * h + bc0.x) / denom,
+                    (bc2.y * h2 + bc1.y * h + bc0.y) / denom,
                     h);
                 const Point3D tcp((tc2 * h2 + tc1 * h + tc0) / denom, h);
 
@@ -1930,13 +1925,12 @@ void testRayVsPrism() {
 
 static void computeTextureSpaceRayCoeffs(
     const Point2D &tcA, const Point2D &tcB, const Point2D &tcC,
-    const float alpha2, const float alpha1, const float alpha0,
-    const float beta2, const float beta1, const float beta0,
+    const Point2D &bc2, const Point2D &bc1, const Point2D &bc0,
     const float denom2, const float denom1, const float denom0,
     Point2D* const tc2, Point2D* const tc1, Point2D* const tc0) {
-    *tc2 = (denom2 - alpha2 - beta2) * tcA + alpha2 * tcB + beta2 * tcC;
-    *tc1 = (denom1 - alpha1 - beta1) * tcA + alpha1 * tcB + beta1 * tcC;
-    *tc0 = (denom0 - alpha0 - beta0) * tcA + alpha0 * tcB + beta0 * tcC;
+    *tc2 = (denom2 - bc2.x - bc2.y) * tcA + bc2.x * tcB + bc2.y * tcC;
+    *tc1 = (denom1 - bc1.x - bc1.y) * tcA + bc1.x * tcB + bc1.y * tcC;
+    *tc0 = (denom0 - bc0.x - bc0.y) * tcA + bc0.x * tcB + bc0.y * tcC;
 }
 
 static inline float evaluateQuadraticPolynomial(
@@ -1953,8 +1947,7 @@ static bool testNonlinearRayVsAabb(
     // Ray
     const Point3D &rayOrg, const Vector3D &rayDir, const float recSqRayLength,
     const float distMin, const float distMax,
-    const float alpha2, const float alpha1, const float alpha0,
-    const float beta2, const float beta1, const float beta0,
+    const Point2D &bc2, const Point2D &bc1, const Point2D &bc0,
     const float denom2, const float denom1, const float denom0,
     const Point2D &tc2, const Point2D &tc1, const Point2D &tc0,
     // Intermediate intersection results
@@ -1982,8 +1975,8 @@ static bool testNonlinearRayVsAabb(
             float u, v;
             compute_u_v(h, recDenom, &u, &v);
             if (u >= aabb.minP.x && u <= aabb.maxP.x && v >= aabb.minP.y && v <= aabb.maxP.y) {
-                const float alpha = evaluateQuadraticPolynomial(alpha2, alpha1, alpha0, h) * recDenom;
-                const float beta = evaluateQuadraticPolynomial(beta2, beta1, beta0, h) * recDenom;
+                const float alpha = evaluateQuadraticPolynomial(bc2.x, bc1.x, bc0.x, h) * recDenom;
+                const float beta = evaluateQuadraticPolynomial(bc2.y, bc1.y, bc0.y, h) * recDenom;
                 const Point3D SAh = pA + h * nA;
                 const Point3D SBh = pB + h * nB;
                 const Point3D SCh = pC + h * nC;
@@ -2004,8 +1997,8 @@ static bool testNonlinearRayVsAabb(
     (const float v, const float h) {
         if (v >= aabb.minP.y && v <= aabb.maxP.y && h >= aabb.minP.z && h <= aabb.maxP.z) {
             const float recDenom = 1.0f / evaluateQuadraticPolynomial(denom2, denom1, denom0, h);
-            const float alpha = evaluateQuadraticPolynomial(alpha2, alpha1, alpha0, h) * recDenom;
-            const float beta = evaluateQuadraticPolynomial(beta2, beta1, beta0, h) * recDenom;
+            const float alpha = evaluateQuadraticPolynomial(bc2.x, bc1.x, bc0.x, h) * recDenom;
+            const float beta = evaluateQuadraticPolynomial(bc2.y, bc1.y, bc0.y, h) * recDenom;
             const Point3D SAh = pA + h * nA;
             const Point3D SBh = pB + h * nB;
             const Point3D SCh = pC + h * nC;
@@ -2027,8 +2020,8 @@ static bool testNonlinearRayVsAabb(
     (const float u, const float h) {
         if (u >= aabb.minP.x && u <= aabb.maxP.x && h >= aabb.minP.z && h <= aabb.maxP.z) {
             const float recDenom = 1.0f / evaluateQuadraticPolynomial(denom2, denom1, denom0, h);
-            const float alpha = evaluateQuadraticPolynomial(alpha2, alpha1, alpha0, h) * recDenom;
-            const float beta = evaluateQuadraticPolynomial(beta2, beta1, beta0, h) * recDenom;
+            const float alpha = evaluateQuadraticPolynomial(bc2.x, bc1.x, bc0.x, h) * recDenom;
+            const float beta = evaluateQuadraticPolynomial(bc2.y, bc1.y, bc0.y, h) * recDenom;
             const Point3D SAh = pA + h * nA;
             const Point3D SBh = pB + h * nB;
             const Point3D SCh = pC + h * nC;
@@ -2297,22 +2290,19 @@ void testNonlinearRayVsAabb() {
         Vector3D e0, e1;
         normalize(rayDir).makeCoordinateSystem(&e0, &e1);
 
-        float alpha2, alpha1, alpha0;
-        float beta2, beta1, beta0;
+        Point2D bc2, bc1, bc0;
         float denom2, denom1, denom0;
         computeCanonicalSpaceRayCoeffs(
             rayOrg, e0, e1,
             pA, pB, pC,
             nA, nB, nC,
-            &alpha2, &alpha1, &alpha0,
-            &beta2, &beta1, &beta0,
+            &bc2, &bc1, &bc0,
             &denom2, &denom1, &denom0);
 
         Point2D tc2, tc1, tc0;
         computeTextureSpaceRayCoeffs(
             tcA, tcB, tcC,
-            alpha2, alpha1, alpha0,
-            beta2, beta1, beta0,
+            bc2, bc1, bc0,
             denom2, denom1, denom0,
             &tc2, &tc1, &tc0);
 
@@ -2342,8 +2332,8 @@ void testNonlinearRayVsAabb() {
                 const float h2 = pow2(h);
                 const float denom = denom2 * h2 + denom1 * h + denom0;
                 const Point3D p(
-                    (alpha2 * h2 + alpha1 * h + alpha0) / denom,
-                    (beta2 * h2 + beta1 * h + beta0) / denom,
+                    (bc2.x * h2 + bc1.x * h + bc0.x) / denom,
+                    (bc2.y * h2 + bc1.y * h + bc0.y) / denom,
                     h);
                 const Point3D tcp((tc2 * h2 + tc1 * h + tc0) / denom, h);
 
@@ -2368,8 +2358,8 @@ void testNonlinearRayVsAabb() {
                 const float h2 = pow2(h);
                 const float denom = denom2 * h2 + denom1 * h + denom0;
                 const Point3D p(
-                    (alpha2 * h2 + alpha1 * h + alpha0) / denom,
-                    (beta2 * h2 + beta1 * h + beta0) / denom,
+                    (bc2.x * h2 + bc1.x * h + bc0.x) / denom,
+                    (bc2.y * h2 + bc1.y * h + bc0.y) / denom,
                     h);
                 const Point3D tcp((tc2 * h2 + tc1 * h + tc0) / denom, h);
 
@@ -2465,7 +2455,7 @@ void testNonlinearRayVsAabb() {
             aabb,
             rayOrg, rayDir, recSqRayLength,
             distMin, distMax,
-            alpha2, alpha1, alpha0, beta2, beta1, beta0, denom2, denom1, denom0,
+            bc2, bc1, bc0, denom2, denom1, denom0,
             tc2, tc1, tc0,
             hs_uMin, vs_uMin, hs_uMax, vs_uMax,
             hs_vMin, us_vMin, hs_vMax, us_vMax,
@@ -2695,22 +2685,19 @@ LeafNode{0.69874f, Point3D(0.708984f, 0.00683594f, 0.486168f), Point3D(0.709961f
     Vector3D e0, e1;
     normalize(rayDir).makeCoordinateSystem(&e0, &e1);
 
-    float alpha2, alpha1, alpha0;
-    float beta2, beta1, beta0;
+    Point2D bc2, bc1, bc0;
     float denom2, denom1, denom0;
     computeCanonicalSpaceRayCoeffs(
         rayOrg, e0, e1,
         pA, pB, pC,
         nA, nB, nC,
-        &alpha2, &alpha1, &alpha0,
-        &beta2, &beta1, &beta0,
+        &bc2, &bc1, &bc0,
         &denom2, &denom1, &denom0);
 
     Point2D tc2, tc1, tc0;
     computeTextureSpaceRayCoeffs(
         tcA, tcB, tcC,
-        alpha2, alpha1, alpha0,
-        beta2, beta1, beta0,
+        bc2, bc1, bc0,
         denom2, denom1, denom0,
         &tc2, &tc1, &tc0);
 
@@ -2740,8 +2727,8 @@ LeafNode{0.69874f, Point3D(0.708984f, 0.00683594f, 0.486168f), Point3D(0.709961f
             const float h2 = pow2(h);
             const float denom = denom2 * h2 + denom1 * h + denom0;
             const Point3D p(
-                (alpha2 * h2 + alpha1 * h + alpha0) / denom,
-                (beta2 * h2 + beta1 * h + beta0) / denom,
+                (bc2.x * h2 + bc1.x * h + bc0.x) / denom,
+                (bc2.y * h2 + bc1.y * h + bc0.y) / denom,
                 h);
             const Point3D tcp((tc2 * h2 + tc1 * h + tc0) / denom, h);
 
@@ -2767,8 +2754,8 @@ LeafNode{0.69874f, Point3D(0.708984f, 0.00683594f, 0.486168f), Point3D(0.709961f
                 const float h2 = pow2(h);
                 const float denom = denom2 * h2 + denom1 * h + denom0;
                 const Point3D p(
-                    (alpha2 * h2 + alpha1 * h + alpha0) / denom,
-                    (beta2 * h2 + beta1 * h + beta0) / denom,
+                    (bc2.x * h2 + bc1.x * h + bc0.x) / denom,
+                    (bc2.y * h2 + bc1.y * h + bc0.y) / denom,
                     h);
                 const Point3D tcp((tc2 * h2 + tc1 * h + tc0) / denom, h);
 
@@ -2875,8 +2862,7 @@ LeafNode{0.69874f, Point3D(0.708984f, 0.00683594f, 0.486168f), Point3D(0.709961f
                     aabb,
                     rayOrg, rayDir, recSqRayLength,
                     prismHitDistEnter, node.distMax,
-                    alpha2, alpha1, alpha0,
-                    beta2, beta1, beta0,
+                    bc2, bc1, bc0,
                     denom2, denom1, denom0,
                     tc2, tc1, tc0,
                     hs_uLo, vs_uLo,
