@@ -57,10 +57,13 @@ list(
     "ext/imgui/(backends|misc|examples)/.*")
 list(
     FILTER COMMON_SOURCES EXCLUDE REGEX
-    "ext/tinyexr/deps/miniz/examples/.*")
+    "ext/tinyexr/deps/miniz/.*")
 list(
     FILTER COMMON_SOURCES EXCLUDE REGEX
     "ext/tinyexr/deps/ZFP/.*")
+list(
+    FILTER COMMON_SOURCES EXCLUDE REGEX
+    "ext/tinyexr/deps/nanozlib/.*")
 list(
     FILTER COMMON_SOURCES EXCLUDE REGEX
     "ext/tinyexr/(examples|experimental|test)/.*")
@@ -163,6 +166,9 @@ function(set_common_sources)
     source_group(
         "non-essentials/ext/tinyexr/miniz" REGULAR_EXPRESSION
         "../ext/tinyexr/deps/miniz/[^/]*\.(h|hpp|c|cpp)$")
+    source_group(
+        "non-essentials/ext/tinyexr/nanozlib" REGULAR_EXPRESSION
+        "../ext/tinyexr/deps/nanozlib/[^/]*\.(h|hpp|c|cpp)$")
     source_group(
         "non-essentials/ext/cubd" REGULAR_EXPRESSION
         "../ext/cubd/[^/]*\.h$")
@@ -298,6 +304,8 @@ target_compile_options(
     "$<$<AND:$<CXX_COMPILER_ID:MSVC>,$<NOT:$<COMPILE_LANGUAGE:CUDA>>>:/MP>"
     # if (compilerID == MSVC && compilerLanguage != CUDA) set(/Zc:__cplusplus);
     "$<$<AND:$<CXX_COMPILER_ID:MSVC>,$<NOT:$<COMPILE_LANGUAGE:CUDA>>>:/Zc:__cplusplus>"
+    # if (compilerID == MSVC && compilerLanguage == CUDA) set(-Xcompiler "/wd 4819 /Zc:__cplusplus");
+    "$<$<AND:$<CXX_COMPILER_ID:MSVC>,$<COMPILE_LANGUAGE:CUDA>>:-Xcompiler=/wd4819 /Zc:__cplusplus>"
 )
 target_include_directories(
     fakelib INTERFACE
