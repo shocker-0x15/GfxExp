@@ -2121,7 +2121,7 @@ struct Point2D_T {
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Point2D_T(const Point2D_T<F2> &v) :
         x(v.x), y(v.y) {}
     template <typename F2 = F, std::enable_if_t<(sizeof(F2) > sizeof(F)), int> = 0>
-        CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr Point2D_T(const Point2D_T<F2> &v) :
+    CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr Point2D_T(const Point2D_T<F2> &v) :
         x(static_cast<F>(v.x)), y(static_cast<F>(v.y)) {}
 
     CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr operator Vector2D_T<F>() const {
@@ -2444,7 +2444,7 @@ struct Vector3D_T {
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector3D_T(const Vector3D_T<F2, isNormal> &v) :
         x(v.x), y(v.y), z(v.z) {}
     template <typename F2 = F, std::enable_if_t<(sizeof(F2) > sizeof(F)), int> = 0>
-        CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr Vector3D_T(const Vector3D_T<F2, isNormal> &v) :
+    CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr Vector3D_T(const Vector3D_T<F2, isNormal> &v) :
         x(static_cast<F>(v.x)), y(static_cast<F>(v.y)), z(static_cast<F>(v.z)) {}
 
     CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr operator Vector3D_T<F, !isNormal>() const {
@@ -2801,7 +2801,7 @@ struct Point3D_T {
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Point3D_T(const Point3D_T<F2> &v) :
         x(v.x), y(v.y), z(v.z) {}
     template <typename F2 = F, std::enable_if_t<(sizeof(F2) > sizeof(F)), int> = 0>
-        CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr Point3D_T(const Point3D_T<F2> &v) :
+    CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr Point3D_T(const Point3D_T<F2> &v) :
         x(static_cast<F>(v.x)), y(static_cast<F>(v.y)), z(static_cast<F>(v.z)) {}
 
     CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr operator Point2D_T<F>() const {
@@ -3109,7 +3109,7 @@ struct Vector4D_T {
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Vector4D_T(const Vector4D_T<F2> &v) :
         x(v.x), y(v.y), z(v.z), w(v.w) {}
     template <typename F2 = F, std::enable_if_t<(sizeof(F2) > sizeof(F)), int> = 0>
-        CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr Vector4D_T(const Vector4D_T<F2> &v) :
+    CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr Vector4D_T(const Vector4D_T<F2> &v) :
         x(static_cast<F>(v.x)), y(static_cast<F>(v.y)), z(static_cast<F>(v.z)), w(static_cast<F>(v.w)) {}
 
     template <bool isNormal>
@@ -3563,7 +3563,7 @@ struct Matrix2x2_T {
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix2x2_T(const Matrix2x2_T<F2> &v) :
         c0(v.c0), c1(v.c1) {}
     template <typename F2 = F, std::enable_if_t<(sizeof(F2) > sizeof(F)), int> = 0>
-        CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr Matrix2x2_T(const Matrix2x2_T<F2> &v) :
+    CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr Matrix2x2_T(const Matrix2x2_T<F2> &v) :
         c0(static_cast<Vector2D_T<F>>(v.c0)),
         c1(static_cast<Vector2D_T<F>>(v.c1)) {}
 
@@ -3830,7 +3830,7 @@ struct Matrix3x2_T {
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix3x2_T(const Matrix3x2_T<F2> &v) :
         c0(v.c0), c1(v.c1) {}
     template <typename F2 = F, std::enable_if_t<(sizeof(F2) > sizeof(F)), int> = 0>
-        CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr Matrix3x2_T(const Matrix3x2_T<F2> &v) :
+    CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr Matrix3x2_T(const Matrix3x2_T<F2> &v) :
         c0(static_cast<Vector3D_T<F, false>>(v.c0)),
         c1(static_cast<Vector3D_T<F, false>>(v.c1)) {}
 
@@ -3999,7 +3999,7 @@ struct Matrix3x3_T {
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix3x3_T(const Matrix3x3_T<F2> &v) :
         c0(v.c0), c1(v.c1), c2(v.c2) {}
     template <typename F2 = F, std::enable_if_t<(sizeof(F2) > sizeof(F)), int> = 0>
-        CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr Matrix3x3_T(const Matrix3x3_T<F2> &v) :
+    CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr Matrix3x3_T(const Matrix3x3_T<F2> &v) :
         c0(static_cast<Vector3D_T<F, false>>(v.c0)),
         c1(static_cast<Vector3D_T<F, false>>(v.c1)),
         c2(static_cast<Vector3D_T<F, false>>(v.c2)) {}
@@ -4467,7 +4467,7 @@ struct Matrix4x4_T {
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Matrix4x4_T(const Matrix4x4_T<F2> &v) :
         c0(v.c0), c1(v.c1), c2(v.c2), c3(v.c3) {}
     template <typename F2 = F, std::enable_if_t<(sizeof(F2) > sizeof(F)), int> = 0>
-        CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr Matrix4x4_T(const Matrix4x4_T<F2> &v) :
+    CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr Matrix4x4_T(const Matrix4x4_T<F2> &v) :
         c0(static_cast<Vector4D_T<F>>(v.c0)),
         c1(static_cast<Vector4D_T<F>>(v.c1)),
         c2(static_cast<Vector4D_T<F>>(v.c2)),
@@ -4904,7 +4904,7 @@ struct Quaternion_T {
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Quaternion_T(const Quaternion_T<F2> &v) :
         x(v.x), y(v.y), z(v.z), w(v.w) {}
     template <typename F2 = F, std::enable_if_t<(sizeof(F2) > sizeof(F)), int> = 0>
-        CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr Quaternion_T(const Quaternion_T<F2> &v) :
+    CUDA_COMMON_FUNCTION CUDA_INLINE explicit constexpr Quaternion_T(const Quaternion_T<F2> &v) :
         x(static_cast<F>(v.x)), y(static_cast<F>(v.y)), z(static_cast<F>(v.z)), w(static_cast<F>(v.w)) {}
 
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Quaternion_T operator+() const {
