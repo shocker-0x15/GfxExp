@@ -68,6 +68,8 @@ struct GPUEnvironment {
     CUmodule svgfModule;
     cudau::Kernel kernelEstimateVariance;
     cudau::Kernel kernelApplyATrousFilter_box3x3;
+    cudau::Kernel kernelApplyATrousFilter_Gauss3x3;
+    cudau::Kernel kernelApplyATrousFilter_Gauss5x5;
     cudau::Kernel kernelFeedbackNoisyLighting;
     cudau::Kernel kernelFillBackground;
     cudau::Kernel kernelApplyAlbedoModulationAndTemporalAntiAliasing;
@@ -112,6 +114,10 @@ struct GPUEnvironment {
             cudau::Kernel(svgfModule, "estimateVariance", cudau::dim3(8, 8), 0);
         kernelApplyATrousFilter_box3x3 =
             cudau::Kernel(svgfModule, "applyATrousFilter_box3x3", cudau::dim3(8, 8), 0);
+        kernelApplyATrousFilter_Gauss3x3 =
+            cudau::Kernel(svgfModule, "applyATrousFilter_Gauss3x3", cudau::dim3(8, 8), 0);
+        kernelApplyATrousFilter_Gauss5x5 =
+            cudau::Kernel(svgfModule, "applyATrousFilter_Gauss5x5", cudau::dim3(8, 8), 0);
         kernelFeedbackNoisyLighting =
             cudau::Kernel(svgfModule, "feedbackNoisyLighting", cudau::dim3(8, 8), 0);
         kernelFillBackground =
@@ -1729,6 +1735,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         static int32_t maxPathLength = 5;
         static bool enableTemporalAccumulation = true;
         static bool enableSVGF = true;
+        static auto kernelType = shared::ATrousKernelType::Box3x3;
         static bool feedback1stFilteredResult = true;
         static bool specularMollification = true;
         static bool enableTemporalAA = true;
@@ -1790,6 +1797,11 @@ int32_t main(int32_t argc, const char* argv[]) try {
                     resetAccumulation |= ImGui::Checkbox("Temporal Accumulation", &enableTemporalAccumulation);
                     resetAccumulation |= ImGui::Checkbox("SVGF", &enableSVGF);
                     if (enableSVGF) {
+                        ImGui::Text("Kernel");
+                        ImGui::RadioButtonE("Box 3x3", &kernelType, shared::ATrousKernelType::Box3x3);
+                        ImGui::RadioButtonE("Gauss 3x3", &kernelType, shared::ATrousKernelType::Gauss3x3);
+                        ImGui::RadioButtonE("Gauss 5x5", &kernelType, shared::ATrousKernelType::Gauss5x5);
+
                         ImGui::Checkbox("Feedback 1st filtered result", &feedback1stFilteredResult);
                         ImGui::Checkbox("Specular Mollification", &specularMollification);
                     }
@@ -2144,11 +2156,19 @@ int32_t main(int32_t argc, const char* argv[]) try {
                     numFilteringStages);
             }
 
+            cudau::Kernel aTrousKernel;
+            if (kernelType == shared::ATrousKernelType::Box3x3)
+                aTrousKernel = gpuEnv.kernelApplyATrousFilter_box3x3;
+            else if (kernelType == shared::ATrousKernelType::Gauss3x3)
+                aTrousKernel = gpuEnv.kernelApplyATrousFilter_Gauss3x3;
+            else /*if (kernelType == shared::ATrousKernelType::Gauss5x5)*/
+                aTrousKernel = gpuEnv.kernelApplyATrousFilter_Gauss5x5;
+
             // JP: A-Trousフィルターをライティングと分散に複数回適用する。
             // EN: Apply the a-trous filter to lighting and its variance multiple times.
             curGPUTimer.aTrousFilter.start(curCuStream);
             for (uint32_t filterStageIndex = 0; filterStageIndex < numFilteringStages; ++filterStageIndex) {
-                gpuEnv.kernelApplyATrousFilter_box3x3.launchWithThreadDim(
+                aTrousKernel.launchWithThreadDim(
                     curCuStream, cudau::dim3(renderTargetSizeX, renderTargetSizeY),
                     filterStageIndex);
             }

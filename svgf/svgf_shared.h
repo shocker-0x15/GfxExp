@@ -166,6 +166,14 @@ namespace shared {
         uint32_t pathLength : 6;
     };
 
+
+
+    enum class ATrousKernelType {
+        Box3x3 = 0,
+        Gauss3x3,
+        Gauss5x5,
+    };
+
     
     
     struct StaticPipelineLaunchParameters {

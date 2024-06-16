@@ -135,17 +135,11 @@ CUDA_DEVICE_KERNEL void estimateVariance() {
 
 
 
-enum ATrousKernelType {
-    ATrousKernelType_Box3x3 = 0,
-    ATrousKernelType_Gauss3x3,
-    ATrousKernelType_Gauss5x5,
-};
-
 template <ATrousKernelType kernelType>
 struct ATrousKernel {};
 
 template <>
-struct ATrousKernel<ATrousKernelType_Box3x3> {
+struct ATrousKernel<ATrousKernelType::Box3x3> {
     CUDA_DEVICE_FUNCTION constexpr static float Weights(uint32_t idx) {
         constexpr float _Weights[] = {
             1, 1, 1,
@@ -168,7 +162,7 @@ struct ATrousKernel<ATrousKernelType_Box3x3> {
     static constexpr uint32_t centerIndex = 4;
 };
 template <>
-struct ATrousKernel<ATrousKernelType_Gauss3x3> {
+struct ATrousKernel<ATrousKernelType::Gauss3x3> {
     CUDA_DEVICE_FUNCTION constexpr static float Weights(uint32_t idx) {
         constexpr float _Weights[] = {
             1 / 16.0f, 1 / 8.0f, 1 / 16.0f,
@@ -191,7 +185,7 @@ struct ATrousKernel<ATrousKernelType_Gauss3x3> {
     static constexpr uint32_t centerIndex = 4;
 };
 template <>
-struct ATrousKernel<ATrousKernelType_Gauss5x5> {
+struct ATrousKernel<ATrousKernelType::Gauss5x5> {
     CUDA_DEVICE_FUNCTION constexpr static float Weights(uint32_t idx) {
         constexpr float _Weights[] = {
             1 / 256.0f,  4 / 256.0f,  6 / 256.0f,  4 / 256.0f, 1 / 256.0f,
@@ -217,6 +211,8 @@ struct ATrousKernel<ATrousKernelType_Gauss5x5> {
     }
     static constexpr uint32_t centerIndex = 12;
 };
+
+
 
 template <ATrousKernelType kernelType>
 CUDA_DEVICE_FUNCTION void applyATrousFilter_generic(uint32_t filterStageIndex) {
@@ -350,7 +346,15 @@ CUDA_DEVICE_FUNCTION void applyATrousFilter_generic(uint32_t filterStageIndex) {
 }
 
 CUDA_DEVICE_KERNEL void applyATrousFilter_box3x3(uint32_t filterStageIndex) {
-    applyATrousFilter_generic<ATrousKernelType_Box3x3>(filterStageIndex);
+    applyATrousFilter_generic<ATrousKernelType::Box3x3>(filterStageIndex);
+}
+
+CUDA_DEVICE_KERNEL void applyATrousFilter_Gauss3x3(uint32_t filterStageIndex) {
+    applyATrousFilter_generic<ATrousKernelType::Gauss3x3>(filterStageIndex);
+}
+
+CUDA_DEVICE_KERNEL void applyATrousFilter_Gauss5x5(uint32_t filterStageIndex) {
+    applyATrousFilter_generic<ATrousKernelType::Gauss5x5>(filterStageIndex);
 }
 
 
