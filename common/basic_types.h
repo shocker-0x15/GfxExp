@@ -1042,6 +1042,54 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec2BinaryOpTraits<N2A, N2B>
 }
 
 template <std::integral NA, NVec2I N2B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec2BinaryOpTraits<NVec2_t<NA>, N2B>::ReturnType operator|(
+    const NA a, const N2B &b) {
+    return Vec2BinaryOpTraits<NVec2_t<NA>, N2B>::make(a | b.x, a | b.y);
+}
+template <NVec2I N2A, std::integral NB>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec2BinaryOpTraits<N2A, NVec2_t<NB>>::ReturnType operator|(
+    const N2A &a, const NB b) {
+    return Vec2BinaryOpTraits<N2A, NVec2_t<NB>>::make(a.x | b, a.y | b);
+}
+template <NVec2I N2A, NVec2I N2B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec2BinaryOpTraits<N2A, N2B>::ReturnType operator|(
+    const N2A &a, const N2B &b) {
+    return Vec2BinaryOpTraits<N2A, N2B>::make(a.x | b.x, a.y | b.y);
+}
+
+template <std::integral NA, NVec2I N2B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec2BinaryOpTraits<NVec2_t<NA>, N2B>::ReturnType operator&(
+    const NA a, const N2B &b) {
+    return Vec2BinaryOpTraits<NVec2_t<NA>, N2B>::make(a & b.x, a & b.y);
+}
+template <NVec2I N2A, std::integral NB>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec2BinaryOpTraits<N2A, NVec2_t<NB>>::ReturnType operator&(
+    const N2A &a, const NB b) {
+    return Vec2BinaryOpTraits<N2A, NVec2_t<NB>>::make(a.x & b, a.y & b);
+}
+template <NVec2I N2A, NVec2I N2B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec2BinaryOpTraits<N2A, N2B>::ReturnType operator&(
+    const N2A &a, const N2B &b) {
+    return Vec2BinaryOpTraits<N2A, N2B>::make(a.x & b.x, a.y & b.y);
+}
+
+template <std::integral NA, NVec2I N2B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec2BinaryOpTraits<NVec2_t<NA>, N2B>::ReturnType operator^(
+    const NA a, const N2B &b) {
+    return Vec2BinaryOpTraits<NVec2_t<NA>, N2B>::make(a ^ b.x, a ^ b.y);
+}
+template <NVec2I N2A, std::integral NB>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec2BinaryOpTraits<N2A, NVec2_t<NB>>::ReturnType operator^(
+    const N2A &a, const NB b) {
+    return Vec2BinaryOpTraits<N2A, NVec2_t<NB>>::make(a.x ^ b, a.y ^ b);
+}
+template <NVec2I N2A, NVec2I N2B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec2BinaryOpTraits<N2A, N2B>::ReturnType operator^(
+    const N2A &a, const N2B &b) {
+    return Vec2BinaryOpTraits<N2A, N2B>::make(a.x ^ b.x, a.y ^ b.y);
+}
+
+template <std::integral NA, NVec2I N2B>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec2BinaryOpTraits<NVec2_t<NA>, N2B>::ReturnType operator<<(
     const NA a, const N2B &b) {
     return Vec2BinaryOpTraits<NVec2_t<NA>, N2B>::make(a << b.x, a << b.y);
@@ -1131,6 +1179,45 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr void operator%=(
     N2A &a, const N2B &b) {
     a.x %= b.x;
     a.y %= b.y;
+}
+
+template <NVec2I N2A, std::integral NB>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr void operator|=(
+    N2A &a, const NB &b) {
+    a.x |= b;
+    a.y |= b;
+}
+template <NVec2I N2A, NVec2I N2B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr void operator|=(
+    N2A &a, const N2B &b) {
+    a.x |= b.x;
+    a.y |= b.y;
+}
+
+template <NVec2I N2A, std::integral NB>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr void operator&=(
+    N2A &a, const NB &b) {
+    a.x &= b;
+    a.y &= b;
+}
+template <NVec2I N2A, NVec2I N2B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr void operator&=(
+    N2A &a, const N2B &b) {
+    a.x &= b.x;
+    a.y &= b.y;
+}
+
+template <NVec2I N2A, std::integral NB>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr void operator^=(
+    N2A &a, const NB &b) {
+    a.x ^= b;
+    a.y ^= b;
+}
+template <NVec2I N2A, NVec2I N2B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr void operator^=(
+    N2A &a, const N2B &b) {
+    a.x ^= b.x;
+    a.y ^= b.y;
 }
 
 template <NVec2I N2A, std::integral NB>
@@ -1313,6 +1400,54 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec3BinaryOpTraits<N3A, N3B>
 }
 
 template <std::integral NA, NVec3I N3B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec3BinaryOpTraits<NVec3_t<NA>, N3B>::ReturnType operator|(
+    const NA a, const N3B &b) {
+    return Vec3BinaryOpTraits<NVec3_t<NA>, N3B>::make(a | b.x, a | b.y, a | b.z);
+}
+template <NVec3I N3A, std::integral NB>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec3BinaryOpTraits<N3A, NVec3_t<NB>>::ReturnType operator|(
+    const N3A &a, const NB b) {
+    return Vec3BinaryOpTraits<N3A, NVec3_t<NB>>::make(a.x | b, a.y | b, a.z | b);
+}
+template <NVec3I N3A, NVec3I N3B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec3BinaryOpTraits<N3A, N3B>::ReturnType operator|(
+    const N3A &a, const N3B &b) {
+    return Vec3BinaryOpTraits<N3A, N3B>::make(a.x | b.x, a.y | b.y, a.z | b.z);
+}
+
+template <std::integral NA, NVec3I N3B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec3BinaryOpTraits<NVec3_t<NA>, N3B>::ReturnType operator&(
+    const NA a, const N3B &b) {
+    return Vec3BinaryOpTraits<NVec3_t<NA>, N3B>::make(a & b.x, a & b.y, a & b.z);
+}
+template <NVec3I N3A, std::integral NB>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec3BinaryOpTraits<N3A, NVec3_t<NB>>::ReturnType operator&(
+    const N3A &a, const NB b) {
+    return Vec3BinaryOpTraits<N3A, NVec3_t<NB>>::make(a.x & b, a.y & b, a.z & b);
+}
+template <NVec3I N3A, NVec3I N3B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec3BinaryOpTraits<N3A, N3B>::ReturnType operator&(
+    const N3A &a, const N3B &b) {
+    return Vec3BinaryOpTraits<N3A, N3B>::make(a.x & b.x, a.y & b.y, a.z & b.z);
+}
+
+template <std::integral NA, NVec3I N3B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec3BinaryOpTraits<NVec3_t<NA>, N3B>::ReturnType operator^(
+    const NA a, const N3B &b) {
+    return Vec3BinaryOpTraits<NVec3_t<NA>, N3B>::make(a ^ b.x, a ^ b.y, a ^ b.z);
+}
+template <NVec3I N3A, std::integral NB>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec3BinaryOpTraits<N3A, NVec3_t<NB>>::ReturnType operator^(
+    const N3A &a, const NB b) {
+    return Vec3BinaryOpTraits<N3A, NVec3_t<NB>>::make(a.x ^ b, a.y ^ b, a.z ^ b);
+}
+template <NVec3I N3A, NVec3I N3B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec3BinaryOpTraits<N3A, N3B>::ReturnType operator^(
+    const N3A &a, const N3B &b) {
+    return Vec3BinaryOpTraits<N3A, N3B>::make(a.x ^ b.x, a.y ^ b.y, a.z ^ b.z);
+}
+
+template <std::integral NA, NVec3I N3B>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec3BinaryOpTraits<NVec3_t<NA>, N3B>::ReturnType operator<<(
     const NA a, const N3B &b) {
     return Vec3BinaryOpTraits<NVec3_t<NA>, N3B>::make(a << b.x, a << b.y, a << b.z);
@@ -1411,6 +1546,51 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr void operator%=(
     a.x %= b.x;
     a.y %= b.y;
     a.z %= b.z;
+}
+
+template <NVec3I N3A, std::integral NB>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr void operator|=(
+    N3A &a, const NB &b) {
+    a.x |= b;
+    a.y |= b;
+    a.z |= b;
+}
+template <NVec3I N3A, NVec3I N3B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr void operator|=(
+    N3A &a, const N3B &b) {
+    a.x |= b.x;
+    a.y |= b.y;
+    a.z |= b.z;
+}
+
+template <NVec3I N3A, std::integral NB>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr void operator&=(
+    N3A &a, const NB &b) {
+    a.x &= b;
+    a.y &= b;
+    a.z &= b;
+}
+template <NVec3I N3A, NVec3I N3B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr void operator&=(
+    N3A &a, const N3B &b) {
+    a.x &= b.x;
+    a.y &= b.y;
+    a.z &= b.z;
+}
+
+template <NVec3I N3A, std::integral NB>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr void operator^=(
+    N3A &a, const NB &b) {
+    a.x ^= b;
+    a.y ^= b;
+    a.z ^= b;
+}
+template <NVec3I N3A, NVec3I N3B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr void operator^=(
+    N3A &a, const N3B &b) {
+    a.x ^= b.x;
+    a.y ^= b.y;
+    a.z ^= b.z;
 }
 
 template <NVec3I N3A, std::integral NB>
@@ -1599,6 +1779,54 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec4BinaryOpTraits<N4A, N4B>
 }
 
 template <std::integral NA, NVec4I N4B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec4BinaryOpTraits<NVec4_t<NA>, N4B>::ReturnType operator|(
+    const NA a, const N4B &b) {
+    return Vec4BinaryOpTraits<NVec4_t<NA>, N4B>::make(a | b.x, a | b.y, a | b.z, a | b.w);
+}
+template <NVec4I N4A, std::integral NB>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec4BinaryOpTraits<N4A, NVec4_t<NB>>::ReturnType operator|(
+    const N4A &a, const NB b) {
+    return Vec4BinaryOpTraits<N4A, NVec4_t<NB>>::make(a.x | b, a.y | b, a.z | b, a.w | b);
+}
+template <NVec4I N4A, NVec4I N4B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec4BinaryOpTraits<N4A, N4B>::ReturnType operator|(
+    const N4A &a, const N4B &b) {
+    return Vec4BinaryOpTraits<N4A, N4B>::make(a.x | b.x, a.y | b.y, a.z | b.z, a.w | b.w);
+}
+
+template <std::integral NA, NVec4I N4B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec4BinaryOpTraits<NVec4_t<NA>, N4B>::ReturnType operator&(
+    const NA a, const N4B &b) {
+    return Vec4BinaryOpTraits<NVec4_t<NA>, N4B>::make(a & b.x, a & b.y, a & b.z, a & b.w);
+}
+template <NVec4I N4A, std::integral NB>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec4BinaryOpTraits<N4A, NVec4_t<NB>>::ReturnType operator&(
+    const N4A &a, const NB b) {
+    return Vec4BinaryOpTraits<N4A, NVec4_t<NB>>::make(a.x & b, a.y & b, a.z & b, a.w & b);
+}
+template <NVec4I N4A, NVec4I N4B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec4BinaryOpTraits<N4A, N4B>::ReturnType operator&(
+    const N4A &a, const N4B &b) {
+    return Vec4BinaryOpTraits<N4A, N4B>::make(a.x & b.x, a.y & b.y, a.z & b.z, a.w & b.w);
+}
+
+template <std::integral NA, NVec4I N4B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec4BinaryOpTraits<NVec4_t<NA>, N4B>::ReturnType operator^(
+    const NA a, const N4B &b) {
+    return Vec4BinaryOpTraits<NVec4_t<NA>, N4B>::make(a ^ b.x, a ^ b.y, a ^ b.z, a ^ b.w);
+}
+template <NVec4I N4A, std::integral NB>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec4BinaryOpTraits<N4A, NVec4_t<NB>>::ReturnType operator^(
+    const N4A &a, const NB b) {
+    return Vec4BinaryOpTraits<N4A, NVec4_t<NB>>::make(a.x ^ b, a.y ^ b, a.z ^ b, a.w ^ b);
+}
+template <NVec4I N4A, NVec4I N4B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec4BinaryOpTraits<N4A, N4B>::ReturnType operator^(
+    const N4A &a, const N4B &b) {
+    return Vec4BinaryOpTraits<N4A, N4B>::make(a.x ^ b.x, a.y ^ b.y, a.z ^ b.z, a.w ^ b.w);
+}
+
+template <std::integral NA, NVec4I N4B>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr typename Vec4BinaryOpTraits<NVec4_t<NA>, N4B>::ReturnType operator<<(
     const NA a, const N4B &b) {
     return Vec4BinaryOpTraits<NVec4_t<NA>, N4B>::make(a << b.x, a << b.y, a << b.z, a << b.w);
@@ -1709,6 +1937,57 @@ CUDA_COMMON_FUNCTION CUDA_INLINE constexpr void operator%=(
 }
 
 template <NVec4I N4A, std::integral NB>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr void operator|=(
+    N4A &a, const NB &b) {
+    a.x |= b;
+    a.y |= b;
+    a.z |= b;
+    a.w |= b;
+}
+template <NVec4I N4A, NVec4I N4B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr void operator|=(
+    N4A &a, const N4B &b) {
+    a.x |= b.x;
+    a.y |= b.y;
+    a.z |= b.z;
+    a.w |= b.w;
+}
+
+template <NVec4I N4A, std::integral NB>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr void operator&=(
+    N4A &a, const NB &b) {
+    a.x &= b;
+    a.y &= b;
+    a.z &= b;
+    a.w &= b;
+}
+template <NVec4I N4A, NVec4I N4B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr void operator&=(
+    N4A &a, const N4B &b) {
+    a.x &= b.x;
+    a.y &= b.y;
+    a.z &= b.z;
+    a.w &= b.w;
+}
+
+template <NVec4I N4A, std::integral NB>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr void operator^=(
+    N4A &a, const NB &b) {
+    a.x ^= b;
+    a.y ^= b;
+    a.z ^= b;
+    a.w ^= b;
+}
+template <NVec4I N4A, NVec4I N4B>
+CUDA_COMMON_FUNCTION CUDA_INLINE constexpr void operator^=(
+    N4A &a, const N4B &b) {
+    a.x ^= b.x;
+    a.y ^= b.y;
+    a.z ^= b.z;
+    a.w ^= b.w;
+}
+
+template <NVec4I N4A, std::integral NB>
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr void operator<<=(
     N4A &a, const NB &b) {
     a.x <<= b;
@@ -1811,6 +2090,9 @@ struct Bool2D {
         x(v), y(v) {}
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Bool2D(const bool xx, const bool yy) :
         x(xx), y(yy) {}
+    template <NVec2I N2>
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Bool2D(const N2 &v) :
+        x(v.x), y(v.y) {}
 
     template <std::integral I>
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr bool &operator[](const I idx) {
@@ -2398,6 +2680,9 @@ struct Bool3D {
         x(xx), y(yy), z(zz) {}
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Bool3D(const Bool2D &xy, const bool zz) :
         x(xy.x), y(xy.y), z(zz) {}
+    template <NVec3I N3>
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Bool3D(const N3 &v) :
+        x(v.x), y(v.y), z(v.z) {}
 
     template <std::integral I>
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr bool &operator[](const I idx) {
@@ -3078,6 +3363,20 @@ struct Bool4D {
         x(xx), y(yy), z(zz), w(ww) {}
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Bool4D(const Bool3D &xyz, bool ww) :
         x(xyz.x), y(xyz.y), z(xyz.z), w(ww) {}
+    template <NVec4I N4>
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr Bool4D(const N4 &v) :
+        x(v.x), y(v.y), z(v.z), w(v.w) {}
+
+    template <std::integral I>
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr bool &operator[](const I idx) {
+        Assert(static_cast<uint32_t>(idx) < 4, "idx is out of bound.");
+        return *(&x + idx);
+    }
+    template <std::integral I>
+    CUDA_COMMON_FUNCTION CUDA_INLINE constexpr bool operator[](const I idx) const {
+        Assert(static_cast<uint32_t>(idx) < 4, "idx is out of bound.");
+        return *(&x + idx);
+    }
 };
 
 CUDA_COMMON_FUNCTION CUDA_INLINE constexpr bool all(const Bool4D &v) {

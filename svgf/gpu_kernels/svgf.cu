@@ -140,7 +140,7 @@ struct ATrousKernel {};
 
 template <>
 struct ATrousKernel<ATrousKernelType::Box3x3> {
-    CUDA_DEVICE_FUNCTION constexpr static float Weights(uint32_t idx) {
+    CUDA_DEVICE_FUNCTION CUDA_INLINE constexpr static float Weights(uint32_t idx) {
         constexpr float _Weights[] = {
             1, 1, 1,
             1, 1, 1,
@@ -148,7 +148,7 @@ struct ATrousKernel<ATrousKernelType::Box3x3> {
         };
         return _Weights[idx];
     }
-    CUDA_DEVICE_FUNCTION constexpr static int2 Offsets(uint32_t idx) {
+    CUDA_DEVICE_FUNCTION CUDA_INLINE constexpr static int2 Offsets(uint32_t idx) {
         constexpr int2 _Offsets[] = {
             int2{-1, -1}, int2{0, -1}, int2{1, -1},
             int2{-1,  0}, int2{0,  0}, int2{1,  0},
@@ -156,14 +156,14 @@ struct ATrousKernel<ATrousKernelType::Box3x3> {
         };
         return _Offsets[idx];
     }
-    CUDA_DEVICE_FUNCTION constexpr static uint32_t Size() {
+    CUDA_DEVICE_FUNCTION CUDA_INLINE constexpr static uint32_t Size() {
         return 9;
     }
     static constexpr uint32_t centerIndex = 4;
 };
 template <>
 struct ATrousKernel<ATrousKernelType::Gauss3x3> {
-    CUDA_DEVICE_FUNCTION constexpr static float Weights(uint32_t idx) {
+    CUDA_DEVICE_FUNCTION CUDA_INLINE constexpr static float Weights(uint32_t idx) {
         constexpr float _Weights[] = {
             1 / 16.0f, 1 / 8.0f, 1 / 16.0f,
             1 / 8.0f, 1 / 4.0f, 1 / 8.0f,
@@ -171,7 +171,7 @@ struct ATrousKernel<ATrousKernelType::Gauss3x3> {
         };
         return _Weights[idx];
     }
-    CUDA_DEVICE_FUNCTION constexpr static int2 Offsets(uint32_t idx) {
+    CUDA_DEVICE_FUNCTION CUDA_INLINE constexpr static int2 Offsets(uint32_t idx) {
         constexpr int2 _Offsets[] = {
             int2{-1, -1}, int2{0, -1}, int2{1, -1},
             int2{-1,  0}, int2{0,  0}, int2{1,  0},
@@ -179,14 +179,14 @@ struct ATrousKernel<ATrousKernelType::Gauss3x3> {
         };
         return _Offsets[idx];
     }
-    CUDA_DEVICE_FUNCTION constexpr static uint32_t Size() {
+    CUDA_DEVICE_FUNCTION CUDA_INLINE constexpr static uint32_t Size() {
         return 9;
     }
     static constexpr uint32_t centerIndex = 4;
 };
 template <>
 struct ATrousKernel<ATrousKernelType::Gauss5x5> {
-    CUDA_DEVICE_FUNCTION constexpr static float Weights(uint32_t idx) {
+    CUDA_DEVICE_FUNCTION CUDA_INLINE constexpr static float Weights(uint32_t idx) {
         constexpr float _Weights[] = {
             1 / 256.0f,  4 / 256.0f,  6 / 256.0f,  4 / 256.0f, 1 / 256.0f,
             4 / 256.0f, 16 / 256.0f, 24 / 256.0f, 16 / 256.0f, 4 / 256.0f,
@@ -196,7 +196,7 @@ struct ATrousKernel<ATrousKernelType::Gauss5x5> {
         };
         return _Weights[idx];
     }
-    CUDA_DEVICE_FUNCTION constexpr static int2 Offsets(uint32_t idx) {
+    CUDA_DEVICE_FUNCTION CUDA_INLINE constexpr static int2 Offsets(uint32_t idx) {
         constexpr int2 _Offsets[] = {
             int2{-2, -2}, int2{-1, -2}, int2{0, -2}, int2{1, -2}, int2{2, -2},
             int2{-2, -1}, int2{-1, -1}, int2{0, -1}, int2{1, -1}, int2{2, -1},
@@ -206,7 +206,7 @@ struct ATrousKernel<ATrousKernelType::Gauss5x5> {
         };
         return _Offsets[idx];
     }
-    CUDA_DEVICE_FUNCTION constexpr static uint32_t Size() {
+    CUDA_DEVICE_FUNCTION CUDA_INLINE constexpr static uint32_t Size() {
         return 25;
     }
     static constexpr uint32_t centerIndex = 12;
@@ -215,7 +215,7 @@ struct ATrousKernel<ATrousKernelType::Gauss5x5> {
 
 
 template <ATrousKernelType kernelType>
-CUDA_DEVICE_FUNCTION void applyATrousFilter_generic(uint32_t filterStageIndex) {
+CUDA_DEVICE_FUNCTION CUDA_INLINE void applyATrousFilter_generic(uint32_t filterStageIndex) {
     const int2 launchIndex = make_int2(
         blockDim.x * blockIdx.x + threadIdx.x,
         blockDim.y * blockIdx.y + threadIdx.y);
@@ -466,7 +466,7 @@ CUDA_DEVICE_KERNEL void fillBackground(uint32_t numFilteringStages) {
 
 
 
-CUDA_DEVICE_FUNCTION void reprojectPreviousAccumulation(
+CUDA_DEVICE_FUNCTION CUDA_INLINE void reprojectPreviousAccumulation(
     const optixu::NativeBlockBuffer2D<float4> &prevFinalLightingBuffer, Point2D prevScreenPos,
     RGB* prevFinalLighting, bool* outOfScreen) {
     *prevFinalLighting = RGB(0.0f, 0.0f, 0.0f);
