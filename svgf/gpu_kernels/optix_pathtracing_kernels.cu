@@ -356,9 +356,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_rayGen_generic() {
     const uint32_t sampleCount = min(prevResult.sampleInfo.count + 1, 65535u);
     if constexpr (enableTemporalAccumulation) {
         if (sampleCount > 1) {
-            float curWeight = 1.0f / 5; // Exponential Moving Average
-            if (sampleCount < 5) // Cumulative Moving Average
-                curWeight = 1.0f / sampleCount;
+            // Transition from cumulative (CMA) to exponential moving average (EMA).
+            const float curWeight = 1.0f / stc::min(sampleCount, 5u);
             const float prevWeight = 1.0f - curWeight;
             demCont = prevWeight * prevResult.noisyLighting + curWeight * demCont;
             luminance = prevWeight * prevResult.firstMoment + curWeight * luminance;

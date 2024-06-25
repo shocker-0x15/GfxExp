@@ -608,10 +608,9 @@ CUDA_DEVICE_KERNEL void applyAlbedoModulationAndTemporalAntiAliasing(uint32_t nu
         prevFinalLighting = clamp(prevFinalLighting, nbMin, nbMax);
 
         const float curWeight = 1.0f / plp.f->taaHistoryLength; // Exponential Moving Average
-        //if (sampleCount < plp.f->taaHistoryLength) // Cumulative Moving Average
-        //    curWeight = 1.0f / sampleCount;
-        const float prevWeight = 1.0f - curWeight;
-        finalLighting = prevWeight * prevFinalLighting + curWeight * finalLighting;
+        //// Transition from cumulative (CMA) to exponential moving average (EMA).
+        //const float curWeight = 1.0f / stc::min(sampleCount, plp.f->taaHistoryLength);
+        finalLighting = lerp(prevFinalLighting, finalLighting, curWeight);
     }
 
     const optixu::NativeBlockBuffer2D<float4> &curFinalLightingBuffer =
