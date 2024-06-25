@@ -16,6 +16,8 @@ CUDA_DEVICE_KERNEL void debugVisualize(
         launchIndex.y >= imageSize.y)
         return;
 
+    const int2 glPix = convertToGLPix(pix);
+
     const uint32_t curBufIdx = plp.f->bufferIndex;
     const StaticPipelineLaunchParameters::TemporalSet &staticTemporalSet =
         plp.s->temporalSets[curBufIdx];
@@ -55,12 +57,12 @@ CUDA_DEVICE_KERNEL void debugVisualize(
         break;
     }
     case BufferToDisplay::Normal: {
-        const GBuffer1Elements gb1Elems = perFrameTemporalSet.GBuffer1.read(glPix(pix));
+        const GBuffer1Elements gb1Elems = perFrameTemporalSet.GBuffer1.read(glPix);
         color = make_float4((0.5f * gb1Elems.normalInWorld + Normal3D(0.5f)).toNative(), 1.0f);
         break;
     }
     case BufferToDisplay::MotionVector: {
-        const GBuffer2Elements gb2Elems = perFrameTemporalSet.GBuffer2.read(glPix(pix));
+        const GBuffer2Elements gb2Elems = perFrameTemporalSet.GBuffer2.read(glPix);
         const Point2D curScreenPos = Point2D(pix.x + 0.5f, pix.y + 0.5f) / Point2D(imageSize.x, imageSize.y);
         const Point2D prevScreenPos = gb2Elems.prevScreenPos;
         const Vector2D motionVector = Vector2D(imageSize.x, imageSize.y) * (curScreenPos - prevScreenPos);
@@ -82,5 +84,5 @@ CUDA_DEVICE_KERNEL void debugVisualize(
         break;
     }
 
-    plp.f->debugVisualizeBuffer.write(glPix(pix), color);
+    plp.f->debugVisualizeBuffer.write(glPix, color);
 }

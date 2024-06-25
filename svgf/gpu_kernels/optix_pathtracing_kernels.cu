@@ -33,10 +33,11 @@ struct PreviousNeighbor {
             plp.s->temporalSets[prevBufIdx];
         const PerFramePipelineLaunchParameters::TemporalSet &perFrameTemporalSet =
             plp.f->temporalSets[prevBufIdx];
-        //float depth = perFrameTemporalSet.depthBuffer.read(glPix(pix));
-        const GBuffer0Elements gBuffer0 = perFrameTemporalSet.GBuffer0.read(glPix(pix));
-        const GBuffer1Elements gBuffer1 = perFrameTemporalSet.GBuffer1.read(glPix(pix));
-        const GBuffer2Elements gBuffer2 = perFrameTemporalSet.GBuffer2.read(glPix(pix));
+        const int2 glPix = convertToGLPix(pix);
+        //float depth = perFrameTemporalSet.depthBuffer.read(glPix);
+        const GBuffer0Elements gBuffer0 = perFrameTemporalSet.GBuffer0.read(glPix);
+        const GBuffer1Elements gBuffer1 = perFrameTemporalSet.GBuffer1.read(glPix);
+        const GBuffer2Elements gBuffer2 = perFrameTemporalSet.GBuffer2.read(glPix);
         position = gBuffer0.positionInWorld;
         normal = gBuffer1.normalInWorld;
         instSlot = gBuffer2.instSlot;
@@ -198,9 +199,10 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void pathTrace_rayGen_generic() {
     const PerFramePipelineLaunchParameters::TemporalSet &perFrameTemporalSet =
         plp.f->temporalSets[curBufIdx];
 
-    const GBuffer0Elements gb0Elems = perFrameTemporalSet.GBuffer0.read(glPix(launchIndex));
-    const GBuffer1Elements gb1Elems = perFrameTemporalSet.GBuffer1.read(glPix(launchIndex));
-    const GBuffer2Elements gb2Elems = perFrameTemporalSet.GBuffer2.read(glPix(launchIndex));
+    const int2 glPix = convertToGLPix(launchIndex);
+    const GBuffer0Elements gb0Elems = perFrameTemporalSet.GBuffer0.read(glPix);
+    const GBuffer1Elements gb1Elems = perFrameTemporalSet.GBuffer1.read(glPix);
+    const GBuffer2Elements gb2Elems = perFrameTemporalSet.GBuffer2.read(glPix);
 
     Point3D positionInWorld = gb0Elems.positionInWorld;
     const Normal3D shadingNormalInWorld = gb1Elems.normalInWorld;

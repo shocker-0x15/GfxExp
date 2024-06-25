@@ -715,7 +715,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE T clamp(T v, T minv, T maxv) {
 }
 
 template <typename T>
-CUDA_DEVICE_FUNCTION CUDA_INLINE int2 glPix(T pix) {
+CUDA_DEVICE_FUNCTION CUDA_INLINE int2 convertToGLPix(T pix) {
     return make_int2(pix.x, plp.s->imageSize.y - 1 - pix.y);
 };
 
