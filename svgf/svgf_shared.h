@@ -229,6 +229,7 @@ namespace shared {
         uint32_t isFirstFrame : 1;
         uint32_t enableTemporalAccumulation : 1;
         uint32_t enableSVGF : 1;
+        uint32_t prefilterVariance : 1;
         uint32_t feedback1stFilteredResult : 1;
         uint32_t mollifySpecular : 1;
         uint32_t enableTemporalAA : 1;

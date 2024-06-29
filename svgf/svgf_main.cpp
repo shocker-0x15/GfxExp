@@ -1736,6 +1736,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         static bool enableTemporalAccumulation = true;
         static bool enableSVGF = true;
         static auto kernelType = shared::ATrousKernelType::Box3x3;
+        static bool prefilterVariance = true;
         static bool feedback1stFilteredResult = true;
         static bool specularMollification = true;
         static bool enableTemporalAA = true;
@@ -1802,7 +1803,8 @@ int32_t main(int32_t argc, const char* argv[]) try {
                         ImGui::RadioButtonE("Gauss 3x3", &kernelType, shared::ATrousKernelType::Gauss3x3);
                         ImGui::RadioButtonE("Gauss 5x5", &kernelType, shared::ATrousKernelType::Gauss5x5);
 
-                        ImGui::Checkbox("Feedback 1st filtered result", &feedback1stFilteredResult);
+                        ImGui::Checkbox("Prefilter Variance", &prefilterVariance);
+                        ImGui::Checkbox("Feedback 1st Filtered Result", &feedback1stFilteredResult);
                         ImGui::Checkbox("Specular Mollification", &specularMollification);
                     }
 
@@ -2003,6 +2005,7 @@ int32_t main(int32_t argc, const char* argv[]) try {
         perFramePlp.isFirstFrame = newSequence;
         perFramePlp.enableTemporalAccumulation = enableTemporalAccumulation;
         perFramePlp.enableSVGF = enableSVGF;
+        perFramePlp.prefilterVariance = prefilterVariance;
         perFramePlp.feedback1stFilteredResult = feedback1stFilteredResult;
         perFramePlp.mollifySpecular = specularMollification;
         perFramePlp.enableTemporalAA = enableTemporalAA;

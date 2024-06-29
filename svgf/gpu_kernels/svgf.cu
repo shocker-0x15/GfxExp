@@ -270,27 +270,34 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void applyATrousFilter_generic(uint32_t filterS
     const float dzdy = (vnbDepth - depth) * dy;
     const Normal3D normal = perFrameTemporalSet.GBuffer1.read(glPix).normalInWorld;
 
-    // JP: 安定化のため分散は3x3のガウシアンフィルターにかける。
-    // EN: Apply 3x3 Gaussian filter to variance for stabilization.
-    constexpr float gaussKernel[] = {
-        1 / 4.0f, 1 / 2.0f, 1 / 4.0f
-    };
-    float sumLocalVars = 0.0f;
-    float sumVarWeights = 0.0f;
+    float localMeanStdDev;
+    if (plp.f->prefilterVariance) {
+        // JP: 安定化のため分散は3x3のガウシアンフィルターにかける。
+        // EN: Apply 3x3 Gaussian filter to variance for stabilization.
+        constexpr float gaussKernel[] = {
+            1 / 4.0f, 1 / 2.0f, 1 / 4.0f
+        };
+        float sumLocalVars = 0.0f;
+        float sumVarWeights = 0.0f;
 #pragma unroll
-    for (int i = -1; i <= 1; ++i) {
-        const int nbPixY = clamp(pix.y + i, 0, imageSize.y - 1);
-        const float hy = gaussKernel[i + 1];
-        for (int j = -1; j <= 1; ++j) {
-            const int nbPixX = clamp(pix.x + j, 0, imageSize.x - 1);
-            const float hx = gaussKernel[j + 1];
-            const int2 nbPix = make_int2(nbPixX, nbPixY);
-            const float weight = hx * hy;
-            sumLocalVars += weight * src_lighting_variance_buffer.read(nbPix).variance;
-            sumVarWeights += weight;
+        for (int i = -1; i <= 1; ++i) {
+            const int nbPixY = clamp(pix.y + i, 0, imageSize.y - 1);
+            const float hy = gaussKernel[i + 1];
+#pragma unroll
+            for (int j = -1; j <= 1; ++j) {
+                const int nbPixX = clamp(pix.x + j, 0, imageSize.x - 1);
+                const float hx = gaussKernel[j + 1];
+                const int2 nbPix = make_int2(nbPixX, nbPixY);
+                const float weight = hx * hy;
+                sumLocalVars += weight * src_lighting_variance_buffer.read(nbPix).variance;
+                sumVarWeights += weight;
+            }
         }
+        localMeanStdDev = std::sqrt(sumLocalVars / sumVarWeights);
     }
-    const float localMeanStdDev = std::sqrt(sumLocalVars / sumVarWeights);
+    else {
+        localMeanStdDev = std::sqrt(src_lighting_variance_buffer.read(pix).variance);
+    }
 
     // END: Obtain the current pixel's information.
     // ----------------------------------------------------------------
