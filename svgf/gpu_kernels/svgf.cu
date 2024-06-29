@@ -273,7 +273,11 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void applyATrousFilter_generic(uint32_t filterS
     float localMeanStdDev;
     if (plp.f->prefilterVariance) {
         // JP: 安定化のため分散は3x3のガウシアンフィルターにかける。
+        //     低い確率でしか寄与のあるサンプルが取れない領域で分散を低く見積もってしまうことで
+        //     フィルタリング半径を小さくしてしまうことを防ぐ。
         // EN: Apply 3x3 Gaussian filter to variance for stabilization.
+        //     Prevent the filtering radius from shrinking by underestimating the variance
+        //     in regions where samples with non-zero contribution happen only with low probablity.
         constexpr float gaussKernel[] = {
             1 / 4.0f, 1 / 2.0f, 1 / 4.0f
         };
