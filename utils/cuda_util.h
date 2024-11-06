@@ -27,25 +27,25 @@
 #       define CUDAUPlatform_Windows_MSVC
 #       if defined(__INTELLISENSE__)
 #           define CUDAU_CODE_COMPLETION
-#       endif
-#   endif
+#       endif // if defined(__INTELLISENSE__)
+#   endif // if defined(__MINGW32__)
 #elif defined(__linux__)
 #   define CUDAUPlatform_Linux
 #elif defined(__APPLE__)
 #   define CUDAUPlatform_macOS
 #elif defined(__OpenBSD__)
 #   define CUDAUPlatform_OpenBSD
-#endif
+#endif // if defined(_WIN32) || defined(_WIN64)
 
 
 
 #if __cplusplus <= 199711L
 #   if defined(CUDAUPlatform_Windows_MSVC)
 #       pragma message("\"/Zc:__cplusplus\" compiler option to enable the updated __cplusplus definition is recommended.")
-#   else
+#   else // if defined(CUDAUPlatform_Windows_MSVC)
 #       pragma message("Enabling the updated __cplusplus definition is recommended.")
-#   endif
-#endif
+#   endif // if defined(CUDAUPlatform_Windows_MSVC)
+#endif // if __cplusplus <= 199711L
 
 
 
@@ -53,26 +53,26 @@
 // Defining things corresponding to cstdint and cfloat is left to the user.
 typedef unsigned long long CUtexObject;
 typedef unsigned long long CUsurfObject;
-#else
+#else // if defined(__CUDACC_RTC__)
 #include <cstdint>
 #include <cfloat>
 #if defined(CUDAUPlatform_Windows)
 #   pragma warning(push)
 #   pragma warning(disable:4819)
-#endif
+#endif // if defined(CUDAUPlatform_Windows)
 #include <cuda.h>
 #if defined(CUDAUPlatform_Windows)
 #   pragma warning(pop)
-#endif
-#endif
+#endif // if defined(CUDAUPlatform_Windows)
+#endif // if defined(__CUDACC_RTC__)
 
 #if !defined(__CUDA_ARCH__)
 #   include <cstdio>
 #   include <cstdlib>
+#   include <stdexcept>
 
 #   include <algorithm>
 #   include <vector>
-#   include <sstream>
 
 // JP: CUDA/OpenGL連携機能が不要な場合はコンパイルオプションとして
 //     CUDA_UTIL_DONT_USE_GL_INTEROPの定義を行う。
@@ -82,22 +82,22 @@ typedef unsigned long long CUsurfObject;
 //     Modify GL/gl3w.h as needed.
 #   if !defined(CUDA_UTIL_DONT_USE_GL_INTEROP)
 #       define CUDA_UTIL_USE_GL_INTEROP
-#   endif
+#   endif // !defined(CUDA_UTIL_DONT_USE_GL_INTEROP)
 #   if defined(CUDA_UTIL_USE_GL_INTEROP)
 #       include <GL/gl3w.h>
 #       include <cudaGL.h>
-#   endif
+#   endif // if defined(CUDA_UTIL_USE_GL_INTEROP)
 
 #   undef min
 #   undef max
 #   undef near
 #   undef far
 #   undef RGB
-#endif
+#endif // if !defined(__CUDA_ARCH__)
 
 #if __cplusplus >= 202002L
 #   include <concepts>
-#endif
+#endif // if __cplusplus >= 202002L
 
 
 
@@ -109,7 +109,7 @@ typedef unsigned long long CUsurfObject;
 #   define CUDA_INLINE __forceinline__
 #   define CUDA_DEVICE_FUNCTION __device__
 #   define CUDA_COMMON_FUNCTION __host__ __device__
-#else
+#else // if defined(__CUDACC__)
 #   define CUDA_SHARED_MEM
 #   define CUDA_CONSTANT_MEM
 #   define CUDA_DEVICE_MEM
@@ -117,25 +117,29 @@ typedef unsigned long long CUsurfObject;
 #   define CUDA_INLINE inline
 #   define CUDA_DEVICE_FUNCTION
 #   define CUDA_COMMON_FUNCTION
-#endif
+#endif // if defined(__CUDACC__)
 
 
 
-#ifdef _DEBUG
-#   define CUDAU_ENABLE_ASSERT
-#endif
+#if !defined(CUDAU_ENABLE_ASSERT)
+#   if defined(_DEBUG)
+#       define CUDAU_ENABLE_ASSERT 1
+#   else // if defined(_DEBUG)
+#       define CUDAU_ENABLE_ASSERT 0
+#   endif // if defined(_DEBUG)
+#endif // if !defined(CUDAU_ENABLE_ASSERT)
 
-#if defined(CUDAU_ENABLE_ASSERT)
+#if CUDAU_ENABLE_ASSERT
 #   if defined(__CUDA_ARCH__)
 #       define CUDAUAssert(expr, fmt, ...) \
 do { \
     if (!(expr)) { \
-        printf("%s @%s: %u:\n", #expr, __FILE__, __LINE__); \
-        printf(fmt"\n", ##__VA_ARGS__); \
+        ::printf("%s @%s: %u:\n", #expr, __FILE__, __LINE__); \
+        ::printf(fmt"\n", ##__VA_ARGS__); \
     } \
 } \
 while (0)
-#   else
+#   else // if defined(__CUDA_ARCH__)
 #       define CUDAUAssert(expr, fmt, ...) \
 do { \
     if (!(expr)) { \
@@ -145,31 +149,23 @@ do { \
     } \
 } \
 while (0)
-#   endif
-#else
+#   endif // if defined(__CUDA_ARCH__)
+#else // if CUDAU_ENABLE_ASSERT
 #   define CUDAUAssert(expr, fmt, ...)
-#endif
+#endif // if CUDAU_ENABLE_ASSERT
 
 #define CUDAUAssert_ShouldNotBeCalled() CUDAUAssert(false, "Should not be called!")
 #define CUDAUAssert_NotImplemented() CUDAUAssert(false, "Not implemented yet!")
 
-#define CUDADRV_CHECK(call) \
-    do { \
-        CUresult error = call; \
-        if (error != CUDA_SUCCESS) { \
-            std::stringstream ss; \
-            const char* errMsg = "failed to get an error message."; \
-            cuGetErrorString(error, &errMsg); \
-            ss << "CUDA call (" << #call << " ) failed with error: '" \
-               << errMsg \
-               << "' (" __FILE__ << ":" << __LINE__ << ")\n"; \
-            throw std::runtime_error(ss.str().c_str()); \
-        } \
-    } while (0)
+#if !defined(CUDAU_ENABLE_CHECK)
+#   define CUDAU_ENABLE_CHECK 1
+#endif // if !defined(CUDAU_ENABLE_CHECK)
 
-#define CUDA_CHECK(call) \
+#if CUDAU_ENABLE_CHECK
+#   define CUDADRV_CHECK(call) cudau::check(call, #call)
+#   define CUDA_CHECK(call) \
     do { \
-        cudaError_t error = call; \
+        const cudaError_t error = call; \
         if (error != cudaSuccess) { \
             std::stringstream ss; \
             ss << "CUDA call (" << #call << " ) failed with error: '" \
@@ -178,6 +174,11 @@ while (0)
             throw std::runtime_error(ss.str().c_str()); \
         } \
     } while (0)
+#else // if CUDAU_ENABLE_CHECK
+#   define CUDADRV_CHECK(call) call
+#   define CUDA_CHECK(call) call
+#endif // if CUDAU_ENABLE_CHECK
+
 
 
 
@@ -185,15 +186,17 @@ namespace cudau {
 
 #if __cplusplus >= 202002L
 #   define CUDAU_INTEGRAL_CONCEPT std::integral
-#else
+#else // if __cplusplus >= 202002L
 #   define CUDAU_INTEGRAL_CONCEPT typename
-#endif
+#endif // if __cplusplus >= 202002L
 
 
 
 #if !defined(__CUDA_ARCH__)
     void devPrintf(const char* fmt, ...);
-#endif
+
+    void check(CUresult status, const char* callStr);
+#endif // if !defined(__CUDA_ARCH__)
 
 
 
@@ -347,7 +350,8 @@ namespace cudau {
     void callKernel(
         CUstream stream, CUfunction kernel,
         const dim3 &gridDim, const dim3 &blockDim, uint32_t sharedMemSize,
-        ArgTypes&&... args) {
+        ArgTypes&&... args)
+    {
         if constexpr (sizeof...(args) > 0) {
             ConstVoidPtr argPointers[sizeof...(args)];
             CUdeviceptr pointers[sizeof...(args)] = {};
@@ -380,7 +384,8 @@ namespace cudau {
     public:
         Kernel() : m_kernel(nullptr), m_blockDim(1), m_sharedMemSize(0) {}
         Kernel(CUmodule module, const char* name, const dim3 blockDim, uint32_t sharedMemSize) :
-            m_blockDim(blockDim), m_sharedMemSize(sharedMemSize) {
+            m_blockDim(blockDim), m_sharedMemSize(sharedMemSize)
+        {
             CUDADRV_CHECK(cuModuleGetFunction(&m_kernel, module, name));
         }
 
@@ -423,7 +428,7 @@ namespace cudau {
 
         template <typename... ArgTypes>
         void launchWithThreadDim(CUstream stream, const dim3 &threadDim, ArgTypes&&... args) const {
-            dim3 gridDim = calcGridDim(threadDim.x, threadDim.y, threadDim.z);
+            const dim3 gridDim = calcGridDim(threadDim.x, threadDim.y, threadDim.z);
             callKernel(
                 stream, m_kernel,
                 gridDim, m_blockDim, m_sharedMemSize,
@@ -528,12 +533,16 @@ namespace cudau {
         Buffer();
         ~Buffer();
 
-        Buffer(CUcontext context, BufferType type,
-               size_t numElements, size_t stride) : Buffer() {
+        Buffer(
+            CUcontext context, BufferType type,
+            size_t numElements, size_t stride) : Buffer()
+        {
             initialize(context, type, numElements, stride);
         }
-        Buffer(CUcontext context, BufferType type,
-               const void* data, size_t numElements, size_t stride) : Buffer() {
+        Buffer(
+            CUcontext context, BufferType type,
+            const void* data, size_t numElements, size_t stride) : Buffer()
+        {
             initialize(context, type, data, numElements, stride);
         }
 
@@ -545,12 +554,14 @@ namespace cudau {
 
         void initialize(
             CUcontext context, BufferType type,
-            size_t numElements, size_t stride) {
+            size_t numElements, size_t stride)
+        {
             initialize(context, type, numElements, stride, 0);
         }
         void initialize(
             CUcontext context, BufferType type,
-            const void* data, size_t numElements, size_t stride, CUstream stream = 0) {
+            const void* data, size_t numElements, size_t stride, CUstream stream = 0)
+        {
             initialize(context, type, numElements, stride, 0);
             CUDADRV_CHECK(cuMemcpyHtoDAsync(getCUdeviceptr(), data, numElements * stride, stream));
         }
@@ -658,15 +669,15 @@ namespace cudau {
         }
         template <typename T>
         void fill(const T &value, CUstream stream = 0) const {
-            size_t numValues = (m_stride * m_numElements) / sizeof(T);
+            const size_t numValues = (m_stride * m_numElements) / sizeof(T);
             if (m_persistentMappedMemory) {
-                T* values = reinterpret_cast<T*>(m_mappedPointer);
+                T* const values = reinterpret_cast<T*>(m_mappedPointer);
                 for (size_t i = 0; i < numValues; ++i)
                     values[i] = value;
                 write(values, numValues, stream);
             }
             else {
-                std::vector<T> values(numValues, value);
+                const std::vector<T> values(numValues, value);
                 write(values, stream);
             }
         }
@@ -703,24 +714,30 @@ namespace cudau {
         void initialize(
             CUcontext context, BufferType type,
             size_t numElements, const T &value,
-            CUstream stream = 0) {
-            std::vector<T> values(numElements, value);
+            CUstream stream = 0)
+        {
+            const std::vector<T> values(numElements, value);
             initialize(context, type, values.size());
-            CUDADRV_CHECK(cuMemcpyHtoDAsync(Buffer::getCUdeviceptr(), values.data(), values.size() * sizeof(T), stream));
+            CUDADRV_CHECK(cuMemcpyHtoDAsync(
+                Buffer::getCUdeviceptr(), values.data(), values.size() * sizeof(T), stream));
         }
         void initialize(
             CUcontext context, BufferType type,
             const T* v, size_t numElements,
-            CUstream stream = 0) {
+            CUstream stream = 0)
+        {
             initialize(context, type, numElements);
-            CUDADRV_CHECK(cuMemcpyHtoDAsync(Buffer::getCUdeviceptr(), v, numElements * sizeof(T), stream));
+            CUDADRV_CHECK(cuMemcpyHtoDAsync(
+                Buffer::getCUdeviceptr(), v, numElements * sizeof(T), stream));
         }
         void initialize(
             CUcontext context, BufferType type,
             const std::vector<T> &v,
-            CUstream stream = 0) {
+            CUstream stream = 0)
+        {
             initialize(context, type, v.size());
-            CUDADRV_CHECK(cuMemcpyHtoDAsync(Buffer::getCUdeviceptr(), v.data(), v.size() * sizeof(T), stream));
+            CUDADRV_CHECK(cuMemcpyHtoDAsync(
+                Buffer::getCUdeviceptr(), v.data(), v.size() * sizeof(T), stream));
         }
         void finalize() {
             Buffer::finalize();
@@ -730,7 +747,7 @@ namespace cudau {
             Buffer::resize(numElements, sizeof(T), stream);
         }
         void resize(int32_t numElements, const T &value, CUstream stream = 0) {
-            std::vector<T> values(numElements, value);
+            const std::vector<T> values(numElements, value);
             Buffer::resize(numElements, sizeof(T), stream);
             CUDADRV_CHECK(cuMemcpyHtoDAsync(
                 Buffer::getCUdeviceptr(), values.data(), values.size() * sizeof(T), stream));
@@ -778,8 +795,8 @@ namespace cudau {
         // TODO: ? stream
         template <CUDAU_INTEGRAL_CONCEPT I>
         T operator[](I idx) {
-            const T* values = map();
-            T ret = values[idx];
+            const T* const values = map();
+            const T ret = values[idx];
             unmap();
             return ret;
         }
@@ -858,7 +875,7 @@ namespace cudau {
 
 #   if defined(CUDA_UTIL_USE_GL_INTEROP)
     void getArrayElementFormat(GLenum internalFormat, ArrayElementType* elemType, uint32_t* numChannels);
-#   endif
+#   endif // if defined(CUDA_UTIL_USE_GL_INTEROP)
 
     inline bool isBCFormat(ArrayElementType elemType) {
         return (elemType == cudau::ArrayElementType::BC1_UNorm ||
@@ -933,7 +950,8 @@ namespace cudau {
         void initialize1D(
             CUcontext context, ArrayElementType elemType, uint32_t numChannels,
             ArraySurface surfaceLoadStore,
-            size_t length, uint32_t numMipmapLevels) {
+            size_t length, uint32_t numMipmapLevels)
+        {
             initialize(
                 context, elemType, numChannels, length, 0, 0, numMipmapLevels,
                 surfaceLoadStore == ArraySurface::Enable, false, false, false, 0);
@@ -941,7 +959,8 @@ namespace cudau {
         void initialize2D(
             CUcontext context, ArrayElementType elemType, uint32_t numChannels,
             ArraySurface surfaceLoadStore, ArrayTextureGather useTextureGather,
-            size_t width, size_t height, uint32_t numMipmapLevels) {
+            size_t width, size_t height, uint32_t numMipmapLevels)
+        {
             initialize(
                 context, elemType, numChannels, width, height, 0, numMipmapLevels,
                 surfaceLoadStore == ArraySurface::Enable,
@@ -951,14 +970,16 @@ namespace cudau {
         void initialize3D(
             CUcontext context, ArrayElementType elemType, uint32_t numChannels,
             ArraySurface surfaceLoadStore,
-            size_t width, size_t height, size_t depth, uint32_t numMipmapLevels) {
+            size_t width, size_t height, size_t depth, uint32_t numMipmapLevels)
+        {
             initialize(
                 context, elemType, numChannels, width, height, 0, numMipmapLevels,
                 surfaceLoadStore == ArraySurface::Enable, false, false, false, 0);
         }
         void initializeFromGLTexture2D(
             CUcontext context, uint32_t glTexID,
-            ArraySurface surfaceLoadStore, ArrayTextureGather useTextureGather) {
+            ArraySurface surfaceLoadStore, ArrayTextureGather useTextureGather)
+        {
 #if defined(CUDA_UTIL_USE_GL_INTEROP)
             GLint width, height;
             GLint numMipmapLevels;
@@ -1037,23 +1058,25 @@ namespace cudau {
         T* map(
             uint32_t mipmapLevel = 0,
             CUstream stream = 0,
-            BufferMapFlag flag = BufferMapFlag::ReadWrite) {
+            BufferMapFlag flag = BufferMapFlag::ReadWrite)
+        {
             return reinterpret_cast<T*>(map(mipmapLevel, stream, flag));
         }
         void unmap(uint32_t mipmapLevel = 0, CUstream stream = 0);
         template <typename T>
         void write(
-            const T* srcValues, size_t numValues, uint32_t mipmapLevel = 0, CUstream stream = 0) const {
-            size_t depth = std::max<size_t>(1, m_depth);
+            const T* srcValues, size_t numValues, uint32_t mipmapLevel = 0, CUstream stream = 0) const
+        {
+            const size_t depth = std::max<size_t>(1, m_depth);
 
             size_t bw;
             size_t bh;
             computeDimensionsOfLevel(mipmapLevel, &bw, &bh);
-            size_t sizePerRow = bw * m_stride;
-            size_t size = depth * bh * sizePerRow;
+            const size_t sizePerRow = bw * m_stride;
+            const size_t size = depth * bh * sizePerRow;
             if (sizeof(T) * numValues > size)
                 throw std::runtime_error("Too large transfer.");
-            size_t writeHeight = (sizeof(T) * numValues) / sizePerRow;
+            const size_t writeHeight = (sizeof(T) * numValues) / sizePerRow;
 
             CUDA_MEMCPY3D params = {};
             params.WidthInBytes = sizePerRow;
@@ -1084,16 +1107,16 @@ namespace cudau {
         }
         template <typename T>
         void read(T* dstValues, size_t numValues, uint32_t mipmapLevel = 0, CUstream stream = 0) const {
-            size_t depth = std::max<size_t>(1, m_depth);
+            const size_t depth = std::max<size_t>(1, m_depth);
 
             size_t bw;
             size_t bh;
             computeDimensionsOfLevel(mipmapLevel, &bw, &bh);
-            size_t sizePerRow = bw * m_stride;
-            size_t size = depth * bh * sizePerRow;
+            const size_t sizePerRow = bw * m_stride;
+            const size_t size = depth * bh * sizePerRow;
             if (sizeof(T) * numValues > size)
                 throw std::runtime_error("Too large transfer.");
-            size_t readHeight = (sizeof(T) * numValues) / sizePerRow;
+            const size_t readHeight = (sizeof(T) * numValues) / sizePerRow;
 
             CUDA_MEMCPY3D params = {};
             params.WidthInBytes = sizePerRow;
@@ -1127,11 +1150,11 @@ namespace cudau {
             size_t bw;
             size_t bh;
             computeDimensionsOfLevel(mipmapLevel, &bw, &bh);
-            size_t depth = std::max<size_t>(1, m_depth);
-            size_t sizePerRow = bw * m_stride;
-            size_t size = depth * bh * sizePerRow;
-            size_t numValues = size / sizeof(T);
-            std::vector<T> values(value, numValues);
+            const size_t depth = std::max<size_t>(1, m_depth);
+            const size_t sizePerRow = bw * m_stride;
+            const size_t size = depth * bh * sizePerRow;
+            const size_t numValues = size / sizeof(T);
+            const std::vector<T> values(value, numValues);
             write(values, mipmapLevel, stream);
         }
 
@@ -1148,10 +1171,10 @@ namespace cudau {
             if (m_mipmapArrays[mipmapLevel] == nullptr)
                 throw std::runtime_error("Use beginCUDAAccess()/endCUDAAccess().");
 
-            CUsurfObject ret;
             CUDA_RESOURCE_DESC resDesc = {};
             resDesc.resType = CU_RESOURCE_TYPE_ARRAY;
             resDesc.res.array.hArray = m_mipmapArrays[mipmapLevel];
+            CUsurfObject ret;
             CUDADRV_CHECK(cuSurfObjectCreate(&ret, &resDesc));
             return ret;
 #else
@@ -1325,7 +1348,7 @@ namespace cudau {
                 resDesc.resType = CU_RESOURCE_TYPE_ARRAY;
                 resDesc.res.array.hArray = array.getCUarray(0);
             }
-            bool isBCTex = array.isBCTexture();
+            const bool isBCTex = array.isBCTexture();
             CUDA_RESOURCE_VIEW_DESC resViewDesc = {};
             if (!isBCTex)
                 resViewDesc = array.getResourceViewDesc();
@@ -1387,7 +1410,7 @@ namespace cudau {
         }
     };
 
-#endif // #if !defined(__CUDA_ARCH__)
+#endif // if !defined(__CUDA_ARCH__)
 
 #undef CUDAU_INTEGRAL_CONCEPT
 

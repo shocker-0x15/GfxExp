@@ -18,34 +18,55 @@
 
 #include "cuda_util.h"
 
-#ifdef CUDAUPlatform_Windows_MSVC
+#include <sstream>
+
+#if defined(CUDAUPlatform_Windows_MSVC)
 #   include <Windows.h>
 #   undef near
 #   undef far
 #   undef min
 #   undef max
-#endif
+#endif // if defined(CUDAUPlatform_Windows_MSVC)
 
 
 
 namespace cudau {
-#ifdef CUDAUPlatform_Windows_MSVC
     void devPrintf(const char* fmt, ...) {
+#if defined(CUDAUPlatform_Windows_MSVC)
         va_list args;
         va_start(args, fmt);
-        char str[1024];
-        vsprintf_s(str, fmt, args);
+        const int32_t reqStrSize = _vscprintf(fmt, args) + 1;
         va_end(args);
-        OutputDebugString(str);
-    }
-#else
-    void devPrintf(const char* fmt, ...) {
+
+        static std::vector<char> str;
+        if (reqStrSize > str.size())
+            str.resize(reqStrSize);
+
+        va_start(args, fmt);
+        vsnprintf_s(str.data(), str.size(), _TRUNCATE, fmt, args);
+        va_end(args);
+
+        OutputDebugStringA(str.data());
+#else // if defined(CUDAUPlatform_Windows_MSVC)
         va_list args;
         va_start(args, fmt);
         vprintf_s(fmt, args);
         va_end(args);
+#endif // if defined(CUDAUPlatform_Windows_MSVC)
     }
-#endif
+
+    void check(CUresult status, const char* callStr) {
+        if (status == CUDA_SUCCESS)
+            return;
+
+        std::stringstream ss;
+        const char* errMsg = "failed to get an error message.";
+        cuGetErrorString(status, &errMsg);
+        ss << "CUDA call (" << callStr << " ) failed with error: '"
+            << errMsg
+            << "' (" __FILE__ << ":" << __LINE__ << ")\n";
+        throw std::runtime_error(ss.str().c_str());
+    }
 
 
 //#define USE_PINNED_MAPPED_MEMORY
@@ -55,17 +76,17 @@ namespace cudau {
         void* ret;
         CUDADRV_CHECK(cuMemAllocHost(&ret, size));
         return ret;
-#else
+#else // if defined(USE_PINNED_MAPPED_MEMORY)
         return new uint8_t[size];
-#endif
+#endif // if defined(USE_PINNED_MAPPED_MEMORY)
     }
 
     static void releaseHostMem(void* ptr) {
 #if defined(USE_PINNED_MAPPED_MEMORY)
         CUDADRV_CHECK(cuMemFreeHost(ptr));
-#else
+#else // if defined(USE_PINNED_MAPPED_MEMORY)
         delete[] ptr;
-#endif
+#endif // if defined(USE_PINNED_MAPPED_MEMORY)
     }
 
 
@@ -122,7 +143,8 @@ namespace cudau {
 
     void Buffer::initialize(
         CUcontext context, BufferType type,
-        size_t numElements, size_t stride, uint32_t glBufferID) {
+        size_t numElements, size_t stride, uint32_t glBufferID)
+    {
         if (m_initialized)
             throw std::runtime_error("Buffer is already initialized.");
 
@@ -153,7 +175,7 @@ namespace cudau {
         m_GLBufferID = glBufferID;
         m_cudaGfxResource = nullptr;
 
-        size_t size = m_numElements * m_stride;
+        const size_t size = m_numElements * m_stride;
 
         if (m_type == BufferType::Device) {
             CUDADRV_CHECK(cuMemAlloc(&m_devicePointer, size));
@@ -162,10 +184,10 @@ namespace cudau {
 #if defined(CUDA_UTIL_USE_GL_INTEROP)
             CUDADRV_CHECK(cuGraphicsGLRegisterBuffer(
                 &m_cudaGfxResource, m_GLBufferID, CU_GRAPHICS_REGISTER_FLAGS_NONE));
-#else
+#else // if defined(CUDA_UTIL_USE_GL_INTEROP)
             throw std::runtime_error(
                 "Disable \"CUDA_UTIL_DONT_USE_GL_INTEROP\" if you use CUDA/OpenGL interoperability.");
-#endif
+#endif // if defined(CUDA_UTIL_USE_GL_INTEROP)
         }
         else if (m_type == BufferType::ZeroCopy) {
             CUDADRV_CHECK(cuMemHostAlloc(
@@ -239,14 +261,14 @@ namespace cudau {
         newBuffer.initialize(m_cuContext, m_type, numElements, stride, m_GLBufferID);
         newBuffer.setMappedMemoryPersistent(m_persistentMappedMemory);
 
-        size_t numElementsToCopy = std::min(m_numElements, numElements);
+        const size_t numElementsToCopy = std::min(m_numElements, numElements);
         if (stride == m_stride) {
-            size_t numBytesToCopy = numElementsToCopy * m_stride;
+            const size_t numBytesToCopy = numElementsToCopy * m_stride;
             CUDADRV_CHECK(cuMemcpyDtoDAsync(newBuffer.m_devicePointer, m_devicePointer, numBytesToCopy, stream));
         }
         else {
-            auto src = map<const uint8_t>(stream, BufferMapFlag::ReadOnly);
-            auto dst = newBuffer.map<uint8_t>(stream, BufferMapFlag::WriteOnlyDiscard);
+            const auto src = map<const uint8_t>(stream, BufferMapFlag::ReadOnly);
+            const auto dst = newBuffer.map<uint8_t>(stream, BufferMapFlag::WriteOnlyDiscard);
             for (size_t i = 0; i < numElementsToCopy; ++i) {
                 std::memset(dst, 0, stride);
                 std::memcpy(dst, src, m_stride);
@@ -286,7 +308,7 @@ namespace cudau {
         m_persistentMappedMemory = b;
         if (m_mapFlag == BufferMapFlag::Unmapped) {
             if (m_persistentMappedMemory) {
-                size_t size = m_numElements * m_stride;
+                const size_t size = m_numElements * m_stride;
                 m_mappedPointer = allocHostMem(size);
             }
             else {
@@ -306,7 +328,7 @@ namespace cudau {
             m_type == BufferType::GL_Interop) {
             CUDADRV_CHECK(cuCtxSetCurrent(m_cuContext));
 
-            size_t size = m_numElements * m_stride;
+            const size_t size = m_numElements * m_stride;
             if (!m_persistentMappedMemory)
                 m_mappedPointer = allocHostMem(size);
 
@@ -317,7 +339,7 @@ namespace cudau {
                 CUDADRV_CHECK(cuMemcpyDtoHAsync(m_mappedPointer, m_devicePointer, size, stream));
 #if defined(USE_PINNED_MAPPED_MEMORY)
                 CUDADRV_CHECK(cuStreamSynchronize(stream));
-#endif
+#endif // if defined(USE_PINNED_MAPPED_MEMORY)
             }
 
             return m_mappedPointer;
@@ -337,7 +359,7 @@ namespace cudau {
             m_type == BufferType::GL_Interop) {
             CUDADRV_CHECK(cuCtxSetCurrent(m_cuContext));
 
-            size_t size = m_numElements * m_stride;
+            const size_t size = m_numElements * m_stride;
 
             if (m_mapFlag != BufferMapFlag::ReadOnly)
                 CUDADRV_CHECK(cuMemcpyHtoDAsync(m_devicePointer, m_mappedPointer, size, stream));
@@ -360,7 +382,7 @@ namespace cudau {
         ret.initialize(m_cuContext, m_type, m_numElements, m_stride, m_GLBufferID);
         ret.setMappedMemoryPersistent(m_persistentMappedMemory);
 
-        size_t size = m_numElements * m_stride;
+        const size_t size = m_numElements * m_stride;
         if (m_type == BufferType::Device) {
             CUDADRV_CHECK(cuCtxSetCurrent(m_cuContext));
 
@@ -480,10 +502,12 @@ namespace cudau {
 #undef CUDA_UTIL_EXPR1
 #undef CUDA_UTIL_EXPR0
     }
-#endif
+#endif // if defined(CUDA_UTIL_USE_GL_INTEROP)
 
     Array::Array() :
         m_cuContext(nullptr),
+        m_width(0), m_height(0), m_depth(0), m_numMipmapLevels(0),
+        m_stride(0), m_elemType(ArrayElementType(0xFFFFFFFF)), m_numChannels(0),
         m_array(0), m_mappedPointers(nullptr), m_mipmapArrays(nullptr), m_mapFlags(nullptr),
         m_surfObjs(nullptr),
         m_GLTexID(0), m_cudaGfxResource(nullptr),
@@ -559,7 +583,8 @@ namespace cudau {
     void Array::initialize(
         CUcontext context, ArrayElementType elemType, uint32_t numChannels,
         size_t width, size_t height, size_t depth, uint32_t numMipmapLevels,
-        bool surfaceLoadStore, bool useTextureGather, bool cubemap, bool layered, uint32_t glTexID) {
+        bool surfaceLoadStore, bool useTextureGather, bool cubemap, bool layered, uint32_t glTexID)
+    {
         if (m_initialized)
             throw std::runtime_error("Array is already initialized.");
         if (numChannels != 1 && numChannels != 2 && numChannels != 4)
@@ -717,10 +742,10 @@ namespace cudau {
                 (useTextureGather ?
                  CU_GRAPHICS_REGISTER_FLAGS_TEXTURE_GATHER : 0));
             CUDADRV_CHECK(cuGraphicsGLRegisterImage(&m_cudaGfxResource, glTexID, GL_TEXTURE_2D, flags));
-#else
+#else // if defined(CUDA_UTIL_USE_GL_INTEROP)
             throw std::runtime_error(
                 "Disable \"CUDA_UTIL_DONT_USE_GL_INTEROP\" if you use CUDA/OpenGL interoperability.");
-#endif
+#endif // if defined(CUDA_UTIL_USE_GL_INTEROP)
         }
         else {
             if (m_numMipmapLevels > 1)
@@ -828,7 +853,7 @@ namespace cudau {
             copyHeight = (copyHeight + 3) / 4;
         }
 
-        size_t sizePerRow = copyWidth * m_stride;
+        const size_t sizePerRow = copyWidth * m_stride;
 
         CUDA_MEMCPY3D params = {};
         params.WidthInBytes = sizePerRow;
@@ -890,7 +915,7 @@ namespace cudau {
         size_t bw;
         size_t bh;
         computeDimensionsOfLevel(mipmapLevel, &bw, &bh);
-        size_t size = std::max<size_t>(1, m_depth) * bh * bw * m_stride;
+        const size_t size = std::max<size_t>(1, m_depth) * bh * bw * m_stride;
 
         m_mappedPointers[mipmapLevel] = allocHostMem(size);
         m_mapFlags[mipmapLevel] = flag;
@@ -899,7 +924,7 @@ namespace cudau {
             read(reinterpret_cast<uint8_t*>(m_mappedPointers[mipmapLevel]), size, mipmapLevel, stream);
 #if defined(USE_PINNED_MAPPED_MEMORY)
             CUDADRV_CHECK(cuStreamSynchronize(stream));
-#endif
+#endif // if defined(USE_PINNED_MAPPED_MEMORY)
         }
 
         return m_mappedPointers[mipmapLevel];
@@ -917,7 +942,7 @@ namespace cudau {
             size_t bw;
             size_t bh;
             computeDimensionsOfLevel(mipmapLevel, &bw, &bh);
-            size_t size = std::max<size_t>(1, m_depth) * bh * bw * m_stride;
+            const size_t size = std::max<size_t>(1, m_depth) * bh * bw * m_stride;
 
             write(reinterpret_cast<uint8_t*>(m_mappedPointers[mipmapLevel]), size, mipmapLevel, stream);
         }

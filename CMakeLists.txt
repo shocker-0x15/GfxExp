@@ -15,14 +15,14 @@ set(
     "${CMAKE_SOURCE_DIR}/cmake"
     ${CMAKE_MODULE_PATH})
 find_package(CUDAToolkit 12.5 REQUIRED)
-find_package(OptiX80)
+find_package(OptiX81)
 include("copy_files")
 include("nvcuda_compile_ptx")
 
-if (OptiX80_FOUND)
-    set(OPTIX_INCLUDE_DIR "${OPTIX80_INCLUDE_DIR}")
+if (OptiX81_FOUND)
+    set(OPTIX_INCLUDE_DIR "${OPTIX81_INCLUDE_DIR}")
 else()
-    message(FATAL_ERROR "OptiX SDK 8.0 not found.")
+    message(FATAL_ERROR "OptiX SDK 8.1 not found.")
 endif()
 
 

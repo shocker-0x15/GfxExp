@@ -9,7 +9,7 @@ enum cudaSurfaceBoundaryMode {
     cudaBoundaryModeClamp,
     cudaBoundaryModeTrap,
 };
-#endif
+#endif // if defined(OPTIXU_Platform_CodeCompletion)
 
 namespace optixu {
     template <typename T, typename... Ts>
@@ -28,7 +28,7 @@ namespace optixu {
         static constexpr size_t typeSize = sizeof(T);
         static_assert(typeSize == 4 || typeSize == 8 || typeSize == 16,
                       "Unsupported size of type.");
-#endif
+#endif // if defined(__CUDA_ARCH__) || defined(OPTIXU_Platform_CodeCompletion)
         CUsurfObject m_surfObject;
 
 #if defined(__CUDA_ARCH__) || defined(OPTIXU_Platform_CodeCompletion)
@@ -63,7 +63,7 @@ namespace optixu {
                 surf2Dwrite(u.uiValue, m_surfObject, xAddr, yAddr, boundaryMode);
             }
         }
-#endif
+#endif // if defined(__CUDA_ARCH__) || defined(OPTIXU_Platform_CodeCompletion)
 
     public:
         RT_COMMON_FUNCTION NativeBlockBuffer2D() : m_surfObject(0) {}
@@ -128,7 +128,7 @@ namespace optixu {
         RT_DEVICE_FUNCTION void writePartially(int2 idx, U value, cudaSurfaceBoundaryMode boundaryMode = cudaBoundaryModeTrap) const {
             writePartially<offsetInBytes>(make_uint2(idx.x, idx.y), value, boundaryMode);
         }
-#endif
+#endif // if defined(__CUDA_ARCH__) || defined(OPTIXU_Platform_CodeCompletion)
     };
 
 
@@ -158,7 +158,7 @@ namespace optixu {
             }
             return 0;
         }
-#endif
+#endif // if defined(__CUDA_ARCH__) || defined(OPTIXU_Platform_CodeCompletion)
 
     public:
         RT_COMMON_FUNCTION BlockBuffer2D() {}
@@ -208,7 +208,7 @@ namespace optixu {
         RT_DEVICE_FUNCTION void write(int2 idx, const T &value) {
             (*this)[idx] = value;
         }
-#endif
+#endif // if defined(__CUDA_ARCH__) || defined(OPTIXU_Platform_CodeCompletion)
     };
 
 #if !defined(__CUDA_ARCH__)
@@ -341,7 +341,7 @@ namespace optixu {
             return BlockBuffer2D<T, log2BlockWidth>(m_rawBuffer.getDevicePointer(), m_width, m_height);
         }
     };
-#endif // !defined(__CUDA_ARCH__)
+#endif // if !defined(__CUDA_ARCH__)
 }
 
 #if !defined(__CUDA_ARCH__)
@@ -355,4 +355,4 @@ cudau::Buffer::operator optixu::BufferView() const {
 //inline optixu::BufferView getView(const cudau::Buffer &buffer) {
 //    return optixu::BufferView(buffer.getCUdeviceptr(), buffer.numElements(), buffer.stride());
 //}
-#endif // !defined(__CUDA_ARCH__)
+#endif // if !defined(__CUDA_ARCH__)

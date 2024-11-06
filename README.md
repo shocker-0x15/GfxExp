@@ -180,7 +180,7 @@ It requires the following libraries.
 
 * CUDA 12.5\
   Note that CUDA 12.5 has compilation issues for C++20 with Visual Studio 2022 17.10.0.
-* OptiX 8.0.0 (requires Maxwell or later generation NVIDIA GPU)
+* OptiX 8.1.0 (requires Maxwell or later generation NVIDIA GPU)
 
 
 
