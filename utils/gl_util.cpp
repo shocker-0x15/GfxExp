@@ -1,6 +1,6 @@
 ﻿/*
 
-   Copyright 2023 Shin Watanabe
+   Copyright 2024 Shin Watanabe
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -32,23 +32,45 @@
 #include <regex>
 
 namespace glu {
-#ifdef GLUPlatform_Windows_MSVC
     void devPrintf(const char* fmt, ...) {
+#if defined(GLUPlatform_Windows_MSVC)
         va_list args;
         va_start(args, fmt);
-        char str[4096];
-        vsprintf_s(str, fmt, args);
+        const int32_t reqStrSize = _vscprintf(fmt, args) + 1;
         va_end(args);
-        OutputDebugString(str);
-    }
-#else
-    void devPrintf(const char* fmt, ...) {
+
+        static std::vector<char> str;
+        if (reqStrSize > str.size())
+            str.resize(reqStrSize);
+
+        va_start(args, fmt);
+        vsnprintf_s(str.data(), str.size(), _TRUNCATE, fmt, args);
+        va_end(args);
+
+        OutputDebugStringA(str.data());
+#else // if defined(GLUPlatform_Windows_MSVC)
         va_list args;
         va_start(args, fmt);
         vprintf_s(fmt, args);
         va_end(args);
+#endif // if defined(GLUPlatform_Windows_MSVC)
     }
-#endif
+
+    void check(const char* callStr) {
+        auto error = static_cast<::glu::Error>(glGetError());
+        if (error == ::glu::Error::NoError)
+            return;
+
+        std::stringstream ss;
+        const char* errMsg = nullptr;
+        ::glu::getErrorString(error, &errMsg);
+        ss << "GL call (" << callStr << " ) failed with error: '"
+            << errMsg
+            << "' (" __FILE__ << ":" << __LINE__ << ")\n";
+        throw std::runtime_error(ss.str().c_str());
+    }
+
+
 
     template <typename... Types>
     static void throwRuntimeError(bool expr, const char* fmt, const Types &... args) {

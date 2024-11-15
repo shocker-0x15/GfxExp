@@ -1,6 +1,6 @@
 /*
 
-   Copyright 2021 Shin Watanabe
+   Copyright 2024 Shin Watanabe
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -41,5 +41,5 @@ namespace dds {
 
     [[nodiscard]]
     uint8_t** load(const char* filepath, int32_t* width, int32_t* height, int32_t* mipCount, size_t** sizes, Format* format);
-    void free(uint8_t** data, int32_t mipCount, size_t* sizes);
+    void free(uint8_t** data, size_t* sizes);
 }

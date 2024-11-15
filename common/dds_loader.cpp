@@ -1,6 +1,6 @@
 /*
 
-   Copyright 2021 Shin Watanabe
+   Copyright 2024 Shin Watanabe
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -21,10 +21,10 @@
 #    define Platform_Windows
 #    if defined(_MSC_VER)
 #        define Platform_Windows_MSVC
-#    endif
+#    endif // if defined(_MSC_VER)
 #elif defined(__APPLE__)
 #    define Platform_macOS
-#endif
+#endif // if defined(_WIN32) || defined(_WIN64)
 
 #if defined(Platform_Windows_MSVC)
 #   define NOMINMAX
@@ -33,32 +33,42 @@
 #   undef near
 #   undef far
 #   undef RGB
-#endif
+#endif // if defined(Platform_Windows_MSVC)
 
 #include "dds_loader.h"
 
+#include <vector>
 #include <algorithm>
 #include <fstream>
 
-#ifdef _DEBUG
-#   define ENABLE_ASSERT
+#if defined(_DEBUG)
+#   define ENABLE_ASSERT 1
 #   define DEBUG_SELECT(A, B) A
-#else
+#else // if defined(_DEBUG)
+#   define ENABLE_ASSERT 0
 #   define DEBUG_SELECT(A, B) B
-#endif
+#endif // if defined(_DEBUG)
 
-#ifdef Platform_Windows_MSVC
+#if defined(Platform_Windows_MSVC)
 static void devPrintf(const char* fmt, ...) {
     va_list args;
     va_start(args, fmt);
-    char str[4096];
-    vsnprintf_s(str, sizeof(str), _TRUNCATE, fmt, args);
+    const int32_t reqStrSize = _vscprintf(fmt, args) + 1;
     va_end(args);
-    OutputDebugString(str);
+
+    static std::vector<char> str;
+    if (reqStrSize > str.size())
+        str.resize(reqStrSize);
+
+    va_start(args, fmt);
+    vsnprintf_s(str.data(), str.size(), _TRUNCATE, fmt, args);
+    va_end(args);
+
+    OutputDebugStringA(str.data());
 }
-#else
+#else // if defined(Platform_Windows_MSVC)
 #   define devPrintf(fmt, ...) printf(fmt, ##__VA_ARGS__);
-#endif
+#endif // if defined(Platform_Windows_MSVC)
 
 #if 1
 #   define hpprintf(fmt, ...) do { devPrintf(fmt, ##__VA_ARGS__); printf(fmt, ##__VA_ARGS__); } while (0)
@@ -66,11 +76,11 @@ static void devPrintf(const char* fmt, ...) {
 #   define hpprintf(fmt, ...) printf(fmt, ##__VA_ARGS__)
 #endif
 
-#ifdef ENABLE_ASSERT
+#if ENABLE_ASSERT
 #   define Assert(expr, fmt, ...) if (!(expr)) { devPrintf("%s @%s: %u:\n", #expr, __FILE__, __LINE__); devPrintf(fmt"\n", ##__VA_ARGS__); abort(); } 0
-#else
+#else // if ENABLE_ASSERT
 #   define Assert(expr, fmt, ...)
-#endif
+#endif // if ENABLE_ASSERT
 
 #define Assert_ShouldNotBeCalled() Assert(false, "Should not be called!")
 #define Assert_NotImplemented() Assert(false, "Not implemented yet!")
@@ -327,7 +337,7 @@ namespace dds {
         return data;
     }
 
-    void free(uint8_t** data, int32_t mipCount, size_t* sizes) {
+    void free(uint8_t** data, size_t* sizes) {
         void* singleData = data[0];
         delete[] sizes;
         delete[] data;
