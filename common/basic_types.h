@@ -3324,7 +3324,7 @@ struct AABB_T {
     Point3D_T<F> maxP;
 
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr AABB_T() :
-        minP(Point3D_T<F>(std::numeric_limits<F>::infinity())), maxP(Point3D_T<F>(-std::numeric_limits<F>::infinity())) {}
+        minP(Point3D_T<F>(INFINITY)), maxP(Point3D_T<F>(-INFINITY)) {}
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr AABB_T(
         const Point3D_T<F> &_minP, const Point3D_T<F> &_maxP) :
         minP(_minP), maxP(_maxP) {}
@@ -3397,7 +3397,7 @@ struct AABB_T {
     CUDA_COMMON_FUNCTION CUDA_INLINE constexpr bool intersect(
         const Point3D_T<F> &org, const Vector3D_T<F, false> &dir, const F distMin, const F distMax) const {
         if (!isValid())
-            return std::numeric_limits<F>::infinity();
+            return INFINITY;
         const Vector3D_T<F, false> invRayDir = 1.0f / dir;
         const Vector3D_T<F, false> tNear = (minP - org) * invRayDir;
         const Vector3D_T<F, false> tFar = (maxP - org) * invRayDir;
@@ -3432,7 +3432,7 @@ struct AABB_T {
         const F distMin, const F distMax,
         F* const u, F* const v, bool* const isFrontHit) const {
         if (!isValid())
-            return std::numeric_limits<F>::infinity();
+            return INFINITY;
         const Vector3D_T<F, false> invRayDir = 1.0f / dir;
         const Vector3D_T<F, false> tNear = (minP - org) * invRayDir;
         const Vector3D_T<F, false> tFar = (maxP - org) * invRayDir;
@@ -3444,7 +3444,7 @@ struct AABB_T {
         t0 = std::fmax(t0, distMin);
         t1 = std::fmin(t1, distMax);
         if (!(t0 <= t1 && t1 > 0.0f))
-            return std::numeric_limits<F>::infinity();
+            return INFINITY;
 
         const F t = *isFrontHit ? t0 : t1;
         Vector3D_T<F, false> n = -sign(dir) * step(near.yzx(), near) * step(near.zxy(), near);
