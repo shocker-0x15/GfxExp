@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AutoVisualizer xmlns="http://schemas.microsoft.com/vstudio/debugger/natvis/2010">
+  <!-- optixu::Material -->
+  <Type Name="optixu::Material">
+    <DisplayString Condition="m != nullptr">{(void*)m}</DisplayString>
+    <DisplayString>empty</DisplayString>
+
+    <Expand>
+      <ExpandedItem Condition="m != nullptr">m</ExpandedItem>
+    </Expand>
+  </Type>
+
+  <!-- optixu::Scene -->
+  <Type Name="optixu::Scene">
+    <DisplayString Condition="m != nullptr">{(void*)m}</DisplayString>
+    <DisplayString>empty</DisplayString>
+
+    <Expand>
+      <ExpandedItem Condition="m != nullptr">m</ExpandedItem>
+    </Expand>
+  </Type>
+
+  <!-- optixu::OpacityMicroMapArray -->
+  <Type Name="optixu::OpacityMicroMapArray">
+    <DisplayString Condition="m != nullptr">{(void*)m}</DisplayString>
+    <DisplayString>empty</DisplayString>
+
+    <Expand>
+      <ExpandedItem Condition="m != nullptr">m</ExpandedItem>
+    </Expand>
+  </Type>
+
+  <!-- optixu::GeometryInstance -->
+  <Type Name="optixu::GeometryInstance">
+    <DisplayString Condition="m != nullptr">{(void*)m}</DisplayString>
+    <DisplayString>empty</DisplayString>
+
+    <Expand>
+      <ExpandedItem Condition="m != nullptr">m</ExpandedItem>
+    </Expand>
+  </Type>
+
+  <!-- optixu::GeometryInstance -->
+  <Type Name="optixu::GeometryInstance">
+    <DisplayString Condition="m != nullptr">{(void*)m}</DisplayString>
+    <DisplayString>empty</DisplayString>
+
+    <Expand>
+      <ExpandedItem Condition="m != nullptr">m</ExpandedItem>
+    </Expand>
+  </Type>
+
+  <!-- optixu::GeometryAccelerationStructure -->
+  <Type Name="optixu::GeometryAccelerationStructure">
+    <DisplayString Condition="m != nullptr">{(void*)m}</DisplayString>
+    <DisplayString>empty</DisplayString>
+
+    <Expand>
+      <ExpandedItem Condition="m != nullptr">m</ExpandedItem>
+    </Expand>
+  </Type>
+
+  <!-- optixu::Transform -->
+  <Type Name="optixu::Transform">
+    <DisplayString Condition="m != nullptr">{(void*)m}</DisplayString>
+    <DisplayString>empty</DisplayString>
+
+    <Expand>
+      <ExpandedItem Condition="m != nullptr">m</ExpandedItem>
+    </Expand>
+  </Type>
+
+  <!-- optixu::Instance -->
+  <Type Name="optixu::Instance">
+    <DisplayString Condition="m != nullptr">{(void*)m}</DisplayString>
+    <DisplayString>empty</DisplayString>
+
+    <Expand>
+      <ExpandedItem Condition="m != nullptr">m</ExpandedItem>
+    </Expand>
+  </Type>
+
+  <!-- optixu::InstanceAccelerationStructure -->
+  <Type Name="optixu::InstanceAccelerationStructure">
+    <DisplayString Condition="m != nullptr">{(void*)m}</DisplayString>
+    <DisplayString>empty</DisplayString>
+
+    <Expand>
+      <ExpandedItem Condition="m != nullptr">m</ExpandedItem>
+    </Expand>
+  </Type>
+
+  <!-- optixu::Pipeline -->
+  <Type Name="optixu::Pipeline">
+    <DisplayString Condition="m != nullptr">{(void*)m}</DisplayString>
+    <DisplayString>empty</DisplayString>
+
+    <Expand>
+      <ExpandedItem Condition="m != nullptr">m</ExpandedItem>
+    </Expand>
+  </Type>
+
+  <!-- optixu::Module -->
+  <Type Name="optixu::Module">
+    <DisplayString Condition="m != nullptr">{(void*)m}</DisplayString>
+    <DisplayString>empty</DisplayString>
+
+    <Expand>
+      <ExpandedItem Condition="m != nullptr">m</ExpandedItem>
+    </Expand>
+  </Type>
+
+  <!-- optixu::Program -->
+  <Type Name="optixu::Program">
+    <DisplayString Condition="m != nullptr">{(void*)m}</DisplayString>
+    <DisplayString>empty</DisplayString>
+
+    <Expand>
+      <ExpandedItem Condition="m != nullptr">m</ExpandedItem>
+    </Expand>
+  </Type>
+
+  <!-- optixu::HitProgramGroup -->
+  <Type Name="optixu::HitProgramGroup">
+    <DisplayString Condition="m != nullptr">{(void*)m}</DisplayString>
+    <DisplayString>empty</DisplayString>
+
+    <Expand>
+      <ExpandedItem Condition="m != nullptr">m</ExpandedItem>
+    </Expand>
+  </Type>
+
+  <!-- optixu::CallableProgramGroup -->
+  <Type Name="optixu::CallableProgramGroup">
+    <DisplayString Condition="m != nullptr">{(void*)m}</DisplayString>
+    <DisplayString>empty</DisplayString>
+
+    <Expand>
+      <ExpandedItem Condition="m != nullptr">m</ExpandedItem>
+    </Expand>
+  </Type>
+
+  <!-- optixu::Denoiser -->
+  <Type Name="optixu::Denoiser">
+    <DisplayString Condition="m != nullptr">{(void*)m}</DisplayString>
+    <DisplayString>empty</DisplayString>
+
+    <Expand>
+      <ExpandedItem Condition="m != nullptr">m</ExpandedItem>
+    </Expand>
+  </Type>
+</AutoVisualizer>

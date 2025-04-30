@@ -1,6 +1,6 @@
 ﻿/*
 
-   Copyright 2024 Shin Watanabe
+   Copyright 2025 Shin Watanabe
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -550,55 +550,6 @@ namespace optixu {
 
 
     template <>
-    class Object<DisplacementMicroMapArray>::Priv : public PrivateObject {
-        _Scene* scene;
-        OptixDisplacementMicromapFlags flags;
-
-        BufferView rawDmmBuffer;
-        BufferView perMicroMapDescBuffer;
-        BufferView outputBuffer;
-        std::vector<OptixDisplacementMicromapHistogramEntry> microMapHistogramEntries;
-
-        OptixDisplacementMicromapArrayBuildInput buildInput;
-        OptixMicromapBufferSizes memoryRequirement;
-
-        uint32_t memoryUsageComputed : 1;
-        uint32_t buffersSet : 1;
-        uint32_t available : 1;
-
-    public:
-        OPTIXU_OPAQUE_BRIDGE(DisplacementMicroMapArray);
-
-        Priv(_Scene* _scene) :
-            scene(_scene),
-            memoryUsageComputed(false), buffersSet(false),
-            available(false)
-        {}
-        ~Priv() {
-            getContext()->unregisterName(this);
-        }
-
-        const _Scene* getScene() const {
-            return scene;
-        }
-        _Context* getContext() const {
-            return scene->getContext();
-        }
-        OPTIXU_DEFINE_THROW_RUNTIME_ERROR("DMM");
-
-        bool isReady() const {
-            return available;
-        }
-
-        BufferView getBuffer() const {
-            throwRuntimeError(outputBuffer.isValid(), "Output buffer has not been set.");
-            return outputBuffer;
-        }
-    };
-
-
-
-    template <>
     class Object<GeometryInstance>::Priv : public PrivateObject {
         _Scene* scene;
         SizeAlign userDataSizeAlign;
@@ -618,20 +569,8 @@ namespace optixu {
             OptixOpacityMicromapArrayIndexingMode opacityMicroMapIndexingMode;
             uint32_t opacityMicroMapIndexOffset;
 
-            BufferView displacementVertexDirectionBuffer;
-            BufferView displacementVertexBiasAndScaleBuffer;
-            BufferView displacementTriangleFlagsBuffer;
-            OptixDisplacementMicromapDirectionFormat displacementVertexDirectionFormat;
-            OptixDisplacementMicromapBiasAndScaleFormat displacementVertexBiasAndScaleFormat;
-            _DisplacementMicroMapArray* displacementMicroMapArray;
-            BufferView displacementMicroMapIndexBuffer;
-            std::vector<OptixDisplacementMicromapUsageCount> displacementMicroMapUsageCounts;
-            OptixDisplacementMicromapArrayIndexingMode displacementMicroMapIndexingMode;
-            uint32_t displacementMicroMapIndexOffset;
-
             uint32_t materialIndexSize : 3;
             uint32_t opacityMicroMapIndexSize : 3;
-            uint32_t displacementMicroMapIndexSize : 3;
         };
         struct CurveGeometry {
             CUdeviceptr* vertexBufferArray;
@@ -697,20 +636,19 @@ namespace optixu {
                 geom.opacityMicroMapIndexingMode = OPTIX_OPACITY_MICROMAP_ARRAY_INDEXING_MODE_NONE;
                 geom.opacityMicroMapIndexOffset = 0;
 
-                geom.displacementMicroMapArray = nullptr;
-                geom.displacementMicroMapIndexingMode = OPTIX_DISPLACEMENT_MICROMAP_ARRAY_INDEXING_MODE_NONE;
-                geom.displacementMicroMapIndexOffset = 0;
-
                 geom.materialIndexSize = 0;
                 geom.opacityMicroMapIndexSize = 0;
-                geom.displacementMicroMapIndexSize = 0;
             }
             else if (geomType == GeometryType::LinearSegments ||
                      geomType == GeometryType::QuadraticBSplines ||
+                     geomType == GeometryType::QuadraticBSplineRocaps ||
                      geomType == GeometryType::FlatQuadraticBSplines ||
                      geomType == GeometryType::CubicBSplines ||
+                     geomType == GeometryType::CubicBSplineRocaps ||
                      geomType == GeometryType::CatmullRomSplines ||
-                     geomType == GeometryType::CubicBezier) {
+                     geomType == GeometryType::CatmullRomSplineRocaps ||
+                     geomType == GeometryType::CubicBezier ||
+                     geomType == GeometryType::CubicBezierRocaps) {
                 geometry = CurveGeometry{};
                 auto &geom = std::get<CurveGeometry>(geometry);
                 geom.vertexBufferArray = new CUdeviceptr[numMotionSteps];

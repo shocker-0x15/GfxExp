@@ -171,16 +171,16 @@ Programs here use [OptiX Utility](https://github.com/shocker-0x15/OptiX_Utility)
 現状以下の環境で動作を確認しています。\
 I've confirmed that the program runs correctly in the following environment.
 
-* Windows 11 (24H2) & Visual Studio Community 2022 (17.13.3)
+* Windows 11 (24H2) & Visual Studio Community 2022 (17.13.6)
 * Ryzen 9 7950X, 64GB, RTX 4080 16GB
-* NVIDIA Driver 572.47 (Note that versions around 510-512 had several OptiX issues.)
+* NVIDIA Driver 576.02 (Note that versions around 510-512 had several OptiX issues.)
 
 動作させるにあたっては以下のライブラリが必要です。\
 It requires the following libraries.
 
 * CUDA 12.8\
   Note that CUDA 12.5 has compilation issues for C++20 with Visual Studio 2022 17.10.0.
-* OptiX 8.1.0 (requires Maxwell or later generation NVIDIA GPU)
+* OptiX 9.0.0 (requires Maxwell or later generation NVIDIA GPU)
 
 
 

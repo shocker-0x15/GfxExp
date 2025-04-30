@@ -1,6 +1,6 @@
 ﻿/*
 
-   Copyright 2024 Shin Watanabe
+   Copyright 2025 Shin Watanabe
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -24,13 +24,21 @@ Note:
 JP:
 - 現状ではあらゆるAPIに破壊的変更が入る可能性がある。
 - (少なくともホスト側コンパイラーがMSVC 16.8.2の場合は)"-std=c++17"をptxのコンパイル時に設定する必要あり。
-- Visual StudioにおけるCUDAのプロパティ"Use Fast Math"はptxコンパイルに対して機能していない？
 EN:
 - It is likely for now that any API will have breaking changes.
 - Setting "-std=c++17" is required for ptx compilation (at least for the case the host compiler is MSVC 16.8.2).
-- In Visual Studio, does the CUDA property "Use Fast Math" not work for ptx compilation??
 
 変更履歴 / Update History:
+- !!BREAKING
+- JP: - OptiX 9.0.0のサポートを開始。
+      - Rocaps型のカーブをサポート。
+      - DMM APIを削除。
+      - Clusters APIは未対応。
+  EN: - Started to support OptiX 9.0.0.
+      - Supported Rocaps-type curves.
+      - Removed the DMM API.
+      - Does not support clusters API yet.
+
 - JP: - OptiX 8.1.0をサポート。
   EN: - Supported OptiX 8.1.0.
 
@@ -1299,8 +1307,6 @@ namespace optixu {
               |              +-- GeomInst
               |              |
               |              +-- OMMArray
-              |              |
-              |              +-- DMMArray
               |
               +-- Denoiser
 
@@ -1357,7 +1363,6 @@ namespace optixu {
     OPTIXU_PREPROCESS_OBJECT(Material); \
     OPTIXU_PREPROCESS_OBJECT(Scene); \
     OPTIXU_PREPROCESS_OBJECT(OpacityMicroMapArray); \
-    OPTIXU_PREPROCESS_OBJECT(DisplacementMicroMapArray); \
     OPTIXU_PREPROCESS_OBJECT(GeometryInstance); \
     OPTIXU_PREPROCESS_OBJECT(GeometryAccelerationStructure); \
     OPTIXU_PREPROCESS_OBJECT(Transform); \
@@ -1386,12 +1391,17 @@ namespace optixu {
         Triangles = 0,
         LinearSegments,
         QuadraticBSplines,
+        QuadraticBSplineRocaps,
         FlatQuadraticBSplines,
         CubicBSplines,
+        CubicBSplineRocaps,
         CatmullRomSplines,
+        CatmullRomSplineRocaps,
         CubicBezier,
+        CubicBezierRocaps,
         Spheres,
         CustomPrimitives,
+        Count,
     };
 
     enum class ASTradeoff {
@@ -1616,8 +1626,6 @@ namespace optixu {
         [[nodiscard]]
         OpacityMicroMapArray createOpacityMicroMapArray() const;
         [[nodiscard]]
-        DisplacementMicroMapArray createDisplacementMicroMapArray() const;
-        [[nodiscard]]
         GeometryInstance createGeometryInstance(
             OPTIXU_EN_PRM(GeometryType, geomType, Triangles)) const;
         [[nodiscard]]
@@ -1674,39 +1682,6 @@ namespace optixu {
 
 
 
-    class DisplacementMicroMapArray : public Object<DisplacementMicroMapArray> {
-    public:
-        void destroy();
-
-        // JP: 以下のAPIを呼んだ場合はDMM Arrayが自動でdirty状態になる。
-        // EN: Calling the following APIs automatically marks the DMM array dirty.
-        void setConfiguration(OptixDisplacementMicromapFlags config) const;
-        void computeMemoryUsage(
-            const OptixDisplacementMicromapHistogramEntry* microMapHistogramEntries,
-            uint32_t numMicroMapHistogramEntries,
-            OptixMicromapBufferSizes* memoryRequirement) const;
-        void setBuffers(
-            const BufferView &rawDmmBuffer, const BufferView &perMicroMapDescBuffer,
-            const BufferView &outputBuffer) const;
-
-        // JP: DMM Arrayをdirty状態にする。
-        // EN: Mark the DMM array dirty.
-        void markDirty() const;
-
-        // JP: DMM Arrayをリビルドした場合、それを参照するGASのリビルド、もしくはアップデートが必要。
-        //     アップデートを使う場合は予めGASの設定でDMM Arrayのアップデートを許可する必要がある。
-        // EN: If the DMM array is rebuilt, GASs refering the DMM array need to be rebuilt or updated.
-        //     Allowing DMM array update is required in the GAS setttings when using updating.
-        void rebuild(CUstream stream, const BufferView &scratchBuffer) const;
-
-        bool isReady() const;
-        BufferView getOutputBuffer() const;
-
-        OptixDisplacementMicromapFlags getConfiguration() const;
-    };
-
-
-
     class GeometryInstance : public Object<GeometryInstance> {
     public:
         void destroy();
@@ -1733,16 +1708,6 @@ namespace optixu {
             const OptixOpacityMicromapUsageCount* ommUsageCounts, uint32_t numOmmUsageCounts,
             const BufferView &ommIndexBuffer,
             OPTIXU_EN_PRM(IndexSize, indexSize, k4Bytes), uint32_t indexOffset = 0) const;
-        void setDisplacementMicroMapArray(
-            const BufferView &vertexDirectionBuffer,
-            const BufferView &vertexBiasAndScaleBuffer,
-            const BufferView &triangleFlagsBuffer,
-            DisplacementMicroMapArray displacementMicroMapArray,
-            const OptixDisplacementMicromapUsageCount* dmmUsageCounts, uint32_t numDmmUsageCounts,
-            const BufferView &dmmIndexBuffer,
-            OPTIXU_EN_PRM(IndexSize, indexSize, k4Bytes), uint32_t indexOffset = 0,
-            OptixDisplacementMicromapDirectionFormat vertexDirectionFormat = OPTIX_DISPLACEMENT_MICROMAP_DIRECTION_FORMAT_FLOAT3,
-            OptixDisplacementMicromapBiasAndScaleFormat vertexBiasAndScaleFormat = OPTIX_DISPLACEMENT_MICROMAP_BIAS_AND_SCALE_FORMAT_FLOAT2) const;
         void setSegmentIndexBuffer(const BufferView &segmentIndexBuffer) const;
         void setCurveEndcapFlags(OptixCurveEndcapFlags endcapFlags) const;
         void setSingleRadius(UseSingleRadius useSingleRadius) const;
@@ -1782,14 +1747,6 @@ namespace optixu {
         OpacityMicroMapArray getOpacityMicroMapArray(
             BufferView* ommIndexBuffer = nullptr,
             IndexSize* indexSize = nullptr, uint32_t* indexOffset = nullptr) const;
-        DisplacementMicroMapArray getDisplacementMicroMapArray(
-            BufferView* vertexDirectionBuffer = nullptr,
-            BufferView* vertexBiasAndScaleBuffer = nullptr,
-            BufferView* triangleFlagsBuffer = nullptr,
-            BufferView* dmmIndexBuffer = nullptr,
-            IndexSize* indexSize = nullptr, uint32_t* indexOffset = nullptr,
-            OptixDisplacementMicromapDirectionFormat* vertexDirectionFormat = nullptr,
-            OptixDisplacementMicromapBiasAndScaleFormat* vertexBiasAndScaleFormat = nullptr) const;
         BufferView getSegmentIndexBuffer() const;
         BufferView getCustomPrimitiveAABBBuffer(uint32_t motionStep = 0) const;
         uint32_t getPrimitiveIndexOffset() const;
@@ -2338,12 +2295,26 @@ struct float4;
 struct OptixInvalidRayExceptionDetails;
 struct OptixParameterMismatchExceptionDetails;
 
-void optixGetCatmullRomVertexData(OptixTraversableHandle gas, unsigned int primIdx, unsigned int sbtGASIndex, float time, float4 data[4]);
-void optixGetCubicBezierVertexData(OptixTraversableHandle gas, unsigned int primIdx, unsigned int sbtGASIndex, float time, float4 data[4]);
-void optixGetCubicBSplineVertexData(OptixTraversableHandle gas, unsigned int primIdx, unsigned int sbtGASIndex, float time, float4 data[4]);
+void optixGetCatmullRomRocapsVertexData(float4 data[4]);
+void optixGetCatmullRomRocapsVertexDataFromHandle(OptixTraversableHandle gas, unsigned int primIdx, unsigned int sbtGASIndex, float time, float4 data[4]);
+void optixGetCatmullRomVertexData(float4 data[4]);
+void optixGetCatmullRomVertexDataFromHandle(OptixTraversableHandle gas, unsigned int primIdx, unsigned int sbtGASIndex, float time, float4 data[4]);
+unsigned int optixGetClusterId();
+void optixGetCubicBezierRocapsVertexData(float4 data[4]);
+void optixGetCubicBezierRocapsVertexDataFromHandle(OptixTraversableHandle gas, unsigned int primIdx, unsigned int sbtGASIndex, float time, float4 data[4]);
+void optixGetCubicBezierVertexData(float4 data[4]);
+void optixGetCubicBezierVertexDataFromHandle(OptixTraversableHandle gas, unsigned int primIdx, unsigned int sbtGASIndex, float time, float4 data[4]);
+void optixGetCubicBSplineRocapsVertexData(float4 data[4]);
+void optixGetCubicBSplineRocapsVertexDataFromHandle(OptixTraversableHandle gas, unsigned int primIdx, unsigned int sbtGASIndex, float time, float4 data[4]);
+void optixGetCubicBSplineVertexData(float4 data[4]);
+void optixGetCubicBSplineVertexDataFromHandle(OptixTraversableHandle gas, unsigned int primIdx, unsigned int sbtGASIndex, float time, float4 data[4]);
 float optixGetCurveParameter();
 int optixGetExceptionCode();
+OptixInvalidRayExceptionDetails optixGetExceptionInvalidRay();
+int optixGetExceptionInvalidSbtOffset();
+OptixTraversableHandle optixGetExceptionInvalidTraversable();
 char* optixGetExceptionLineInfo();
+OptixParameterMismatchExceptionDetails optixGetExceptionParameterMismatch();
 unsigned int optixGetGASMotionStepCount(OptixTraversableHandle gas);
 float optixGetGASMotionTimeBegin(OptixTraversableHandle gas);
 float optixGetGASMotionTimeEnd(OptixTraversableHandle gas);
@@ -2359,67 +2330,103 @@ const float4* optixGetInstanceTransformFromHandle(OptixTraversableHandle handle)
 OptixTraversableHandle optixGetInstanceTraversableFromIAS(OptixTraversableHandle ias, unsigned int instIdx);
 uint3 optixGetLaunchDimensions();
 uint3 optixGetLaunchIndex();
-void optixGetLinearCurveVertexData(OptixTraversableHandle gas, unsigned int primIdx, unsigned int sbtGASIndex, float time, float4 data[2]);
+void optixGetLinearCurveVertexData(float4 data[2]);
+void optixGetLinearCurveVertexDataFromHandle(OptixTraversableHandle gas, unsigned int primIdx, unsigned int sbtGASIndex, float time, float4 data[2]);
 const OptixMatrixMotionTransform* optixGetMatrixMotionTransformFromHandle(OptixTraversableHandle handle);
-void optixGetMicroTriangleBarycentricsData(float2 data[3]);
-void optixGetMicroTriangleVertexData(float3 data[3]);
 float3 optixGetObjectRayDirection();
 float3 optixGetObjectRayOrigin();
+template <typename HitState>
+void optixGetObjectToWorldTransformMatrix(const HitState &hs, float m[12]);
 void optixGetObjectToWorldTransformMatrix(float m[12]);
 unsigned int optixGetPrimitiveIndex();
 OptixPrimitiveType optixGetPrimitiveType(unsigned int hitKind);
 OptixPrimitiveType optixGetPrimitiveType();
-void optixGetQuadraticBSplineVertexData(OptixTraversableHandle gas, unsigned int primIdx, unsigned int sbtGASIndex, float time, float4 data[3]);
+void optixGetQuadraticBSplineRocapsVertexData(float4 data[3]);
+void optixGetQuadraticBSplineRocapsVertexDataFromHandle(OptixTraversableHandle gas, unsigned int primIdx, unsigned int sbtGASIndex, float time, float4 data[3]);
+void optixGetQuadraticBSplineVertexData(float4 data[3]);
+void optixGetQuadraticBSplineVertexDataFromHandle(OptixTraversableHandle gas, unsigned int primIdx, unsigned int sbtGASIndex, float time, float4 data[3]);
 unsigned int optixGetRayFlags();
 float optixGetRayTime();
 float optixGetRayTmax();
 float optixGetRayTmin();
 unsigned int optixGetRayVisibilityMask();
-float3 optixGetRibbonNormal(OptixTraversableHandle gas, unsigned int primIdx, unsigned int sbtGASIndex, float time, float2 ribbonParameters);
+float3 optixGetRibbonNormal(float2 ribbonParameters);
+float3 optixGetRibbonNormalFromHandle(OptixTraversableHandle gas, unsigned int primIdx, unsigned int sbtGASIndex, float time, float2 ribbonParameters);
 float2 optixGetRibbonParameters();
-void optixGetRibbonVertexData(OptixTraversableHandle gas, unsigned int primIdx, unsigned int sbtGASIndex, float time, float4 data[3]);
+void optixGetRibbonVertexData(float4 data[3]);
+void optixGetRibbonVertexDataFromHandle(OptixTraversableHandle gas, unsigned int primIdx, unsigned int sbtGASIndex, float time, float4 data[3]);
 CUdeviceptr optixGetSbtDataPointer();
 unsigned int optixGetSbtGASIndex();
-void optixGetSphereData(OptixTraversableHandle gas, unsigned int primIdx, unsigned int sbtGASIndex, float time, float4 data[1]);
+void optixGetSphereData(float4 data[1]);
+void optixGetSphereDataFromHandle(OptixTraversableHandle gas, unsigned int primIdx, unsigned int sbtGASIndex, float time, float4 data[1]);
 const OptixSRTMotionTransform* optixGetSRTMotionTransformFromHandle(OptixTraversableHandle handle);
 const OptixStaticTransform* optixGetStaticTransformFromHandle(OptixTraversableHandle handle);
 OptixTraversableHandle optixGetTransformListHandle(unsigned int index);
 unsigned int optixGetTransformListSize();
 OptixTransformType optixGetTransformTypeFromHandle(OptixTraversableHandle handle);
 float2 optixGetTriangleBarycentrics();
-void optixGetTriangleVertexData(OptixTraversableHandle gas, unsigned int primIdx, unsigned int sbtGASIndex, float time, float3 data[3]);
+void optixGetTriangleVertexData(float3 data[3]);
+void optixGetTriangleVertexDataFromHandle(OptixTraversableHandle gas, unsigned int primIdx, unsigned int sbtGASIndex, float time, float3 data[3]);
 float3 optixGetWorldRayDirection();
 float3 optixGetWorldRayOrigin();
+template <typename HitState>
+void optixGetWorldToObjectTransformMatrix(const HitState &hs, float m[12]);
 void optixGetWorldToObjectTransformMatrix(float m[12]);
+void optixHitObjectGetCatmullRomRocapsVertexData(float4 data[4]);
+void optixHitObjectGetCatmullRomVertexData(float4 data[4]);
+unsigned int optixHitObjectGetClusterId();
+void optixHitObjectGetCubicBezierRocapsVertexData(float4 data[4]);
+void optixHitObjectGetCubicBezierVertexData(float4 data[4]);
+void optixHitObjectGetCubicBSplineRocapsVertexData(float4 data[4]);
+void optixHitObjectGetCubicBSplineVertexData(float4 data[4]);
+float optixHitObjectGetCurveParameter();
+OptixTraversableHandle optixHitObjectGetGASTraversableHandle();
 unsigned int optixHitObjectGetHitKind();
 unsigned int optixHitObjectGetInstanceId();
 unsigned int optixHitObjectGetInstanceIndex();
+void optixHitObjectGetLinearCurveVertexData(float4 data[2]);
+void optixHitObjectGetObjectToWorldTransformMatrix(float m[12]);
 unsigned int optixHitObjectGetPrimitiveIndex();
+void optixHitObjectGetQuadraticBSplineRocapsVertexData(float4 data[3]);
+void optixHitObjectGetQuadraticBSplineVertexData(float4 data[3]);
+unsigned int optixHitObjectGetRayFlags();
 float optixHitObjectGetRayTime();
 float optixHitObjectGetRayTmax();
 float optixHitObjectGetRayTmin();
+float3 optixHitObjectGetRibbonNormal(float2 ribbonParameters);
+float2 optixHitObjectGetRibbonParameters();
+void optixHitObjectGetRibbonVertexData(float4 data[3]);
 CUdeviceptr optixHitObjectGetSbtDataPointer();
 unsigned int optixHitObjectGetSbtGASIndex();
 unsigned int optixHitObjectGetSbtRecordIndex();
+void optixHitObjectGetSphereData(float4 data[1]);
 OptixTraversableHandle optixHitObjectGetTransformListHandle(unsigned int index);
 unsigned int optixHitObjectGetTransformListSize();
+void optixHitObjectGetTraverseData(OptixTraverseData* data);
+float2 optixHitObjectGetTriangleBarycentrics();
+void optixHitObjectGetTriangleVertexData(float3 data[3]);
 float3 optixHitObjectGetWorldRayDirection();
 float3 optixHitObjectGetWorldRayOrigin();
+void optixHitObjectGetWorldToObjectTransformMatrix(float m[12]);
 bool optixHitObjectIsHit();
 bool optixHitObjectIsMiss();
 bool optixHitObjectIsNop();
+void optixHitObjectSetSbtRecordIndex(unsigned int sbtRecordIndex);
+float3 optixHitObjectTransformNormalFromObjectToWorldSpace(float3 normal);
+float3 optixHitObjectTransformNormalFromWorldToObjectSpace(float3 normal);
+float3 optixHitObjectTransformPointFromObjectToWorldSpace(float3 point);
+float3 optixHitObjectTransformPointFromWorldToObjectSpace(float3 point);
+float3 optixHitObjectTransformVectorFromObjectToWorldSpace(float3 vec);
+float3 optixHitObjectTransformVectorFromWorldToObjectSpace(float3 vec);
 void optixIgnoreIntersection();
 bool optixIsBackFaceHit(unsigned int hitKind);
 bool optixIsBackFaceHit();
-bool optixIsDisplacedMicromeshTriangleBackFaceHit();
-bool optixIsDisplacedMicromeshTriangleFrontFaceHit();
-bool optixIsDisplacedMicromeshTriangleHit();
 bool optixIsFrontFaceHit(unsigned int hitKind);
 bool optixIsFrontFaceHit();
 bool optixIsTriangleBackFaceHit();
 bool optixIsTriangleFrontFaceHit();
 bool optixIsTriangleHit();
-void optixMakeMissHitObject(unsigned int missSBTIndex, float3 rayOrigin, float3 rayDirection, float tmin, float tmax, float rayTime);
+void optixMakeMissHitObject(unsigned int missSBTIndex, float3 rayOrigin, float3 rayDirection, float tmin, float tmax, float rayTime, unsigned int rayFlags);
 void optixMakeNopHitObject();
 void optixReorder();
 void optixReorder(unsigned int coherentHint, unsigned int numCoherentHintBitsFromLSB);
@@ -2428,11 +2435,23 @@ void optixTerminateRay();
 uint4 optixTexFootprint2D(unsigned long long tex, unsigned int texInfo, float x, float y, unsigned int* singleMipLevel);
 uint4 optixTexFootprint2DGrad(unsigned long long tex, unsigned int texInfo, float x, float y, float dPdx_x, float dPdx_y, float dPdy_x, float dPdy_y, bool coarse, unsigned int* singleMipLevel);
 uint4 optixTexFootprint2DLod(unsigned long long tex, unsigned int texInfo, float x, float y, float level, bool coarse, unsigned int* singleMipLevel);
+template <typename HitState>
+float3 optixTransformNormalFromObjectToWorldSpace(const HitState &hs, float3 normal);
 float3 optixTransformNormalFromObjectToWorldSpace(float3 normal);
+template <typename HitState>
+float3 optixTransformNormalFromWorldToObjectSpace(const HitState &hs, float3 normal);
 float3 optixTransformNormalFromWorldToObjectSpace(float3 normal);
+template <typename HitState>
+float3 optixTransformPointFromObjectToWorldSpace(const HitState &hs, float3 point);
 float3 optixTransformPointFromObjectToWorldSpace(float3 point);
+template <typename HitState>
+float3 optixTransformPointFromWorldToObjectSpace(const HitState &hs, float3 point);
 float3 optixTransformPointFromWorldToObjectSpace(float3 point);
+template <typename HitState>
+float3 optixTransformVectorFromObjectToWorldSpace(const HitState &hs, float3 vec);
 float3 optixTransformVectorFromObjectToWorldSpace(float3 vec);
+template <typename HitState>
+float3 optixTransformVectorFromWorldToObjectSpace(const HitState &hs, float3 vec);
 float3 optixTransformVectorFromWorldToObjectSpace(float3 vec);
 unsigned int optixUndefinedValue();
 

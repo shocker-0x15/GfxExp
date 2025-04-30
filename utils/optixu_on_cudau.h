@@ -349,7 +349,7 @@ namespace optixu {
 template <>
 cudau::Buffer::operator optixu::BufferView() const {
     return optixu::BufferView(
-        getCUdeviceptr(), static_cast<uint32_t>(numElements()), static_cast<uint32_t>(stride()));
+        getCUdeviceptr(), numElements(), static_cast<uint32_t>(stride()));
 }
 
 //inline optixu::BufferView getView(const cudau::Buffer &buffer) {

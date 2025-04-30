@@ -129,12 +129,12 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <LibraryPath>$(SolutionDir)ext\prebuilt\lib;C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8\lib\x64;$(LibraryPath)</LibraryPath>
     <TargetName>tfdm</TargetName>
-    <ExternalIncludePath>$(SolutionDir)ext\tinyexr;$(SolutionDir)ext\tinyexr\deps\miniz;$(SolutionDir)ext\glfw\include;$(SolutionDir)ext\imgui;$(SolutionDir)ext\vdb;$(SolutionDir)ext\prebuilt\include;C:\ProgramData\NVIDIA Corporation\OptiX SDK 8.1.0\include;$(ExternalIncludePath)</ExternalIncludePath>
+    <ExternalIncludePath>$(SolutionDir)ext\tinyexr;$(SolutionDir)ext\tinyexr\deps\miniz;$(SolutionDir)ext\glfw\include;$(SolutionDir)ext\imgui;$(SolutionDir)ext\vdb;$(SolutionDir)ext\prebuilt\include;C:\ProgramData\NVIDIA Corporation\OptiX SDK 9.0.0\include;$(ExternalIncludePath)</ExternalIncludePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <LibraryPath>$(SolutionDir)ext\prebuilt\lib;C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.8\lib\x64;$(LibraryPath)</LibraryPath>
     <TargetName>tfdm</TargetName>
-    <ExternalIncludePath>$(SolutionDir)ext\tinyexr;$(SolutionDir)ext\tinyexr\deps\miniz;$(SolutionDir)ext\glfw\include;$(SolutionDir)ext\imgui;$(SolutionDir)ext\vdb;$(SolutionDir)ext\prebuilt\include;C:\ProgramData\NVIDIA Corporation\OptiX SDK 8.1.0\include;$(ExternalIncludePath)</ExternalIncludePath>
+    <ExternalIncludePath>$(SolutionDir)ext\tinyexr;$(SolutionDir)ext\tinyexr\deps\miniz;$(SolutionDir)ext\glfw\include;$(SolutionDir)ext\imgui;$(SolutionDir)ext\vdb;$(SolutionDir)ext\prebuilt\include;C:\ProgramData\NVIDIA Corporation\OptiX SDK 9.0.0\include;$(ExternalIncludePath)</ExternalIncludePath>
   </PropertyGroup>
   <PropertyGroup Label="Vcpkg">
     <VcpkgEnabled>false</VcpkgEnabled>

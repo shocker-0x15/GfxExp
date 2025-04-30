@@ -1,6 +1,6 @@
 ﻿/*
 
-   Copyright 2024 Shin Watanabe
+   Copyright 2025 Shin Watanabe
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -278,19 +278,19 @@ namespace optixu {
         return (new _OpacityMicroMapArray(m))->getPublicType();
     }
 
-    DisplacementMicroMapArray Scene::createDisplacementMicroMapArray() const {
-        return (new _DisplacementMicroMapArray(m))->getPublicType();
-    }
-
     GeometryInstance Scene::createGeometryInstance(GeometryType geomType) const {
         m->throwRuntimeError(
             geomType == GeometryType::Triangles ||
             geomType == GeometryType::LinearSegments ||
             geomType == GeometryType::QuadraticBSplines ||
+            geomType == GeometryType::QuadraticBSplineRocaps ||
             geomType == GeometryType::FlatQuadraticBSplines ||
             geomType == GeometryType::CubicBSplines ||
+            geomType == GeometryType::CubicBSplineRocaps ||
             geomType == GeometryType::CatmullRomSplines ||
+            geomType == GeometryType::CatmullRomSplineRocaps ||
             geomType == GeometryType::CubicBezier ||
+            geomType == GeometryType::CubicBezierRocaps ||
             geomType == GeometryType::Spheres ||
             geomType == GeometryType::CustomPrimitives,
             "Invalid geometry type: %u.",
@@ -303,10 +303,14 @@ namespace optixu {
             geomType == GeometryType::Triangles ||
             geomType == GeometryType::LinearSegments ||
             geomType == GeometryType::QuadraticBSplines ||
+            geomType == GeometryType::QuadraticBSplineRocaps ||
             geomType == GeometryType::FlatQuadraticBSplines ||
             geomType == GeometryType::CubicBSplines ||
+            geomType == GeometryType::CubicBSplineRocaps ||
             geomType == GeometryType::CatmullRomSplines ||
+            geomType == GeometryType::CatmullRomSplineRocaps ||
             geomType == GeometryType::CubicBezier ||
+            geomType == GeometryType::CubicBezierRocaps ||
             geomType == GeometryType::Spheres ||
             geomType == GeometryType::CustomPrimitives,
             "Invalid geometry type: %u.",
@@ -471,104 +475,6 @@ namespace optixu {
 
 
 
-    void DisplacementMicroMapArray::destroy() {
-        if (m)
-            delete m;
-        m = nullptr;
-    }
-
-    void DisplacementMicroMapArray::setConfiguration(OptixDisplacementMicromapFlags config) const {
-        bool changed = false;
-        changed = m->flags != config;
-        m->flags = config;
-
-        if (changed) {
-            m->memoryUsageComputed = false;
-            m->available = false;
-        }
-    }
-
-    void DisplacementMicroMapArray::computeMemoryUsage(
-        const OptixDisplacementMicromapHistogramEntry* microMapHistogramEntries,
-        uint32_t numMicroMapHistogramEntries,
-        OptixMicromapBufferSizes* memoryRequirement) const
-    {
-        m->microMapHistogramEntries.resize(numMicroMapHistogramEntries);
-        std::copy_n(microMapHistogramEntries, numMicroMapHistogramEntries, m->microMapHistogramEntries.data());
-
-        m->buildInput = {};
-        m->buildInput.flags = m->flags;
-        m->buildInput.displacementMicromapHistogramEntries = m->microMapHistogramEntries.data();
-        m->buildInput.numDisplacementMicromapHistogramEntries =
-            static_cast<uint32_t>(m->microMapHistogramEntries.size());
-        OPTIX_CHECK(optixDisplacementMicromapArrayComputeMemoryUsage(
-            m->getRawContext(), &m->buildInput, &m->memoryRequirement));
-
-        *memoryRequirement = m->memoryRequirement;
-
-        m->memoryUsageComputed = true;
-        m->available = false;
-    }
-
-    void DisplacementMicroMapArray::setBuffers(
-        const BufferView &rawDmmBuffer, const BufferView &perMicroMapDescBuffer,
-        const BufferView &outputBuffer) const
-    {
-        m->throwRuntimeError(
-            outputBuffer.sizeInBytes() >= m->memoryRequirement.outputSizeInBytes,
-            "Size of the given buffer is not enough.");
-        m->rawDmmBuffer = rawDmmBuffer;
-        m->perMicroMapDescBuffer = perMicroMapDescBuffer;
-        m->outputBuffer = outputBuffer;
-
-        m->buildInput.displacementValuesBuffer = m->rawDmmBuffer.getCUdeviceptr();
-        m->buildInput.perDisplacementMicromapDescBuffer = m->perMicroMapDescBuffer.getCUdeviceptr();
-        m->buildInput.perDisplacementMicromapDescStrideInBytes = m->perMicroMapDescBuffer.stride();
-
-        m->buffersSet = true;
-        m->available = false;
-    }
-
-    void DisplacementMicroMapArray::markDirty() const {
-        m->memoryUsageComputed = false;
-        m->available = false;
-    }
-
-    void DisplacementMicroMapArray::rebuild(
-        CUstream stream, const BufferView &scratchBuffer) const
-    {
-        m->throwRuntimeError(
-            m->memoryUsageComputed, "You need to call computeMemoryUsage() before rebuild.");
-        m->throwRuntimeError(
-            m->buffersSet, "You need to call setBuffers() before rebuild.");
-        m->throwRuntimeError(
-            scratchBuffer.sizeInBytes() >= m->memoryRequirement.tempSizeInBytes,
-            "Size of the given scratch buffer is not enough.");
-
-        OptixMicromapBuffers buffers = {};
-        buffers.output = m->outputBuffer.getCUdeviceptr();
-        buffers.outputSizeInBytes = m->memoryRequirement.outputSizeInBytes;
-        buffers.temp = scratchBuffer.getCUdeviceptr();
-        buffers.tempSizeInBytes = m->memoryRequirement.tempSizeInBytes;
-        OPTIX_CHECK(optixDisplacementMicromapArrayBuild(m->getRawContext(), stream, &m->buildInput, &buffers));
-
-        m->available = true;
-    }
-
-    bool DisplacementMicroMapArray::isReady() const {
-        return m->isReady();
-    }
-
-    BufferView DisplacementMicroMapArray::getOutputBuffer() const {
-        return m->getBuffer();
-    }
-
-    OptixDisplacementMicromapFlags DisplacementMicroMapArray::getConfiguration() const {
-        return m->flags;
-    }
-
-
-
     void GeometryInstance::Priv::fillBuildInput(OptixBuildInput* input, CUdeviceptr preTransform) const {
         *input = OptixBuildInput{};
 
@@ -632,48 +538,6 @@ namespace optixu {
                     ommInput.indexStrideInBytes = geom.opacityMicroMapIndexBuffer.stride();
                     ommInput.indexSizeInBytes = geom.opacityMicroMapIndexSize;
                     ommInput.indexOffset = geom.opacityMicroMapIndexOffset;
-                }
-            }
-
-            if (geom.displacementMicroMapArray) {
-                throwRuntimeError(
-                    geom.displacementVertexDirectionBuffer.isValid(),
-                    "Vertex direction buffer must be provided.");
-                throwRuntimeError(
-                    geom.displacementVertexDirectionBuffer.numElements() == numVertices,
-                    "Num elements of the vertex direction buffer doesn't match that of the vertices.");
-                throwRuntimeError(
-                    geom.displacementVertexBiasAndScaleBuffer.isValid(),
-                    "Vertex bias and scale buffer must be provided.");
-                throwRuntimeError(
-                    geom.displacementVertexBiasAndScaleBuffer.numElements() == numVertices,
-                    "Num elements of the vertex bias and scale buffer doesn't match that of the vertices.");
-                throwRuntimeError(
-                    geom.displacementTriangleFlagsBuffer.isValid(),
-                    "Triangle flags buffer must be provided.");
-                throwRuntimeError(
-                    geom.displacementTriangleFlagsBuffer.numElements() == numTriangles,
-                    "Num elements of the triangle flags buffer doesn't match that of the triangles.");
-
-                OptixBuildInputDisplacementMicromap &dmmInput = triArray.displacementMicromap;
-                dmmInput.vertexDirectionsBuffer = geom.displacementVertexDirectionBuffer.getCUdeviceptr();
-                dmmInput.vertexDirectionStrideInBytes = geom.displacementVertexDirectionBuffer.stride();
-                dmmInput.vertexDirectionFormat = geom.displacementVertexDirectionFormat;
-                dmmInput.vertexBiasAndScaleBuffer = geom.displacementVertexBiasAndScaleBuffer.getCUdeviceptr();
-                dmmInput.vertexBiasAndScaleStrideInBytes = geom.displacementVertexBiasAndScaleBuffer.stride();
-                dmmInput.vertexBiasAndScaleFormat = geom.displacementVertexBiasAndScaleFormat;
-                dmmInput.triangleFlagsBuffer = geom.displacementTriangleFlagsBuffer.getCUdeviceptr();
-                dmmInput.triangleFlagsStrideInBytes = geom.displacementTriangleFlagsBuffer.stride();
-                dmmInput.displacementMicromapArray = geom.displacementMicroMapArray->getBuffer().getCUdeviceptr();
-                dmmInput.displacementMicromapUsageCounts = geom.displacementMicroMapUsageCounts.data();
-                dmmInput.numDisplacementMicromapUsageCounts =
-                    static_cast<uint32_t>(geom.displacementMicroMapUsageCounts.size());
-                dmmInput.indexingMode = geom.displacementMicroMapIndexingMode;
-                if (dmmInput.indexingMode == OPTIX_OPACITY_MICROMAP_ARRAY_INDEXING_MODE_INDEXED) {
-                    dmmInput.displacementMicromapIndexBuffer = geom.displacementMicroMapIndexBuffer.getCUdeviceptr();
-                    dmmInput.displacementMicromapIndexStrideInBytes = geom.displacementMicroMapIndexBuffer.stride();
-                    dmmInput.displacementMicromapIndexSizeInBytes = geom.displacementMicroMapIndexSize;
-                    dmmInput.displacementMicromapIndexOffset = geom.displacementMicroMapIndexOffset;
                 }
             }
 
@@ -762,14 +626,22 @@ namespace optixu {
                 curveArray.curveType = OPTIX_PRIMITIVE_TYPE_ROUND_LINEAR;
             else if (geomType == GeometryType::QuadraticBSplines)
                 curveArray.curveType = OPTIX_PRIMITIVE_TYPE_ROUND_QUADRATIC_BSPLINE;
+            else if (geomType == GeometryType::QuadraticBSplineRocaps)
+                curveArray.curveType = OPTIX_PRIMITIVE_TYPE_ROUND_QUADRATIC_BSPLINE_ROCAPS;
             else if (geomType == GeometryType::FlatQuadraticBSplines)
                 curveArray.curveType = OPTIX_PRIMITIVE_TYPE_FLAT_QUADRATIC_BSPLINE;
             else if (geomType == GeometryType::CubicBSplines)
                 curveArray.curveType = OPTIX_PRIMITIVE_TYPE_ROUND_CUBIC_BSPLINE;
+            else if (geomType == GeometryType::CubicBSplineRocaps)
+                curveArray.curveType = OPTIX_PRIMITIVE_TYPE_ROUND_CUBIC_BSPLINE_ROCAPS;
             else if (geomType == GeometryType::CatmullRomSplines)
                 curveArray.curveType = OPTIX_PRIMITIVE_TYPE_ROUND_CATMULLROM;
+            else if (geomType == GeometryType::CatmullRomSplineRocaps)
+                curveArray.curveType = OPTIX_PRIMITIVE_TYPE_ROUND_CATMULLROM_ROCAPS;
             else if (geomType == GeometryType::CubicBezier)
                 curveArray.curveType = OPTIX_PRIMITIVE_TYPE_ROUND_CUBIC_BEZIER;
+            else if (geomType == GeometryType::CubicBezierRocaps)
+                curveArray.curveType = OPTIX_PRIMITIVE_TYPE_ROUND_CUBIC_BEZIER_ROCAPS;
             else
                 optixuAssert_ShouldNotBeCalled();
             curveArray.endcapFlags = geom.endcapFlags;
@@ -948,50 +820,6 @@ namespace optixu {
                     ommInput.indexStrideInBytes = geom.opacityMicroMapIndexBuffer.stride();
                     ommInput.indexSizeInBytes = geom.opacityMicroMapIndexSize;
                     ommInput.indexOffset = geom.opacityMicroMapIndexOffset;
-                }
-            }
-
-            if (geom.displacementMicroMapArray) {
-                throwRuntimeError(
-                    geom.displacementVertexDirectionBuffer.isValid(),
-                    "Vertex direction buffer must be provided.");
-                throwRuntimeError(
-                    geom.displacementVertexDirectionBuffer.numElements() == numVertices,
-                    "Num elements of the vertex direction buffer doesn't match that of the vertices.");
-                throwRuntimeError(
-                    geom.displacementVertexBiasAndScaleBuffer.isValid(),
-                    "Vertex bias and scale buffer must be provided.");
-                throwRuntimeError(
-                    geom.displacementVertexBiasAndScaleBuffer.numElements() == numVertices,
-                    "Num elements of the vertex bias and scale buffer doesn't match that of the vertices.");
-                throwRuntimeError(
-                    geom.displacementTriangleFlagsBuffer.isValid(),
-                    "Triangle flags buffer must be provided.");
-                throwRuntimeError(
-                    geom.displacementTriangleFlagsBuffer.numElements() == numTriangles,
-                    "Num elements of the triangle flags buffer doesn't match that of the triangles.");
-
-                // TODO: どの情報が更新可能なのか調べる。
-                throwRuntimeError(geom.displacementMicroMapArray->isReady(), "DMM array is not ready.");
-                OptixBuildInputDisplacementMicromap &dmmInput = triArray.displacementMicromap;
-                dmmInput.vertexDirectionsBuffer = geom.displacementVertexDirectionBuffer.getCUdeviceptr();
-                dmmInput.vertexDirectionStrideInBytes = geom.displacementVertexDirectionBuffer.stride();
-                dmmInput.vertexDirectionFormat = geom.displacementVertexDirectionFormat;
-                dmmInput.vertexBiasAndScaleBuffer = geom.displacementVertexBiasAndScaleBuffer.getCUdeviceptr();
-                dmmInput.vertexBiasAndScaleStrideInBytes = geom.displacementVertexBiasAndScaleBuffer.stride();
-                dmmInput.vertexBiasAndScaleFormat = geom.displacementVertexBiasAndScaleFormat;
-                dmmInput.triangleFlagsBuffer = geom.displacementTriangleFlagsBuffer.getCUdeviceptr();
-                dmmInput.triangleFlagsStrideInBytes = geom.displacementTriangleFlagsBuffer.stride();
-                dmmInput.displacementMicromapArray = geom.displacementMicroMapArray->getBuffer().getCUdeviceptr();
-                dmmInput.displacementMicromapUsageCounts = geom.displacementMicroMapUsageCounts.data();
-                dmmInput.numDisplacementMicromapUsageCounts =
-                    static_cast<uint32_t>(geom.displacementMicroMapUsageCounts.size());
-                dmmInput.indexingMode = geom.displacementMicroMapIndexingMode;
-                if (dmmInput.indexingMode == OPTIX_OPACITY_MICROMAP_ARRAY_INDEXING_MODE_INDEXED) {
-                    dmmInput.displacementMicromapIndexBuffer = geom.displacementMicroMapIndexBuffer.getCUdeviceptr();
-                    dmmInput.displacementMicromapIndexStrideInBytes = geom.displacementMicroMapIndexBuffer.stride();
-                    dmmInput.displacementMicromapIndexSizeInBytes = geom.displacementMicroMapIndexSize;
-                    dmmInput.displacementMicromapIndexOffset = geom.displacementMicroMapIndexOffset;
                 }
             }
 
@@ -1372,52 +1200,6 @@ namespace optixu {
         }
     }
 
-    void GeometryInstance::setDisplacementMicroMapArray(
-        const BufferView &vertexDirectionBuffer,
-        const BufferView &vertexBiasAndScaleBuffer,
-        const BufferView &triangleFlagsBuffer,
-        DisplacementMicroMapArray displacementMicroMapArray,
-        const OptixDisplacementMicromapUsageCount* dmmUsageCounts, uint32_t numDmmUsageCounts,
-        const BufferView &dmmIndexBuffer,
-        IndexSize indexSize, uint32_t indexOffset,
-        OptixDisplacementMicromapDirectionFormat vertexDirectionFormat,
-        OptixDisplacementMicromapBiasAndScaleFormat vertexBiasAndScaleFormat) const
-    {
-        const uint32_t indexSizeInBytes = 1 << static_cast<uint32_t>(indexSize);
-        m->throwRuntimeError(
-            std::holds_alternative<Priv::TriangleGeometry>(m->geometry),
-            "This geometry instance was created not for triangles.");
-        m->throwRuntimeError(
-            indexSize == IndexSize::k2Bytes || indexSize == IndexSize::k4Bytes,
-            "Invalid index size.");
-        m->throwRuntimeError(
-            !dmmIndexBuffer.isValid() || dmmIndexBuffer.stride() >= indexSizeInBytes,
-            "Buffer's stride is smaller than the given index size.");
-        auto &geom = std::get<Priv::TriangleGeometry>(m->geometry);
-        geom.displacementVertexDirectionBuffer = vertexDirectionBuffer;
-        geom.displacementVertexBiasAndScaleBuffer = vertexBiasAndScaleBuffer;
-        geom.displacementTriangleFlagsBuffer = triangleFlagsBuffer;
-        geom.displacementVertexDirectionFormat = vertexDirectionFormat;
-        geom.displacementVertexBiasAndScaleFormat = vertexBiasAndScaleFormat;
-        geom.displacementMicroMapArray = extract(displacementMicroMapArray);
-        if (displacementMicroMapArray) {
-            geom.displacementMicroMapIndexBuffer = dmmIndexBuffer;
-            geom.displacementMicroMapIndexingMode = dmmIndexBuffer.isValid() ?
-                OPTIX_DISPLACEMENT_MICROMAP_ARRAY_INDEXING_MODE_INDEXED :
-                OPTIX_DISPLACEMENT_MICROMAP_ARRAY_INDEXING_MODE_LINEAR;
-            geom.displacementMicroMapIndexSize = indexSizeInBytes;
-            geom.displacementMicroMapIndexOffset = indexOffset;
-            geom.displacementMicroMapUsageCounts.resize(numDmmUsageCounts);
-            std::copy_n(dmmUsageCounts, numDmmUsageCounts, geom.displacementMicroMapUsageCounts.data());
-        }
-        else {
-            geom.displacementMicroMapIndexBuffer = BufferView();
-            geom.displacementMicroMapIndexingMode = OPTIX_DISPLACEMENT_MICROMAP_ARRAY_INDEXING_MODE_NONE;
-            geom.displacementMicroMapIndexSize = 0;
-            geom.displacementMicroMapUsageCounts.clear();
-        }
-    }
-
     void GeometryInstance::setSegmentIndexBuffer(const BufferView &segmentIndexBuffer) const {
         m->throwRuntimeError(
             std::holds_alternative<Priv::CurveGeometry>(m->geometry),
@@ -1640,38 +1422,6 @@ namespace optixu {
         return geom.opacityMicroMapArray->getPublicType();
     }
 
-    DisplacementMicroMapArray GeometryInstance::getDisplacementMicroMapArray(
-        BufferView* vertexDirectionBuffer,
-        BufferView* vertexBiasAndScaleBuffer,
-        BufferView* triangleFlagsBuffer,
-        BufferView* dmmIndexBuffer,
-        IndexSize* indexSize, uint32_t* indexOffset,
-        OptixDisplacementMicromapDirectionFormat* vertexDirectionFormat,
-        OptixDisplacementMicromapBiasAndScaleFormat* vertexBiasAndScaleFormat) const
-    {
-        m->throwRuntimeError(
-            std::holds_alternative<Priv::TriangleGeometry>(m->geometry),
-            "This geometry instance was created not for triangles.");
-        const auto &geom = std::get<Priv::TriangleGeometry>(m->geometry);
-        if (vertexDirectionBuffer)
-            *vertexDirectionBuffer = geom.displacementVertexDirectionBuffer;
-        if (vertexBiasAndScaleBuffer)
-            *vertexBiasAndScaleBuffer = geom.displacementVertexBiasAndScaleBuffer;
-        if (triangleFlagsBuffer)
-            *triangleFlagsBuffer = geom.displacementTriangleFlagsBuffer;
-        if (dmmIndexBuffer)
-            *dmmIndexBuffer = geom.displacementMicroMapIndexBuffer;
-        if (indexSize)
-            *indexSize = convertToIndexSizeEnum(geom.opacityMicroMapIndexSize);
-        if (indexOffset)
-            *indexOffset = geom.opacityMicroMapIndexOffset;
-        if (vertexDirectionFormat)
-            *vertexDirectionFormat = geom.displacementVertexDirectionFormat;
-        if (vertexBiasAndScaleFormat)
-            *vertexBiasAndScaleFormat = geom.displacementVertexBiasAndScaleFormat;
-        return geom.displacementMicroMapArray->getPublicType();
-    }
-
     BufferView GeometryInstance::getSegmentIndexBuffer() const {
         m->throwRuntimeError(
             std::holds_alternative<Priv::CurveGeometry>(m->geometry),
@@ -1878,11 +1628,19 @@ namespace optixu {
             "triangles",
             "linear segments",
             "quadratic B-splines",
+            "quadratic B-spline rocaps",
             "flat quadratic B-splines",
             "cubic B-splines",
+            "cubic B-spline rocaps",
             "Catmull-Rom splines",
+            "Catmull-Rom spline rocaps",
             "cubic Bezier splines",
+            "cubic Bezier spline rocaps",
+            "spheres",
             "custom primitives" };
+        static_assert(
+            std::size(geomTypeStrs) == static_cast<uint32_t>(GeometryType::Count),
+            "Unexpected geometry type counts.");
         m->throwRuntimeError(
             _geomInst->getGeometryType() == m->geomType,
             "This GAS was created for %s.",
@@ -3281,10 +3039,14 @@ namespace optixu {
     {
         if (primType != OPTIX_PRIMITIVE_TYPE_ROUND_LINEAR &&
             primType != OPTIX_PRIMITIVE_TYPE_ROUND_QUADRATIC_BSPLINE &&
+            primType != OPTIX_PRIMITIVE_TYPE_ROUND_QUADRATIC_BSPLINE_ROCAPS &&
             primType != OPTIX_PRIMITIVE_TYPE_FLAT_QUADRATIC_BSPLINE &&
             primType != OPTIX_PRIMITIVE_TYPE_ROUND_CUBIC_BSPLINE &&
+            primType != OPTIX_PRIMITIVE_TYPE_ROUND_CUBIC_BSPLINE_ROCAPS &&
             primType != OPTIX_PRIMITIVE_TYPE_ROUND_CATMULLROM &&
+            primType != OPTIX_PRIMITIVE_TYPE_ROUND_CATMULLROM_ROCAPS &&
             primType != OPTIX_PRIMITIVE_TYPE_ROUND_CUBIC_BEZIER &&
+            primType != OPTIX_PRIMITIVE_TYPE_ROUND_CUBIC_BEZIER_ROCAPS &&
             primType != OPTIX_PRIMITIVE_TYPE_SPHERE)
             return nullptr;
 
@@ -3637,12 +3399,16 @@ namespace optixu {
         const PayloadType &payloadType) const
     {
         m->throwRuntimeError(
-            curveType != OPTIX_PRIMITIVE_TYPE_ROUND_LINEAR ||
-            curveType != OPTIX_PRIMITIVE_TYPE_ROUND_QUADRATIC_BSPLINE ||
-            curveType != OPTIX_PRIMITIVE_TYPE_FLAT_QUADRATIC_BSPLINE ||
-            curveType != OPTIX_PRIMITIVE_TYPE_ROUND_CUBIC_BSPLINE ||
-            curveType != OPTIX_PRIMITIVE_TYPE_ROUND_CATMULLROM ||
-            curveType != OPTIX_PRIMITIVE_TYPE_ROUND_CUBIC_BEZIER,
+            curveType == OPTIX_PRIMITIVE_TYPE_ROUND_LINEAR ||
+            curveType == OPTIX_PRIMITIVE_TYPE_ROUND_QUADRATIC_BSPLINE ||
+            curveType == OPTIX_PRIMITIVE_TYPE_ROUND_QUADRATIC_BSPLINE_ROCAPS ||
+            curveType == OPTIX_PRIMITIVE_TYPE_FLAT_QUADRATIC_BSPLINE ||
+            curveType == OPTIX_PRIMITIVE_TYPE_ROUND_CUBIC_BSPLINE ||
+            curveType == OPTIX_PRIMITIVE_TYPE_ROUND_CUBIC_BSPLINE_ROCAPS ||
+            curveType == OPTIX_PRIMITIVE_TYPE_ROUND_CATMULLROM ||
+            curveType == OPTIX_PRIMITIVE_TYPE_ROUND_CATMULLROM_ROCAPS ||
+            curveType == OPTIX_PRIMITIVE_TYPE_ROUND_CUBIC_BEZIER ||
+            curveType == OPTIX_PRIMITIVE_TYPE_ROUND_CUBIC_BEZIER_ROCAPS,
             "This is a hit program group for curves.");
         _Module* const _module_CH = extract(module_CH);
         _Module* const _module_AH = extract(module_AH);

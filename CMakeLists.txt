@@ -15,14 +15,14 @@ set(
     "${CMAKE_SOURCE_DIR}/cmake"
     ${CMAKE_MODULE_PATH})
 find_package(CUDAToolkit 12.8 REQUIRED)
-find_package(OptiX81)
+find_package(OptiX90)
 include("copy_files")
 include("nvcuda_compile_ptx")
 
-if (OptiX81_FOUND)
-    set(OPTIX_INCLUDE_DIR "${OPTIX81_INCLUDE_DIR}")
+if (OptiX90_FOUND)
+    set(OPTIX_INCLUDE_DIR "${OPTIX90_INCLUDE_DIR}")
 else()
-    message(FATAL_ERROR "OptiX SDK 8.1 not found.")
+    message(FATAL_ERROR "OptiX SDK 9.0 not found.")
 endif()
 
 
@@ -124,7 +124,7 @@ function(set_common_sources)
         "-Xcompiler" "\"/wd 4819 /Zc:__cplusplus\""
         "$<$<CONFIG:Debug>:-D_DEBUG=1>"
         "$<$<CONFIG:Debug>:-G>"
-        "--gpu-architecture=compute_52"
+        "--gpu-architecture=compute_75"
         "-std=c++20"
         "-cudart" "shared"
         "--use_fast_math"
