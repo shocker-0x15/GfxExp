@@ -2167,6 +2167,7 @@ void createTriangleMeshes(
     Assimp::Importer importer;
     const aiScene* aiscene = importer.ReadFile(
         filePath.string(),
+        aiProcess_JoinIdenticalVertices |
         aiProcess_Triangulate |
         aiProcess_GenNormals |
         aiProcess_CalcTangentSpace |
