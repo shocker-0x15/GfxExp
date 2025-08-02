@@ -327,7 +327,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic(TraversalStats* t
                         & (*bcB >= 0.0f) & (*bcC >= 0.0f) & (*bcB + *bcC <= 1));
                 };
 
-                float t = INFINITY;
+                float t = stc::numeric_limits<float>::infinity();
                 float mbcB, mbcC;
                 Vector3D n;
                 if (testRayVsTriangleIntersection(
@@ -413,7 +413,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic(TraversalStats* t
                     Matrix3x2 jacobS;
                     const Point2D hitGuessMin = texelCenter - Vector2D(0.5f, 0.5f) * texelScale;
                     const Point2D hitGuessMax = texelCenter + Vector2D(0.5f, 0.5f) * texelScale;
-                    float prevErrDist2 = INFINITY;
+                    float prevErrDist2 = stc::numeric_limits<float>::infinity();
                     uint8_t errDistStreak = 0;
                     uint8_t invalidRegionStreak = 0;
                     uint8_t behindStreak = 0;
@@ -440,7 +440,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic(TraversalStats* t
                         errDistStreak = errDist2 > prevErrDist2 ? (errDistStreak + 1) : 0;
                         behindStreak = dotDirDelta < 0 ? (behindStreak + 1) : 0;
                         if (errDistStreak >= 2 || behindStreak >= 2) {
-                            *hitDist = INFINITY;
+                            *hitDist = stc::numeric_limits<float>::infinity();
                             return false;
                         }
                         prevErrDist2 = errDist2;
@@ -462,7 +462,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic(TraversalStats* t
                             if (bc[0] < 0.0f || bc[1] < 0.0f || bc[2] < 0.0f
                                 || bc[0] > 1.0f || bc[1] > 1.0f || bc[2] > 1.0f
                                 || dotDirDelta < 0) {
-                                *hitDist = INFINITY;
+                                *hitDist = stc::numeric_limits<float>::infinity();
                                 return false;
                             }
                             *hitDist = std::sqrt(hitDist2/* / rayDir.sqLength()*/);
@@ -493,7 +493,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void displacedSurface_generic(TraversalStats* t
                                 || bc[0] > 1.0f || bc[1] > 1.0f || bc[2] > 1.0f) {
                                 ++invalidRegionStreak;
                                 if (invalidRegionStreak >= 3) {
-                                    *hitDist = INFINITY;
+                                    *hitDist = stc::numeric_limits<float>::infinity();
                                     return false;
                                 }
                                 curGuess = min(max(curGuess, hitGuessMin), hitGuessMax);

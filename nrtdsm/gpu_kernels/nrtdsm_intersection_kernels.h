@@ -182,43 +182,45 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testRayVsPrism(
     const Point3D &rayOrg, const Vector3D &rayDir, const float distMin, const float distMax,
     const Point3D &pA, const Point3D &pB, const Point3D &pC,
     const Point3D &pD, const Point3D &pE, const Point3D &pF,
-    float* const hitDistMin, float* const hitDistMax) {
-    *hitDistMin = INFINITY;
-    *hitDistMax = -INFINITY;
+    float* const hitDistMin, float* const hitDistMax)
+{
+    const float inf = stc::numeric_limits<float>::infinity();
+    *hitDistMin = inf;
+    *hitDistMax = -inf;
 
     float tt;
     Normal3D nn;
     float uu, vv;
     if (testRayVsTriangle(
-        rayOrg, rayDir, -INFINITY, INFINITY,
+        rayOrg, rayDir, -inf, inf,
         pC, pB, pA,
         &tt, &nn, &uu, &vv)) {
         *hitDistMin = std::fmin(*hitDistMin, tt);
         *hitDistMax = std::fmax(*hitDistMax, tt);
     }
     if (testRayVsTriangle(
-        rayOrg, rayDir, -INFINITY, INFINITY,
+        rayOrg, rayDir, -inf, inf,
         pD, pE, pF,
         &tt, &nn, &uu, &vv)) {
         *hitDistMin = std::fmin(*hitDistMin, tt);
         *hitDistMax = std::fmax(*hitDistMax, tt);
     }
     if (testRayVsBilinearPatch(
-        rayOrg, rayDir, -INFINITY, INFINITY,
+        rayOrg, rayDir, -inf, inf,
         pA, pB, pD, pE,
         &tt, &nn, &uu, &vv)) {
         *hitDistMin = std::fmin(*hitDistMin, tt);
         *hitDistMax = std::fmax(*hitDistMax, tt);
     }
     if (testRayVsBilinearPatch(
-        rayOrg, rayDir, -INFINITY, INFINITY,
+        rayOrg, rayDir, -inf, inf,
         pB, pC, pE, pF,
         &tt, &nn, &uu, &vv)) {
         *hitDistMin = std::fmin(*hitDistMin, tt);
         *hitDistMax = std::fmax(*hitDistMax, tt);
     }
     if (testRayVsBilinearPatch(
-        rayOrg, rayDir, -INFINITY, INFINITY,
+        rayOrg, rayDir, -inf, inf,
         pC, pA, pF, pD,
         &tt, &nn, &uu, &vv)) {
         *hitDistMin = std::fmin(*hitDistMin, tt);
@@ -875,9 +877,11 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsAabb(
     const float denom2, const float denom1, const float denom0,
     const Point2D &tc2, const Point2D &tc1, const Point2D &tc0,
     // results
-    float* const hitDistMin, float* const hitDistMax) {
-    *hitDistMin = INFINITY;
-    *hitDistMax = -INFINITY;
+    float* const hitDistMin, float* const hitDistMax)
+{
+    const float inf = stc::numeric_limits<float>::infinity();
+    *hitDistMin = inf;
+    *hitDistMax = -inf;
 
     const auto computeHitDistance = [&]
     (const float h, const float recDenom) {
@@ -981,9 +985,11 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsAabb(
     const float hs_vLo[2], const float us_vLo[2],
     const float hs_vHi[2], const float us_vHi[2],
     // results
-    float* const hitDistMin, float* const hitDistMax) {
-    *hitDistMin = INFINITY;
-    *hitDistMax = -INFINITY;
+    float* const hitDistMin, float* const hitDistMax)
+{
+    const float inf = stc::numeric_limits<float>::infinity();
+    *hitDistMin = inf;
+    *hitDistMax = -inf;
 
     const auto computeHitDistance = [&]
     (const float h, const float recDenom) {
@@ -1257,11 +1263,14 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsShellBvh(
     // Results
     Point3D* const hitPointInCan, /*Point3D* const hitPointInTex,*/
     float* const hitDist, Normal3D* const hitNormalInObj, uint32_t* const hitGeomIndex,
-    TraversalStats* const travStats) {
+    TraversalStats* const travStats)
+{
     using InternalNode = InternalNode_T<shellBvhArity>;
 
     static constexpr uint32_t orderBitWidth = tzcntConst(shellBvhArity);
     static constexpr uint32_t orderMask = (1 << orderBitWidth) - 1;
+
+    const float inf = stc::numeric_limits<float>::infinity();
 
     *hitDist = distMax;
 
@@ -1323,7 +1332,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsShellBvh(
             for (uint32_t slot = 0; slot < shellBvhArity; ++slot) {
                 if (!intNode.getChildIsValid(slot)) {
                     for (; slot < shellBvhArity; ++slot)
-                        keys[slot] = floatToOrderedUInt(INFINITY);
+                        keys[slot] = floatToOrderedUInt(inf);
                     break;
                 }
 
@@ -1403,7 +1412,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsShellBvh(
                 }
 
                 if (!aabbHit)
-                    keys[slot] = floatToOrderedUInt(INFINITY);
+                    keys[slot] = floatToOrderedUInt(inf);
             }
 
             if (numIntHits + numLeafHits > 0)
@@ -1475,7 +1484,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsShellBvh(
                     "%u-%u,   Leaf %u: tri %u: %s (%g)%s\n",
                     plp.f->frameIndex, optixGetPrimitiveIndex(),
                     primRefIdx, primRef.storageIndex, triHit ? "hit" : "miss",
-                    triHit ? *hitDist : INFINITY, primRef.isLeafEnd ? " end" : "");
+                    triHit ? *hitDist : inf, primRef.isLeafEnd ? " end" : "");
             }
 #endif
 
@@ -1973,7 +1982,7 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void detailedSurface_generic(TraversalStats* tr
                         hs_u[iuLo], vs_u[iuLo], hs_u[iuHi], vs_u[iuHi],
                         hs_v[ivLo], us_v[ivLo], hs_v[ivHi], us_v[ivHi],
                         &distMin, &distMax);
-                    float dist = INFINITY;
+                    float dist = stc::numeric_limits<float>::infinity();
                     if (hit) {
                         dist = 0.5f * (distMin + distMax);
                         ++numValidEntries;

@@ -35,8 +35,9 @@ CUDA_DEVICE_KERNEL void preprocessNRC(
         *plp.s->offsetToSelectUnbiasedTile = offsetToSelectUnbiasedTile;
         *plp.s->offsetToSelectTrainingPath = offsetToSelectTrainingPath;
 
-        plp.s->targetMinMax[bufIdx][0] = RGBAsOrderedInt(RGB(INFINITY)); // min
-        plp.s->targetMinMax[bufIdx][1] = RGBAsOrderedInt(RGB(-INFINITY)); // max
+        const float inf = stc::numeric_limits<float>::infinity();
+        plp.s->targetMinMax[bufIdx][0] = RGBAsOrderedInt(RGB(inf)); // min
+        plp.s->targetMinMax[bufIdx][1] = RGBAsOrderedInt(RGB(-inf)); // max
         *plp.s->targetAvg[bufIdx] = RGB(0.0f); // max
     }
 
@@ -179,8 +180,9 @@ CUDA_DEVICE_KERNEL void shuffleTrainingData() {
         auto &sm_maxRadiance = reinterpret_cast<RGBAsOrderedInt &>(sm_pool[3]);
         auto &sm_avgRadiance = reinterpret_cast<RGB &>(sm_pool[6]);
         if (threadIdx.x == 0) {
-            sm_minRadiance = RGBAsOrderedInt(RGB(INFINITY));
-            sm_maxRadiance = RGBAsOrderedInt(RGB(-INFINITY));
+            const float inf = stc::numeric_limits<float>::infinity();
+            sm_minRadiance = RGBAsOrderedInt(RGB(inf));
+            sm_maxRadiance = RGBAsOrderedInt(RGB(-inf));
             sm_avgRadiance = RGB(0.0f);
         }
         __syncthreads();

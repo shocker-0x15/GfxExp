@@ -52,8 +52,8 @@ CUDA_DEVICE_KERNEL void generateMinMaxMipMap(
         return;
 
     const int2 basePixIdx = 2 * dstPixIdx;
-    float minHeight = INFINITY;
-    float maxHeight = -INFINITY;
+    float minHeight = stc::numeric_limits<float>::infinity();
+    float maxHeight = -stc::numeric_limits<float>::infinity();
     float2 minMax;
 
     const optixu::NativeBlockBuffer2D<float2> &prevMinMaxMip = nrtdsmGeomInst->minMaxMipMap[srcMipLevel];
@@ -167,8 +167,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void computeAABBs_generic(
 
     // JP: 三角形を含むテクセルもしくはBVHノードのmin/maxを読み取る。
     // EN: Compute the min/max of texels or BVH nodes overlapping with the triangle.
-    float minHeight = INFINITY;
-    float maxHeight = -INFINITY;
+    float minHeight = stc::numeric_limits<float>::infinity();
+    float maxHeight = -stc::numeric_limits<float>::infinity();
     float preScale = 1.0f;
     {
         const Matrix3x3 &texXfm = nrtdsmGeomInst->params.textureTransform;

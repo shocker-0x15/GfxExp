@@ -10,8 +10,8 @@ CUDA_DEVICE_FUNCTION float2 computeTexelMinMax(
         return tex2DLod<float>(heightMap, px / imgSize.x, py / imgSize.y, mipLevel);
     };
 
-    float minHeight = INFINITY;
-    float maxHeight = -INFINITY;
+    float minHeight = stc::numeric_limits<float>::infinity();
+    float maxHeight = -stc::numeric_limits<float>::infinity();
     if constexpr (intersectionType == LocalIntersectionType::Box ||
                   intersectionType == LocalIntersectionType::TwoTriangle ||
                   intersectionType == LocalIntersectionType::Bilinear) {
@@ -91,8 +91,8 @@ CUDA_DEVICE_FUNCTION void generateMinMaxMipMap_generic(
         return;
 
     const int2 basePixIdx = 2 * dstPixIdx;
-    float minHeight = INFINITY;
-    float maxHeight = -INFINITY;
+    float minHeight = stc::numeric_limits<float>::infinity();
+    float maxHeight = -stc::numeric_limits<float>::infinity();
     float2 minMax;
 
     const optixu::NativeBlockBuffer2D<float2> &prevMinMaxMip = tfdmGeomInst->minMaxMipMap[srcMipLevel];
@@ -176,8 +176,8 @@ CUDA_DEVICE_KERNEL void computeAABBs(
 
     // JP: 三角形を含むテクセルのmin/maxを読み取る。
     // EN: Compute the min/max of texels overlapping with the triangle.
-    float minHeight = INFINITY;
-    float maxHeight = -INFINITY;
+    float minHeight = stc::numeric_limits<float>::infinity();
+    float maxHeight = -stc::numeric_limits<float>::infinity();
     float preScale = 1.0f;
     {
         const Matrix3x3 &texXfm = tfdmGeomInst->params.textureTransform;
