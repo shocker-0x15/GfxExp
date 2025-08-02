@@ -1549,7 +1549,8 @@ template <uint32_t log2BlockWidth>
 void saveImage(
     const std::filesystem::path &filepath,
     optixu::HostBlockBuffer2D<float4, log2BlockWidth> &buffer,
-    const SDRImageSaverConfig &config) {
+    const SDRImageSaverConfig &config)
+{
     uint32_t width = buffer.getWidth();
     uint32_t height = buffer.getHeight();
     auto data = new float4[width * height];

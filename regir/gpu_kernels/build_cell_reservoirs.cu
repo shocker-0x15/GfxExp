@@ -6,7 +6,8 @@ using namespace shared;
 CUDA_DEVICE_FUNCTION CUDA_INLINE RGB sampleIntensity(
     const Point3D &cellCenter, const Vector3D &halfCellSize, float minSquaredDistance,
     float uLight, bool sampleEnvLight, float uPos0, float uPos1,
-    LightSample* lightSample, float* probDensity) {
+    LightSample* lightSample, float* probDensity)
+{
     sampleLight<false>(
         cellCenter,
         uLight, sampleEnvLight, uPos0, uPos1,

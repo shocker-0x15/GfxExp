@@ -34,7 +34,8 @@ static_assert(useImplicitLightSampling || useExplicitLightSampling, "Invalid con
 
 CUDA_DEVICE_FUNCTION CUDA_INLINE RGB performNextEventEstimation(
     const Point3D &shadingPoint, const Vector3D &vOutLocal, const ReferenceFrame &shadingFrame,
-    const BSDF &bsdf, PCG32RNG &rng) {
+    const BSDF &bsdf, PCG32RNG &rng)
+{
     RGB ret(0.0f);
     if constexpr (useExplicitLightSampling) {
         float uLight = rng.getFloat0cTo1o();

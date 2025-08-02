@@ -344,7 +344,8 @@ template <bool useSolidAngleSampling>
 CUDA_DEVICE_FUNCTION CUDA_INLINE void sampleLight(
     const Point3D &shadingPoint,
     float ul, bool sampleEnvLight, float u0, float u1,
-    shared::LightSample* lightSample, float* areaPDensity) {
+    shared::LightSample* lightSample, float* areaPDensity)
+{
     using namespace shared;
     CUtexObject texEmittance = 0;
     RGB emittance(0.0f, 0.0f, 0.0f);
@@ -540,7 +541,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void sampleLight(
 template <typename RayType, bool withVisibility>
 CUDA_DEVICE_FUNCTION CUDA_INLINE RGB performDirectLighting(
     const Point3D &shadingPoint, const Vector3D &vOutLocal, const ReferenceFrame &shadingFrame,
-    const BSDF &bsdf, const shared::LightSample &lightSample) {
+    const BSDF &bsdf, const shared::LightSample &lightSample)
+{
     using namespace shared;
     Vector3D shadowRayDir = lightSample.atInfinity ?
         Vector3D(lightSample.position) :
@@ -579,7 +581,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE RGB performDirectLighting(
 
 template <typename RayType>
 CUDA_DEVICE_FUNCTION CUDA_INLINE bool evaluateVisibility(
-    const Point3D &shadingPoint, const shared::LightSample &lightSample) {
+    const Point3D &shadingPoint, const shared::LightSample &lightSample)
+{
     using namespace shared;
     Vector3D shadowRayDir = lightSample.atInfinity ?
         Vector3D(lightSample.position) :
@@ -609,7 +612,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void computeSurfacePoint(
     const Point3D &referencePoint,
     Point3D* positionInWorld, Normal3D* shadingNormalInWorld, Vector3D* texCoord0DirInWorld,
     Normal3D* geometricNormalInWorld, Point2D* texCoord,
-    float* hypAreaPDensity) {
+    float* hypAreaPDensity)
+{
     using namespace shared;
     const Triangle &tri = geomInst.triangleBuffer[primIndex];
     const Vertex &vA = geomInst.vertexBuffer[tri.index0];
@@ -703,7 +707,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void computeSurfacePoint(
     const shared::GeometryInstanceData &geomInst,
     uint32_t primIndex, float bcB, float bcC,
     Point3D* positionInWorld, Normal3D* shadingNormalInWorld, Vector3D* texCoord0DirInWorld,
-    Normal3D* geometricNormalInWorld, Point2D* texCoord) {
+    Normal3D* geometricNormalInWorld, Point2D* texCoord)
+{
     using namespace shared;
     const Triangle &tri = geomInst.triangleBuffer[primIndex];
     const Vertex &vA = geomInst.vertexBuffer[tri.index0];

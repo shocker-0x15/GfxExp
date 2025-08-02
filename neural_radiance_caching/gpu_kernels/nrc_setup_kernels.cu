@@ -6,7 +6,8 @@ using namespace shared;
 CUDA_DEVICE_KERNEL void preprocessNRC(
     uint32_t offsetToSelectUnbiasedTile,
     uint32_t offsetToSelectTrainingPath,
-    bool isNewSequence) {
+    bool isNewSequence)
+{
     const uint32_t linearIndex = blockDim.x * blockIdx.x + threadIdx.x;
     if (linearIndex >= plp.s->maxNumTrainingSuffixes)
         return;

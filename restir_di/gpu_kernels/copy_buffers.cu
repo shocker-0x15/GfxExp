@@ -1,4 +1,4 @@
-#define PURE_CUDA
+﻿#define PURE_CUDA
 #include "../restir_di_shared.h"
 
 using namespace shared;
@@ -7,7 +7,8 @@ CUDA_DEVICE_KERNEL void copyToLinearBuffers(
     float4* linearColorBuffer,
     float4* linearAlbedoBuffer,
     float4* linearNormalBuffer,
-    float2* linearMotionVectorBuffer) {
+    float2* linearMotionVectorBuffer)
+{
     const uint2 launchIndex = make_uint2(
         blockDim.x * blockIdx.x + threadIdx.x,
         blockDim.y * blockIdx.y + threadIdx.y);
@@ -32,8 +33,8 @@ CUDA_DEVICE_KERNEL void visualizeToOutputBuffer(
     void* linearBuffer,
     BufferToDisplay bufferTypeToDisplay,
     float motionVectorOffset, float motionVectorScale,
-    optixu::NativeBlockBuffer2D<float4> outputBuffer) {
-    const uint32_t bufIdx = plp.f->bufferIndex;
+    optixu::NativeBlockBuffer2D<float4> outputBuffer)
+{
     const uint2 launchIndex = make_uint2(
         blockDim.x * blockIdx.x + threadIdx.x,
         blockDim.y * blockIdx.y + threadIdx.y);

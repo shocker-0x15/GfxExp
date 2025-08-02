@@ -1,4 +1,4 @@
-#include "bvh_builder.h"
+﻿#include "bvh_builder.h"
 #include "common_host.h"
 
 namespace bvh {
@@ -178,7 +178,8 @@ struct TempInternalNode_T {
 static void calcTriangleVertices(
     const BuilderInput<PrimitiveType::Geometric> &buildInput,
     const uint32_t geomIdx, const uint32_t primIdx,
-    Point3D* const pA, Point3D* const pB, Point3D* const pC) {
+    Point3D* const pA, Point3D* const pB, Point3D* const pC)
+{
     const Geometry &geom = buildInput.geometries[geomIdx];
 
     uint32_t tri[3];
@@ -212,7 +213,8 @@ static void calcTriangleVertices(
 static void findBestObjectSplit(
     const std::span<PrimitiveReference> primRefs, const std::span<PrimSplitInfo> primSplitInfos,
     const uint32_t numPrimRefs, const AABB &centAabb,
-    SplitInfo* const splitInfo) {
+    SplitInfo* const splitInfo)
+{
     AABB binAabbs[numObjBins][3];
     uint32_t binPrimCounts[numObjBins][3];
 
@@ -311,7 +313,8 @@ static void findBestObjectSplit(
 static void findBestSpatialSplit(
     const std::span<PrimitiveReference> primRefs,
     const uint32_t numPrims, const AABB &geomAabb,
-    SplitInfo* const splitInfo) {
+    SplitInfo* const splitInfo)
+{
     AABB binAabbs[numSpaBins][3];
     uint32_t binPrimEntryCounts[numSpaBins][3];
     uint32_t binPrimExitCounts[numSpaBins][3];
@@ -417,7 +420,8 @@ static void performPartition(
     const SplitTask &splitTask, const std::function<bool(uint32_t)> &pred,
     const uint32_t minNumPrimsPerLeaf,
     const uint32_t leftPrimCount, const uint32_t rightPrimCount,
-    SplitTask* const leftTask, SplitTask* const rightTask) {
+    SplitTask* const leftTask, SplitTask* const rightTask)
+{
     *leftTask = {};
     *rightTask = {};
 
@@ -483,7 +487,8 @@ static void performPartition(
 
 static void performObjectSplit(
     const SplitTask &splitTask, const SplitInfo &splitInfo, const uint32_t minNumPrimsPerLeaf,
-    SplitTask* const leftTask, SplitTask* const rightTask) {
+    SplitTask* const leftTask, SplitTask* const rightTask)
+{
     const uint32_t splitDim = splitInfo.dim;
     const auto pred = [&splitTask, &splitInfo, splitDim]
     (uint32_t idx) {
@@ -501,7 +506,8 @@ static void performObjectSplit(
 static void splitTriangle(
     Point3D pA, Point3D pB, Point3D pC,
     const float splitPlane, const uint32_t splitAxis,
-    AABB* const bbA, AABB* const bbB) {
+    AABB* const bbA, AABB* const bbB)
+{
     uint32_t mask =
         (((pC[splitAxis] >= splitPlane) << 2) |
          ((pB[splitAxis] >= splitPlane) << 1) |
@@ -541,7 +547,8 @@ static void splitTriangle(
 static void performSpatialSplit(
     const BuilderInput<PrimitiveType::Geometric> &buildInput,
     const SplitTask &splitTask, const SplitInfo &splitInfo,
-    SplitTask* const leftTask, SplitTask* const rightTask) {
+    SplitTask* const leftTask, SplitTask* const rightTask)
+{
     const uint32_t splitDim = splitInfo.dim;
     const uint32_t splitPlaneIdx = splitInfo.planeIndex;
     const float binCoeff = (splitTask.geomAabb.maxP[splitDim] - splitTask.geomAabb.minP[splitDim]) / numSpaBins;
@@ -649,7 +656,8 @@ static void performSpatialSplit(
 template <uint32_t arity, PrimitiveType primType>
 static void buildBVH(
     const BuilderInput<primType> &buildInput,
-    typename BVHAlias<arity, primType>::type* const bvh) {
+    typename BVHAlias<arity, primType>::type* const bvh)
+{
     using TempInternalNode = TempInternalNode_T<arity>;
     using InternalNode = shared::InternalNode_T<arity>;
 
@@ -1121,7 +1129,8 @@ static void buildBVH(
 template <uint32_t arity>
 void buildGeometryBVH(
     const Geometry* const geoms, const uint32_t numGeoms,
-    const GeometryBVHBuildConfig &config, GeometryBVH<arity>* const bvh) {
+    const GeometryBVHBuildConfig &config, GeometryBVH<arity>* const bvh)
+{
     BuilderInput<PrimitiveType::Geometric> input = {};
     input.geometries = geoms;
     input.numGeometries = numGeoms;
@@ -1148,7 +1157,8 @@ template void buildGeometryBVH<8>(
 template <uint32_t arity>
 void buildInstanceBVH(
     const Instance* const insts, const uint32_t numInsts,
-    const InstanceBVHBuildConfig &config, InstanceBVH<arity>* const bvh) {
+    const InstanceBVHBuildConfig &config, InstanceBVH<arity>* const bvh)
+{
     BuilderInput<PrimitiveType::Instance> input = {};
     input.instances = insts;
     input.numInstances = numInsts;
@@ -1241,7 +1251,8 @@ static inline void sortOrder(KeyType (&keys)[8], uint32_t* const values) {
 static bool testRayVsTriangle(
     const Point3D &rayOrg, const Vector3D &rayDir, const float distMin, const float distMax,
     const Point3D &pA, const Point3D &pB, const Point3D &pC,
-    float* const hitDist, Normal3D* const hitNormal, float* const bcB, float* const bcC) {
+    float* const hitDist, Normal3D* const hitNormal, float* const bcB, float* const bcC)
+{
     const Vector3D eAB = pB - pA;
     const Vector3D eCA = pA - pC;
     *hitNormal = static_cast<Normal3D>(cross(eCA, eAB));
@@ -1262,7 +1273,8 @@ template <uint32_t arity>
 inline shared::HitObject __traverse(
     const GeometryBVH<arity> &bvh,
     const Point3D &rayOrg, const Vector3D &rayDir, const float distMin, const float distMax,
-    TraversalStatistics* const stats, const bool debugPrint) {
+    TraversalStatistics* const stats, const bool debugPrint)
+{
     using namespace shared;
     using InternalNode = InternalNode_T<arity>;
 
@@ -1642,7 +1654,8 @@ template <uint32_t arity>
 shared::HitObject traverse(
     const GeometryBVH<arity> &bvh,
     const Point3D &rayOrg, const Vector3D &rayDir, const float distMin, const float distMax,
-    TraversalStatistics* const stats, const bool debugPrint) {
+    TraversalStatistics* const stats, const bool debugPrint)
+{
     return __traverse(
         bvh,
         rayOrg, rayDir, distMin, distMax,

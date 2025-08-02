@@ -464,7 +464,8 @@ CUDA_DEVICE_KERNEL void fillBackground(uint32_t numFilteringStages) {
 
 CUDA_DEVICE_FUNCTION void reprojectPreviousAccumulation(
     const optixu::NativeBlockBuffer2D<float4> &prevFinalLightingBuffer, Point2D prevScreenPos,
-    RGB* prevFinalLighting, bool* outOfScreen) {
+    RGB* prevFinalLighting, bool* outOfScreen)
+{
     *prevFinalLighting = RGB(0.0f, 0.0f, 0.0f);
     *outOfScreen = (prevScreenPos.x < 0.0f || prevScreenPos.y < 0.0f ||
                     prevScreenPos.x >= 1.0f || prevScreenPos.y >= 1.0f);

@@ -16,7 +16,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool isDebugPixel() {
 CUDA_DEVICE_FUNCTION CUDA_INLINE bool testRayVsTriangle(
     const Point3D &rayOrg, const Vector3D &rayDir, const float distMin, const float distMax,
     const Point3D &pA, const Point3D &pB, const Point3D &pC,
-    float* const hitDist, Normal3D* const hitNormal, float* const bcB, float* const bcC) {
+    float* const hitDist, Normal3D* const hitNormal, float* const bcB, float* const bcC)
+{
     const Vector3D eAB = pB - pA;
     const Vector3D eCA = pA - pC;
     *hitNormal = static_cast<Normal3D>(cross(eCA, eAB));
@@ -35,7 +36,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testRayVsTriangle(
 
 CUDA_DEVICE_FUNCTION CUDA_INLINE Point3D restoreTriangleHitPoint(
     const Point3D &pA, const Point3D &pB, const Point3D &pC,
-    const float bcB, const float bcC, Normal3D* const hitNormal) {
+    const float bcB, const float bcC, Normal3D* const hitNormal)
+{
     *hitNormal = static_cast<Normal3D>(cross(pB - pA, pC - pA));
     return (1 - (bcB + bcC)) * pA + bcB * pB + bcC * pC;
 }
@@ -45,7 +47,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE Point3D restoreTriangleHitPoint(
 CUDA_DEVICE_FUNCTION CUDA_INLINE bool testRayVsBilinearPatch(
     const Point3D &rayOrg, const Vector3D &rayDir, const float distMin, const float distMax,
     const Point3D &pA, const Point3D &pB, const Point3D &pC, const Point3D &pD,
-    float* const hitDist, Normal3D* const hitNormal, float* const u, float* const v) {
+    float* const hitDist, Normal3D* const hitNormal, float* const u, float* const v)
+{
     const Vector3D eAB = pB - pA;
     const Vector3D eAC = pC - pA;
     const Vector3D eBD = pD - pB;
@@ -113,7 +116,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testRayVsBilinearPatch(
 
 CUDA_DEVICE_FUNCTION CUDA_INLINE Point3D restoreBilinearPatchHitPoint(
     const Point3D &pA, const Point3D &pB, const Point3D &pC, const Point3D &pD,
-    const float u, const float v, Normal3D* const hitNormal) {
+    const float u, const float v, Normal3D* const hitNormal)
+{
     const Vector3D eAB = pB - pA;
     const Vector3D eAC = pC - pA;
     const Vector3D eBD = pD - pB;
@@ -129,7 +133,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testRayVsPrism(
     const Point3D &pA, const Point3D &pB, const Point3D &pC,
     const Point3D &pD, const Point3D &pE, const Point3D &pF,
     float* const hitDist, float* const hitParam0, float* const hitParam1,
-    bool* isFrontHit) {
+    bool* isFrontHit)
+{
     *hitDist = distMax;
 
     const auto updateHit = [&]
@@ -237,7 +242,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE Point3D restorePrismHitPoint(
     const Point3D &pA, const Point3D &pB, const Point3D &pC,
     const Point3D &pD, const Point3D &pE, const Point3D &pF,
     const float hitParam0, const float hitParam1,
-    Normal3D* const hitNormal) {
+    Normal3D* const hitNormal)
+{
     const uint32_t faceID = static_cast<uint32_t>(hitParam0);
     const float u = std::fmod(hitParam0, 1.0f);
     const float v = std::fmod(hitParam1, 1.0f);
@@ -333,7 +339,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE float evaluateCubicPolynomial(
 
 CUDA_DEVICE_FUNCTION CUDA_INLINE uint32_t solveQuadraticEquation(
     const float coeffs[3], const float xMin, const float xMax,
-    float roots[2]) {
+    float roots[2])
+{
     const float a = coeffs[2];
     const float b = coeffs[1];
     const float c = coeffs[0];
@@ -367,7 +374,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE uint32_t solveQuadraticEquation(
 
 CUDA_DEVICE_FUNCTION CUDA_INLINE void solveQuadraticEquation(
     const float a, const float b, const float c, const float xMin, const float xMax,
-    float roots[2]) {
+    float roots[2])
+{
     const float coeffs[] = { c, b, a };
     const uint32_t numRoots = ::solveQuadraticEquation(coeffs, xMin, xMax, roots);
 #pragma unroll
@@ -377,7 +385,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void solveQuadraticEquation(
 
 CUDA_DEVICE_FUNCTION CUDA_INLINE uint32_t solveCubicEquationAnalytical(
     const float coeffs[4], const float xMin, const float xMax,
-    float roots[3]) {
+    float roots[3])
+{
     uint32_t numRoots = 0;
     const auto testRoot = [&](const float x) {
         if (x >= xMin && x <= xMax)
@@ -497,7 +506,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE float evaluatePolynomial(const float coeffs[deg
 
 template <uint32_t degree>
 CUDA_DEVICE_FUNCTION CUDA_INLINE void deflatePolynomial(
-    const float coeffs[degree + 1], const float root, float defCoeffs[degree]) {
+    const float coeffs[degree + 1], const float root, float defCoeffs[degree])
+{
     defCoeffs[degree - 1] = coeffs[degree];
     for (int32_t deg = static_cast<int32_t>(degree) - 1; deg > 0; --deg)
         defCoeffs[deg - 1] = coeffs[deg] + root * defCoeffs[deg];
@@ -511,7 +521,8 @@ template <uint32_t degree, bool boundError>
 CUDA_DEVICE_FUNCTION CUDA_INLINE float findSingleRootClosed(
     const float coeffs[degree + 1], const float derivCoeffs[degree],
     const float xMin, const float xMax, const float yMin, const float yMax,
-    const float epsilon) {
+    const float epsilon)
+{
     // JP: 初期値は区間の中点から始める。
     // EN: The initial guess is the mid point of the interval.
     float xr = (xMin + xMax) / 2;
@@ -604,7 +615,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE float findSingleRootClosed(
 template <bool boundError>
 CUDA_DEVICE_FUNCTION CUDA_INLINE uint32_t solveCubicEquationNumerical(
     const float coeffs[4], const float xMin, const float xMax, float epsilon,
-    float roots[3]) {
+    float roots[3])
+{
     Assert(stc::isfinite(xMin) && stc::isfinite(xMax) && xMin < xMax, "Invalid interval.");
     constexpr uint32_t degree = 3;
     if (coeffs[3] == 0.0f)
@@ -792,7 +804,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void computeCanonicalSpaceRayCoeffs(
     const Point3D &pA, const Point3D &pB, const Point3D &pC,
     const Normal3D &nA, const Normal3D &nB, const Normal3D &nC,
     Point2D* const bc2, Point2D* const bc1, Point2D* const bc0,
-    float* const denom2, float* const denom1, float* const denom0) {
+    float* const denom2, float* const denom1, float* const denom0)
+{
     Vector2D eAB, fAB;
     Vector2D eAC, fAC;
     Vector2D eAO, NA;
@@ -842,7 +855,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void computeTextureSpaceRayCoeffs(
     const Point2D &tcA, const Point2D &tcB, const Point2D &tcC,
     const Point2D &bc2, Point2D &bc1, Point2D &bc0,
     const float denom2, const float denom1, const float denom0,
-    Point2D* const tc2, Point2D* const tc1, Point2D* const tc0) {
+    Point2D* const tc2, Point2D* const tc1, Point2D* const tc0)
+{
     *tc2 = (denom2 - bc2.x - bc2.y) * tcA + bc2.x * tcB + bc2.y * tcC;
     *tc1 = (denom1 - bc1.x - bc1.y) * tcA + bc1.x * tcB + bc1.y * tcC;
     *tc0 = (denom0 - bc0.x - bc0.y) * tcA + bc0.x * tcB + bc0.y * tcC;
@@ -854,7 +868,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void computeTextureSpaceRayCoeffs(
 CUDA_DEVICE_FUNCTION CUDA_INLINE float computeSignedDistance(
     const Point3D &rayOrg, const Vector3D &rayDir, const float recSqRayLength,
     const Point3D &SAh, const Point3D &SBh, const Point3D &SCh,
-    const float alpha, const float beta) {
+    const float alpha, const float beta)
+{
     const float dist = recSqRayLength * dot(
         rayDir,
         (1 - alpha - beta) * SAh + alpha * SBh + beta * SCh - rayOrg);
@@ -1075,7 +1090,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE bool testNonlinearRayVsMicroTriangle(
     const float denom2, const float denom1, const float denom0,
     // Results
     Point3D* const hitPointInCan, /*Point3D* const hitPointInTex,*/
-    float* const hitDist, Normal3D* const hitNormalInObj) {
+    float* const hitDist, Normal3D* const hitNormalInObj)
+{
     // JP: テクスチャー空間中のマイクロ三角形を含む平面の方程式の係数を求める。
     // EN: Compute the coefficients of the equation of a plane in which
     //     the micro triangle in the texture space is contained.

@@ -4,7 +4,8 @@
 using namespace shared;
 
 CUDA_DEVICE_FUNCTION float2 computeTexelMinMax(
-    const CUtexObject heightMap, const int32_t mipLevel, const int2 &imgSize, const int2 &pixIdx) {
+    const CUtexObject heightMap, const int32_t mipLevel, const int2 &imgSize, const int2 &pixIdx)
+{
     const auto sample = [&](float px, float py) {
         return tex2DLod<float>(heightMap, px / imgSize.x, py / imgSize.y, mipLevel);
     };
@@ -26,7 +27,8 @@ CUDA_DEVICE_FUNCTION float2 computeTexelMinMax(
 
 
 CUDA_DEVICE_KERNEL void generateFirstMinMaxMipMap(
-    const GeometryInstanceDataForNRTDSM* const nrtdsmGeomInst) {
+    const GeometryInstanceDataForNRTDSM* const nrtdsmGeomInst)
+{
     const int2 pixIdx(
         blockDim.x * blockIdx.x + threadIdx.x,
         blockDim.y * blockIdx.y + threadIdx.y);
@@ -42,7 +44,8 @@ CUDA_DEVICE_KERNEL void generateFirstMinMaxMipMap(
 
 
 CUDA_DEVICE_KERNEL void generateMinMaxMipMap(
-    const GeometryInstanceDataForNRTDSM* const nrtdsmGeomInst, const uint32_t srcMipLevel) {
+    const GeometryInstanceDataForNRTDSM* const nrtdsmGeomInst, const uint32_t srcMipLevel)
+{
     const int2 dstPixIdx(
         blockDim.x * blockIdx.x + threadIdx.x,
         blockDim.y * blockIdx.y + threadIdx.y);
@@ -84,7 +87,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void traverseShellBvh(
     const bool tcFlipped, const Vector2D texTriEdgeNormals[2],
     const Point2D &texTriAabbMinP, const Point2D &texTriAabbMaxP,
     const GeometryBVH_T<shellBvhArity> &shellBvh, const Vector2D &bvhShift,
-    float* const minHeight, float* const maxHeight) {
+    float* const minHeight, float* const maxHeight)
+{
     using InternalNode = InternalNode_T<shellBvhArity>;
 
     uint32_t curNodeIdx = 0;

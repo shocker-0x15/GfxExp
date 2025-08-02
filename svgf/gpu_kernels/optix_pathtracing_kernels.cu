@@ -55,7 +55,8 @@ struct PreviousNeighbor {
 CUDA_DEVICE_FUNCTION CUDA_INLINE void reprojectPreviousAccumulation(
     const Point3D &curPosInWorld, const Normal3D &curNormalInWorld, uint32_t curInstSlot, uint32_t curMatSlot,
     Point2D prevScreenPos,
-    PreviousResult* prevResult) {
+    PreviousResult* prevResult)
+{
     prevResult->noisyLighting = RGB(0.0f, 0.0f, 0.0f);
     prevResult->firstMoment = 0.0f;
     prevResult->secondMoment = 0.0f;
@@ -136,7 +137,8 @@ static_assert(useImplicitLightSampling || useExplicitLightSampling, "Invalid con
 
 CUDA_DEVICE_FUNCTION CUDA_INLINE RGB performNextEventEstimation(
     const Point3D &shadingPoint, const Vector3D &vOutLocal, const ReferenceFrame &shadingFrame,
-    const BSDF &bsdf, PCG32RNG &rng) {
+    const BSDF &bsdf, PCG32RNG &rng)
+{
     RGB ret(0.0f);
     if constexpr (useExplicitLightSampling) {
         float uLight = rng.getFloat0cTo1o();

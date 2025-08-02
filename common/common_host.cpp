@@ -205,7 +205,8 @@ template <typename RealType>
 void RegularConstantContinuousDistribution1DTemplate<RealType>::
 initialize(
     CUcontext cuContext, cudau::BufferType type,
-    const RealType* values, uint32_t numValues) {
+    const RealType* values, uint32_t numValues)
+{
     Assert(!m_isInitialized, "Already initialized!");
     m_numValues = numValues;
 #if defined(USE_WALKER_ALIAS_METHOD)
@@ -323,7 +324,8 @@ template <typename RealType>
 void RegularConstantContinuousDistribution2DTemplate<RealType>::
 initialize(
     CUcontext cuContext, cudau::BufferType type,
-    const RealType* values, uint32_t numD1, uint32_t numD2) {
+    const RealType* values, uint32_t numD1, uint32_t numD2)
+{
     Assert(!m_isInitialized, "Already initialized!");
     m_1DDists = new RegularConstantContinuousDistribution1DTemplate<RealType>[numD2];
     m_raw1DDists.initialize(cuContext, type, static_cast<uint32_t>(numD2));
@@ -741,7 +743,8 @@ struct FlattenedNode {
 
 static void computeFlattenedNodes(
     const aiScene* scene, const Matrix4x4 &parentXfm, const aiNode* curNode,
-    std::vector<FlattenedNode> &flattenedNodes) {
+    std::vector<FlattenedNode> &flattenedNodes)
+{
     aiMatrix4x4 curAiXfm = curNode->mTransformation;
     Matrix4x4 curXfm = Matrix4x4(
         Vector4D(curAiXfm.a1, curAiXfm.a2, curAiXfm.a3, curAiXfm.a4),
@@ -762,7 +765,8 @@ static void computeFlattenedNodes(
 
 static void translate(
     dds::Format ddsFormat,
-    cudau::ArrayElementType* cudaType, bool* needsDegamma, bool* isHDR) {
+    cudau::ArrayElementType* cudaType, bool* needsDegamma, bool* isHDR)
+{
     *needsDegamma = false;
     *isHDR = false;
     switch (ddsFormat) {
@@ -821,7 +825,8 @@ static void translate(
 
 static void translate(
     dds::Format ddsFormat,
-    GLenum* glFormat, bool* needsDegamma, bool* isHDR) {
+    GLenum* glFormat, bool* needsDegamma, bool* isHDR)
+{
     *needsDegamma = false;
     *isHDR = false;
     // https://dench.flatlib.jp/opengl/textures
@@ -1003,7 +1008,8 @@ void createImmTexture(
     const T &immValue,
     bool isNormalized,
     std::shared_ptr<cudau::Array>* texture,
-    std::shared_ptr<glu::Texture2D>* gfxTexture) {
+    std::shared_ptr<glu::Texture2D>* gfxTexture)
+{
     std::map<ImmTextureCacheKey<T>, TextureCacheValue>* textureCache;
     uint32_t numComps = 0;
     if constexpr (std::is_same_v<T, float>) {
@@ -1160,7 +1166,8 @@ bool loadTexture(
     CUcontext cuContext,
     std::shared_ptr<cudau::Array>* texture,
     bool* needsDegamma,
-    bool* isHDR) {
+    bool* isHDR)
+{
     TextureCacheKey cacheKey;
     cacheKey.filePath = filePath;
     cacheKey.cuContext = cuContext;
@@ -1274,7 +1281,8 @@ bool loadNormalTexture(
     CUcontext cuContext,
     std::shared_ptr<cudau::Array>* texture,
     std::shared_ptr<glu::Texture2D>* gfxTexture,
-    BumpMapTextureType* bumpMapType) {
+    BumpMapTextureType* bumpMapType)
+{
     TextureCacheKey cacheKey;
     cacheKey.filePath = filePath;
     cacheKey.cuContext = cuContext;
@@ -1386,7 +1394,8 @@ bool loadNormalTexture(
 void createNormalTexture(
     CUcontext cuContext,
     const std::filesystem::path &normalPath,
-    Material* mat) {
+    Material* mat)
+{
     if (normalPath.empty()) {
         createImmTexture(
             cuContext, float3(0.5f, 0.5f, 1.0f), true,
@@ -1408,7 +1417,8 @@ void createEmittanceTexture(
     CUcontext cuContext,
     const std::filesystem::path &emittancePath, const RGB &immEmittance,
     Material* mat,
-    bool* needsDegamma, bool* isHDR) {
+    bool* needsDegamma, bool* isHDR)
+{
     *needsDegamma = false;
     *isHDR = false;
     if (emittancePath.empty()) {
@@ -1445,7 +1455,8 @@ void createLambertMaterial(
     CUcontext cuContext, Scene* scene,
     const std::filesystem::path &reflectancePath, const RGB &immReflectance,
     const std::filesystem::path &normalPath,
-    const std::filesystem::path &emittancePath, const RGB &immEmittance) {
+    const std::filesystem::path &emittancePath, const RGB &immEmittance)
+{
     shared::MaterialData* matDataOnHost = scene->materialDataBuffer.getMappedPointer();
 
     cudau::TextureSampler sampler_sRGB;
@@ -1548,7 +1559,8 @@ void createDiffuseAndSpecularMaterial(
     const std::filesystem::path &specularColorPath, const RGB &immSpecularColor,
     float immSmoothness,
     const std::filesystem::path &normalPath,
-    const std::filesystem::path &emittancePath, const RGB &immEmittance) {
+    const std::filesystem::path &emittancePath, const RGB &immEmittance)
+{
     shared::MaterialData* matDataOnHost = scene->materialDataBuffer.getMappedPointer();
 
     cudau::TextureSampler sampler_sRGB;
@@ -1680,7 +1692,8 @@ void createSimplePBRMaterial(
     const std::filesystem::path &occlusion_roughness_metallicPath,
     const float3 &immOcclusion_roughness_metallic,
     const std::filesystem::path &normalPath,
-    const std::filesystem::path &emittancePath, const RGB &immEmittance) {
+    const std::filesystem::path &emittancePath, const RGB &immEmittance)
+{
     shared::MaterialData* matDataOnHost = scene->materialDataBuffer.getMappedPointer();
 
     cudau::TextureSampler sampler_sRGB;
@@ -1806,7 +1819,8 @@ GeometryInstance* createGeometryInstance(
     const std::vector<shared::Vertex> &vertices,
     const std::vector<shared::Triangle> &triangles,
     const Material* mat, optixu::Material optixMat,
-    bool allocateGfxResource) {
+    bool allocateGfxResource)
+{
     shared::GeometryInstanceData* geomInstDataOnHost = scene->geomInstDataBuffer.getMappedPointer();
 
     GeometryInstance* geomInst = new GeometryInstance();
@@ -1894,7 +1908,8 @@ GeometryInstance* createTFDMGeometryInstance(
     CUcontext cuContext, Scene* scene,
     const std::vector<shared::Vertex> &vertices,
     const std::vector<shared::Triangle> &triangles,
-    const Material* mat, optixu::Material optixMat) {
+    const Material* mat, optixu::Material optixMat)
+{
     shared::GeometryInstanceData* geomInstDataOnHost = scene->geomInstDataBuffer.getMappedPointer();
 
     GeometryInstance* geomInst = new GeometryInstance();
@@ -1939,7 +1954,8 @@ GeometryInstance* createNRTDSMGeometryInstance(
     CUcontext cuContext, Scene* scene,
     const std::vector<shared::Vertex> &vertices,
     const std::vector<shared::Triangle> &triangles,
-    const Material* mat, optixu::Material optixMat) {
+    const Material* mat, optixu::Material optixMat)
+{
     shared::GeometryInstanceData* geomInstDataOnHost = scene->geomInstDataBuffer.getMappedPointer();
 
     GeometryInstance* geomInst = new GeometryInstance();
@@ -1984,7 +2000,8 @@ GeometryInstance* createLinearSegmentsGeometryInstance(
     CUcontext cuContext, Scene* scene,
     const std::vector<shared::CurveVertex> &vertices,
     const std::vector<uint32_t> &indices,
-    const Material* mat, optixu::Material optixMat) {
+    const Material* mat, optixu::Material optixMat)
+{
     shared::GeometryInstanceData* geomInstDataOnHost = scene->geomInstDataBuffer.getMappedPointer();
 
     GeometryInstance* geomInst = new GeometryInstance();
@@ -2033,7 +2050,8 @@ GeometryInstance* createLinearSegmentsGeometryInstance(
 
 GeometryGroup* createGeometryGroup(
     Scene* scene,
-    const std::set<const GeometryInstance*> &geomInsts) {
+    const std::set<const GeometryInstance*> &geomInsts)
+{
     GeometryGroup* geomGroup = new GeometryGroup();
     geomGroup->geomInsts = geomInsts;
     geomGroup->numEmitterPrimitives = 0;
@@ -2062,7 +2080,8 @@ GeometryGroup* createGeometryGroup(
 static void computeFlattenedMesh(
     const aiScene* scene, const Matrix4x4 &parentXfm, const aiNode* curNode,
     std::vector<TriangleGeometryOnCPU>* geometries,
-    AABB* const aabb) {
+    AABB* const aabb)
+{
     const aiMatrix4x4 &nodeAiXfm = curNode->mTransformation;
     const Matrix4x4 nodeXfm = Matrix4x4(
         Vector4D(nodeAiXfm.a1, nodeAiXfm.a2, nodeAiXfm.a3, nodeAiXfm.a4),
@@ -2132,7 +2151,8 @@ void loadTriangleMeshGeometriesOnCPU(
     const std::filesystem::path &filePath,
     const Matrix4x4 &preTransform,
     std::vector<TriangleGeometryOnCPU>* geometries,
-    AABB* aabb) {
+    AABB* aabb)
+{
     hpprintf("Reading: %s ... ", filePath.string().c_str());
     fflush(stdout);
     Assimp::Importer importer;
@@ -2161,7 +2181,8 @@ void createTriangleMeshes(
     MaterialConvention matConv,
     const Matrix4x4 &preTransform,
     CUcontext cuContext, Scene* scene, optixu::Material optixMat,
-    bool allocateGfxResource) {
+    bool allocateGfxResource)
+{
     hpprintf("Reading: %s ... ", filePath.string().c_str());
     fflush(stdout);
     Assimp::Importer importer;
@@ -2415,7 +2436,8 @@ void createRectangleLight(
     const RGB &immEmittance,
     const Matrix4x4 &transform,
     CUcontext cuContext, Scene* scene, optixu::Material optixMat,
-    bool allocateGfxResource) {
+    bool allocateGfxResource)
+{
     if constexpr (useLambertMaterial)
         createLambertMaterial(cuContext, scene, "", reflectance, "", emittancePath, immEmittance);
     else
@@ -2461,7 +2483,8 @@ void createSphereLight(
     const RGB &immEmittance,
     const Point3D &position,
     CUcontext cuContext, Scene* scene, optixu::Material optixMat,
-    bool allocateGfxResource) {
+    bool allocateGfxResource)
+{
     if constexpr (useLambertMaterial)
         createLambertMaterial(cuContext, scene, "", reflectance, "", emittancePath, immEmittance);
     else
@@ -2559,7 +2582,8 @@ void createSphereLight(
 Instance* createInstance(
     CUcontext cuContext, Scene* scene,
     const Mesh::GeometryGroupInstance &geomGroupInst,
-    const Matrix4x4 &transform) {
+    const Matrix4x4 &transform)
+{
     shared::InstanceData* instDataOnHost = scene->instDataBuffer[0].getMappedPointer();
 
     Matrix4x4 finalTransform = transform * geomGroupInst.transform;
@@ -2635,7 +2659,8 @@ void loadEnvironmentalTexture(
     const std::filesystem::path &filePath,
     CUcontext cuContext,
     cudau::Array* envLightArray, CUtexObject* envLightTexture,
-    RegularConstantContinuousDistribution2D* envLightImportanceMap) {
+    RegularConstantContinuousDistribution2D* envLightImportanceMap)
+{
     cudau::TextureSampler sampler_float;
     sampler_float.setXyFilterMode(cudau::TextureFilterMode::Linear);
     sampler_float.setWrapMode(0, cudau::TextureWrapMode::Clamp);
@@ -2700,7 +2725,8 @@ void saveImage(const std::filesystem::path &filepath, uint32_t width, uint32_t h
 void saveImageHDR(
     const std::filesystem::path &filepath, uint32_t width, uint32_t height,
     float brightnessScale,
-    const float* data, bool flipY) {
+    const float* data, bool flipY)
+{
     EXRHeader header;
     InitEXRHeader(&header);
 
@@ -2766,7 +2792,8 @@ void saveImageHDR(
 void saveImageHDR(
     const std::filesystem::path &filepath, uint32_t width, uint32_t height,
     float brightnessScale,
-    const float4* data, bool flipY) {
+    const float4* data, bool flipY)
+{
     EXRHeader header;
     InitEXRHeader(&header);
 
@@ -2831,7 +2858,8 @@ void saveImageHDR(
 
 void saveImage(
     const std::filesystem::path &filepath, uint32_t width, uint32_t height, const float4* data,
-    const SDRImageSaverConfig &config) {
+    const SDRImageSaverConfig &config)
+{
     auto image = new uint32_t[width * height];
     for (int y = 0; y < static_cast<int32_t>(height); ++y) {
         uint32_t sy = config.flipY ? (height - 1 - y) : y;
@@ -2871,7 +2899,8 @@ void saveImage(
 void saveImage(
     const std::filesystem::path &filepath,
     uint32_t width, cudau::TypedBuffer<float4> &buffer,
-    const SDRImageSaverConfig &config) {
+    const SDRImageSaverConfig &config)
+{
     Assert(buffer.numElements() % width == 0, "Buffer's length is not divisible by the width.");
     uint32_t height = static_cast<uint32_t>(buffer.numElements()) / width;
     auto data = buffer.map();
@@ -2882,7 +2911,8 @@ void saveImage(
 void saveImage(
     const std::filesystem::path &filepath,
     cudau::Array &array,
-    const SDRImageSaverConfig &config) {
+    const SDRImageSaverConfig &config)
+{
     auto data = array.map<float4>();
     saveImage(
         filepath,

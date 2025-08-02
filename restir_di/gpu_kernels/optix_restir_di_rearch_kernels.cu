@@ -268,7 +268,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE float computeMISWeight(
     uint32_t selfStreamLength, const Point3D &positionInWorld, const Vector3D &vOutLocal,
     const ReferenceFrame &shadingFrame, const BSDF &bsdf,
     const int2 &tNbCoord, const int2 &stNbCoord,
-    uint32_t streamLength, const LightSample &lightSample, float sampleTargetDensity) {
+    uint32_t streamLength, const LightSample &lightSample, float sampleTargetDensity)
+{
     const float numMisWeight = sampleTargetDensity;
     float denomMisWeight = numMisWeight * streamLength;
 

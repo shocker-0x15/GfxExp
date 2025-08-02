@@ -5,7 +5,8 @@ using namespace shared;
 
 template <LocalIntersectionType intersectionType>
 CUDA_DEVICE_FUNCTION float2 computeTexelMinMax(
-    const CUtexObject heightMap, const int32_t mipLevel, const int2 &imgSize, const int2 &pixIdx) {
+    const CUtexObject heightMap, const int32_t mipLevel, const int2 &imgSize, const int2 &pixIdx)
+{
     const auto sample = [&](float px, float py) {
         return tex2DLod<float>(heightMap, px / imgSize.x, py / imgSize.y, mipLevel);
     };
@@ -44,7 +45,8 @@ CUDA_DEVICE_FUNCTION float2 computeTexelMinMax(
 
 template <LocalIntersectionType intersectionType>
 CUDA_DEVICE_FUNCTION void generateFirstMinMaxMipMap_generic(
-    const GeometryInstanceDataForTFDM* const tfdmGeomInst) {
+    const GeometryInstanceDataForTFDM* const tfdmGeomInst)
+{
     const int2 pixIdx(
         blockDim.x * blockIdx.x + threadIdx.x,
         blockDim.y * blockIdx.y + threadIdx.y);
@@ -58,22 +60,26 @@ CUDA_DEVICE_FUNCTION void generateFirstMinMaxMipMap_generic(
 }
 
 CUDA_DEVICE_KERNEL void generateFirstMinMaxMipMap_Box(
-    const GeometryInstanceDataForTFDM* const tfdmGeomInst) {
+    const GeometryInstanceDataForTFDM* const tfdmGeomInst)
+{
     generateFirstMinMaxMipMap_generic<LocalIntersectionType::Box>(tfdmGeomInst);
 }
 
 CUDA_DEVICE_KERNEL void generateFirstMinMaxMipMap_TwoTriangle(
-    const GeometryInstanceDataForTFDM* const tfdmGeomInst) {
+    const GeometryInstanceDataForTFDM* const tfdmGeomInst)
+{
     generateFirstMinMaxMipMap_generic<LocalIntersectionType::TwoTriangle>(tfdmGeomInst);
 }
 
 CUDA_DEVICE_KERNEL void generateFirstMinMaxMipMap_Bilinear(
-    const GeometryInstanceDataForTFDM* const tfdmGeomInst) {
+    const GeometryInstanceDataForTFDM* const tfdmGeomInst)
+{
     generateFirstMinMaxMipMap_generic<LocalIntersectionType::Bilinear>(tfdmGeomInst);
 }
 
 CUDA_DEVICE_KERNEL void generateFirstMinMaxMipMap_BSpline(
-    const GeometryInstanceDataForTFDM* const tfdmGeomInst) {
+    const GeometryInstanceDataForTFDM* const tfdmGeomInst)
+{
     generateFirstMinMaxMipMap_generic<LocalIntersectionType::BSpline>(tfdmGeomInst);
 }
 
@@ -81,7 +87,8 @@ CUDA_DEVICE_KERNEL void generateFirstMinMaxMipMap_BSpline(
 
 template <LocalIntersectionType intersectionType>
 CUDA_DEVICE_FUNCTION void generateMinMaxMipMap_generic(
-    const GeometryInstanceDataForTFDM* const tfdmGeomInst, const uint32_t srcMipLevel) {
+    const GeometryInstanceDataForTFDM* const tfdmGeomInst, const uint32_t srcMipLevel)
+{
     const int2 dstPixIdx(
         blockDim.x * blockIdx.x + threadIdx.x,
         blockDim.y * blockIdx.y + threadIdx.y);
@@ -124,29 +131,34 @@ CUDA_DEVICE_FUNCTION void generateMinMaxMipMap_generic(
 }
 
 CUDA_DEVICE_KERNEL void generateMinMaxMipMap_Box(
-    const GeometryInstanceDataForTFDM* const tfdmGeomInst, const uint32_t srcMipLevel) {
+    const GeometryInstanceDataForTFDM* const tfdmGeomInst, const uint32_t srcMipLevel)
+{
     generateMinMaxMipMap_generic<LocalIntersectionType::Box>(tfdmGeomInst, srcMipLevel);
 }
 
 CUDA_DEVICE_KERNEL void generateMinMaxMipMap_TwoTriangle(
-    const GeometryInstanceDataForTFDM* const tfdmGeomInst, const uint32_t srcMipLevel) {
+    const GeometryInstanceDataForTFDM* const tfdmGeomInst, const uint32_t srcMipLevel)
+{
     generateMinMaxMipMap_generic<LocalIntersectionType::TwoTriangle>(tfdmGeomInst, srcMipLevel);
 }
 
 CUDA_DEVICE_KERNEL void generateMinMaxMipMap_Bilinear(
-    const GeometryInstanceDataForTFDM* const tfdmGeomInst, const uint32_t srcMipLevel) {
+    const GeometryInstanceDataForTFDM* const tfdmGeomInst, const uint32_t srcMipLevel)
+{
     generateMinMaxMipMap_generic<LocalIntersectionType::Bilinear>(tfdmGeomInst, srcMipLevel);
 }
 
 CUDA_DEVICE_KERNEL void generateMinMaxMipMap_BSpline(
-    const GeometryInstanceDataForTFDM* const tfdmGeomInst, const uint32_t srcMipLevel) {
+    const GeometryInstanceDataForTFDM* const tfdmGeomInst, const uint32_t srcMipLevel)
+{
     generateMinMaxMipMap_generic<LocalIntersectionType::BSpline>(tfdmGeomInst, srcMipLevel);
 }
 
 
 
 CUDA_DEVICE_KERNEL void computeAABBs(
-    const GeometryInstanceData* const geomInst, const GeometryInstanceDataForTFDM* const tfdmGeomInst) {
+    const GeometryInstanceData* const geomInst, const GeometryInstanceDataForTFDM* const tfdmGeomInst)
+{
     const uint32_t primIndex = blockDim.x * blockIdx.x + threadIdx.x;
     if (primIndex >= geomInst->triangleBuffer.getNumElements())
         return;

@@ -18,7 +18,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void convertToPolar(const Vector3D &dir, float*
 CUDA_DEVICE_FUNCTION CUDA_INLINE void createRadianceQuery(
     const Point3D &positionInWorld, const Normal3D &normalInWorld, const Vector3D &scatteredDirInWorld,
     float roughness, const RGB &diffuseReflectance, const RGB &specularReflectance,
-    RadianceQuery* query) {
+    RadianceQuery* query)
+{
     float phi, theta;
     query->position = plp.s->sceneAABB->normalize(positionInWorld);
     convertToPolar(Vector3D(normalInWorld), &phi, &theta);
@@ -36,7 +37,8 @@ static constexpr bool useSolidAngleSampling = false;
 
 CUDA_DEVICE_FUNCTION CUDA_INLINE RGB performNextEventEstimation(
     const Point3D &shadingPoint, const Vector3D &vOutLocal, const ReferenceFrame &shadingFrame,
-    const BSDF &bsdf, PCG32RNG &rng) {
+    const BSDF &bsdf, PCG32RNG &rng)
+{
     float uLight = rng.getFloat0cTo1o();
     bool selectEnvLight = false;
     float probToSampleCurLightType = 1.0f;

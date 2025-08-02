@@ -18,7 +18,8 @@ static_assert(useImplicitLightSampling || useExplicitLightSampling, "Invalid con
 CUDA_DEVICE_FUNCTION CUDA_INLINE RGB sampleFromCell(
     const Point3D &shadingPoint, const Vector3D &vOutLocal, const ReferenceFrame &shadingFrame, const BSDF &bsdf,
     uint32_t frameIndex, PCG32RNG &rng,
-    LightSample* lightSample, float* recProbDensityEstimate) {
+    LightSample* lightSample, float* recProbDensityEstimate)
+{
     Vector3D randomOffset;
     if (plp.f->enableCellRandomization) {
         randomOffset = plp.s->gridCellSize
@@ -83,7 +84,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE RGB sampleFromCell(
 template <bool useReGIR>
 CUDA_DEVICE_FUNCTION CUDA_INLINE RGB performNextEventEstimation(
     const Point3D &shadingPoint, const Vector3D &vOutLocal, const ReferenceFrame &shadingFrame, const BSDF &bsdf,
-    PCG32RNG &rng) {
+    PCG32RNG &rng)
+{
     RGB ret(0.0f);
     if constexpr (useReGIR) {
         LightSample lightSample;

@@ -1,4 +1,4 @@
-#define PURE_CUDA
+﻿#define PURE_CUDA
 #include "../regir_shared.h"
 
 using namespace shared;
@@ -7,7 +7,8 @@ CUDA_DEVICE_KERNEL void copyToLinearBuffers(
     float4* linearColorBuffer,
     float4* linearAlbedoBuffer,
     float4* linearNormalBuffer,
-    float2* linearMotionVectorBuffer) {
+    float2* linearMotionVectorBuffer)
+{
     const uint2 launchIndex = make_uint2(
         blockDim.x * blockIdx.x + threadIdx.x,
         blockDim.y * blockIdx.y + threadIdx.y);
@@ -28,7 +29,8 @@ CUDA_DEVICE_KERNEL void copyToLinearBuffers(
 
 CUDA_DEVICE_FUNCTION CUDA_INLINE uint32_t calcCellLinearIndex(
     const Point3D &gridOrigin, const Vector3D &gridCellSize, const uint3 &gridDimension,
-    const Point3D &positionInWorld) {
+    const Point3D &positionInWorld)
+{
     const Point3D relPos(positionInWorld - gridOrigin);
     const uint32_t ix = min(max(
         static_cast<uint32_t>(relPos.x / gridCellSize.x), 0u), gridDimension.x - 1);
@@ -59,7 +61,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE uint32_t getFNV1Hash32(const T &x) {
 
 CUDA_DEVICE_FUNCTION CUDA_INLINE RGB calcCellColor(
     const Point3D &gridOrigin, const Vector3D &gridCellSize, const uint3 &gridDimension,
-    const Point3D &positionInWorld) {
+    const Point3D &positionInWorld)
+{
     const uint32_t cellLinearIndex = calcCellLinearIndex(gridOrigin, gridCellSize, gridDimension, positionInWorld);
 
     const uint32_t hash = getFNV1Hash32(cellLinearIndex);
@@ -78,7 +81,8 @@ CUDA_DEVICE_KERNEL void visualizeToOutputBuffer(
     void* linearBuffer,
     BufferToDisplay bufferTypeToDisplay,
     float motionVectorOffset, float motionVectorScale,
-    optixu::NativeBlockBuffer2D<float4> outputBuffer) {
+    optixu::NativeBlockBuffer2D<float4> outputBuffer)
+{
     const uint32_t bufIdx = plp.f->bufferIndex;
     const uint2 launchIndex = make_uint2(
         blockDim.x * blockIdx.x + threadIdx.x,

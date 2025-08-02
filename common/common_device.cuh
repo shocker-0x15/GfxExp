@@ -84,12 +84,14 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE Vector3D halfVector(const Vector3D &a, const Ve
 
 template <bool isNormalA, bool isNormalB>
 CUDA_DEVICE_FUNCTION CUDA_INLINE float absDot(
-    const Vector3D_T<float, isNormalA> &a, const Vector3D_T<float, isNormalB> &b) {
+    const Vector3D_T<float, isNormalA> &a, const Vector3D_T<float, isNormalB> &b)
+{
     return std::fabs(dot(a, b));
 }
 
 CUDA_DEVICE_FUNCTION CUDA_INLINE void makeCoordinateSystem(
-    const Normal3D &normal, Vector3D* tangent, Vector3D* bitangent) {
+    const Normal3D &normal, Vector3D* tangent, Vector3D* bitangent)
+{
     float sign = normal.z >= 0 ? 1 : -1;
     const float a = -1 / (sign + normal.z);
     const float b = normal.x * normal.y * a;
@@ -100,14 +102,16 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void makeCoordinateSystem(
 // JP: 自己交叉回避のためにレイの原点にオフセットを付加する。
 // EN: Add an offset to a ray origin to avoid self-intersection.
 CUDA_DEVICE_FUNCTION CUDA_INLINE Point3D offsetRayOriginNaive(
-    const Point3D &p, const Normal3D &geometricNormal) {
+    const Point3D &p, const Normal3D &geometricNormal)
+{
     return p + RayEpsilon * geometricNormal;
 }
 
 // Reference:
 // Chapter 6. A Fast and Robust Method for Avoiding Self-Intersection, Ray Tracing Gems, 2019
 CUDA_DEVICE_FUNCTION CUDA_INLINE Point3D offsetRayOrigin(
-    const Point3D &p, const Normal3D &geometricNormal) {
+    const Point3D &p, const Normal3D &geometricNormal)
+{
     constexpr float kOrigin = 1.0f / 32.0f;
     constexpr float kFloatScale = 1.0f / 65536.0f;
     constexpr float kIntScale = 256.0f;
@@ -137,7 +141,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE Point3D offsetRayOrigin(
 
 template <typename T>
 CUDA_DEVICE_FUNCTION CUDA_INLINE T sample(
-    CUtexObject texture, shared::TexDimInfo dimInfo, const Point2D &texCoord, float mipLevel) {
+    CUtexObject texture, shared::TexDimInfo dimInfo, const Point2D &texCoord, float mipLevel)
+{
     return tex2DLod<T>(texture, texCoord.x, texCoord.y, mipLevel);
 }
 
@@ -169,7 +174,8 @@ struct ReferenceFrame {
 };
 
 CUDA_DEVICE_FUNCTION CUDA_INLINE void applyBumpMapping(
-    const Normal3D &modNormalInTF, ReferenceFrame* frameToModify) {
+    const Normal3D &modNormalInTF, ReferenceFrame* frameToModify)
+{
     // JP: 法線から回転軸と回転角(、Quaternion)を求めて対応する接平面ベクトルを求める。
     // EN: calculate a rotating axis and an angle (and quaternion) from the normal then calculate corresponding tangential vectors.
     float projLength = std::sqrt(modNormalInTF.x * modNormalInTF.x + modNormalInTF.y * modNormalInTF.y);
@@ -239,7 +245,8 @@ static constexpr bool useEmbeddedVertexData = true;
 
 template <OptixPrimitiveType curveType>
 CUDA_DEVICE_FUNCTION CUDA_INLINE Normal3D calcCurveSurfaceNormal(
-    const shared::GeometryInstanceData &geom, uint32_t primIndex, float curveParam, const Point3D &hp) {
+    const shared::GeometryInstanceData &geom, uint32_t primIndex, float curveParam, const Point3D &hp)
+{
     using namespace shared;
 
     constexpr uint32_t numControlPoints = curve::getNumControlPoints<curveType>();
@@ -340,7 +347,8 @@ public:
     }
     CUDA_DEVICE_FUNCTION RGB sampleThroughput(
         const Vector3D &vGiven, float uDir0, float uDir1,
-        Vector3D* vSampled, float* dirPDensity) const {
+        Vector3D* vSampled, float* dirPDensity) const
+    {
         *vSampled = cosineSampleHemisphere(uDir0, uDir1);
         *dirPDensity = vSampled->z / pi_v<float>;
         if (vGiven.z <= 0.0f)
@@ -368,7 +376,8 @@ public:
 template <>
 CUDA_DEVICE_FUNCTION CUDA_INLINE void setupBSDFBody<LambertBRDF>(
     const shared::MaterialData &matData, Point2D texCoord, float mipLevel,
-    uint32_t* bodyData, shared::BSDFFlags /*flags*/) {
+    uint32_t* bodyData, shared::BSDFFlags /*flags*/)
+{
     float4 reflectance = sample<float4>(
         matData.asLambert.reflectance, matData.asLambert.reflectanceDimInfo, texCoord, mipLevel);
     auto &bsdfBody = *reinterpret_cast<LambertBRDF*>(bodyData);
@@ -386,7 +395,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void setupBSDFBody<LambertBRDF>(
 // https://www.shadertoy.com/view/WtjfRD
 CUDA_DEVICE_FUNCTION CUDA_INLINE void calcFittedPreIntegratedTerms(
     float cosV, float roughness,
-    float* diffusePreInt, float* specularPreIntA, float* specularPreIntB) {
+    float* diffusePreInt, float* specularPreIntA, float* specularPreIntB)
+{
         {
             float u = cosV;
             float v = roughness;
@@ -447,7 +457,8 @@ class DiffuseAndSpecularBRDF {
             return 2 / (1 + std::sqrt(1 + temp));
         }
         CUDA_DEVICE_FUNCTION float evaluateHeightCorrelatedSmithG(
-            const Vector3D &v1, const Vector3D &v2, const Normal3D &m) {
+            const Vector3D &v1, const Vector3D &v2, const Normal3D &m)
+        {
             float alpha_g2_tanTheta2_1 = pow2(alpha_g) * (pow2(v1.x) + pow2(v1.y)) / pow2(v1.z);
             float alpha_g2_tanTheta2_2 = pow2(alpha_g) * (pow2(v2.x) + pow2(v2.y)) / pow2(v2.z);
             float Lambda1 = (-1 + std::sqrt(1 + alpha_g2_tanTheta2_1)) / 2;
@@ -458,7 +469,8 @@ class DiffuseAndSpecularBRDF {
         }
         CUDA_DEVICE_FUNCTION float sample(
             const Vector3D &v, float u0, float u1,
-            Normal3D* m, float* mPDensity) const {
+            Normal3D* m, float* mPDensity) const
+        {
             // stretch view
             Vector3D sv = normalize(Vector3D(alpha_g * v.x, alpha_g * v.y, v.z));
 
@@ -503,21 +515,24 @@ protected:
 public:
     CUDA_DEVICE_FUNCTION DiffuseAndSpecularBRDF() {}
     CUDA_DEVICE_FUNCTION DiffuseAndSpecularBRDF(
-        const RGB &diffuseColor, const RGB &specularF0Color, float smoothness) {
+        const RGB &diffuseColor, const RGB &specularF0Color, float smoothness)
+    {
         m_diffuseColor = diffuseColor;
         m_specularF0Color = specularF0Color;
         m_roughness = 1 - smoothness;
     }
 
     CUDA_DEVICE_FUNCTION void getSurfaceParameters(
-        RGB* diffuseReflectance, RGB* specularReflectance, float* roughness) const {
+        RGB* diffuseReflectance, RGB* specularReflectance, float* roughness) const
+    {
         *diffuseReflectance = m_diffuseColor;
         *specularReflectance = m_specularF0Color;
         *roughness = m_roughness;
     }
     CUDA_DEVICE_FUNCTION RGB sampleThroughput(
         const Vector3D &vGiven, float uDir0, float uDir1,
-        Vector3D* vSampled, float* dirPDensity) const {
+        Vector3D* vSampled, float* dirPDensity) const
+    {
         GGXMicrofacetDistribution ggx;
         ggx.alpha_g = m_roughness * m_roughness;
 
@@ -752,7 +767,8 @@ public:
 class SimplePBR_BRDF : public DiffuseAndSpecularBRDF {
 public:
     CUDA_DEVICE_FUNCTION SimplePBR_BRDF(
-        const RGB &baseColor, float reflectance, float smoothness, float metallic) {
+        const RGB &baseColor, float reflectance, float smoothness, float metallic)
+    {
         m_diffuseColor = baseColor * (1 - metallic);
         m_specularF0Color = RGB(0.16f * pow2(reflectance) * (1 - metallic)) + baseColor * metallic;
         m_roughness = 1 - smoothness;
@@ -762,7 +778,8 @@ public:
 template <>
 CUDA_DEVICE_FUNCTION CUDA_INLINE void setupBSDFBody<DiffuseAndSpecularBRDF>(
     const shared::MaterialData &matData, Point2D texCoord, float mipLevel,
-    uint32_t* bodyData, shared::BSDFFlags flags) {
+    uint32_t* bodyData, shared::BSDFFlags flags)
+{
     float4 diffuseColor = sample<float4>(
         matData.asDiffuseAndSpecular.diffuse,
         matData.asDiffuseAndSpecular.diffuseDimInfo,
@@ -788,7 +805,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void setupBSDFBody<DiffuseAndSpecularBRDF>(
 template <>
 CUDA_DEVICE_FUNCTION CUDA_INLINE void setupBSDFBody<SimplePBR_BRDF>(
     const shared::MaterialData &matData, Point2D texCoord, float mipLevel,
-    uint32_t* bodyData, shared::BSDFFlags flags) {
+    uint32_t* bodyData, shared::BSDFFlags flags)
+{
     float4 baseColor_opacity = sample<float4>(
         matData.asSimplePBR.baseColor_opacity,
         matData.asSimplePBR.baseColor_opacity_dimInfo,
@@ -811,32 +829,37 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void setupBSDFBody<SimplePBR_BRDF>(
 
 #define DEFINE_BSDF_CALLABLES(BSDFType) \
     RT_CALLABLE_PROGRAM void RT_DC_NAME(BSDFType ## _getSurfaceParameters)(\
-        const uint32_t* data, RGB* diffuseReflectance, RGB* specularReflectance, float* roughness) {\
+        const uint32_t* data, RGB* diffuseReflectance, RGB* specularReflectance, float* roughness)\
+    {\
         auto &bsdf = *reinterpret_cast<const BSDFType*>(data);\
         return bsdf.getSurfaceParameters(diffuseReflectance, specularReflectance, roughness);\
     }\
     CUDA_DECLARE_CALLABLE_PROGRAM_POINTER(BSDFType ## _getSurfaceParameters);\
     RT_CALLABLE_PROGRAM RGB RT_DC_NAME(BSDFType ## _sampleThroughput)(\
         const uint32_t* data, const Vector3D &vGiven, float uDir0, float uDir1,\
-        Vector3D* vSampled, float* dirPDensity) {\
+        Vector3D* vSampled, float* dirPDensity)\
+    {\
         auto &bsdf = *reinterpret_cast<const BSDFType*>(data);\
         return bsdf.sampleThroughput(vGiven, uDir0, uDir1, vSampled, dirPDensity);\
     }\
     CUDA_DECLARE_CALLABLE_PROGRAM_POINTER(BSDFType ## _sampleThroughput);\
     RT_CALLABLE_PROGRAM RGB RT_DC_NAME(BSDFType ## _evaluate)(\
-        const uint32_t* data, const Vector3D &vGiven, const Vector3D &vSampled) {\
+        const uint32_t* data, const Vector3D &vGiven, const Vector3D &vSampled)\
+    {\
         auto &bsdf = *reinterpret_cast<const BSDFType*>(data);\
         return bsdf.evaluate(vGiven, vSampled);\
     }\
     CUDA_DECLARE_CALLABLE_PROGRAM_POINTER(BSDFType ## _evaluate);\
     RT_CALLABLE_PROGRAM float RT_DC_NAME(BSDFType ## _evaluatePDF)(\
-        const uint32_t* data, const Vector3D &vGiven, const Vector3D &vSampled) {\
+        const uint32_t* data, const Vector3D &vGiven, const Vector3D &vSampled)\
+    {\
         auto &bsdf = *reinterpret_cast<const BSDFType*>(data);\
         return bsdf.evaluatePDF(vGiven, vSampled);\
     }\
     CUDA_DECLARE_CALLABLE_PROGRAM_POINTER(BSDFType ## _evaluatePDF);\
     RT_CALLABLE_PROGRAM RGB RT_DC_NAME(BSDFType ## _evaluateDHReflectanceEstimate)(\
-        const uint32_t* data, const Vector3D &vGiven) {\
+        const uint32_t* data, const Vector3D &vGiven)\
+    {\
         auto &bsdf = *reinterpret_cast<const BSDFType*>(data);\
         return bsdf.evaluateDHReflectanceEstimate(vGiven);\
     }\
@@ -850,7 +873,8 @@ DEFINE_BSDF_CALLABLES(DiffuseAndSpecularBRDF);
 #define DEFINE_SETUP_BSDF_CALLABLE(BSDFType) \
     RT_CALLABLE_PROGRAM void RT_DC_NAME(setup ## BSDFType)(\
         const shared::MaterialData &matData, Point2D texCoord, float mipLevel,\
-        uint32_t* bodyData, shared::BSDFFlags flags) {\
+        uint32_t* bodyData, shared::BSDFFlags flags)\
+    {\
         setupBSDFBody<BSDFType>(matData, texCoord, mipLevel, bodyData, flags);\
     }\
     CUDA_DECLARE_CALLABLE_PROGRAM_POINTER(setup ## BSDFType)
@@ -878,7 +902,8 @@ struct BSDF {
 
     CUDA_DEVICE_FUNCTION void setup(
         const shared::MaterialData &matData, const Point2D &texCoord, float mipLevel,
-        shared::BSDFFlags flags = shared::BSDFFlags::None) {
+        shared::BSDFFlags flags = shared::BSDFFlags::None)
+    {
 #if defined(USE_HARD_CODED_BSDF_FUNCTIONS)
         setupBSDFBody<HARD_CODED_BSDF>(matData, texCoord, mipLevel, m_data, flags);
 #else
@@ -891,7 +916,8 @@ struct BSDF {
 #endif
     }
     CUDA_DEVICE_FUNCTION void getSurfaceParameters(
-        RGB* diffuseReflectance, RGB* specularReflectance, float* roughness) const {
+        RGB* diffuseReflectance, RGB* specularReflectance, float* roughness) const
+    {
 #if defined(USE_HARD_CODED_BSDF_FUNCTIONS)
         auto &bsdf = *reinterpret_cast<const HARD_CODED_BSDF*>(m_data);
         return bsdf.getSurfaceParameters(diffuseReflectance, specularReflectance, roughness);
@@ -901,7 +927,8 @@ struct BSDF {
     }
     CUDA_DEVICE_FUNCTION RGB sampleThroughput(
         const Vector3D &vGiven, float uDir0, float uDir1,
-        Vector3D* vSampled, float* dirPDensity) const {
+        Vector3D* vSampled, float* dirPDensity) const
+    {
 #if defined(USE_HARD_CODED_BSDF_FUNCTIONS)
         auto &bsdf = *reinterpret_cast<const HARD_CODED_BSDF*>(m_data);
         return bsdf.sampleThroughput(vGiven, uDir0, uDir1, vSampled, dirPDensity);

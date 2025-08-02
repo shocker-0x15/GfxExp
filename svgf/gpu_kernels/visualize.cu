@@ -1,4 +1,4 @@
-#define PURE_CUDA
+﻿#define PURE_CUDA
 #include "../svgf_shared.h"
 
 using namespace shared;
@@ -6,7 +6,8 @@ using namespace shared;
 CUDA_DEVICE_KERNEL void debugVisualize(
     BufferToDisplay bufferToDisplay,
     float motionVectorOffset, float motionVectorScale,
-    uint32_t numFilteringStages) {
+    uint32_t numFilteringStages)
+{
     const uint2 launchIndex = make_uint2(
         blockDim.x * blockIdx.x + threadIdx.x,
         blockDim.y * blockIdx.y + threadIdx.y);

@@ -281,7 +281,8 @@ template <bool useSolidAngleSampling>
 CUDA_DEVICE_FUNCTION CUDA_INLINE void sampleLight(
     const Point3D &shadingPoint,
     float ul, bool sampleEnvLight, float u0, float u1,
-    shared::LightSample* lightSample, float* areaPDensity) {
+    shared::LightSample* lightSample, float* areaPDensity)
+{
     using namespace shared;
     CUtexObject texEmittance = 0;
     RGB emittance(0.0f, 0.0f, 0.0f);
@@ -477,7 +478,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void sampleLight(
 template <typename RayType, bool withVisibility>
 CUDA_DEVICE_FUNCTION CUDA_INLINE RGB performDirectLighting(
     const Point3D &shadingPoint, const Vector3D &vOutLocal, const ReferenceFrame &shadingFrame,
-    const BSDF &bsdf, const shared::LightSample &lightSample) {
+    const BSDF &bsdf, const shared::LightSample &lightSample)
+{
     using namespace shared;
     Vector3D shadowRayDir = lightSample.atInfinity ?
         Vector3D(lightSample.position) :
@@ -516,7 +518,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE RGB performDirectLighting(
 
 template <typename RayType>
 CUDA_DEVICE_FUNCTION CUDA_INLINE bool evaluateVisibility(
-    const Point3D &shadingPoint, const shared::LightSample &lightSample) {
+    const Point3D &shadingPoint, const shared::LightSample &lightSample)
+{
     using namespace shared;
     Vector3D shadowRayDir = lightSample.atInfinity ?
         Vector3D(lightSample.position) :
@@ -547,7 +550,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void computeSurfacePoint(
     const Point3D &referencePoint,
     Point3D* positionInWorld, Normal3D* shadingNormalInWorld, Vector3D* texCoord0DirInWorld,
     Normal3D* geometricNormalInWorld, Point2D* texCoord,
-    float* hypAreaPDensity) {
+    float* hypAreaPDensity)
+{
     using namespace shared;
     const Triangle &tri = geomInst.triangleBuffer[primIndex];
     const Vertex &vA = geomInst.vertexBuffer[tri.index0];
@@ -653,7 +657,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE void computeSurfacePoint(
     bool isDisplacedTriangleHit,
     uint32_t primIndex, float bcB, float bcC,
     Point3D* positionInWorld, Normal3D* shadingNormalInWorld, Vector3D* texCoord0DirInWorld,
-    Normal3D* geometricNormalInWorld, Point2D* texCoord) {
+    Normal3D* geometricNormalInWorld, Point2D* texCoord)
+{
     using namespace shared;
     const Triangle &tri = geomInst.triangleBuffer[primIndex];
     const Vertex &vA = geomInst.vertexBuffer[tri.index0];
@@ -812,7 +817,8 @@ enum class TriangleSquareIntersection2DResult {
 CUDA_DEVICE_FUNCTION CUDA_INLINE TriangleSquareIntersection2DResult testTriangleSquareIntersection2D(
     const Point2D &pA, const Point2D &pB, const Point2D &pC, bool tcFlipped, const Vector2D triEdgeNormals[3],
     const Point2D &triAabbMinP, const Point2D &triAabbMaxP,
-    const Point2D &squareCenter, float squareHalfWidth) {
+    const Point2D &squareCenter, float squareHalfWidth)
+{
     const Vector2D vSquareCenter = static_cast<Vector2D>(squareCenter);
     const Point2D relTriPs[] = {
         pA - vSquareCenter,
@@ -860,7 +866,8 @@ CUDA_DEVICE_FUNCTION CUDA_INLINE TriangleSquareIntersection2DResult testTriangle
 
 CUDA_DEVICE_FUNCTION CUDA_INLINE void findRoots(
     const Point2D &triAabbMinP, const Point2D &triAabbMaxP, const int32_t maxDepth, uint32_t targetMipLevel,
-    Texel* const roots, uint32_t* const numRoots) {
+    Texel* const roots, uint32_t* const numRoots)
+{
     using namespace shared;
     const Vector2D d = triAabbMaxP - triAabbMinP;
     const uint32_t largerDim = d.y > d.x;
